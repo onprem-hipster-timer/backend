@@ -7,8 +7,7 @@ def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
     """
     새 Schedule을 DB에 생성합니다.
     """
-    # Pydantic 모델을 SQLModel 인스턴스로 변환
-    schedule = Schedule.from_orm(data)
+    schedule = Schedule.model_validate(data)
 
     session.add(schedule)
     session.commit()
@@ -45,7 +44,6 @@ def update_schedule(
     for field, value in update_data.items():
         setattr(schedule, field, value)
 
-    session.add(schedule)
     session.commit()
     session.refresh(schedule)
 
