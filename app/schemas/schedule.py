@@ -1,13 +1,24 @@
-from uuid import UUID
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
+from pydantic import field_validator
 from sqlmodel import SQLModel
+
+from app.valid.schedule import validate_time_order
+
 
 class ScheduleCreate(SQLModel):
     title: str
     description: Optional[str] = None
     start_time: datetime
     end_time: datetime
+
+    @field_validator("end_time")
+    def validate_time(cls, end_time, info):
+        validate_time_order(info.data.get("start_time"), end_time)
+        return end_time
+
 
 class ScheduleRead(ScheduleCreate):
     id: UUID
@@ -18,3 +29,8 @@ class ScheduleUpdate(SQLModel):
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+
+    @field_validator("end_time")
+    def validate_time(cls, end_time, info):
+        validate_time_order(info.data.get("start_time"), end_time)
+        return end_time
