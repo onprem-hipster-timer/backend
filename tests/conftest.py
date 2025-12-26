@@ -1,7 +1,6 @@
 import pytest
 from sqlmodel import SQLModel, create_engine, Session
 from app.models.schedule import Schedule
-from app.models.base import UUIDBase, TimestampMixin
 
 
 @pytest.fixture
@@ -38,7 +37,7 @@ def test_session(test_engine):
 def sample_schedule(test_session):
     """테스트 데이터"""
     from datetime import datetime, UTC
-    from app.schemas.schedule import ScheduleCreate
+    from app.domain.schedule.schema.schedule import ScheduleCreate
     
     schedule_data = ScheduleCreate(
         title="테스트 일정",

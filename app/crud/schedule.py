@@ -1,6 +1,7 @@
+from datetime import datetime
 from sqlmodel import Session, select
 from app.models.schedule import Schedule
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate
+from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 
 
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
@@ -21,6 +22,31 @@ def get_schedules(session: Session) -> list[Schedule]:
     모든 Schedule 객체를 조회합니다.
     """
     statement = select(Schedule)
+    results = session.exec(statement)
+    return results.all()
+
+
+def get_schedules_by_date_range(
+    session: Session,
+    start_date: datetime,
+    end_date: datetime,
+) -> list[Schedule]:
+    """
+    날짜 범위로 Schedule 객체를 조회합니다.
+    
+    :param session: DB 세션
+    :param start_date: 시작 날짜 (이 날짜 이후에 시작하는 일정 포함)
+    :param end_date: 종료 날짜 (이 날짜 이전에 종료하는 일정 포함)
+    :return: 해당 날짜 범위와 겹치는 모든 일정
+    """
+    # 일정이 주어진 날짜 범위와 겹치는 경우를 조회
+    # 일정의 start_time <= end_date AND 일정의 end_time >= start_date
+    statement = (
+        select(Schedule)
+        .where(Schedule.start_time <= end_date)
+        .where(Schedule.end_time >= start_date)
+        .order_by(Schedule.start_time)
+    )
     results = session.exec(statement)
     return results.all()
 

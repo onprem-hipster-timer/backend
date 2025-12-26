@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # 로깅
     LOG_LEVEL: str = "INFO"
     
+    # GraphQL
+    GRAPHQL_ENABLE_PLAYGROUND: bool = True  # 개발 환경에서만 True
+    GRAPHQL_ENABLE_INTROSPECTION: bool = True  # 개발 환경에서만 True
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

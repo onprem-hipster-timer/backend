@@ -1,15 +1,10 @@
 import pytest
 from datetime import datetime, UTC
 from uuid import UUID
-from app.crud.schedule import (
-    create_schedule,
-    get_schedules,
-    get_schedule,
-    update_schedule,
-    delete_schedule,
-)
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate
-from app.valid.schedule import validate_time_order
+from app.domain.schedule.service import ScheduleService
+from app.domain.schedule.repository import ScheduleRepository
+from app.domain.schedule.schema.schedule import ScheduleCreate, ScheduleUpdate
+from app.utils.validators import validate_time_order
 
 
 class MockScheduleRepository:
@@ -59,7 +54,9 @@ def test_create_schedule_success(test_session):
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
     
-    schedule = create_schedule(test_session, schedule_data)
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    schedule = service.create_schedule(schedule_data)
     
     assert schedule.title == "회의"
     assert schedule.description == "팀 회의"
@@ -77,13 +74,18 @@ def test_create_schedule_invalid_time(test_session):
         end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
     )
     
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    # Pydantic validator가 먼저 검증하므로 ValueError 발생
     with pytest.raises(ValueError, match="end_time must be after start_time"):
-        create_schedule(test_session, schedule_data)
+        service.create_schedule(schedule_data)
 
 
 def test_get_schedules(test_session, sample_schedule):
     """모든 일정 조회 테스트"""
-    schedules = get_schedules(test_session)
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    schedules = service.get_all_schedules()
     
     assert len(schedules) >= 1
     assert any(s.id == sample_schedule.id for s in schedules)
@@ -91,7 +93,9 @@ def test_get_schedules(test_session, sample_schedule):
 
 def test_get_schedule_success(test_session, sample_schedule):
     """ID로 일정 조회 성공 테스트"""
-    schedule = get_schedule(test_session, sample_schedule.id)
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    schedule = service.get_schedule(sample_schedule.id)
     
     assert schedule is not None
     assert schedule.id == sample_schedule.id
@@ -101,11 +105,14 @@ def test_get_schedule_success(test_session, sample_schedule):
 def test_get_schedule_not_found(test_session):
     """존재하지 않는 일정 조회 테스트"""
     from uuid import uuid4
+    from app.domain.schedule.exceptions import ScheduleNotFoundError
     
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
     non_existent_id = uuid4()
-    schedule = get_schedule(test_session, non_existent_id)
     
-    assert schedule is None
+    with pytest.raises(ScheduleNotFoundError):
+        service.get_schedule(non_existent_id)
 
 
 def test_update_schedule_success(test_session, sample_schedule):
@@ -115,7 +122,9 @@ def test_update_schedule_success(test_session, sample_schedule):
         description="업데이트된 설명",
     )
     
-    updated_schedule = update_schedule(test_session, sample_schedule, update_data)
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    updated_schedule = service.update_schedule(sample_schedule.id, update_data)
     
     assert updated_schedule.title == "업데이트된 회의"
     assert updated_schedule.description == "업데이트된 설명"
@@ -129,17 +138,24 @@ def test_update_schedule_invalid_time(test_session, sample_schedule):
         end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
     )
     
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    # Pydantic validator가 먼저 검증하므로 ValueError 발생
     with pytest.raises(ValueError, match="end_time must be after start_time"):
-        update_schedule(test_session, sample_schedule, update_data)
+        service.update_schedule(sample_schedule.id, update_data)
 
 
 def test_delete_schedule_success(test_session, sample_schedule):
     """일정 삭제 성공 테스트"""
+    from app.domain.schedule.exceptions import ScheduleNotFoundError
+    
     schedule_id = sample_schedule.id
     
-    delete_schedule(test_session, sample_schedule)
+    repository = ScheduleRepository(test_session)
+    service = ScheduleService(repository)
+    service.delete_schedule(schedule_id)
     
-    # 삭제 후 조회하면 None이어야 함
-    deleted_schedule = get_schedule(test_session, schedule_id)
-    assert deleted_schedule is None
+    # 삭제 후 조회하면 ScheduleNotFoundError 발생
+    with pytest.raises(ScheduleNotFoundError):
+        service.get_schedule(schedule_id)
 
