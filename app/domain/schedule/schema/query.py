@@ -14,7 +14,6 @@ from strawberry.types import Info
 from app.domain.schedule.schema.types import Event, Day, Calendar
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.service import ScheduleService
-from app.domain.schedule.repository import ScheduleRepository
 
 
 class GraphQLContext(TypedDict):
@@ -72,8 +71,8 @@ class ScheduleQuery:
         end_datetime = datetime.combine(end_date, datetime.max.time())
         
         # ✅ Domain Service 사용 (N+1 문제 방지)
-        repository = ScheduleRepository(session)
-        service = ScheduleService(repository)
+        # FastAPI Best Practices: Service는 session을 받아서 CRUD 직접 사용
+        service = ScheduleService(session)
         schedules = service.get_schedules_by_date_range(
             start_datetime,
             end_datetime,

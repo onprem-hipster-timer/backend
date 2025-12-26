@@ -1,76 +1,101 @@
+"""
+Schedule Router
+
+FastAPI Best Practices:
+- 모든 라우트는 async
+- Dependencies를 활용한 검증
+- Service는 session을 받아서 CRUD 직접 사용
+"""
 from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
-from uuid import UUID
 
 from app.api.dependencies import get_db_transactional
+from app.api.v1.schedules_dependencies import valid_schedule_id
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
     ScheduleRead,
     ScheduleUpdate,
 )
 from app.domain.schedule.service import ScheduleService
-from app.domain.schedule.repository import ScheduleRepository
+from app.domain.schedule.model import Schedule
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
 
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
-def create_schedule(
+async def create_schedule(
     data: ScheduleCreate,
     session: Session = Depends(get_db_transactional),
 ):
     """
     새 일정 생성
     
-    ✅ 트랜잭션 자동 관리:
-    - try/except 필요 없음
+    FastAPI Best Practices:
+    - async 라우트 사용
+    - 트랜잭션 자동 관리 (context manager)
     - Exception Handler가 예외 처리
-    - session.commit() 불필요 (context manager가 처리)
     """
-    repository = ScheduleRepository(session)
-    service = ScheduleService(repository)
+    service = ScheduleService(session)
     return service.create_schedule(data)
 
 
 @router.get("", response_model=list[ScheduleRead])
-def read_schedules(session: Session = Depends(get_db_transactional)):
-    """모든 일정 조회"""
-    repository = ScheduleRepository(session)
-    service = ScheduleService(repository)
+async def read_schedules(session: Session = Depends(get_db_transactional)):
+    """
+    모든 일정 조회
+    
+    FastAPI Best Practices:
+    - async 라우트 사용
+    """
+    service = ScheduleService(session)
     return service.get_all_schedules()
 
 
 @router.get("/{schedule_id}", response_model=ScheduleRead)
-def read_schedule(
-    schedule_id: UUID,
-    session: Session = Depends(get_db_transactional),
+async def read_schedule(
+    schedule: Schedule = Depends(valid_schedule_id),
 ):
-    """ID로 일정 조회"""
-    repository = ScheduleRepository(session)
-    service = ScheduleService(repository)
-    return service.get_schedule(schedule_id)
+    """
+    ID로 일정 조회
+    
+    FastAPI Best Practices:
+    - Dependency로 검증 (valid_schedule_id)
+    - 중복 검증 코드 제거
+    - 여러 엔드포인트에서 재사용 가능
+    """
+    return schedule
 
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
-def update_schedule(
-    schedule_id: UUID,
+async def update_schedule(
     data: ScheduleUpdate,
+    schedule: Schedule = Depends(valid_schedule_id),
     session: Session = Depends(get_db_transactional),
 ):
-    """일정 업데이트"""
-    repository = ScheduleRepository(session)
-    service = ScheduleService(repository)
-    return service.update_schedule(schedule_id, data)
+    """
+    일정 업데이트
+    
+    FastAPI Best Practices:
+    - Dependency로 schedule 검증 (valid_schedule_id)
+    - Service는 session을 받아서 CRUD 직접 사용
+    """
+    service = ScheduleService(session)
+    return service.update_schedule(schedule.id, data)
 
 
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
-def delete_schedule(
-    schedule_id: UUID,
+async def delete_schedule(
+    schedule: Schedule = Depends(valid_schedule_id),
     session: Session = Depends(get_db_transactional),
 ):
-    """일정 삭제"""
-    repository = ScheduleRepository(session)
-    service = ScheduleService(repository)
-    service.delete_schedule(schedule_id)
+    """
+    일정 삭제
+    
+    FastAPI Best Practices:
+    - Dependency로 schedule 검증 (valid_schedule_id)
+    - Service는 session을 받아서 CRUD 직접 사용
+    """
+    service = ScheduleService(session)
+    service.delete_schedule(schedule.id)
     return {"ok": True}
 

@@ -7,13 +7,16 @@ from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
     """
     새 Schedule을 DB에 생성합니다.
+    
+    FastAPI Best Practices:
+    - commit은 get_db_transactional이 처리
+    - CRUD는 데이터 접근만 담당
     """
     schedule = Schedule.model_validate(data)
-
     session.add(schedule)
-    session.commit()
+    # commit은 get_db_transactional이 처리
+    session.flush()  # ID를 얻기 위해 flush
     session.refresh(schedule)
-
     return schedule
 
 
@@ -65,20 +68,26 @@ def update_schedule(
 ) -> Schedule:
     """
     Schedule 객체의 변경된 필드만 반영해 업데이트합니다.
+    
+    FastAPI Best Practices:
+    - commit은 get_db_transactional이 처리
     """
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(schedule, field, value)
-
-    session.commit()
+    
+    # commit은 get_db_transactional이 처리
+    session.flush()
     session.refresh(schedule)
-
     return schedule
 
 
 def delete_schedule(session: Session, schedule: Schedule) -> None:
     """
     Schedule 객체를 삭제합니다.
+    
+    FastAPI Best Practices:
+    - commit은 get_db_transactional이 처리
     """
     session.delete(schedule)
-    session.commit()
+    # commit은 get_db_transactional이 처리

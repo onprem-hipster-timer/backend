@@ -52,13 +52,13 @@ class Day:
     GraphQL Day 타입 (특정 날짜와 해당 날짜의 이벤트들)
     
     캘린더 뷰를 위한 도메인 개념
+    
+    Bug Fix: 커스텀 __init__ 제거
+    - Strawberry는 타입 어노테이션을 기반으로 자동으로 __init__ 생성
+    - 커스텀 __init__은 Strawberry의 내부 메커니즘과 충돌 가능
     """
     date: date
     events: List[Event]
-
-    def __init__(self, date: date, events: List[Event]):
-        self.date = date
-        self.events = events
 
 
 @strawberry.type
@@ -67,9 +67,10 @@ class Calendar:
     GraphQL Calendar 타입 (날짜 범위와 해당 기간의 모든 날짜들)
     
     주간/월간 뷰를 위한 도메인 개념
+    
+    Bug Fix: 커스텀 __init__ 제거
+    - Strawberry는 타입 어노테이션을 기반으로 자동으로 __init__ 생성
+    - 커스텀 __init__은 Strawberry의 내부 메커니즘과 충돌 가능
     """
     days: List[Day]
-
-    def __init__(self, days: List[Day]):
-        self.days = days
 

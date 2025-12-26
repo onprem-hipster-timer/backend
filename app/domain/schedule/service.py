@@ -1,25 +1,32 @@
 """
 Schedule Service
 
-아키텍처 원칙:
+FastAPI Best Practices:
 - Service는 비즈니스 로직을 담당
-- Repository를 통해 데이터 접근
+- CRUD 함수를 직접 사용 (Repository 패턴 제거)
 - Domain Exception을 발생시켜 비즈니스 규칙 위반 표현
 """
 from datetime import datetime
 from uuid import UUID
+from sqlmodel import Session
 
-from app.domain.schedule.repository import ScheduleRepository
+from app.crud import schedule as crud
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 
 
 class ScheduleService:
-    """Schedule Service - 비즈니스 로직"""
+    """
+    Schedule Service - 비즈니스 로직
     
-    def __init__(self, repository: ScheduleRepository):
-        self.repository = repository
+    FastAPI Best Practices:
+    - Repository 패턴 제거, CRUD 함수 직접 사용
+    - Session을 받아서 CRUD 함수 호출
+    """
+    
+    def __init__(self, session: Session):
+        self.session = session
     
     def create_schedule(self, data: ScheduleCreate) -> Schedule:
         """
@@ -29,7 +36,7 @@ class ScheduleService:
         :return: 생성된 일정
         """
         # 비즈니스 로직: 시간 검증은 Pydantic validator에서 처리
-        return self.repository.create(data)
+        return crud.create_schedule(self.session, data)
     
     def get_schedule(self, schedule_id: UUID) -> Schedule:
         """
@@ -39,7 +46,7 @@ class ScheduleService:
         :return: 일정
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
-        schedule = self.repository.get_by_id(schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id)
         if not schedule:
             raise ScheduleNotFoundError()
         return schedule
@@ -50,7 +57,7 @@ class ScheduleService:
         
         :return: 일정 리스트
         """
-        return self.repository.get_all()
+        return crud.get_schedules(self.session)
     
     def get_schedules_by_date_range(
         self,
@@ -64,7 +71,7 @@ class ScheduleService:
         :param end_date: 종료 날짜
         :return: 해당 날짜 범위와 겹치는 모든 일정
         """
-        return self.repository.get_by_date_range(start_date, end_date)
+        return crud.get_schedules_by_date_range(self.session, start_date, end_date)
     
     def update_schedule(
         self,
@@ -79,11 +86,11 @@ class ScheduleService:
         :return: 업데이트된 일정
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
-        schedule = self.repository.get_by_id(schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id)
         if not schedule:
             raise ScheduleNotFoundError()
         
-        return self.repository.update(schedule, data)
+        return crud.update_schedule(self.session, schedule, data)
     
     def delete_schedule(self, schedule_id: UUID) -> None:
         """
@@ -92,9 +99,9 @@ class ScheduleService:
         :param schedule_id: 일정 ID
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
-        schedule = self.repository.get_by_id(schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id)
         if not schedule:
             raise ScheduleNotFoundError()
         
-        self.repository.delete(schedule)
+        crud.delete_schedule(self.session, schedule)
 

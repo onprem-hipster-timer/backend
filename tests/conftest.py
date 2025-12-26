@@ -35,9 +35,16 @@ def test_session(test_engine):
 
 @pytest.fixture
 def sample_schedule(test_session):
-    """테스트 데이터"""
+    """
+    테스트 데이터
+    
+    Bug Fix: commit() 제거, flush() 사용
+    - test_session fixture는 rollback 기반 격리를 제공
+    - commit()을 호출하면 트랜잭션이 커밋되어 rollback이 작동하지 않음
+    - flush()를 사용하여 ID를 얻고, 트랜잭션은 test_session이 rollback 처리
+    """
     from datetime import datetime, UTC
-    from app.domain.schedule.schema.schedule import ScheduleCreate
+    from app.domain.schedule.schema.dto import ScheduleCreate
     
     schedule_data = ScheduleCreate(
         title="테스트 일정",
@@ -48,7 +55,8 @@ def sample_schedule(test_session):
     
     schedule = Schedule.model_validate(schedule_data)
     test_session.add(schedule)
-    test_session.commit()
+    # Bug Fix: commit() 대신 flush() 사용 (트랜잭션 격리 유지)
+    test_session.flush()  # ID를 얻기 위해 flush
     test_session.refresh(schedule)
     return schedule
 

@@ -13,10 +13,11 @@ from uuid import UUID
 from pydantic import field_validator
 from sqlmodel import SQLModel
 
+from app.core.base_model import CustomModel
 from app.utils.validators import validate_time_order
 
 
-class ScheduleCreate(SQLModel):
+class ScheduleCreate(CustomModel):
     """일정 생성 DTO"""
     title: str
     description: Optional[str] = None
@@ -35,7 +36,7 @@ class ScheduleRead(ScheduleCreate):
     created_at: datetime
 
 
-class ScheduleUpdate(SQLModel):
+class ScheduleUpdate(CustomModel):
     """일정 업데이트 DTO"""
     title: Optional[str] = None
     description: Optional[str] = None

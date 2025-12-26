@@ -1,15 +1,13 @@
 import pytest
 from datetime import datetime, UTC
 from app.domain.schedule.service import ScheduleService
-from app.domain.schedule.repository import ScheduleRepository
-from app.domain.schedule.schema.schedule import ScheduleCreate, ScheduleUpdate
+from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 
 
 @pytest.mark.integration
 def test_create_and_get_schedule_integration(test_session):
     """DB를 포함한 일정 생성 및 조회 통합 테스트"""
-    repository = ScheduleRepository(test_session)
-    service = ScheduleService(repository)
+    service = ScheduleService(test_session)
     
     # 1. 일정 생성
     schedule_data = ScheduleCreate(
@@ -33,8 +31,7 @@ def test_create_and_get_schedule_integration(test_session):
 @pytest.mark.integration
 def test_update_schedule_integration(test_session, sample_schedule):
     """DB를 포함한 일정 업데이트 통합 테스트"""
-    repository = ScheduleRepository(test_session)
-    service = ScheduleService(repository)
+    service = ScheduleService(test_session)
     schedule_id = sample_schedule.id
     
     # 1. 일정 업데이트
@@ -57,8 +54,7 @@ def test_delete_schedule_integration(test_session, sample_schedule):
     """DB를 포함한 일정 삭제 통합 테스트"""
     from app.domain.schedule.exceptions import ScheduleNotFoundError
     
-    repository = ScheduleRepository(test_session)
-    service = ScheduleService(repository)
+    service = ScheduleService(test_session)
     schedule_id = sample_schedule.id
     
     # 1. 일정 삭제
@@ -72,8 +68,7 @@ def test_delete_schedule_integration(test_session, sample_schedule):
 @pytest.mark.integration
 def test_get_all_schedules_integration(test_session):
     """DB를 포함한 모든 일정 조회 통합 테스트"""
-    repository = ScheduleRepository(test_session)
-    service = ScheduleService(repository)
+    service = ScheduleService(test_session)
     
     # 1. 여러 일정 생성
     schedules_data = [
@@ -105,8 +100,7 @@ def test_schedule_workflow_integration(test_session):
     """일정 전체 워크플로우 통합 테스트"""
     from app.domain.schedule.exceptions import ScheduleNotFoundError
     
-    repository = ScheduleRepository(test_session)
-    service = ScheduleService(repository)
+    service = ScheduleService(test_session)
     
     # 1. 일정 생성
     schedule_data = ScheduleCreate(
