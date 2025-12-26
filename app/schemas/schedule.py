@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import field_validator
 from sqlmodel import SQLModel
 
-from app.valid.schedule import validate_time_order
+from app.utils.validators import validate_time_order
 
 
 class ScheduleCreate(SQLModel):
@@ -25,7 +25,7 @@ class ScheduleRead(ScheduleCreate):
     created_at: datetime
 
 class ScheduleUpdate(SQLModel):
-    title: Optional[UUID] = None
+    title: Optional[str] = None
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None

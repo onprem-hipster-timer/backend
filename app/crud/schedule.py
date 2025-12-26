@@ -25,7 +25,7 @@ def get_schedules(session: Session) -> list[Schedule]:
     return results.all()
 
 
-def get_schedule(session: Session, schedule_id: int) -> Schedule | None:
+def get_schedule(session: Session, schedule_id) -> Schedule | None:
     """
     ID로 Schedule 조회 (없으면 None 반환)
     """
