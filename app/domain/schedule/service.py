@@ -50,7 +50,7 @@ class ScheduleService:
             start_time=ensure_utc_naive(data.start_time),
             end_time=ensure_utc_naive(data.end_time),
         )
-        
+
         return crud.create_schedule(self.session, create_data)
 
     def get_schedule(self, schedule_id: UUID) -> Schedule:
@@ -93,7 +93,7 @@ class ScheduleService:
         # UTC naive datetime으로 변환하여 조회
         start_date_utc = ensure_utc_naive(start_date)
         end_date_utc = ensure_utc_naive(end_date)
-        
+
         return crud.get_schedules_by_date_range(self.session, start_date_utc, end_date_utc)
 
     def update_schedule(
@@ -119,13 +119,13 @@ class ScheduleService:
 
         # 설정된 필드만 가져오기 (exclude_unset=True)
         update_dict = data.model_dump(exclude_unset=True)
-        
+
         # datetime 필드가 설정되어 있으면 UTC naive로 변환
         if 'start_time' in update_dict:
             update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
         if 'end_time' in update_dict:
             update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
-        
+
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
 

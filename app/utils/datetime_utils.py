@@ -25,11 +25,11 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
     """
     if dt is None:
         return None
-    
+
     # timezone이 있으면 UTC로 변환
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc)
-    
+
     # timezone 정보 제거 (naive datetime)
     return dt.replace(tzinfo=None)
 
@@ -48,7 +48,7 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
     """
     if dt is None:
         return None
-    
+
     # timezone이 있으면 UTC로 변환
     if dt.tzinfo is not None:
         # UTC가 아니면 자동으로 UTC로 변환
@@ -56,7 +56,6 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
             dt = dt.astimezone(timezone.utc)
         # UTC로 변환 후 naive datetime으로 변환
         return dt.replace(tzinfo=None)
-    
+
     # timezone이 없으면 그대로 반환 (UTC로 가정)
     return dt
-
