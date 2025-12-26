@@ -9,7 +9,7 @@ FastAPI Best Practices:
 from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
 
-from app.api.dependencies import get_db_transactional
+from app.db.session import get_db, get_db_transactional
 from app.api.v1.schedules_dependencies import valid_schedule_id
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
@@ -40,12 +40,13 @@ async def create_schedule(
 
 
 @router.get("", response_model=list[ScheduleRead])
-async def read_schedules(session: Session = Depends(get_db_transactional)):
+async def read_schedules(session: Session = Depends(get_db)):
     """
     모든 일정 조회
     
     FastAPI Best Practices:
     - async 라우트 사용
+    - 읽기 전용이므로 get_db 사용 (commit 불필요)
     """
     service = ScheduleService(session)
     return service.get_all_schedules()

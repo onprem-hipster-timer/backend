@@ -10,7 +10,7 @@ from fastapi import Request, Depends
 from sqlmodel import Session
 from strawberry.fastapi import GraphQLRouter
 
-from app.api.dependencies import get_db_transactional
+from app.db.session import get_db_transactional
 from app.core.config import settings
 from app.domain.schedule.schema.query import schema
 
