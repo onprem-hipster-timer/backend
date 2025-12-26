@@ -69,7 +69,7 @@ async def domain_exception_handler(
         extra={
             "error_id": error_id,
             "error_type": exc.__class__.__name__,
-            "message": exc.detail,
+            "error_message": exc.detail,
             "path": request.url.path,
             "method": request.method,
             "status_code": exc.status_code,

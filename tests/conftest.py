@@ -1,5 +1,6 @@
 import pytest
 from sqlmodel import SQLModel, create_engine, Session
+from sqlalchemy.pool import StaticPool
 from app.models.schedule import Schedule
 
 
@@ -67,23 +68,33 @@ def e2e_client():
     E2E 테스트용 FastAPI 클라이언트
     
     테스트용 메모리 SQLite 데이터베이스를 사용하고 테이블을 초기화합니다.
+    
+    Bug Fix: StaticPool 사용
+    - SQLite 메모리 DB는 커넥션마다 별도 인스턴스를 가짐
+    - StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB 인스턴스를 공유하도록 함
     """
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db.session import _session_manager
     
     # 테스트용 메모리 데이터베이스 엔진 생성
-    test_engine = create_engine("sqlite:///:memory:", echo=False)
+    # StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB를 공유
+    test_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        echo=False,
+    )
     
-    # 테이블 생성
-    SQLModel.metadata.create_all(test_engine)
-    
-    # SessionManager의 엔진을 테스트용으로 임시 교체
+    # SessionManager의 엔진을 테스트용으로 임시 교체 (init_db 전에 교체)
     original_engine = _session_manager.engine
     _session_manager.engine = test_engine
     
+    # 테이블 생성 (교체된 엔진에 대해)
+    SQLModel.metadata.create_all(test_engine)
+    
     try:
-        # TestClient 생성 (lifespan이 실행됨)
+        # TestClient 생성 (lifespan이 실행되지만 이미 테이블이 생성되어 있음)
         client = TestClient(app)
         yield client
     finally:
