@@ -117,13 +117,17 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # UTC naive datetime으로 변환하여 업데이트
-        update_data = ScheduleUpdate(
-            title=data.title,
-            description=data.description,
-            start_time=ensure_utc_naive(data.start_time) if data.start_time else None,
-            end_time=ensure_utc_naive(data.end_time) if data.end_time else None,
-        )
+        # 설정된 필드만 가져오기 (exclude_unset=True)
+        update_dict = data.model_dump(exclude_unset=True)
+        
+        # datetime 필드가 설정되어 있으면 UTC naive로 변환
+        if 'start_time' in update_dict:
+            update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
+        if 'end_time' in update_dict:
+            update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
+        
+        # 변환된 dict로 ScheduleUpdate 재생성
+        update_data = ScheduleUpdate(**update_dict)
 
         return crud.update_schedule(self.session, schedule, update_data)
 

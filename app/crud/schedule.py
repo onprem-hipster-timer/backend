@@ -73,8 +73,9 @@ def update_schedule(
     
     FastAPI Best Practices:
     - commit은 get_db_transactional이 처리
+    - exclude_none=True: None 값은 업데이트하지 않음 (기존 값 유지)
     """
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump(exclude_unset=True, exclude_none=True)
     for field, value in update_data.items():
         setattr(schedule, field, value)
 
