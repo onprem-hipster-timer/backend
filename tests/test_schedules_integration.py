@@ -50,19 +50,24 @@ def test_update_schedule_integration(test_session, sample_schedule):
 
 
 @pytest.mark.integration
-def test_delete_schedule_integration(test_session, sample_schedule):
+def test_delete_schedule_integration(test_engine, sample_schedule):
     """DB를 포함한 일정 삭제 통합 테스트"""
+    from sqlmodel import Session
     from app.domain.schedule.exceptions import ScheduleNotFoundError
     
-    service = ScheduleService(test_session)
     schedule_id = sample_schedule.id
     
-    # 1. 일정 삭제
-    service.delete_schedule(schedule_id)
+    # 1. 삭제용 세션으로 일정 삭제
+    with Session(test_engine) as delete_session:
+        delete_service = ScheduleService(delete_session)
+        delete_service.delete_schedule(schedule_id)
+        delete_session.commit()  # 실제 DB에 반영
     
-    # 2. DB에서 실제로 삭제되었는지 확인
-    with pytest.raises(ScheduleNotFoundError):
-        service.get_schedule(schedule_id)
+    # 2. 조회용 다른 세션으로 실제 DB에서 확인 (identity map 없이)
+    with Session(test_engine) as check_session:
+        check_service = ScheduleService(check_session)
+        with pytest.raises(ScheduleNotFoundError):
+            check_service.get_schedule(schedule_id)
 
 
 @pytest.mark.integration
@@ -131,8 +136,10 @@ def test_schedule_workflow_integration(test_session):
     
     # 5. 일정 삭제
     service.delete_schedule(schedule_id)
+    test_session.flush()  # 트랜잭션 내에서 즉시 반영
     
-    # 6. 삭제 확인
+    # 6. 삭제 확인 - identity map 비우고 실제 DB에서 확인
+    test_session.expire_all()  # identity map 비우기 (실제 DB 쿼리 강제)
     with pytest.raises(ScheduleNotFoundError):
         service.get_schedule(schedule_id)
 

@@ -146,16 +146,22 @@ def test_update_schedule_invalid_time(test_session, sample_schedule):
     assert "end_time must be after start_time" in str(exc_info.value)
 
 
-def test_delete_schedule_success(test_session, sample_schedule):
+def test_delete_schedule_success(test_engine, sample_schedule):
     """일정 삭제 성공 테스트"""
+    from sqlmodel import Session
     from app.domain.schedule.exceptions import ScheduleNotFoundError
     
     schedule_id = sample_schedule.id
     
-    service = ScheduleService(test_session)
-    service.delete_schedule(schedule_id)
+    # 삭제용 세션으로 일정 삭제
+    with Session(test_engine) as delete_session:
+        delete_service = ScheduleService(delete_session)
+        delete_service.delete_schedule(schedule_id)
+        delete_session.commit()  # 실제 DB에 반영
     
-    # 삭제 후 조회하면 ScheduleNotFoundError 발생
-    with pytest.raises(ScheduleNotFoundError):
-        service.get_schedule(schedule_id)
+    # 조회용 다른 세션으로 실제 DB에서 확인 (identity map 없이)
+    with Session(test_engine) as check_session:
+        check_service = ScheduleService(check_session)
+        with pytest.raises(ScheduleNotFoundError):
+            check_service.get_schedule(schedule_id)
 
