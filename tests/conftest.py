@@ -60,3 +60,36 @@ def sample_schedule(test_session):
     test_session.refresh(schedule)
     return schedule
 
+
+@pytest.fixture
+def e2e_client():
+    """
+    E2E 테스트용 FastAPI 클라이언트
+    
+    테스트용 메모리 SQLite 데이터베이스를 사용하고 테이블을 초기화합니다.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.session import _session_manager
+    
+    # 테스트용 메모리 데이터베이스 엔진 생성
+    test_engine = create_engine("sqlite:///:memory:", echo=False)
+    
+    # 테이블 생성
+    SQLModel.metadata.create_all(test_engine)
+    
+    # SessionManager의 엔진을 테스트용으로 임시 교체
+    original_engine = _session_manager.engine
+    _session_manager.engine = test_engine
+    
+    try:
+        # TestClient 생성 (lifespan이 실행됨)
+        client = TestClient(app)
+        yield client
+    finally:
+        # 원래 엔진으로 복원
+        _session_manager.engine = original_engine
+        # 테스트용 엔진 정리
+        SQLModel.metadata.drop_all(test_engine)
+        test_engine.dispose()
+

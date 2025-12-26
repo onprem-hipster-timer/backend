@@ -1,19 +1,11 @@
 import pytest
 from datetime import datetime, UTC
-from fastapi.testclient import TestClient
-from app.main import app
-
-
-@pytest.fixture
-def client():
-    """테스트용 FastAPI 클라이언트"""
-    return TestClient(app)
 
 
 @pytest.mark.e2e
-def test_create_schedule_e2e(client):
+def test_create_schedule_e2e(e2e_e2e_client):
     """HTTP를 통한 일정 생성 E2E 테스트"""
-    response = client.post(
+    response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "E2E 테스트 일정",
@@ -32,10 +24,10 @@ def test_create_schedule_e2e(client):
 
 
 @pytest.mark.e2e
-def test_get_schedule_e2e(client):
+def test_get_schedule_e2e(e2e_client):
     """HTTP를 통한 일정 조회 E2E 테스트"""
     # 1. 일정 생성
-    create_response = client.post(
+    create_response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "조회 테스트 일정",
@@ -47,7 +39,7 @@ def test_get_schedule_e2e(client):
     schedule_id = create_response.json()["id"]
     
     # 2. 일정 조회
-    get_response = client.get(f"/v1/schedules/{schedule_id}")
+    get_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 200
     data = get_response.json()
     assert data["id"] == schedule_id
@@ -55,23 +47,23 @@ def test_get_schedule_e2e(client):
 
 
 @pytest.mark.e2e
-def test_get_schedule_not_found_e2e(client):
+def test_get_schedule_not_found_e2e(e2e_client):
     """존재하지 않는 일정 조회 E2E 테스트"""
     from uuid import uuid4
     
     non_existent_id = str(uuid4())
-    response = client.get(f"/v1/schedules/{non_existent_id}")
+    response = e2e_client.get(f"/v1/schedules/{non_existent_id}")
     
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
 @pytest.mark.e2e
-def test_get_all_schedules_e2e(client):
+def test_get_all_schedules_e2e(e2e_client):
     """HTTP를 통한 모든 일정 조회 E2E 테스트"""
     # 1. 여러 일정 생성
     for i in range(3):
-        client.post(
+        e2e_client.post(
             "/v1/schedules",
             json={
                 "title": f"일정 {i}",
@@ -81,7 +73,7 @@ def test_get_all_schedules_e2e(client):
         )
     
     # 2. 모든 일정 조회
-    response = client.get("/v1/schedules")
+    response = e2e_client.get("/v1/schedules")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -89,10 +81,10 @@ def test_get_all_schedules_e2e(client):
 
 
 @pytest.mark.e2e
-def test_update_schedule_e2e(client):
+def test_update_schedule_e2e(e2e_client):
     """HTTP를 통한 일정 업데이트 E2E 테스트"""
     # 1. 일정 생성
-    create_response = client.post(
+    create_response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "원본 제목",
@@ -105,7 +97,7 @@ def test_update_schedule_e2e(client):
     schedule_id = create_response.json()["id"]
     
     # 2. 일정 업데이트
-    update_response = client.patch(
+    update_response = e2e_client.patch(
         f"/v1/schedules/{schedule_id}",
         json={
             "title": "업데이트된 제목",
@@ -118,16 +110,16 @@ def test_update_schedule_e2e(client):
     assert updated_data["description"] == "업데이트된 설명"
     
     # 3. 업데이트 확인
-    get_response = client.get(f"/v1/schedules/{schedule_id}")
+    get_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "업데이트된 제목"
 
 
 @pytest.mark.e2e
-def test_delete_schedule_e2e(client):
+def test_delete_schedule_e2e(e2e_client):
     """HTTP를 통한 일정 삭제 E2E 테스트"""
     # 1. 일정 생성
-    create_response = client.post(
+    create_response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "삭제 테스트 일정",
@@ -139,20 +131,20 @@ def test_delete_schedule_e2e(client):
     schedule_id = create_response.json()["id"]
     
     # 2. 일정 삭제
-    delete_response = client.delete(f"/v1/schedules/{schedule_id}")
+    delete_response = e2e_client.delete(f"/v1/schedules/{schedule_id}")
     assert delete_response.status_code == 200
     assert delete_response.json()["ok"] is True
     
     # 3. 삭제 확인
-    get_response = client.get(f"/v1/schedules/{schedule_id}")
+    get_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 404
 
 
 @pytest.mark.e2e
-def test_schedule_flow_e2e(client):
+def test_schedule_flow_e2e(e2e_client):
     """HTTP를 통한 일정 전체 흐름 E2E 테스트"""
     # 1. 일정 생성
-    create_response = client.post(
+    create_response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "전체 흐름 테스트",
@@ -167,12 +159,12 @@ def test_schedule_flow_e2e(client):
     assert schedule_data["title"] == "전체 흐름 테스트"
     
     # 2. 일정 조회
-    get_response = client.get(f"/v1/schedules/{schedule_id}")
+    get_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "전체 흐름 테스트"
     
     # 3. 일정 업데이트
-    update_response = client.patch(
+    update_response = e2e_client.patch(
         f"/v1/schedules/{schedule_id}",
         json={
             "title": "업데이트된 전체 흐름",
@@ -183,25 +175,25 @@ def test_schedule_flow_e2e(client):
     assert update_response.json()["title"] == "업데이트된 전체 흐름"
     
     # 4. 최종 상태 확인
-    final_response = client.get(f"/v1/schedules/{schedule_id}")
+    final_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert final_response.status_code == 200
     final_data = final_response.json()
     assert final_data["title"] == "업데이트된 전체 흐름"
     assert final_data["description"] == "업데이트된 설명"
     
     # 5. 일정 삭제
-    delete_response = client.delete(f"/v1/schedules/{schedule_id}")
+    delete_response = e2e_client.delete(f"/v1/schedules/{schedule_id}")
     assert delete_response.status_code == 200
     
     # 6. 삭제 확인
-    deleted_response = client.get(f"/v1/schedules/{schedule_id}")
+    deleted_response = e2e_client.get(f"/v1/schedules/{schedule_id}")
     assert deleted_response.status_code == 404
 
 
 @pytest.mark.e2e
-def test_create_schedule_invalid_time_e2e(client):
+def test_create_schedule_invalid_time_e2e(e2e_client):
     """잘못된 시간으로 일정 생성 실패 E2E 테스트"""
-    response = client.post(
+    response = e2e_client.post(
         "/v1/schedules",
         json={
             "title": "잘못된 시간 테스트",

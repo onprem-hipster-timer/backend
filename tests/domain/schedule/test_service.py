@@ -3,24 +3,25 @@ from datetime import datetime, UTC
 from uuid import UUID
 from app.domain.schedule.service import ScheduleService
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
+from app.utils.datetime_utils import ensure_utc_naive
 from app.utils.validators import validate_time_order
-    """DB 없이 테스트하기 위한 Mock"""
+"""DB 없이 테스트하기 위한 Mock"""
     
-    def __init__(self):
-        self.schedules = {}
-        self.next_id = 1
-    
-    def save(self, schedule):
-        schedule_id = self.next_id
-        self.next_id += 1
-        self.schedules[schedule_id] = schedule
-        return schedule
-    
-    def get_by_id(self, schedule_id):
-        return self.schedules.get(schedule_id)
-    
-    def get_all(self):
-        return list(self.schedules.values())
+def __init__(self):
+    self.schedules = {}
+    self.next_id = 1
+
+def save(self, schedule):
+    schedule_id = self.next_id
+    self.next_id += 1
+    self.schedules[schedule_id] = schedule
+    return schedule
+
+def get_by_id(self, schedule_id):
+    return self.schedules.get(schedule_id)
+
+def get_all(self):
+    return list(self.schedules.values())
 
 
 def test_validate_time_order_success():
@@ -43,6 +44,7 @@ def test_validate_time_order_failure():
 
 def test_create_schedule_success(test_session):
     """일정 생성 성공 테스트"""
+    
     schedule_data = ScheduleCreate(
         title="회의",
         description="팀 회의",
@@ -53,26 +55,33 @@ def test_create_schedule_success(test_session):
     service = ScheduleService(test_session)
     schedule = service.create_schedule(schedule_data)
     
+    # Service가 UTC naive datetime으로 변환하여 저장
+    expected_start_time = ensure_utc_naive(schedule_data.start_time)
+    expected_end_time = ensure_utc_naive(schedule_data.end_time)
+    
     assert schedule.title == "회의"
     assert schedule.description == "팀 회의"
-    assert schedule.start_time == schedule_data.start_time
-    assert schedule.end_time == schedule_data.end_time
+    assert schedule.start_time == expected_start_time
+    assert schedule.end_time == expected_end_time
     assert isinstance(schedule.id, UUID)
     assert schedule.created_at is not None
 
 
 def test_create_schedule_invalid_time(test_session):
     """잘못된 시간으로 일정 생성 실패 테스트"""
-    schedule_data = ScheduleCreate(
-        title="회의",
-        start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
-    )
+    from pydantic import ValidationError
     
-    service = ScheduleService(test_session)
-    # Pydantic validator가 먼저 검증하므로 ValueError 발생
-    with pytest.raises(ValueError, match="end_time must be after start_time"):
-        service.create_schedule(schedule_data)
+    # Pydantic validator가 객체 생성 시점에서 검증
+    # FastAPI는 이를 자동으로 422로 변환
+    with pytest.raises(ValidationError) as exc_info:
+        schedule_data = ScheduleCreate(
+            title="회의",
+            start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
+        )
+    
+    # ValidationError의 에러 메시지 확인
+    assert "end_time must be after start_time" in str(exc_info.value)
 
 
 def test_get_schedules(test_session, sample_schedule):
@@ -123,15 +132,18 @@ def test_update_schedule_success(test_session, sample_schedule):
 
 def test_update_schedule_invalid_time(test_session, sample_schedule):
     """잘못된 시간으로 일정 업데이트 실패 테스트"""
-    update_data = ScheduleUpdate(
-        start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
-    )
+    from pydantic import ValidationError
     
-    service = ScheduleService(test_session)
-    # Pydantic validator가 먼저 검증하므로 ValueError 발생
-    with pytest.raises(ValueError, match="end_time must be after start_time"):
-        service.update_schedule(sample_schedule.id, update_data)
+    # Pydantic validator가 객체 생성 시점에서 검증
+    # FastAPI는 이를 자동으로 422로 변환
+    with pytest.raises(ValidationError) as exc_info:
+        update_data = ScheduleUpdate(
+            start_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # end_time < start_time
+        )
+    
+    # ValidationError의 에러 메시지 확인
+    assert "end_time must be after start_time" in str(exc_info.value)
 
 
 def test_delete_schedule_success(test_session, sample_schedule):

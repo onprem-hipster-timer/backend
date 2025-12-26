@@ -90,6 +90,8 @@ def delete_schedule(session: Session, schedule: Schedule) -> None:
     
     FastAPI Best Practices:
     - commit은 get_db_transactional이 처리
+    - flush를 호출하여 즉시 DB에 반영
     """
     session.delete(schedule)
-    # commit은 get_db_transactional이 처리
+    # flush를 호출하여 즉시 DB에 반영 (commit은 get_db_transactional이 처리)
+    session.flush()
