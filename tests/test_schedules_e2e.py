@@ -55,7 +55,8 @@ def test_get_schedule_not_found_e2e(e2e_client):
     response = e2e_client.get(f"/v1/schedules/{non_existent_id}")
 
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"].lower()
+    # Exception Handler는 "message" 필드를 반환 (ErrorResponse 형식)
+    assert "not found" in response.json()["message"].lower()
 
 
 @pytest.mark.e2e
