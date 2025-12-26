@@ -7,12 +7,12 @@ Schedule Domain GraphQL Query
 """
 from datetime import date, datetime, timedelta
 from typing import List, TypedDict
+
 import strawberry
 from sqlmodel import Session
 from strawberry.types import Info
 
 from app.domain.schedule.schema.types import Event, Day, Calendar
-from app.domain.schedule.model import Schedule
 from app.domain.schedule.service import ScheduleService
 
 
@@ -39,13 +39,13 @@ class ScheduleQuery:
     - Domain이 자신의 GraphQL Query를 정의
     - Resolver는 thin하게, 실제 작업은 Domain Service에 위임
     """
-    
+
     @strawberry.field
     async def calendar(
-        self,
-        info: Info[GraphQLContext, None],
-        start_date: date,
-        end_date: date,
+            self,
+            info: Info[GraphQLContext, None],
+            start_date: date,
+            end_date: date,
     ) -> Calendar:
         """
         날짜 범위로 캘린더 데이터를 조회합니다.
@@ -65,11 +65,11 @@ class ScheduleQuery:
         """
         context: GraphQLContext = info.context
         session: Session = context["session"]
-        
+
         # 날짜 범위를 datetime으로 변환 (하루의 시작과 끝)
         start_datetime = datetime.combine(start_date, datetime.min.time())
         end_datetime = datetime.combine(end_date, datetime.max.time())
-        
+
         # ✅ Domain Service 사용 (N+1 문제 방지)
         # FastAPI Best Practices: Service는 session을 받아서 CRUD 직접 사용
         service = ScheduleService(session)
@@ -77,38 +77,38 @@ class ScheduleQuery:
             start_datetime,
             end_datetime,
         )
-        
+
         # 날짜별로 일정을 그룹화 (메모리에서 처리)
         events_by_date: dict[date, List[Event]] = {}
-        
+
         # 모든 날짜 초기화 (빈 리스트로)
         current_date = start_date
         while current_date <= end_date:
             events_by_date[current_date] = []
             current_date += timedelta(days=1)
-        
+
         # 일정을 날짜별로 분류
         for schedule in schedules:
             event = Event.from_schedule(schedule)
-            
+
             # 일정이 겹치는 모든 날짜에 추가
             schedule_start_date = schedule.start_time.date()
             schedule_end_date = schedule.end_time.date()
-            
+
             current_date = max(schedule_start_date, start_date)
             end_date_inclusive = min(schedule_end_date, end_date)
-            
+
             while current_date <= end_date_inclusive:
                 if current_date in events_by_date:
                     events_by_date[current_date].append(event)
                 current_date += timedelta(days=1)
-        
+
         # Day 객체 리스트 생성
         days = [
             Day(date=date_key, events=events)
             for date_key, events in sorted(events_by_date.items())
         ]
-        
+
         return Calendar(days=days)
 
 
@@ -127,4 +127,3 @@ class Query(ScheduleQuery):
 
 # GraphQL 스키마 export
 schema = strawberry.Schema(query=Query)
-

@@ -11,21 +11,21 @@ from sqlmodel import Session
 
 from app.api.dependencies import get_db_transactional
 from app.api.v1.schedules_dependencies import valid_schedule_id
+from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
     ScheduleRead,
     ScheduleUpdate,
 )
 from app.domain.schedule.service import ScheduleService
-from app.domain.schedule.model import Schedule
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
 
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
-    data: ScheduleCreate,
-    session: Session = Depends(get_db_transactional),
+        data: ScheduleCreate,
+        session: Session = Depends(get_db_transactional),
 ):
     """
     새 일정 생성
@@ -53,7 +53,7 @@ async def read_schedules(session: Session = Depends(get_db_transactional)):
 
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
-    schedule: Schedule = Depends(valid_schedule_id),
+        schedule: Schedule = Depends(valid_schedule_id),
 ):
     """
     ID로 일정 조회
@@ -68,9 +68,9 @@ async def read_schedule(
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
 async def update_schedule(
-    data: ScheduleUpdate,
-    schedule: Schedule = Depends(valid_schedule_id),
-    session: Session = Depends(get_db_transactional),
+        data: ScheduleUpdate,
+        schedule: Schedule = Depends(valid_schedule_id),
+        session: Session = Depends(get_db_transactional),
 ):
     """
     일정 업데이트
@@ -85,8 +85,8 @@ async def update_schedule(
 
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
 async def delete_schedule(
-    schedule: Schedule = Depends(valid_schedule_id),
-    session: Session = Depends(get_db_transactional),
+        schedule: Schedule = Depends(valid_schedule_id),
+        session: Session = Depends(get_db_transactional),
 ):
     """
     일정 삭제
@@ -98,4 +98,3 @@ async def delete_schedule(
     service = ScheduleService(session)
     service.delete_schedule(schedule.id)
     return {"ok": True}
-

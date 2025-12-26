@@ -7,16 +7,17 @@ GraphQL Router
 - 최신 Strawberry 패턴 적용 (2025 기준)
 """
 from fastapi import Request, Depends
-from strawberry.fastapi import GraphQLRouter
 from sqlmodel import Session
-from app.domain.schedule.schema.query import schema
-from app.core.config import settings
+from strawberry.fastapi import GraphQLRouter
+
 from app.api.dependencies import get_db_transactional
+from app.core.config import settings
+from app.domain.schedule.schema.query import schema
 
 
 async def get_context(
-    request: Request,
-    session: Session = Depends(get_db_transactional),
+        request: Request,
+        session: Session = Depends(get_db_transactional),
 ) -> dict:
     """
     GraphQL 컨텍스트 생성 (최신 패턴)
@@ -59,4 +60,3 @@ def create_graphql_router() -> GraphQLRouter:
         graphql_ide="apollo-sandbox" if settings.GRAPHQL_ENABLE_PLAYGROUND else None,
         allow_queries_via_get=True,
     )
-

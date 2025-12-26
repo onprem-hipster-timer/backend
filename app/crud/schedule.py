@@ -1,7 +1,9 @@
 from datetime import datetime
+
 from sqlmodel import Session, select
-from app.models.schedule import Schedule
+
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
+from app.models.schedule import Schedule
 
 
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
@@ -30,9 +32,9 @@ def get_schedules(session: Session) -> list[Schedule]:
 
 
 def get_schedules_by_date_range(
-    session: Session,
-    start_date: datetime,
-    end_date: datetime,
+        session: Session,
+        start_date: datetime,
+        end_date: datetime,
 ) -> list[Schedule]:
     """
     날짜 범위로 Schedule 객체를 조회합니다.
@@ -62,9 +64,9 @@ def get_schedule(session: Session, schedule_id) -> Schedule | None:
 
 
 def update_schedule(
-    session: Session,
-    schedule: Schedule,
-    data: ScheduleUpdate
+        session: Session,
+        schedule: Schedule,
+        data: ScheduleUpdate
 ) -> Schedule:
     """
     Schedule 객체의 변경된 필드만 반영해 업데이트합니다.
@@ -75,7 +77,7 @@ def update_schedule(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(schedule, field, value)
-    
+
     # commit은 get_db_transactional이 처리
     session.flush()
     session.refresh(schedule)

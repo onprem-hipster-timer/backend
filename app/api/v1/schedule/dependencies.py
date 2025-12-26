@@ -7,18 +7,19 @@ FastAPI Best Practices:
 - valid_schedule_id 패턴으로 중복 제거
 """
 from uuid import UUID
+
 from fastapi import Depends
 from sqlmodel import Session
 
 from app.api.dependencies import get_db_transactional
-from app.domain.schedule.model import Schedule
-from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.crud import schedule as crud
+from app.domain.schedule.exceptions import ScheduleNotFoundError
+from app.domain.schedule.model import Schedule
 
 
 async def valid_schedule_id(
-    schedule_id: UUID,
-    session: Session = Depends(get_db_transactional),
+        schedule_id: UUID,
+        session: Session = Depends(get_db_transactional),
 ) -> Schedule:
     """
     Schedule ID 검증 및 Schedule 반환
@@ -37,4 +38,3 @@ async def valid_schedule_id(
     if not schedule:
         raise ScheduleNotFoundError()
     return schedule
-

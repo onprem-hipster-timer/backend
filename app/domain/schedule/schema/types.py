@@ -9,6 +9,7 @@ Schedule Domain GraphQL Types
 from datetime import date, datetime
 from typing import List
 from uuid import UUID
+
 import strawberry
 
 from app.domain.schedule.model import Schedule
@@ -73,4 +74,3 @@ class Calendar:
     - 커스텀 __init__은 Strawberry의 내부 메커니즘과 충돌 가능
     """
     days: List[Day]
-

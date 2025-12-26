@@ -1,5 +1,7 @@
 from typing import Generator
+
 from sqlmodel import Session
+
 from app.db.session import _session_manager
 
 
@@ -33,4 +35,3 @@ def get_session() -> Generator[Session, None, None]:
     """기본 세션 (트랜잭션 수동 관리)"""
     with _session_manager.get_session() as session:
         yield session
-

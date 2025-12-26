@@ -1,2 +1,1 @@
 # Schedule Domain GraphQL Schema
-

@@ -18,4 +18,3 @@ class InvalidScheduleTimeError(DomainException):
     """잘못된 일정 시간"""
     status_code = 400
     detail = "Invalid schedule time: end_time must be after start_time"
-

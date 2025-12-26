@@ -12,4 +12,3 @@ def validate_time_order(start_time: datetime | None, end_time: datetime | None):
     if start_time is not None and end_time is not None:
         if end_time <= start_time:
             raise ValueError("end_time must be after start_time")
-

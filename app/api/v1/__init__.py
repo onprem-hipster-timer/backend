@@ -1,6 +1,7 @@
 from fastapi import APIRouter
-from app.api.v1.schedules import router as schedules_router
+
 from app.api.v1.graphql import create_graphql_router
+from app.api.v1.schedules import router as schedules_router
 
 api_router = APIRouter()
 

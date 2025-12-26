@@ -11,7 +11,6 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import field_validator
-from sqlmodel import SQLModel
 
 from app.core.base_model import CustomModel
 from app.utils.validators import validate_time_order
@@ -47,4 +46,3 @@ class ScheduleUpdate(CustomModel):
     def validate_time(cls, end_time, info):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
-

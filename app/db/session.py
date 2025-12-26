@@ -1,15 +1,17 @@
-from sqlmodel import SQLModel, create_engine, Session
 from contextlib import contextmanager
+
+from sqlmodel import SQLModel, create_engine, Session
+
 from app.core.config import settings
 
 
 class SessionManager:
     """세션 관리자 - Context Manager 패턴"""
-    
+
     def __init__(self):
         self.engine = None
         self._init_engine()
-    
+
     def _init_engine(self):
         """엔진 초기화"""
         self.engine = create_engine(
@@ -18,7 +20,7 @@ class SessionManager:
             pool_size=settings.POOL_SIZE,
             max_overflow=settings.MAX_OVERFLOW,
         )
-    
+
     @contextmanager
     def get_session(self):
         """
@@ -27,7 +29,7 @@ class SessionManager:
         """
         with Session(self.engine) as session:
             yield session
-    
+
     def init_db(self):
         """데이터베이스 초기화"""
         SQLModel.metadata.create_all(self.engine)
