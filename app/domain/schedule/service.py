@@ -263,11 +263,14 @@ class ScheduleService:
         비즈니스 로직:
         - 모든 datetime을 UTC naive로 변환하여 저장
         - 모든 DB 구조에서 일관성 보장
+        - 반복 일정 필드 검증 (recurrence_end가 start_time 이후인지 확인)
         
         :param schedule_id: 일정 ID
         :param data: 업데이트 데이터
         :return: 업데이트된 일정
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
+        :raises InvalidRecurrenceEndError: 반복 종료일이 시작일 이전인 경우
         """
         schedule = crud.get_schedule(self.session, schedule_id)
         if not schedule:
@@ -277,12 +280,37 @@ class ScheduleService:
         update_dict = data.model_dump(exclude_unset=True)
 
         # datetime 필드가 설정되어 있으면 UTC naive로 변환
+        start_time_utc = None
         if 'start_time' in update_dict:
-            update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
+            start_time_utc = ensure_utc_naive(update_dict['start_time'])
+            update_dict['start_time'] = start_time_utc
+        else:
+            # 업데이트되지 않으면 기존 값 사용
+            start_time_utc = schedule.start_time
+        
         if 'end_time' in update_dict:
             update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
+        
+        recurrence_end_utc = None
         if 'recurrence_end' in update_dict and update_dict['recurrence_end']:
-            update_dict['recurrence_end'] = ensure_utc_naive(update_dict['recurrence_end'])
+            recurrence_end_utc = ensure_utc_naive(update_dict['recurrence_end'])
+            update_dict['recurrence_end'] = recurrence_end_utc
+
+        # 반복 일정 검증 (recurrence_rule 또는 recurrence_end가 업데이트되는 경우)
+        recurrence_rule = update_dict.get('recurrence_rule', schedule.recurrence_rule)
+        if recurrence_rule:
+            if 'recurrence_rule' in update_dict:
+                # 새로운 recurrence_rule이 제공된 경우 검증
+                if not RecurrenceCalculator.is_valid_rrule(recurrence_rule):
+                    raise InvalidRecurrenceRuleError()
+            
+            # recurrence_end 검증 (업데이트되거나 기존 값이 있는 경우)
+            if recurrence_end_utc is not None:
+                if recurrence_end_utc < start_time_utc:
+                    raise InvalidRecurrenceEndError()
+            elif schedule.recurrence_end and schedule.recurrence_end < start_time_utc:
+                # start_time이 업데이트되어 기존 recurrence_end와 충돌하는 경우
+                raise InvalidRecurrenceEndError()
 
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)

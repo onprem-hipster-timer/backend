@@ -120,9 +120,11 @@ class ScheduleQuery:
             # Generator cleanup 보장 - 세션 정리
             if session_gen:
                 try:
-                    next(session_gen, None)  # Generator 종료
-                except StopIteration:
-                    pass  # Generator가 이미 종료됨
+                    next(session_gen, None)  # Generator 종료 (기본값 제공으로 StopIteration 발생 안 함)
+                except Exception:
+                    # Generator 종료 중 발생할 수 있는 모든 예외 무시
+                    # (예: Generator가 이미 닫혔거나, 세션 정리 중 오류)
+                    pass
 
 
 # GraphQL Root Schema 생성
