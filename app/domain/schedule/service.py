@@ -415,6 +415,8 @@ class ScheduleService:
         가상 인스턴스를 삭제하면 ScheduleException을 생성하거나 업데이트합니다.
         프론트엔드는 parent_id와 instance_start를 함께 전송합니다.
         
+        recurrence_end가 있는 경우, 모든 인스턴스가 삭제되었으면 원본 일정도 자동 삭제됩니다.
+        
         :param parent_id: 원본 일정 ID
         :param instance_start: 인스턴스 시작 시간
         :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
@@ -447,3 +449,60 @@ class ScheduleService:
                 exception_date=instance_start_utc,
                 is_deleted=True,
             )
+        
+        # recurrence_end가 있는 경우, 모든 인스턴스가 삭제되었는지 확인
+        if parent_schedule.recurrence_end:
+            if self._are_all_instances_deleted(parent_schedule):
+                # 모든 인스턴스가 삭제되었으면 원본 일정도 삭제
+                crud.delete_schedule(self.session, parent_schedule)
+    
+    def _are_all_instances_deleted(self, schedule: Schedule) -> bool:
+        """
+        반복 일정의 모든 인스턴스가 삭제되었는지 확인
+        
+        recurrence_end가 있는 경우에만 사용 가능합니다.
+        무한 반복 일정은 확인하지 않습니다.
+        
+        :param schedule: 반복 일정
+        :return: 모든 인스턴스가 삭제되었으면 True
+        """
+        if not schedule.recurrence_rule or not schedule.recurrence_end:
+            return False
+        
+        # 모든 인스턴스 확장
+        instances = RecurrenceCalculator.expand_recurrence(
+            schedule.start_time,
+            schedule.end_time,
+            schedule.recurrence_rule,
+            schedule.recurrence_end,
+            schedule.start_time,  # 시작부터
+            schedule.recurrence_end,  # 종료일까지
+        )
+        
+        if not instances:
+            # 인스턴스가 없으면 삭제된 것으로 간주
+            return True
+        
+        # 모든 예외 인스턴스 조회 (parent_id로 필터링)
+        all_exceptions = crud.get_schedule_exceptions(
+            self.session,
+            schedule.start_time,
+            schedule.recurrence_end,
+        )
+        parent_exceptions = [
+            exc for exc in all_exceptions
+            if exc.parent_id == schedule.id
+        ]
+        
+        # 각 인스턴스가 삭제되었는지 확인
+        for instance_start, instance_end in instances:
+            exception = self._find_exception(
+                parent_exceptions, schedule.id, instance_start
+            )
+            
+            # 예외가 없거나 삭제되지 않았으면 False
+            if not exception or not exception.is_deleted:
+                return False
+        
+        # 모든 인스턴스가 삭제되었음
+        return True
