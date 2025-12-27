@@ -8,7 +8,7 @@ FastAPI Best Practices:
 - 모든 datetime을 UTC naive로 변환하여 저장 (모든 DB 구조에서 일관성 보장)
 """
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlmodel import Session
 
@@ -17,6 +17,7 @@ from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
     InvalidRecurrenceRuleError,
     InvalidRecurrenceEndError,
+    NotRecurringScheduleError,
 )
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
@@ -185,16 +186,23 @@ class ScheduleService:
         """
         가상 인스턴스 생성 (예외 처리 포함)
         
+        Bug Fix: 각 가상 인스턴스에 고유 ID 생성
+        - 부모 일정의 ID를 재사용하면 여러 인스턴스가 같은 ID를 가지게 됨
+        - UUID를 사용하여 각 인스턴스에 고유 ID 할당
+        
         :param schedule: 원본 일정
         :param instance_start: 인스턴스 시작 시간
         :param instance_end: 인스턴스 종료 시간
         :param exception: 예외 인스턴스 (있는 경우)
         :return: 가상 인스턴스
         """
+        # 각 가상 인스턴스에 고유 ID 생성
+        virtual_id = uuid4()
+        
         # 예외가 있고 삭제되지 않았으면 예외 데이터 사용
         if exception and not exception.is_deleted:
             return Schedule(
-                id=schedule.id,  # 원본 ID 유지
+                id=virtual_id,  # 고유 ID 생성
                 title=exception.title or schedule.title,
                 description=exception.description or schedule.description,
                 start_time=exception.start_time or instance_start,
@@ -207,7 +215,7 @@ class ScheduleService:
 
         # 예외가 없으면 원본 데이터 사용
         return Schedule(
-            id=schedule.id,
+            id=virtual_id,  # 고유 ID 생성
             title=schedule.title,
             description=schedule.description,
             start_time=instance_start,
@@ -222,19 +230,28 @@ class ScheduleService:
         self,
         exceptions: list[ScheduleException],
         parent_id: UUID,
-        instance_date: datetime,
+        instance_start: datetime,
     ) -> ScheduleException | None:
         """
-        특정 날짜의 예외 인스턴스 찾기
+        특정 인스턴스의 예외 찾기
+        
+        Bug Fix: 시간까지 비교하여 정확한 인스턴스 매칭
+        - 날짜만 비교하면 하루에 여러 인스턴스가 있을 때 구분하지 못함
+        - 시간까지 비교하여 정확한 인스턴스와 매칭
+        - 약간의 허용 오차를 두어 시간 정밀도 문제 방지 (1분 이내)
         
         :param exceptions: 예외 인스턴스 리스트
         :param parent_id: 원본 일정 ID
-        :param instance_date: 인스턴스 날짜
+        :param instance_start: 인스턴스 시작 시간 (datetime)
         :return: 예외 인스턴스 또는 None
         """
+        from datetime import timedelta
+        
         for exc in exceptions:
             if exc.parent_id == parent_id:
-                if exc.exception_date.date() == instance_date.date():
+                # 시간까지 비교 (1분 이내 허용 오차)
+                time_diff = abs((exc.exception_date - instance_start).total_seconds())
+                if time_diff <= 60:  # 1분 이내
                     return exc
         return None
 
@@ -244,7 +261,7 @@ class ScheduleService:
             data: ScheduleUpdate,
     ) -> Schedule:
         """
-        일정 업데이트
+        일정 업데이트 (일반 일정만)
         
         비즈니스 로직:
         - 모든 datetime을 UTC naive로 변환하여 저장
@@ -287,3 +304,142 @@ class ScheduleService:
             raise ScheduleNotFoundError()
 
         crud.delete_schedule(self.session, schedule)
+
+    def update_recurring_instance(
+        self,
+        parent_id: UUID,
+        instance_start: datetime,
+        data: ScheduleUpdate,
+    ) -> Schedule:
+        """
+        반복 일정의 특정 인스턴스 수정
+        
+        가상 인스턴스를 수정하면 ScheduleException을 생성하거나 업데이트합니다.
+        프론트엔드는 parent_id와 instance_start를 함께 전송합니다.
+        
+        :param parent_id: 원본 일정 ID
+        :param instance_start: 인스턴스 시작 시간
+        :param data: 업데이트 데이터
+        :return: 수정된 일정 (가상 인스턴스)
+        :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
+        """
+        # 원본 일정 조회
+        parent_schedule = crud.get_schedule(self.session, parent_id)
+        if not parent_schedule:
+            raise ScheduleNotFoundError()
+        
+        if not parent_schedule.recurrence_rule:
+            raise NotRecurringScheduleError()
+        
+        # instance_start를 UTC naive로 변환
+        instance_start_utc = ensure_utc_naive(instance_start)
+        
+        # 기존 예외 인스턴스 조회
+        existing_exception = crud.get_schedule_exception_by_date(
+            self.session, parent_id, instance_start_utc
+        )
+        
+        # 업데이트 데이터 준비
+        update_dict = data.model_dump(exclude_unset=True)
+        
+        # datetime 필드 변환
+        if 'start_time' in update_dict:
+            update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
+        if 'end_time' in update_dict:
+            update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
+        
+        # 예외 인스턴스 생성 또는 업데이트
+        if existing_exception:
+            # 기존 예외 인스턴스 업데이트
+            if existing_exception.is_deleted:
+                existing_exception.is_deleted = False
+            
+            if 'title' in update_dict:
+                existing_exception.title = update_dict['title']
+            if 'description' in update_dict:
+                existing_exception.description = update_dict['description']
+            if 'start_time' in update_dict:
+                existing_exception.start_time = update_dict['start_time']
+            if 'end_time' in update_dict:
+                existing_exception.end_time = update_dict['end_time']
+            
+            self.session.flush()
+            self.session.refresh(existing_exception)
+            
+            # 가상 인스턴스 반환
+            instance_end = existing_exception.end_time or (
+                instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
+            )
+            return self._create_virtual_instance(
+                parent_schedule,
+                instance_start_utc,
+                instance_end,
+                existing_exception
+            )
+        else:
+            # 새 예외 인스턴스 생성
+            exception = crud.create_schedule_exception(
+                self.session,
+                parent_id=parent_id,
+                exception_date=instance_start_utc,
+                is_deleted=False,
+                title=update_dict.get('title'),
+                description=update_dict.get('description'),
+                start_time=update_dict.get('start_time'),
+                end_time=update_dict.get('end_time'),
+            )
+            
+            # 가상 인스턴스 반환
+            instance_end = exception.end_time or (
+                instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
+            )
+            return self._create_virtual_instance(
+                parent_schedule,
+                instance_start_utc,
+                instance_end,
+                exception
+            )
+
+    def delete_recurring_instance(
+        self,
+        parent_id: UUID,
+        instance_start: datetime,
+    ) -> None:
+        """
+        반복 일정의 특정 인스턴스 삭제
+        
+        가상 인스턴스를 삭제하면 ScheduleException을 생성하거나 업데이트합니다.
+        프론트엔드는 parent_id와 instance_start를 함께 전송합니다.
+        
+        :param parent_id: 원본 일정 ID
+        :param instance_start: 인스턴스 시작 시간
+        :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
+        """
+        # 원본 일정 조회
+        parent_schedule = crud.get_schedule(self.session, parent_id)
+        if not parent_schedule:
+            raise ScheduleNotFoundError()
+        
+        if not parent_schedule.recurrence_rule:
+            raise NotRecurringScheduleError()
+        
+        # instance_start를 UTC naive로 변환
+        instance_start_utc = ensure_utc_naive(instance_start)
+        
+        # 기존 예외 인스턴스 조회
+        existing_exception = crud.get_schedule_exception_by_date(
+            self.session, parent_id, instance_start_utc
+        )
+        
+        if existing_exception:
+            # 기존 예외 인스턴스를 삭제로 표시
+            existing_exception.is_deleted = True
+            self.session.flush()
+        else:
+            # 새 예외 인스턴스 생성 (삭제 표시)
+            crud.create_schedule_exception(
+                self.session,
+                parent_id=parent_id,
+                exception_date=instance_start_utc,
+                is_deleted=True,
+            )

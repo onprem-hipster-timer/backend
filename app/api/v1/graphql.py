@@ -13,7 +13,7 @@ from strawberry.fastapi import GraphQLRouter
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.db.session import get_db_transactional
+from app.db.session import get_db
 from app.domain.schedule.schema.query import schema
 
 
@@ -22,36 +22,22 @@ async def get_context(request: Request) -> dict:
     GraphQL 컨텍스트 생성
     
     Bug Fix: Generator 패턴을 사용하여 세션 생명주기 안전하게 관리
-    - get_db_transactional의 Generator를 사용하여 세션 생성
-    - context에 session_gen을 포함하여 명시적으로 정리 가능
-    - FastAPI의 요청 종료 시 자동으로 Generator가 정리됨 (finally 블록)
+    - get_db()의 Generator를 사용하여 세션 생성 (읽기 전용, commit 불필요)
+    - GraphQL resolver에서 try-finally를 통해 cleanup 보장
+    - 요청 종료 시 자동으로 세션 정리됨
     
-    주의사항:
-    - Generator 패턴을 사용하면 FastAPI가 요청 종료 시 자동으로 정리하지 않습니다.
-    - 하지만 get_db_transactional 내부의 finally 블록이 세션을 정리하므로 안전합니다.
-    - 싱글톤 _session_manager는 모듈 레벨에서 한 번만 생성되므로 안전합니다.
+    주의: Strawberry는 context를 자동으로 cleanup하지 않으므로
+    GraphQL resolver에서 try-finally를 통해 cleanup을 보장해야 합니다.
     """
     # Generator를 사용하여 세션 생성
-    # get_db_transactional은 Generator[Session, None, None]를 반환
-    # 내부에 finally 블록이 있어 세션이 자동으로 정리됨
-    session_gen = get_db_transactional()
+    # get_db()는 읽기 전용 세션 (commit 불필요)
+    session_gen = get_db()
     session: Session = next(session_gen)
-    
-    # 주의: Generator가 완전히 소비되지 않으면 세션이 정리되지 않을 수 있습니다.
-    # 하지만 실제로는 FastAPI가 요청 종료 시 Generator를 정리하므로 안전합니다.
-    # 더 안전하게 하려면 context에 cleanup 함수를 포함시킬 수 있습니다.
-    def cleanup():
-        """세션 정리 함수 (명시적 정리를 위해)"""
-        try:
-            next(session_gen, None)  # Generator 종료 시도
-        except StopIteration:
-            pass  # Generator가 이미 종료됨
     
     return {
         "request": request,
         "session": session,
         "_session_gen": session_gen,  # 정리를 위한 Generator 참조
-        "_cleanup": cleanup,  # 명시적 정리를 위한 함수
         # 향후 auth, user 등 추가 가능
     }
 

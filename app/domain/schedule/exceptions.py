@@ -30,3 +30,9 @@ class InvalidRecurrenceEndError(DomainException):
     """잘못된 반복 종료일"""
     status_code = 400
     detail = "Invalid recurrence end: recurrence_end must be after start_time"
+
+
+class NotRecurringScheduleError(DomainException):
+    """반복 일정이 아닌 일정에 대한 작업"""
+    status_code = 400
+    detail = "This schedule is not a recurring schedule"

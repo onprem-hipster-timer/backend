@@ -31,6 +31,7 @@ class Event:
     # 반복 일정 필드
     is_recurring: bool = False  # 반복 일정인지 여부
     parent_id: UUID | None = None  # 반복 일정의 원본 ID (가상 인스턴스인 경우)
+    instance_start: datetime | None = None  # 가상 인스턴스인 경우 시작 시간 (수정/삭제용)
 
     @classmethod
     def from_schedule(cls, schedule: Schedule) -> "Event":
@@ -49,6 +50,7 @@ class Event:
             created_at=schedule.created_at,
             is_recurring=schedule.recurrence_rule is not None or schedule.parent_id is not None,
             parent_id=schedule.parent_id,
+            instance_start=schedule.start_time if schedule.parent_id else None,  # 가상 인스턴스인 경우
         )
 
 

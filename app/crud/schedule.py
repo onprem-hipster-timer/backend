@@ -159,20 +159,29 @@ def get_schedule_exception_by_date(
     exception_date: datetime,
 ) -> ScheduleException | None:
     """
-    특정 날짜의 예외 인스턴스를 조회합니다.
+    특정 인스턴스의 예외를 조회합니다.
+    
+    Bug Fix: 시간까지 비교하여 정확한 인스턴스 매칭
+    - 날짜만 비교하면 하루에 여러 인스턴스가 있을 때 구분하지 못함
+    - 시간까지 비교하여 정확한 인스턴스와 매칭 (1분 이내 허용 오차)
     
     :param session: DB 세션
     :param parent_id: 원본 일정 ID
-    :param exception_date: 예외 날짜
+    :param exception_date: 예외 날짜/시간
     :return: 예외 인스턴스 또는 None
     """
+    # 시간까지 비교하기 위해 범위로 조회
+    # 1분 이내 허용 오차
+    from datetime import timedelta
+    
+    start_range = exception_date - timedelta(seconds=60)
+    end_range = exception_date + timedelta(seconds=60)
+    
     statement = (
         select(ScheduleException)
         .where(ScheduleException.parent_id == parent_id)
-        .where(
-            # 날짜만 비교 (시간 제외)
-            ScheduleException.exception_date.date() == exception_date.date()
-        )
+        .where(ScheduleException.exception_date >= start_range)
+        .where(ScheduleException.exception_date <= end_range)
     )
     result = session.exec(statement).first()
     return result
