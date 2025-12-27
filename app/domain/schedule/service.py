@@ -17,7 +17,7 @@ from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
     InvalidRecurrenceRuleError,
     InvalidRecurrenceEndError,
-    NotRecurringScheduleError,
+    RecurringScheduleError,
 )
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
@@ -296,6 +296,10 @@ class ScheduleService:
         """
         일정 삭제
         
+        비즈니스 로직:
+        - DB 레벨 CASCADE DELETE로 관련 예외 인스턴스 자동 삭제
+        - 모든 DB 구조에서 일관성 보장
+        
         :param schedule_id: 일정 ID
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
@@ -329,7 +333,7 @@ class ScheduleService:
             raise ScheduleNotFoundError()
         
         if not parent_schedule.recurrence_rule:
-            raise NotRecurringScheduleError()
+            raise RecurringScheduleError()
         
         # instance_start를 UTC naive로 변환
         instance_start_utc = ensure_utc_naive(instance_start)
@@ -421,7 +425,7 @@ class ScheduleService:
             raise ScheduleNotFoundError()
         
         if not parent_schedule.recurrence_rule:
-            raise NotRecurringScheduleError()
+            raise RecurringScheduleError()
         
         # instance_start를 UTC naive로 변환
         instance_start_utc = ensure_utc_naive(instance_start)
