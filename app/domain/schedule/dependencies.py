@@ -11,8 +11,8 @@ from uuid import UUID
 from fastapi import Depends
 from sqlmodel import Session
 
-from app.db.session import get_db
 from app.crud import schedule as crud
+from app.db.session import get_db
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.schedule.model import Schedule
 

@@ -98,9 +98,9 @@ def delete_schedule(session: Session, schedule: Schedule) -> None:
 
 
 def get_recurring_schedules(
-    session: Session,
-    start_date: datetime,
-    end_date: datetime,
+        session: Session,
+        start_date: datetime,
+        end_date: datetime,
 ) -> list[Schedule]:
     """
     반복 일정을 조회합니다 (원본만, 가상 인스턴스 제외).
@@ -133,9 +133,9 @@ def get_recurring_schedules(
 
 
 def get_schedule_exceptions(
-    session: Session,
-    start_date: datetime,
-    end_date: datetime,
+        session: Session,
+        start_date: datetime,
+        end_date: datetime,
 ) -> list[ScheduleException]:
     """
     날짜 범위 내의 예외 인스턴스를 조회합니다.
@@ -155,9 +155,9 @@ def get_schedule_exceptions(
 
 
 def get_schedule_exception_by_date(
-    session: Session,
-    parent_id,
-    exception_date: datetime,
+        session: Session,
+        parent_id,
+        exception_date: datetime,
 ) -> ScheduleException | None:
     """
     특정 인스턴스의 예외를 조회합니다.
@@ -174,7 +174,7 @@ def get_schedule_exception_by_date(
     # 시간까지 비교하기 위해 범위로 조회
     # 1분 이내 허용 오차
     start_range, end_range = get_datetime_range(exception_date)
-    
+
     statement = (
         select(ScheduleException)
         .where(ScheduleException.parent_id == parent_id)
@@ -186,14 +186,14 @@ def get_schedule_exception_by_date(
 
 
 def create_schedule_exception(
-    session: Session,
-    parent_id,
-    exception_date: datetime,
-    is_deleted: bool = False,
-    title: str | None = None,
-    description: str | None = None,
-    start_time: datetime | None = None,
-    end_time: datetime | None = None,
+        session: Session,
+        parent_id,
+        exception_date: datetime,
+        is_deleted: bool = False,
+        title: str | None = None,
+        description: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
 ) -> ScheduleException:
     """
     예외 인스턴스를 생성합니다.

@@ -62,7 +62,7 @@ class ScheduleService:
         if data.recurrence_rule:
             if not RecurrenceCalculator.is_valid_rrule(data.recurrence_rule):
                 raise InvalidRecurrenceRuleError()
-            
+
             if recurrence_end_utc and recurrence_end_utc < start_time_utc:
                 raise InvalidRecurrenceEndError()
 
@@ -126,7 +126,7 @@ class ScheduleService:
         )
         # 반복 일정이 아닌 것만 필터링
         regular_schedules = [
-            s for s in regular_schedules 
+            s for s in regular_schedules
             if not s.recurrence_rule
         ]
 
@@ -177,11 +177,11 @@ class ScheduleService:
         return sorted(all_schedules, key=lambda s: s.start_time)
 
     def _create_virtual_instance(
-        self,
-        schedule: Schedule,
-        instance_start: datetime,
-        instance_end: datetime,
-        exception: ScheduleException | None = None,
+            self,
+            schedule: Schedule,
+            instance_start: datetime,
+            instance_end: datetime,
+            exception: ScheduleException | None = None,
     ) -> Schedule:
         """
         가상 인스턴스 생성 (예외 처리 포함)
@@ -198,7 +198,7 @@ class ScheduleService:
         """
         # 각 가상 인스턴스에 고유 ID 생성
         virtual_id = uuid4()
-        
+
         # 예외가 있고 삭제되지 않았으면 예외 데이터 사용
         if exception and not exception.is_deleted:
             return Schedule(
@@ -227,10 +227,10 @@ class ScheduleService:
         )
 
     def _find_exception(
-        self,
-        exceptions: list[ScheduleException],
-        parent_id: UUID,
-        instance_start: datetime,
+            self,
+            exceptions: list[ScheduleException],
+            parent_id: UUID,
+            instance_start: datetime,
     ) -> ScheduleException | None:
         """
         특정 인스턴스의 예외 찾기
@@ -287,10 +287,10 @@ class ScheduleService:
         else:
             # 업데이트되지 않으면 기존 값 사용
             start_time_utc = schedule.start_time
-        
+
         if 'end_time' in update_dict:
             update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
-        
+
         recurrence_end_utc = None
         if 'recurrence_end' in update_dict and update_dict['recurrence_end']:
             recurrence_end_utc = ensure_utc_naive(update_dict['recurrence_end'])
@@ -303,7 +303,7 @@ class ScheduleService:
                 # 새로운 recurrence_rule이 제공된 경우 검증
                 if not RecurrenceCalculator.is_valid_rrule(recurrence_rule):
                     raise InvalidRecurrenceRuleError()
-            
+
             # recurrence_end 검증 (업데이트되거나 기존 값이 있는 경우)
             if recurrence_end_utc is not None:
                 if recurrence_end_utc < start_time_utc:
@@ -335,10 +335,10 @@ class ScheduleService:
         crud.delete_schedule(self.session, schedule)
 
     def update_recurring_instance(
-        self,
-        parent_id: UUID,
-        instance_start: datetime,
-        data: ScheduleUpdate,
+            self,
+            parent_id: UUID,
+            instance_start: datetime,
+            data: ScheduleUpdate,
     ) -> Schedule:
         """
         반복 일정의 특정 인스턴스 수정
@@ -356,33 +356,33 @@ class ScheduleService:
         parent_schedule = crud.get_schedule(self.session, parent_id)
         if not parent_schedule:
             raise ScheduleNotFoundError()
-        
+
         if not parent_schedule.recurrence_rule:
             raise RecurringScheduleError()
-        
+
         # instance_start를 UTC naive로 변환
         instance_start_utc = ensure_utc_naive(instance_start)
-        
+
         # 기존 예외 인스턴스 조회
         existing_exception = crud.get_schedule_exception_by_date(
             self.session, parent_id, instance_start_utc
         )
-        
+
         # 업데이트 데이터 준비
         update_dict = data.model_dump(exclude_unset=True)
-        
+
         # datetime 필드 변환
         if 'start_time' in update_dict:
             update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
         if 'end_time' in update_dict:
             update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
-        
+
         # 예외 인스턴스 생성 또는 업데이트
         if existing_exception:
             # 기존 예외 인스턴스 업데이트
             if existing_exception.is_deleted:
                 existing_exception.is_deleted = False
-            
+
             if 'title' in update_dict:
                 existing_exception.title = update_dict['title']
             if 'description' in update_dict:
@@ -391,13 +391,13 @@ class ScheduleService:
                 existing_exception.start_time = update_dict['start_time']
             if 'end_time' in update_dict:
                 existing_exception.end_time = update_dict['end_time']
-            
+
             self.session.flush()
             self.session.refresh(existing_exception)
-            
+
             # 가상 인스턴스 반환
             instance_end = existing_exception.end_time or (
-                instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
+                    instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
             )
             return self._create_virtual_instance(
                 parent_schedule,
@@ -417,10 +417,10 @@ class ScheduleService:
                 start_time=update_dict.get('start_time'),
                 end_time=update_dict.get('end_time'),
             )
-            
+
             # 가상 인스턴스 반환
             instance_end = exception.end_time or (
-                instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
+                    instance_start_utc + (parent_schedule.end_time - parent_schedule.start_time)
             )
             return self._create_virtual_instance(
                 parent_schedule,
@@ -430,9 +430,9 @@ class ScheduleService:
             )
 
     def delete_recurring_instance(
-        self,
-        parent_id: UUID,
-        instance_start: datetime,
+            self,
+            parent_id: UUID,
+            instance_start: datetime,
     ) -> None:
         """
         반복 일정의 특정 인스턴스 삭제
@@ -450,18 +450,18 @@ class ScheduleService:
         parent_schedule = crud.get_schedule(self.session, parent_id)
         if not parent_schedule:
             raise ScheduleNotFoundError()
-        
+
         if not parent_schedule.recurrence_rule:
             raise RecurringScheduleError()
-        
+
         # instance_start를 UTC naive로 변환
         instance_start_utc = ensure_utc_naive(instance_start)
-        
+
         # 기존 예외 인스턴스 조회
         existing_exception = crud.get_schedule_exception_by_date(
             self.session, parent_id, instance_start_utc
         )
-        
+
         if existing_exception:
             # 기존 예외 인스턴스를 삭제로 표시
             existing_exception.is_deleted = True
@@ -474,13 +474,13 @@ class ScheduleService:
                 exception_date=instance_start_utc,
                 is_deleted=True,
             )
-        
+
         # recurrence_end가 있는 경우, 모든 인스턴스가 삭제되었는지 확인
         if parent_schedule.recurrence_end:
             if self._are_all_instances_deleted(parent_schedule):
                 # 모든 인스턴스가 삭제되었으면 원본 일정도 삭제
                 crud.delete_schedule(self.session, parent_schedule)
-    
+
     def _are_all_instances_deleted(self, schedule: Schedule) -> bool:
         """
         반복 일정의 모든 인스턴스가 삭제되었는지 확인
@@ -493,7 +493,7 @@ class ScheduleService:
         """
         if not schedule.recurrence_rule or not schedule.recurrence_end:
             return False
-        
+
         # 모든 인스턴스 확장
         instances = RecurrenceCalculator.expand_recurrence(
             schedule.start_time,
@@ -503,11 +503,11 @@ class ScheduleService:
             schedule.start_time,  # 시작부터
             schedule.recurrence_end,  # 종료일까지
         )
-        
+
         if not instances:
             # 인스턴스가 없으면 삭제된 것으로 간주
             return True
-        
+
         # 모든 예외 인스턴스 조회 (parent_id로 필터링)
         all_exceptions = crud.get_schedule_exceptions(
             self.session,
@@ -518,16 +518,16 @@ class ScheduleService:
             exc for exc in all_exceptions
             if exc.parent_id == schedule.id
         ]
-        
+
         # 각 인스턴스가 삭제되었는지 확인
         for instance_start, instance_end in instances:
             exception = self._find_exception(
                 parent_exceptions, schedule.id, instance_start
             )
-            
+
             # 예외가 없거나 삭제되지 않았으면 False
             if not exception or not exception.is_deleted:
                 return False
-        
+
         # 모든 인스턴스가 삭제되었음
         return True

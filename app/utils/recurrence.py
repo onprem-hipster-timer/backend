@@ -13,15 +13,15 @@ from app.utils.datetime_utils import format_datetime_for_rrule
 
 class RecurrenceCalculator:
     """반복 일정 계산 유틸리티"""
-    
+
     @staticmethod
     def expand_recurrence(
-        start_time: datetime,
-        end_time: datetime,
-        recurrence_rule: str,
-        recurrence_end: Optional[datetime],
-        query_start: datetime,
-        query_end: datetime,
+            start_time: datetime,
+            end_time: datetime,
+            recurrence_rule: str,
+            recurrence_end: Optional[datetime],
+            query_start: datetime,
+            query_end: datetime,
     ) -> List[tuple[datetime, datetime]]:
         """
         반복 일정을 가상 인스턴스로 확장
@@ -39,10 +39,10 @@ class RecurrenceCalculator:
             if start_time <= query_end and end_time >= query_start:
                 return [(start_time, end_time)]
             return []
-        
+
         # 일정의 지속 시간 계산
         duration = end_time - start_time
-        
+
         # RRULE 파싱 및 계산
         # until 파라미터가 있으면 추가
         rrule_str = recurrence_rule
@@ -50,7 +50,7 @@ class RecurrenceCalculator:
             # RRULE에 UNTIL이 없으면 추가
             if "UNTIL" not in rrule_str.upper():
                 rrule_str = f"{rrule_str};UNTIL={format_datetime_for_rrule(recurrence_end)}"
-        
+
         try:
             rrule_obj = rrulestr(
                 rrule_str,
@@ -61,23 +61,23 @@ class RecurrenceCalculator:
             if start_time <= query_end and end_time >= query_start:
                 return [(start_time, end_time)]
             return []
-        
+
         # 쿼리 범위 내의 인스턴스만 생성
         instances = []
         for instance_start in rrule_obj:
             # 조회 범위를 벗어나면 중단
             if instance_start > query_end:
                 break
-            
+
             # 조회 범위 이전이면 스킵
             instance_end = instance_start + duration
             if instance_end < query_start:
                 continue
-            
+
             instances.append((instance_start, instance_end))
-        
+
         return instances
-    
+
     @staticmethod
     def is_valid_rrule(rrule_str: str) -> bool:
         """
@@ -88,7 +88,7 @@ class RecurrenceCalculator:
         """
         if not rrule_str:
             return False
-        
+
         try:
             # 임시 datetime으로 파싱 테스트
             test_start = datetime(2024, 1, 1, 10, 0, 0)
@@ -96,4 +96,3 @@ class RecurrenceCalculator:
             return True
         except Exception:
             return False
-

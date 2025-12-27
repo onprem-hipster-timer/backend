@@ -116,5 +116,5 @@ async def delete_schedule(
         service.delete_recurring_instance(schedule_id, instance_start)
     else:
         service.delete_schedule(schedule_id)
-    
+
     return {"ok": True}

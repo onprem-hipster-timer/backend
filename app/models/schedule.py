@@ -13,7 +13,7 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     description: Optional[str] = None
     start_time: datetime
     end_time: datetime
-    
+
     # 반복 일정 필드
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일

@@ -9,8 +9,8 @@ GraphQL Router
 from typing import Any, Coroutine
 
 from fastapi import Request
-from strawberry.fastapi import GraphQLRouter
 from sqlmodel import Session
+from strawberry.fastapi import GraphQLRouter
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -33,7 +33,7 @@ async def get_context(request: Request) -> dict:
     # get_db()는 읽기 전용 세션 (commit 불필요)
     session_gen = get_db()
     session: Session = next(session_gen)
-    
+
     return {
         "request": request,
         "session": session,
@@ -62,4 +62,3 @@ def create_graphql_router() -> GraphQLRouter[Coroutine[Any, Any, dict], None]:
         graphql_ide="apollo-sandbox" if settings.GRAPHQL_ENABLE_PLAYGROUND else None,
         allow_queries_via_get=True,
     )
-

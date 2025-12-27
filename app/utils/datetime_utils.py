@@ -79,9 +79,9 @@ def format_datetime_for_rrule(dt: datetime) -> str:
 
 
 def is_datetime_within_tolerance(
-    dt1: datetime,
-    dt2: datetime,
-    tolerance_seconds: int = DEFAULT_TIME_TOLERANCE_SECONDS,
+        dt1: datetime,
+        dt2: datetime,
+        tolerance_seconds: int = DEFAULT_TIME_TOLERANCE_SECONDS,
 ) -> bool:
     """
     두 datetime이 허용 오차 내에 있는지 확인
@@ -99,8 +99,8 @@ def is_datetime_within_tolerance(
 
 
 def get_datetime_range(
-    dt: datetime,
-    tolerance_seconds: int = DEFAULT_TIME_TOLERANCE_SECONDS,
+        dt: datetime,
+        tolerance_seconds: int = DEFAULT_TIME_TOLERANCE_SECONDS,
 ) -> tuple[datetime, datetime]:
     """
     datetime 주변의 범위 계산 (DB 쿼리용)
@@ -115,4 +115,3 @@ def get_datetime_range(
     start_range = dt - timedelta(seconds=tolerance_seconds)
     end_range = dt + timedelta(seconds=tolerance_seconds)
     return (start_range, end_range)
-
