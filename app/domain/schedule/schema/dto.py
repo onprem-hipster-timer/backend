@@ -22,6 +22,8 @@ class ScheduleCreate(CustomModel):
     description: Optional[str] = None
     start_time: datetime
     end_time: datetime
+    recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
+    recurrence_end: Optional[datetime] = None  # 반복 종료일
 
     @field_validator("end_time")
     def validate_time(cls, end_time, info):
@@ -41,6 +43,8 @@ class ScheduleUpdate(CustomModel):
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
+    recurrence_end: Optional[datetime] = None  # 반복 종료일
 
     @field_validator("end_time")
     def validate_time(cls, end_time, info):

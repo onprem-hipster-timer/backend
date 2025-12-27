@@ -59,3 +59,4 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
 
     # timezone이 없으면 그대로 반환 (UTC로 가정)
     return dt
+

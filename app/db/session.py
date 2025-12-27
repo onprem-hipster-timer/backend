@@ -79,9 +79,3 @@ def get_db() -> Generator[Session, None, None]:
     """
     with _session_manager.get_session() as session:
         yield session
-
-
-def get_session() -> Generator[Session, None, None]:
-    """기본 세션 (트랜잭션 수동 관리) - 하위 호환성을 위해 유지"""
-    with _session_manager.get_session() as session:
-        yield session

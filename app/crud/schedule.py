@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlmodel import Session, select
 
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
-from app.models.schedule import Schedule
+from app.models.schedule import Schedule, ScheduleException
 
 
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
@@ -94,3 +94,123 @@ def delete_schedule(session: Session, schedule: Schedule) -> None:
     """
     session.delete(schedule)
     # commit은 get_db_transactional이 처리
+
+
+def get_recurring_schedules(
+    session: Session,
+    start_date: datetime,
+    end_date: datetime,
+) -> list[Schedule]:
+    """
+    반복 일정을 조회합니다 (원본만, 가상 인스턴스 제외).
+    
+    반복 일정은 조회 범위와 겹칠 수 있는 모든 반복 일정을 반환합니다.
+    
+    :param session: DB 세션
+    :param start_date: 조회 시작 날짜
+    :param end_date: 조회 종료 날짜
+    :return: 반복 일정 리스트 (recurrence_rule이 있는 일정)
+    """
+    # 반복 일정은 원본의 start_time이 조회 범위 이전이거나 겹치면 포함
+    # recurrence_end가 없거나 조회 범위와 겹치면 포함
+    statement = (
+        select(Schedule)
+        .where(Schedule.recurrence_rule.isnot(None))
+        .where(
+            # 원본 일정의 시작 시간이 조회 종료일 이전이고
+            (Schedule.start_time <= end_date)
+        )
+        .where(
+            # 반복 종료일이 없거나 조회 시작일 이후
+            (Schedule.recurrence_end.is_(None))
+            | (Schedule.recurrence_end >= start_date)
+        )
+        .order_by(Schedule.start_time)
+    )
+    results = session.exec(statement)
+    return results.all()
+
+
+def get_schedule_exceptions(
+    session: Session,
+    start_date: datetime,
+    end_date: datetime,
+) -> list[ScheduleException]:
+    """
+    날짜 범위 내의 예외 인스턴스를 조회합니다.
+    
+    :param session: DB 세션
+    :param start_date: 조회 시작 날짜
+    :param end_date: 조회 종료 날짜
+    :return: 예외 인스턴스 리스트
+    """
+    statement = (
+        select(ScheduleException)
+        .where(ScheduleException.exception_date >= start_date)
+        .where(ScheduleException.exception_date <= end_date)
+    )
+    results = session.exec(statement)
+    return results.all()
+
+
+def get_schedule_exception_by_date(
+    session: Session,
+    parent_id,
+    exception_date: datetime,
+) -> ScheduleException | None:
+    """
+    특정 날짜의 예외 인스턴스를 조회합니다.
+    
+    :param session: DB 세션
+    :param parent_id: 원본 일정 ID
+    :param exception_date: 예외 날짜
+    :return: 예외 인스턴스 또는 None
+    """
+    statement = (
+        select(ScheduleException)
+        .where(ScheduleException.parent_id == parent_id)
+        .where(
+            # 날짜만 비교 (시간 제외)
+            ScheduleException.exception_date.date() == exception_date.date()
+        )
+    )
+    result = session.exec(statement).first()
+    return result
+
+
+def create_schedule_exception(
+    session: Session,
+    parent_id,
+    exception_date: datetime,
+    is_deleted: bool = False,
+    title: str | None = None,
+    description: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> ScheduleException:
+    """
+    예외 인스턴스를 생성합니다.
+    
+    :param session: DB 세션
+    :param parent_id: 원본 일정 ID
+    :param exception_date: 예외 날짜
+    :param is_deleted: 삭제된 인스턴스인지
+    :param title: 수정된 제목 (수정 시)
+    :param description: 수정된 설명 (수정 시)
+    :param start_time: 수정된 시작 시간 (수정 시)
+    :param end_time: 수정된 종료 시간 (수정 시)
+    :return: 생성된 예외 인스턴스
+    """
+    exception = ScheduleException(
+        parent_id=parent_id,
+        exception_date=exception_date,
+        is_deleted=is_deleted,
+        title=title,
+        description=description,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    session.add(exception)
+    session.flush()
+    session.refresh(exception)
+    return exception

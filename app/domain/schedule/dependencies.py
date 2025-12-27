@@ -23,13 +23,13 @@ async def valid_schedule_id(
 ) -> Schedule:
     """
     Schedule ID 검증 및 Schedule 반환
-    
+
     FastAPI Best Practices:
     - Dependency로 데이터 검증
     - 여러 엔드포인트에서 재사용 가능
     - FastAPI가 결과를 캐싱하여 중복 호출 방지
     - 읽기 전용이므로 get_db 사용 (commit 불필요)
-    
+
     :param schedule_id: Schedule ID
     :param session: DB 세션
     :return: Schedule 객체

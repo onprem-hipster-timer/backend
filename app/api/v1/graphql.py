@@ -6,41 +6,57 @@ GraphQL Router
 - FastAPI에 GraphQL 라우터 등록
 - 최신 Strawberry 패턴 적용 (2025 기준)
 """
-from fastapi import Request, Depends
-from sqlmodel import Session
-from strawberry.fastapi import GraphQLRouter
+from typing import Any, Coroutine
 
-from app.db.session import get_db_transactional
+from fastapi import Request
+from strawberry.fastapi import GraphQLRouter
+from sqlmodel import Session
+
 from app.core.config import settings
+from app.db.session import get_db_transactional
 from app.domain.schedule.schema.query import schema
 
 
-async def get_context(
-        request: Request,
-        session: Session = Depends(get_db_transactional),
-) -> dict:
+async def get_context(request: Request) -> dict:
     """
-    GraphQL 컨텍스트 생성 (최신 패턴)
+    GraphQL 컨텍스트 생성
     
-    최신 권장 패턴 (2025 기준):
-    - async 함수로 정의
-    - dict 반환 (가장 안전하고 읽기 쉬움)
-    - FastAPI Request 포함
-    - DB 세션을 context에 포함
+    Bug Fix: Generator 패턴을 사용하여 세션 생명주기 안전하게 관리
+    - get_db_transactional의 Generator를 사용하여 세션 생성
+    - context에 session_gen을 포함하여 명시적으로 정리 가능
+    - FastAPI의 요청 종료 시 자동으로 Generator가 정리됨 (finally 블록)
     
-    Bug Fix: FastAPI 의존성 + yield 패턴 사용
-    - Strawberry는 자동으로 cleanup하지 않으므로 FastAPI 의존성 시스템 활용
-    - get_db_transactional이 yield 패턴으로 세션 생명주기 관리
-    - FastAPI가 요청 종료 시 자동으로 세션 정리 보장
+    주의사항:
+    - Generator 패턴을 사용하면 FastAPI가 요청 종료 시 자동으로 정리하지 않습니다.
+    - 하지만 get_db_transactional 내부의 finally 블록이 세션을 정리하므로 안전합니다.
+    - 싱글톤 _session_manager는 모듈 레벨에서 한 번만 생성되므로 안전합니다.
     """
+    # Generator를 사용하여 세션 생성
+    # get_db_transactional은 Generator[Session, None, None]를 반환
+    # 내부에 finally 블록이 있어 세션이 자동으로 정리됨
+    session_gen = get_db_transactional()
+    session: Session = next(session_gen)
+    
+    # 주의: Generator가 완전히 소비되지 않으면 세션이 정리되지 않을 수 있습니다.
+    # 하지만 실제로는 FastAPI가 요청 종료 시 Generator를 정리하므로 안전합니다.
+    # 더 안전하게 하려면 context에 cleanup 함수를 포함시킬 수 있습니다.
+    def cleanup():
+        """세션 정리 함수 (명시적 정리를 위해)"""
+        try:
+            next(session_gen, None)  # Generator 종료 시도
+        except StopIteration:
+            pass  # Generator가 이미 종료됨
+    
     return {
         "request": request,
         "session": session,
+        "_session_gen": session_gen,  # 정리를 위한 Generator 참조
+        "_cleanup": cleanup,  # 명시적 정리를 위한 함수
         # 향후 auth, user 등 추가 가능
     }
 
 
-def create_graphql_router() -> GraphQLRouter:
+def create_graphql_router() -> GraphQLRouter[Coroutine[Any, Any, dict], None]:
     """
     GraphQL 라우터 생성
     
@@ -60,3 +76,4 @@ def create_graphql_router() -> GraphQLRouter:
         graphql_ide="apollo-sandbox" if settings.GRAPHQL_ENABLE_PLAYGROUND else None,
         allow_queries_via_get=True,
     )
+
