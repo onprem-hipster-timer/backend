@@ -11,24 +11,25 @@ from uuid import UUID
 from fastapi import Depends
 from sqlmodel import Session
 
-from app.api.dependencies import get_db_transactional
 from app.crud import schedule as crud
+from app.db.session import get_db
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.schedule.model import Schedule
 
 
 async def valid_schedule_id(
         schedule_id: UUID,
-        session: Session = Depends(get_db_transactional),
+        session: Session = Depends(get_db),
 ) -> Schedule:
     """
     Schedule ID 검증 및 Schedule 반환
-    
+
     FastAPI Best Practices:
     - Dependency로 데이터 검증
     - 여러 엔드포인트에서 재사용 가능
     - FastAPI가 결과를 캐싱하여 중복 호출 방지
-    
+    - 읽기 전용이므로 get_db 사용 (commit 불필요)
+
     :param schedule_id: Schedule ID
     :param session: DB 세션
     :return: Schedule 객체

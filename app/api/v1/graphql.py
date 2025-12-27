@@ -6,41 +6,43 @@ GraphQL Router
 - FastAPI에 GraphQL 라우터 등록
 - 최신 Strawberry 패턴 적용 (2025 기준)
 """
-from fastapi import Request, Depends
+from typing import Any, Coroutine
+
+from fastapi import Request
 from sqlmodel import Session
 from strawberry.fastapi import GraphQLRouter
 
-from app.api.dependencies import get_db_transactional
 from app.core.config import settings
+from app.db.session import get_db
 from app.domain.schedule.schema.query import schema
 
 
-async def get_context(
-        request: Request,
-        session: Session = Depends(get_db_transactional),
-) -> dict:
+async def get_context(request: Request) -> dict:
     """
-    GraphQL 컨텍스트 생성 (최신 패턴)
+    GraphQL 컨텍스트 생성
     
-    최신 권장 패턴 (2025 기준):
-    - async 함수로 정의
-    - dict 반환 (가장 안전하고 읽기 쉬움)
-    - FastAPI Request 포함
-    - DB 세션을 context에 포함
+    Bug Fix: Generator 패턴을 사용하여 세션 생명주기 안전하게 관리
+    - get_db()의 Generator를 사용하여 세션 생성 (읽기 전용, commit 불필요)
+    - GraphQL resolver에서 try-finally를 통해 cleanup 보장
+    - 요청 종료 시 자동으로 세션 정리됨
     
-    Bug Fix: FastAPI 의존성 + yield 패턴 사용
-    - Strawberry는 자동으로 cleanup하지 않으므로 FastAPI 의존성 시스템 활용
-    - get_db_transactional이 yield 패턴으로 세션 생명주기 관리
-    - FastAPI가 요청 종료 시 자동으로 세션 정리 보장
+    주의: Strawberry는 context를 자동으로 cleanup하지 않으므로
+    GraphQL resolver에서 try-finally를 통해 cleanup을 보장해야 합니다.
     """
+    # Generator를 사용하여 세션 생성
+    # get_db()는 읽기 전용 세션 (commit 불필요)
+    session_gen = get_db()
+    session: Session = next(session_gen)
+
     return {
         "request": request,
         "session": session,
+        "_session_gen": session_gen,  # 정리를 위한 Generator 참조
         # 향후 auth, user 등 추가 가능
     }
 
 
-def create_graphql_router() -> GraphQLRouter:
+def create_graphql_router() -> GraphQLRouter[Coroutine[Any, Any, dict], None]:
     """
     GraphQL 라우터 생성
     

@@ -6,11 +6,14 @@ FastAPI Best Practices:
 - Dependencies를 활용한 검증
 - Service는 session을 받아서 CRUD 직접 사용
 """
-from fastapi import APIRouter, Depends, status
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
-from app.api.dependencies import get_db_transactional
-from app.api.v1.schedules_dependencies import valid_schedule_id
+from app.db.session import get_db_transactional
+from app.domain.schedule.dependencies import valid_schedule_id
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
@@ -68,33 +71,50 @@ async def read_schedule(
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
 async def update_schedule(
+        schedule_id: UUID,
         data: ScheduleUpdate,
-        schedule: Schedule = Depends(valid_schedule_id),
+        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         session: Session = Depends(get_db_transactional),
 ):
     """
-    일정 업데이트
+    일정 업데이트 (반복 일정 인스턴스 포함)
+    
+    일반 일정과 가상 인스턴스 모두 지원:
+    - 일반 일정: schedule_id로 조회하여 업데이트
+    - 가상 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송
     
     FastAPI Best Practices:
-    - Dependency로 schedule 검증 (valid_schedule_id)
     - Service는 session을 받아서 CRUD 직접 사용
+    - 가상 인스턴스인 경우 instance_start 쿼리 파라미터로 처리
     """
     service = ScheduleService(session)
-    return service.update_schedule(schedule.id, data)
+    if instance_start:
+        return service.update_recurring_instance(schedule_id, instance_start, data)
+    else:
+        return service.update_schedule(schedule_id, data)
 
 
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
 async def delete_schedule(
-        schedule: Schedule = Depends(valid_schedule_id),
+        schedule_id: UUID,
+        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         session: Session = Depends(get_db_transactional),
 ):
     """
-    일정 삭제
+    일정 삭제 (반복 일정 인스턴스 포함)
+    
+    일반 일정과 가상 인스턴스 모두 지원:
+    - 일반 일정: schedule_id로 조회하여 삭제
+    - 가상 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송
     
     FastAPI Best Practices:
-    - Dependency로 schedule 검증 (valid_schedule_id)
     - Service는 session을 받아서 CRUD 직접 사용
+    - 가상 인스턴스인 경우 instance_start 쿼리 파라미터로 처리
     """
     service = ScheduleService(session)
-    service.delete_schedule(schedule.id)
+    if instance_start:
+        service.delete_recurring_instance(schedule_id, instance_start)
+    else:
+        service.delete_schedule(schedule_id)
+
     return {"ok": True}

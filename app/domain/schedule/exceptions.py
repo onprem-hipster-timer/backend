@@ -18,3 +18,21 @@ class InvalidScheduleTimeError(DomainException):
     """잘못된 일정 시간"""
     status_code = 400
     detail = "Invalid schedule time: end_time must be after start_time"
+
+
+class InvalidRecurrenceRuleError(DomainException):
+    """잘못된 반복 규칙"""
+    status_code = 400
+    detail = "Invalid recurrence rule: RRULE format is invalid"
+
+
+class InvalidRecurrenceEndError(DomainException):
+    """잘못된 반복 종료일"""
+    status_code = 400
+    detail = "Invalid recurrence end: recurrence_end must be after start_time"
+
+
+class RecurringScheduleError(DomainException):
+    """반복 일정 관련 에러 (반복 일정이 아닌 일정에 반복 일정 작업 시도)"""
+    status_code = 400
+    detail = "This schedule is not a recurring schedule"
