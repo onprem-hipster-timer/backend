@@ -8,6 +8,8 @@ from typing import List, Optional
 
 from dateutil.rrule import rrulestr
 
+from app.utils.datetime_utils import format_datetime_for_rrule
+
 
 class RecurrenceCalculator:
     """반복 일정 계산 유틸리티"""
@@ -47,7 +49,7 @@ class RecurrenceCalculator:
         if recurrence_end:
             # RRULE에 UNTIL이 없으면 추가
             if "UNTIL" not in rrule_str.upper():
-                rrule_str = f"{rrule_str};UNTIL={recurrence_end.strftime('%Y%m%dT%H%M%SZ')}"
+                rrule_str = f"{rrule_str};UNTIL={format_datetime_for_rrule(recurrence_end)}"
         
         try:
             rrule_obj = rrulestr(

@@ -101,7 +101,7 @@ def test_get_recurring_schedules_expands_instances(test_session):
     service = ScheduleService(test_session)
     parent_schedule = service.create_schedule(schedule_data)
     
-    # 1월 전체 조회 (4개의 월요일이 있어야 함)
+    # 1월 전체 조회 (5개의 월요일이 있어야 함)
     start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC)
     
@@ -109,11 +109,11 @@ def test_get_recurring_schedules_expands_instances(test_session):
     
     # 가상 인스턴스들이 확장되어야 함
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    assert len(recurring_instances) == 4  # 1월의 4개 월요일
+    assert len(recurring_instances) == 5  # 1월의 5개 월요일
     
     # 각 인스턴스가 고유 ID를 가져야 함
     instance_ids = {s.id for s in recurring_instances}
-    assert len(instance_ids) == 4  # 모두 다른 ID
+    assert len(instance_ids) == 5  # 모두 다른 ID
     
     # 각 인스턴스의 시작 시간이 월요일이어야 함
     for instance in recurring_instances:
@@ -306,7 +306,7 @@ def test_delete_recurring_instance(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
     
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    assert len(recurring_instances) == 3  # 1월 1일 제외하고 3개만 남음
+    assert len(recurring_instances) == 4  # 1월 1일 제외하고 4개만 남음
     
     # 삭제된 인스턴스가 없는지 확인
     deleted_instance = next(
@@ -344,10 +344,14 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
     )
     
+    parent_schedule_id = None
+    exception_id = None
+    
     with Session(test_engine) as session:
         service = ScheduleService(session)
         parent_schedule = service.create_schedule(schedule_data)
         session.commit()
+        parent_schedule_id = parent_schedule.id  # 세션이 열려 있을 때 ID 저장
         
         # 예외 인스턴스 생성
         exception = crud.create_schedule_exception(
@@ -358,12 +362,12 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
             title="수정된 회의",
         )
         session.commit()
-        exception_id = exception.id
+        exception_id = exception.id  # 세션이 열려 있을 때 ID 저장
     
     # 부모 일정 삭제
     with Session(test_engine) as delete_session:
         delete_service = ScheduleService(delete_session)
-        delete_service.delete_schedule(parent_schedule.id)
+        delete_service.delete_schedule(parent_schedule_id)  # 저장된 ID 사용
         delete_session.commit()
     
     # 예외 인스턴스가 자동으로 삭제되었는지 확인
@@ -372,6 +376,63 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
         statement = select(ScheduleException).where(ScheduleException.id == exception_id)
         result = check_session.exec(statement).first()
         assert result is None  # CASCADE DELETE로 삭제됨
+
+
+def test_delete_all_instances_deletes_parent_schedule(test_engine):
+    """모든 인스턴스 삭제 시 부모 일정도 자동 삭제되는지 테스트"""
+    from sqlmodel import Session, select
+    from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.schema.dto import ScheduleCreate
+    from app.models.schedule import Schedule
+    
+    # 반복 일정 생성 (4주간 주간 반복 - 4개의 월요일)
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
+        recurrence_end=datetime(2024, 1, 29, 23, 59, 59, tzinfo=UTC),  # 4주간
+    )
+    
+    parent_schedule_id = None
+    
+    with Session(test_engine) as session:
+        service = ScheduleService(session)
+        parent_schedule = service.create_schedule(schedule_data)
+        session.commit()
+        parent_schedule_id = parent_schedule.id
+    
+    # 각 인스턴스를 하나씩 삭제
+    instance_dates = [
+        datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),   # 1월 1일 (월요일)
+        datetime(2024, 1, 8, 10, 0, 0, tzinfo=UTC),   # 1월 8일 (월요일)
+        datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),   # 1월 15일 (월요일)
+        datetime(2024, 1, 22, 10, 0, 0, tzinfo=UTC),     # 1월 22일 (월요일)
+        datetime(2024, 1, 29, 10, 0, 0, tzinfo=UTC),  # 1월 29일 (월요일)
+    ]
+    
+    # 처음 4개 인스턴스 삭제 (부모 일정은 아직 남아있어야 함)
+    for i, instance_date in enumerate(instance_dates[:-1]):
+        with Session(test_engine) as delete_session:
+            delete_service = ScheduleService(delete_session)
+            delete_service.delete_recurring_instance(parent_schedule_id, instance_date)
+            delete_session.commit()
+        
+        # 부모 일정이 아직 존재하는지 확인
+        with Session(test_engine) as check_session:
+            parent = check_session.get(Schedule, parent_schedule_id)
+            assert parent is not None, f"{i+1}번째 인스턴스 삭제 후에도 부모 일정이 존재해야 함"
+    
+    # 마지막 인스턴스 삭제 (부모 일정도 자동 삭제되어야 함)
+    with Session(test_engine) as delete_session:
+        delete_service = ScheduleService(delete_session)
+        delete_service.delete_recurring_instance(parent_schedule_id, instance_dates[-1])
+        delete_session.commit()
+    
+    # 부모 일정이 자동으로 삭제되었는지 확인
+    with Session(test_engine) as check_session:
+        parent = check_session.get(Schedule, parent_schedule_id)
+        assert parent is None, "모든 인스턴스 삭제 시 부모 일정도 자동 삭제되어야 함"
 
 
 # ==================== 예외 인스턴스 복합 시나리오 테스트 ====================
@@ -417,8 +478,8 @@ def test_recurring_schedule_with_multiple_exceptions(test_session):
     
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
     
-    # 4개 인스턴스 중 1개 삭제, 2개 수정, 1개 원본
-    assert len(recurring_instances) == 3  # 삭제된 인스턴스 제외
+    # 5개 인스턴스 중 1개 삭제, 2개 수정, 2개 원본
+    assert len(recurring_instances) == 4  # 삭제된 인스턴스 제외
     
     # 각 인스턴스 확인
     instance_by_date = {s.start_time.date(): s for s in recurring_instances}

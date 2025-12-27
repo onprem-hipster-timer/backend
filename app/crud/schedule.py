@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.models.schedule import Schedule, ScheduleException
+from app.utils.datetime_utils import get_datetime_range
 
 
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
@@ -172,10 +173,7 @@ def get_schedule_exception_by_date(
     """
     # 시간까지 비교하기 위해 범위로 조회
     # 1분 이내 허용 오차
-    from datetime import timedelta
-    
-    start_range = exception_date - timedelta(seconds=60)
-    end_range = exception_date + timedelta(seconds=60)
+    start_range, end_range = get_datetime_range(exception_date)
     
     statement = (
         select(ScheduleException)

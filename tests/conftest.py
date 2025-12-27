@@ -1,13 +1,25 @@
 import pytest
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.pool import StaticPool
+from sqlalchemy import event
 from app.models.schedule import Schedule
 
 
 @pytest.fixture
 def test_engine():
     """테스트용 DB 엔진"""
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    engine = create_engine(
+        "sqlite:///:memory:",
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
+    
+    # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
     
     # 테스트용 테이블 생성
     SQLModel.metadata.create_all(engine)
@@ -85,6 +97,13 @@ def e2e_client():
         poolclass=StaticPool,
         echo=False,
     )
+    
+    # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
+    @event.listens_for(test_engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
     
     # SessionManager의 엔진을 테스트용으로 임시 교체 (init_db 전에 교체)
     original_engine = _session_manager.engine

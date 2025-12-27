@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 from sqlmodel import SQLModel, create_engine, Session
+from sqlalchemy import event
 
 from app.core.config import settings
 
@@ -15,12 +16,27 @@ class SessionManager:
 
     def _init_engine(self):
         """엔진 초기화"""
+        connect_args = {}
+        
+        # SQLite인 경우 외래 키 제약 조건 활성화
+        if settings.DATABASE_URL.startswith("sqlite"):
+            connect_args = {"check_same_thread": False}
+        
         self.engine = create_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
             pool_size=settings.POOL_SIZE,
             max_overflow=settings.MAX_OVERFLOW,
+            connect_args=connect_args,
         )
+        
+        # SQLite인 경우 외래 키 제약 조건 활성화 (각 연결마다)
+        if settings.DATABASE_URL.startswith("sqlite"):
+            @event.listens_for(self.engine, "connect")
+            def set_sqlite_pragma(dbapi_conn, connection_record):
+                cursor = dbapi_conn.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
 
     @contextmanager
     def get_session(self):

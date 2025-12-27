@@ -22,7 +22,7 @@ from app.domain.schedule.exceptions import (
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.models.schedule import ScheduleException
-from app.utils.datetime_utils import ensure_utc_naive
+from app.utils.datetime_utils import ensure_utc_naive, is_datetime_within_tolerance
 from app.utils.recurrence import RecurrenceCalculator
 
 
@@ -245,13 +245,10 @@ class ScheduleService:
         :param instance_start: 인스턴스 시작 시간 (datetime)
         :return: 예외 인스턴스 또는 None
         """
-        from datetime import timedelta
-        
         for exc in exceptions:
             if exc.parent_id == parent_id:
                 # 시간까지 비교 (1분 이내 허용 오차)
-                time_diff = abs((exc.exception_date - instance_start).total_seconds())
-                if time_diff <= 60:  # 1분 이내
+                if is_datetime_within_tolerance(exc.exception_date, instance_start):
                     return exc
         return None
 

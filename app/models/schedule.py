@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import Column, ForeignKey
 from sqlmodel import Field
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -22,8 +23,10 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
 class ScheduleException(UUIDBase, TimestampMixin, table=True):
     """반복 일정의 예외 인스턴스 (특정 날짜만 수정/삭제)"""
     parent_id: UUID = Field(
-        foreign_key="schedule.id",
-        sa_column_kwargs={"ondelete": "CASCADE"}
+        sa_column=Column(
+            ForeignKey("schedule.id", ondelete="CASCADE"),
+            nullable=False
+        )
     )
     exception_date: datetime  # 예외가 발생한 날짜
     is_deleted: bool = False  # 삭제된 인스턴스인지
