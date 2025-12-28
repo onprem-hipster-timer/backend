@@ -44,39 +44,25 @@ class ScheduleService:
         일정 생성
         
         비즈니스 로직:
-        - 모든 datetime을 UTC naive로 변환하여 저장
+        - 모든 datetime을 UTC naive로 변환하여 저장 (DTO에서 보장)
         - 모든 DB 구조에서 일관성 보장
         - 반복 일정 필드도 함께 저장
         - RRULE 검증
         
-        :param data: 일정 생성 데이터
+        :param data: 일정 생성 데이터 (datetime은 DTO에서 UTC naive로 변환됨)
         :return: 생성된 일정
         :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
         :raises InvalidRecurrenceEndError: 반복 종료일이 시작일 이전인 경우
         """
-        start_time_utc = ensure_utc_naive(data.start_time)
-        end_time_utc = ensure_utc_naive(data.end_time)
-        recurrence_end_utc = ensure_utc_naive(data.recurrence_end) if data.recurrence_end else None
-
         # 반복 일정 검증
         if data.recurrence_rule:
             if not RecurrenceCalculator.is_valid_rrule(data.recurrence_rule):
                 raise InvalidRecurrenceRuleError()
 
-            if recurrence_end_utc and recurrence_end_utc < start_time_utc:
+            if data.recurrence_end and data.recurrence_end < data.start_time:
                 raise InvalidRecurrenceEndError()
 
-        # UTC naive datetime으로 변환하여 저장
-        create_data = ScheduleCreate(
-            title=data.title,
-            description=data.description,
-            start_time=start_time_utc,
-            end_time=end_time_utc,
-            recurrence_rule=data.recurrence_rule,
-            recurrence_end=recurrence_end_utc,
-        )
-
-        return crud.create_schedule(self.session, create_data)
+        return crud.create_schedule(self.session, data)
 
     def get_schedule(self, schedule_id: UUID) -> Schedule:
         """
@@ -261,12 +247,12 @@ class ScheduleService:
         일정 업데이트 (일반 일정만)
         
         비즈니스 로직:
-        - 모든 datetime을 UTC naive로 변환하여 저장
+        - 모든 datetime을 UTC naive로 변환하여 저장 (DTO에서 보장)
         - 모든 DB 구조에서 일관성 보장
         - 반복 일정 필드 검증 (recurrence_end가 start_time 이후인지 확인)
         
         :param schedule_id: 일정 ID
-        :param data: 업데이트 데이터
+        :param data: 업데이트 데이터 (datetime은 DTO에서 UTC naive로 변환됨)
         :return: 업데이트된 일정
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
@@ -279,22 +265,9 @@ class ScheduleService:
         # 설정된 필드만 가져오기 (exclude_unset=True)
         update_dict = data.model_dump(exclude_unset=True)
 
-        # datetime 필드가 설정되어 있으면 UTC naive로 변환
-        start_time_utc = None
-        if 'start_time' in update_dict:
-            start_time_utc = ensure_utc_naive(update_dict['start_time'])
-            update_dict['start_time'] = start_time_utc
-        else:
-            # 업데이트되지 않으면 기존 값 사용
-            start_time_utc = schedule.start_time
-
-        if 'end_time' in update_dict:
-            update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
-
-        recurrence_end_utc = None
-        if 'recurrence_end' in update_dict and update_dict['recurrence_end']:
-            recurrence_end_utc = ensure_utc_naive(update_dict['recurrence_end'])
-            update_dict['recurrence_end'] = recurrence_end_utc
+        # datetime 필드 추출 (DTO에서 이미 UTC naive로 변환됨)
+        start_time_utc = update_dict.get('start_time', schedule.start_time)
+        recurrence_end_utc = update_dict.get('recurrence_end', schedule.recurrence_end)
 
         # 반복 일정 검증 (recurrence_rule 또는 recurrence_end가 업데이트되는 경우)
         recurrence_rule = update_dict.get('recurrence_rule', schedule.recurrence_rule)
@@ -368,14 +341,8 @@ class ScheduleService:
             self.session, parent_id, instance_start_utc
         )
 
-        # 업데이트 데이터 준비
+        # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨)
         update_dict = data.model_dump(exclude_unset=True)
-
-        # datetime 필드 변환
-        if 'start_time' in update_dict:
-            update_dict['start_time'] = ensure_utc_naive(update_dict['start_time'])
-        if 'end_time' in update_dict:
-            update_dict['end_time'] = ensure_utc_naive(update_dict['end_time'])
 
         # 예외 인스턴스 생성 또는 업데이트
         if existing_exception:

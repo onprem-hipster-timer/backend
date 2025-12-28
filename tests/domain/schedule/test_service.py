@@ -38,7 +38,7 @@ def test_create_schedule_success(test_session):
     service = ScheduleService(test_session)
     schedule = service.create_schedule(schedule_data)
     
-    # Service가 UTC naive datetime으로 변환하여 저장
+    # DTO가 UTC naive datetime으로 변환하여 저장
     expected_start_time = ensure_utc_naive(schedule_data.start_time)
     expected_end_time = ensure_utc_naive(schedule_data.end_time)
     
