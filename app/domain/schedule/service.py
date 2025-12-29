@@ -121,10 +121,22 @@ class ScheduleService:
             self.session, start_date_utc, end_date_utc
         )
 
-        # 3. 예외 인스턴스 조회
+        # 3. 예외 인스턴스 조회 및 인덱싱
         exceptions = crud.get_schedule_exceptions(
             self.session, start_date_utc, end_date_utc
         )
+
+        # 예외를 한 번만 순회하여 dict와 parent별 그룹화 동시 생성
+        exception_dict = {}
+        exceptions_by_parent = {}
+        for exc in exceptions:
+            # 정확한 매칭용 딕셔너리
+            exception_dict[(exc.parent_id, exc.exception_date)] = exc
+            
+            # parent별 그룹화 (허용 오차 검색용)
+            if exc.parent_id not in exceptions_by_parent:
+                exceptions_by_parent[exc.parent_id] = []
+            exceptions_by_parent[exc.parent_id].append(exc)
 
         # 4. 반복 일정을 가상 인스턴스로 확장
         virtual_instances = []
@@ -143,9 +155,15 @@ class ScheduleService:
 
             # 예외 처리: 삭제/수정된 인스턴스 처리
             for instance_start, instance_end in instances:
-                exception = self._find_exception(
-                    exceptions, schedule.id, instance_start
-                )
+
+                exception = exception_dict.get((schedule.id, instance_start))
+                
+                # 정확히 매칭되지 않으면 시간 허용 오차 검색 (해당 parent_id의 예외만)
+                if exception is None and schedule.id in exceptions_by_parent:
+                    for exc in exceptions_by_parent[schedule.id]:
+                        if is_datetime_within_tolerance(exc.exception_date, instance_start):
+                            exception = exc
+                            break
 
                 if exception and exception.is_deleted:
                     continue  # 삭제된 인스턴스는 제외
