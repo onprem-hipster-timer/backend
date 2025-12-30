@@ -3,7 +3,7 @@ from datetime import datetime, UTC, timezone, timedelta
 from uuid import UUID
 from app.domain.schedule.service import ScheduleService
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
-from app.utils.datetime_utils import ensure_utc_naive
+from app.domain.dateutil.service import ensure_utc_naive
 from app.utils.validators import validate_time_order
 
 

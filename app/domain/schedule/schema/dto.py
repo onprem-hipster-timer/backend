@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import field_validator
 
 from app.core.base_model import CustomModel
-from app.utils.datetime_utils import ensure_utc_naive
+from app.domain.dateutil.service import ensure_utc_naive
 from app.utils.validators import validate_time_order
 
 

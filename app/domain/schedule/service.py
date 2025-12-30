@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from sqlmodel import Session
 
 from app.crud import schedule as crud
+from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
     InvalidRecurrenceRuleError,
@@ -22,7 +23,6 @@ from app.domain.schedule.exceptions import (
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.models.schedule import ScheduleException
-from app.utils.datetime_utils import ensure_utc_naive, is_datetime_within_tolerance
 from app.utils.recurrence import RecurrenceCalculator
 
 
@@ -132,7 +132,7 @@ class ScheduleService:
         for exc in exceptions:
             # 정확한 매칭용 딕셔너리
             exception_dict[(exc.parent_id, exc.exception_date)] = exc
-            
+
             # parent별 그룹화 (허용 오차 검색용)
             if exc.parent_id not in exceptions_by_parent:
                 exceptions_by_parent[exc.parent_id] = []
@@ -157,7 +157,7 @@ class ScheduleService:
             for instance_start, instance_end in instances:
 
                 exception = exception_dict.get((schedule.id, instance_start))
-                
+
                 # 정확히 매칭되지 않으면 시간 허용 오차 검색 (해당 parent_id의 예외만)
                 if exception is None and schedule.id in exceptions_by_parent:
                     for exc in exceptions_by_parent[schedule.id]:

@@ -75,6 +75,31 @@ def sample_schedule(test_session):
 
 
 @pytest.fixture
+def sample_timer(test_session, sample_schedule):
+    """
+    테스트용 타이머 데이터
+    
+    sample_schedule에 의존하여 일정이 먼저 생성되어야 함
+    """
+    from datetime import datetime, UTC
+    from app.domain.timer.schema.dto import TimerCreate
+    from app.domain.timer.service import TimerService
+    
+    timer_data = TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="테스트 타이머",
+        description="테스트 설명",
+        allocated_duration=1800,  # 30분
+    )
+    
+    service = TimerService(test_session)
+    timer = service.create_timer(timer_data)
+    test_session.flush()
+    test_session.refresh(timer)
+    return timer
+
+
+@pytest.fixture
 def e2e_client():
     """
     E2E 테스트용 FastAPI 클라이언트

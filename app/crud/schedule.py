@@ -2,9 +2,9 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
+from app.domain.dateutil.service import get_datetime_range
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.models.schedule import Schedule, ScheduleException
-from app.utils.datetime_utils import get_datetime_range
 
 
 def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:

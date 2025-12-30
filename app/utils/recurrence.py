@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from dateutil.rrule import rrulestr
 
-from app.utils.datetime_utils import format_datetime_for_rrule
+from app.domain.dateutil.service import format_datetime_for_rrule
 
 
 class RecurrenceCalculator:

@@ -1,6 +1,6 @@
+import logging
 from contextlib import contextmanager
 from typing import Generator
-import logging
 
 from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine, Session
@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, create_engine, Session
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 class SessionManager:
     """세션 관리자 - Context Manager 패턴"""

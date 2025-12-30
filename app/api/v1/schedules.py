@@ -7,6 +7,7 @@ FastAPI Best Practices:
 - Service는 session을 받아서 CRUD 직접 사용
 """
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -21,6 +22,8 @@ from app.domain.schedule.schema.dto import (
     ScheduleUpdate,
 )
 from app.domain.schedule.service import ScheduleService
+from app.domain.timer.schema.dto import TimerRead
+from app.domain.timer.service import TimerService
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
@@ -118,3 +121,54 @@ async def delete_schedule(
         service.delete_schedule(schedule_id)
 
     return {"ok": True}
+
+
+@router.get("/{schedule_id}/timers", response_model=list[TimerRead])
+async def get_schedule_timers(
+        schedule: Schedule = Depends(valid_schedule_id),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+):
+    """
+    일정의 모든 타이머 조회
+    """
+    from app.api.v1.timers import timer_to_dto
+    from app.domain.dateutil.service import parse_timezone
+
+    timer_service = TimerService(session)
+    timers = timer_service.get_timers_by_schedule(schedule.id)
+
+    tz_obj = parse_timezone(tz) if tz else None
+    return [timer_to_dto(timer, session, tz_obj) for timer in timers]
+
+
+@router.get("/{schedule_id}/timers/active", response_model=TimerRead)
+async def get_active_timer(
+        schedule: Schedule = Depends(valid_schedule_id),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+):
+    """
+    일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    
+    활성 타이머가 없으면 404를 반환합니다.
+    """
+    from app.domain.timer.exceptions import TimerNotFoundError
+    from app.api.v1.timers import timer_to_dto
+    from app.domain.dateutil.service import parse_timezone
+
+    timer_service = TimerService(session)
+    timer = timer_service.get_active_timer(schedule.id)
+    if not timer:
+        raise TimerNotFoundError()
+
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_to_dto(timer, session, tz_obj)

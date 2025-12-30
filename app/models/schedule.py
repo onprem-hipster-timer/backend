@@ -1,11 +1,14 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
 from sqlalchemy import Column, ForeignKey
-from sqlmodel import Field
+from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.timer import TimerSession
 
 
 class Schedule(UUIDBase, TimestampMixin, table=True):
@@ -18,6 +21,9 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     parent_id: Optional[UUID] = None  # 원본 일정 ID (예외 인스턴스용)
+
+    # Relationship
+    timers: List["TimerSession"] = Relationship(back_populates="schedule")
 
 
 class ScheduleException(UUIDBase, TimestampMixin, table=True):
