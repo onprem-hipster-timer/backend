@@ -1,11 +1,13 @@
 from contextlib import contextmanager
 from typing import Generator
+import logging
 
 from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine, Session
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 class SessionManager:
     """세션 관리자 - Context Manager 패턴"""
@@ -61,32 +63,6 @@ def init_db():
     _session_manager.init_db()
 
 
-def get_db_transactional() -> Generator[Session, None, None]:
-    """
-    Context Manager를 통한 트랜잭션 자동 관리
-    - FastAPI Depends와 함께 사용
-    - 함수 종료 성공: commit 자동
-    - 예외 발생: rollback 자동
-    
-    Bug Fix: 전역 싱글톤 _session_manager 사용
-    Bug Fix: Context Manager 내부에서 commit/rollback 처리
-    """
-    session = None
-    try:
-        with _session_manager.get_session() as session:
-            try:
-                yield session
-                # Context Manager 내부에서 commit (세션이 닫히기 전)
-                session.commit()
-            except Exception:
-                # Context Manager 내부에서 rollback (세션이 닫히기 전)
-                session.rollback()
-                raise
-    finally:
-        # Context Manager가 자동으로 세션을 닫음
-        pass
-
-
 def get_db() -> Generator[Session, None, None]:
     """
     읽기 전용 세션 (commit 없음)
@@ -94,4 +70,34 @@ def get_db() -> Generator[Session, None, None]:
     - FastAPI가 자동으로 세션 close 처리
     """
     with _session_manager.get_session() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            if session.new or session.dirty or session.deleted:
+                logger.warning(
+                    "Read-only session rolled back with pending changes. "
+                    "new=%d dirty=%d deleted=%d",
+                    len(session.new),
+                    len(session.dirty),
+                    len(session.deleted),
+                )
+            session.rollback()
+
+
+def get_db_transactional() -> Generator[Session, None, None]:
+    """
+    트랜잭션 자동 관리 세션
+    - POST/PUT/DELETE 등 쓰기 작업에 사용
+    - 함수 종료 성공: commit 자동
+    - 예외 발생: rollback 자동
+    """
+    with _session_manager.get_session() as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
