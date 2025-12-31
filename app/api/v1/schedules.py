@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
 from app.db.session import get_db_transactional
+from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.dependencies import valid_schedule_id
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
@@ -31,6 +32,11 @@ router = APIRouter(prefix="/schedules", tags=["Schedules"])
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
         data: ScheduleCreate,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
 ):
     """
@@ -42,11 +48,25 @@ async def create_schedule(
     - Exception Handler가 예외 처리
     """
     service = ScheduleService(session)
-    return service.create_schedule(data)
+    schedule = service.create_schedule(data)
+    
+    # Schedule 모델을 ScheduleRead로 변환
+    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return schedule_read.to_timezone(tz_obj)
 
 
 @router.get("", response_model=list[ScheduleRead])
-async def read_schedules(session: Session = Depends(get_db_transactional)):
+async def read_schedules(
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+):
     """
     모든 일정 조회
     
@@ -54,12 +74,23 @@ async def read_schedules(session: Session = Depends(get_db_transactional)):
     - async 라우트 사용
     """
     service = ScheduleService(session)
-    return service.get_all_schedules()
+    schedules = service.get_all_schedules()
+    
+    tz_obj = parse_timezone(tz) if tz else None
+    return [
+        ScheduleRead.model_validate(schedule.model_dump()).to_timezone(tz_obj)
+        for schedule in schedules
+    ]
 
 
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
         schedule: Schedule = Depends(valid_schedule_id),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
 ):
     """
     ID로 일정 조회
@@ -69,7 +100,12 @@ async def read_schedule(
     - 중복 검증 코드 제거
     - 여러 엔드포인트에서 재사용 가능
     """
-    return schedule
+    # Schedule 모델을 ScheduleRead로 변환
+    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return schedule_read.to_timezone(tz_obj)
 
 
 @router.patch("/{schedule_id}", response_model=ScheduleRead)
@@ -77,6 +113,11 @@ async def update_schedule(
         schedule_id: UUID,
         data: ScheduleUpdate,
         instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
 ):
     """
@@ -92,9 +133,16 @@ async def update_schedule(
     """
     service = ScheduleService(session)
     if instance_start:
-        return service.update_recurring_instance(schedule_id, instance_start, data)
+        schedule = service.update_recurring_instance(schedule_id, instance_start, data)
     else:
-        return service.update_schedule(schedule_id, data)
+        schedule = service.update_schedule(schedule_id, data)
+    
+    # Schedule 모델을 ScheduleRead로 변환
+    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return schedule_read.to_timezone(tz_obj)
 
 
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
@@ -137,13 +185,11 @@ async def get_schedule_timers(
     일정의 모든 타이머 조회
     """
     from app.api.v1.timers import timer_to_dto
-    from app.domain.dateutil.service import parse_timezone
 
     timer_service = TimerService(session)
     timers = timer_service.get_timers_by_schedule(schedule.id)
 
-    tz_obj = parse_timezone(tz) if tz else None
-    return [timer_to_dto(timer, session, tz_obj) for timer in timers]
+    return [timer_to_dto(timer, session, tz) for timer in timers]
 
 
 @router.get("/{schedule_id}/timers/active", response_model=TimerRead)
@@ -163,12 +209,10 @@ async def get_active_timer(
     """
     from app.domain.timer.exceptions import TimerNotFoundError
     from app.api.v1.timers import timer_to_dto
-    from app.domain.dateutil.service import parse_timezone
 
     timer_service = TimerService(session)
     timer = timer_service.get_active_timer(schedule.id)
     if not timer:
         raise TimerNotFoundError()
 
-    tz_obj = parse_timezone(tz) if tz else None
-    return timer_to_dto(timer, session, tz_obj)
+    return timer_to_dto(timer, session, tz)
