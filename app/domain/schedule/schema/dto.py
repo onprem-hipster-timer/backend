@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
@@ -40,6 +40,8 @@ class ScheduleCreate(CustomModel):
 
 class ScheduleRead(ScheduleCreate):
     """일정 조회 DTO"""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: UUID
     created_at: datetime
 

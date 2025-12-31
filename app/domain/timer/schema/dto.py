@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone
@@ -35,6 +35,8 @@ class TimerCreate(CustomModel):
 
 class TimerRead(CustomModel):
     """타이머 조회 DTO"""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: UUID
     schedule_id: UUID
     title: Optional[str] = None
@@ -48,8 +50,8 @@ class TimerRead(CustomModel):
     created_at: datetime
     updated_at: datetime
 
-    # 일정 정보 포함
-    schedule: ScheduleRead
+    # 일정 정보 포함 (선택적)
+    schedule: Optional[ScheduleRead] = None
 
     def to_timezone(self, tz: timezone | str | None) -> "TimerRead":
         """

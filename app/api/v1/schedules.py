@@ -51,7 +51,7 @@ async def create_schedule(
     schedule = service.create_schedule(data)
     
     # Schedule 모델을 ScheduleRead로 변환
-    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    schedule_read = ScheduleRead.model_validate(schedule)
     
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
@@ -78,7 +78,7 @@ async def read_schedules(
     
     tz_obj = parse_timezone(tz) if tz else None
     return [
-        ScheduleRead.model_validate(schedule.model_dump()).to_timezone(tz_obj)
+        ScheduleRead.model_validate(schedule).to_timezone(tz_obj)
         for schedule in schedules
     ]
 
@@ -101,7 +101,7 @@ async def read_schedule(
     - 여러 엔드포인트에서 재사용 가능
     """
     # Schedule 모델을 ScheduleRead로 변환
-    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    schedule_read = ScheduleRead.model_validate(schedule)
     
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
@@ -138,7 +138,7 @@ async def update_schedule(
         schedule = service.update_schedule(schedule_id, data)
     
     # Schedule 모델을 ScheduleRead로 변환
-    schedule_read = ScheduleRead.model_validate(schedule.model_dump())
+    schedule_read = ScheduleRead.model_validate(schedule)
     
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
@@ -174,6 +174,10 @@ async def delete_schedule(
 @router.get("/{schedule_id}/timers", response_model=list[TimerRead])
 async def get_schedule_timers(
         schedule: Schedule = Depends(valid_schedule_id),
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -184,17 +188,34 @@ async def get_schedule_timers(
     """
     일정의 모든 타이머 조회
     """
-    from app.api.v1.timers import timer_to_dto
+    from app.domain.schedule.schema.dto import ScheduleRead
+    from app.domain.timer.schema.dto import TimerRead
 
     timer_service = TimerService(session)
     timers = timer_service.get_timers_by_schedule(schedule.id)
 
-    return [timer_to_dto(timer, session, tz) for timer in timers]
+    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    schedule_read = None
+    if include_schedule:
+        schedule_read = ScheduleRead.model_validate(schedule)
+
+    tz_obj = parse_timezone(tz) if tz else None
+    return [
+        TimerRead.model_validate({
+            **timer.model_dump(),
+            "schedule": schedule_read
+        }).to_timezone(tz_obj)
+        for timer in timers
+    ]
 
 
 @router.get("/{schedule_id}/timers/active", response_model=TimerRead)
 async def get_active_timer(
         schedule: Schedule = Depends(valid_schedule_id),
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -208,11 +229,24 @@ async def get_active_timer(
     활성 타이머가 없으면 404를 반환합니다.
     """
     from app.domain.timer.exceptions import TimerNotFoundError
-    from app.api.v1.timers import timer_to_dto
+    from app.domain.schedule.schema.dto import ScheduleRead
+    from app.domain.timer.schema.dto import TimerRead
 
     timer_service = TimerService(session)
     timer = timer_service.get_active_timer(schedule.id)
     if not timer:
         raise TimerNotFoundError()
 
-    return timer_to_dto(timer, session, tz)
+    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    schedule_read = None
+    if include_schedule:
+        schedule_read = ScheduleRead.model_validate(schedule)
+
+    # Timer 모델을 TimerRead로 변환
+    timer_read = TimerRead.model_validate(timer)
+    if schedule_read:
+        timer_read.schedule = schedule_read
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj)
