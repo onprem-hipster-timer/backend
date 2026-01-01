@@ -36,6 +36,8 @@ def test_graphql_calendar_query(e2e_client):
                     endAt
                     createdAt
                     isRecurring
+                    parentId
+                    instanceStart
                 }
             }
         }
@@ -86,6 +88,8 @@ def test_graphql_calendar_query(e2e_client):
     assert "endAt" in event
     assert "createdAt" in event
     assert event["isRecurring"] is False
+    assert event["parentId"] is None
+    assert event["instanceStart"] is None
 
 
 @pytest.mark.e2e
@@ -110,6 +114,9 @@ def test_graphql_calendar_query_multiple_events(e2e_client):
                 date
                 events {
                     title
+                    isRecurring
+                    parentId
+                    instanceStart
                 }
             }
         }
@@ -148,6 +155,9 @@ def test_graphql_calendar_query_empty_range(e2e_client):
                 date
                 events {
                     title
+                    isRecurring
+                    parentId
+                    instanceStart
                 }
             }
         }
@@ -204,6 +214,9 @@ def test_graphql_calendar_query_cross_day_event(e2e_client):
                 date
                 events {
                     title
+                    isRecurring
+                    parentId
+                    instanceStart
                 }
             }
         }
@@ -347,6 +360,7 @@ def test_graphql_calendar_query_with_recurring_schedule(e2e_client):
                     title
                     isRecurring
                     parentId
+                    instanceStart
                 }
             }
         }
@@ -383,4 +397,10 @@ def test_graphql_calendar_query_with_recurring_schedule(e2e_client):
     # 첫 번째 일정은 isRecurring이 True여야 함
     if recurring_events:
         assert recurring_events[0]["isRecurring"] is True
+        # 반복 일정의 경우 parentId와 instanceStart 확인
+        # 첫 번째는 원본이므로 parentId가 None일 수 있음
+        # 인스턴스들은 parentId가 있고 instanceStart가 설정되어야 함
+        for event in recurring_events:
+            assert "parentId" in event
+            assert "instanceStart" in event
 

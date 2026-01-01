@@ -141,4 +141,9 @@ class Query(ScheduleQuery):
 
 
 # GraphQL 스키마 export
-schema = strawberry.Schema(query=Query)
+from app.core.error_handlers import GraphQLErrorHandlingExtension
+
+schema = strawberry.Schema(
+    query=Query,
+    extensions=[GraphQLErrorHandlingExtension],
+)
