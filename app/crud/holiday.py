@@ -10,8 +10,9 @@ import logging
 from datetime import datetime, UTC
 from typing import Optional
 
-from sqlalchemy import select, delete, extract
+from sqlalchemy import delete, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session
 
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
@@ -86,6 +87,31 @@ async def get_holidays_by_year(
     
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+# ============ 동기 조회 전용 (API 조회용) ============
+def get_holidays_by_year_sync(
+    session: Session, start_year: int, end_year: Optional[int] = None
+) -> list[HolidayModel]:
+    """
+    연도별 공휴일 조회 (단일 연도 또는 범위) - 동기 버전
+
+    - API 조회용 (외부 호출 없이 DB 조회만)
+    - commit/rollback은 호출자가 관리
+    """
+    if end_year is None:
+        end_year = start_year
+
+    if start_year == end_year:
+        stmt = select(HolidayModel).where(extract("year", HolidayModel.date) == start_year)
+    else:
+        stmt = select(HolidayModel).where(
+            extract("year", HolidayModel.date) >= start_year,
+            extract("year", HolidayModel.date) <= end_year,
+        )
+
+    result = session.exec(stmt)
+    return list(result.all())
 
 
 async def get_holiday_by_date(

@@ -8,6 +8,7 @@ lifespan 내부에서 실행될 async 태스크
 - Single Responsibility: 각 메서드는 하나의 책임만 담당
 - 메서드 분리로 재사용성 및 테스트 용이성 향상
 - 메서드 체이닝으로 가독성 향상
+- SyncGuard를 통해 동기화 중복 방지
 """
 import asyncio
 import logging
@@ -15,6 +16,7 @@ from datetime import datetime
 
 from app.db.session import async_session_maker
 from app.domain.holiday.service import HolidayService
+from app.domain.holiday.sync_guard import get_sync_guard
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +137,12 @@ class HolidayBackgroundTask:
 
     async def _sync_holidays(self, year: int, force_update: bool = False) -> None:
         """
-        특정 연도 공휴일 동기화 로직
+        특정 연도 공휴일 동기화 로직 (SyncGuard를 통해 중복 방지)
         
         객체지향 원칙 준수:
         - 각 단계를 별도 메서드로 분리
         - Service를 통해 모든 비즈니스 로직 처리
+        - SyncGuard를 통해 동기화 중복 방지
         
         해시가 중복되면 해당 연도는 수정을 시도하지 않음
         
@@ -147,11 +150,17 @@ class HolidayBackgroundTask:
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트 (초기화 시 사용)
         :raises Exception: 모든 예외를 그대로 전파
         """
-        async with async_session_maker() as session:
-            try:
-                service = HolidayService(session)
-                await service.sync_holidays_for_year(year, force_update)
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                raise
+        guard = get_sync_guard()
+
+        async def do_sync(y: int) -> None:
+            """실제 동기화 수행 (SyncGuard 콜백)"""
+            async with async_session_maker() as session:
+                try:
+                    service = HolidayService(session)
+                    await service.sync_holidays_for_year(y, force_update)
+                    await session.commit()
+                except Exception as e:
+                    await session.rollback()
+                    raise
+
+        await guard.sync_year(year, do_sync)

@@ -7,17 +7,21 @@ FastAPI Best Practices:
 - API 클라이언트를 사용하여 외부 API 호출
 - Domain Exception을 발생시켜 비즈니스 규칙 위반 표현
 """
+import asyncio
 import hashlib
 import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session
 
 from app.crud import holiday as crud
+from app.db.session import async_session_maker
+from app.domain.holiday import HolidayItem
 from app.domain.holiday.client import HolidayApiClient
-from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 from app.domain.holiday.exceptions import HolidayApiError, HolidayApiResponseError
+from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 
 logger = logging.getLogger(__name__)
 
@@ -377,3 +381,69 @@ class HolidayService:
         # 동기화 후 다시 DB에서 조회하여 반환 (성공한 연도만 포함)
         models = await crud.get_holidays_by_year(self.session, start_year, end_year)
         return [HolidayItem.model_validate(model) for model in models]
+
+
+class HolidayReadService:
+    """
+    Holiday 조회 전용 서비스 (동기)
+
+    - API 요청 시 DB 조회만 수행
+    - 동기화/API 호출은 배치/백그라운드에서 처리
+    """
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_holidays(self, start_year: int, end_year: Optional[int] = None) -> List[HolidayItem]:
+        if end_year is None:
+            end_year = start_year
+
+        models = crud.get_holidays_by_year_sync(self.session, start_year, end_year)
+        return [HolidayItem.model_validate(model) for model in models]
+
+
+    async def get_with_sync_option(
+        self,
+        start_year: int,
+        end_year: Optional[int],
+        sync_if_missing: bool,
+    ) -> list[HolidayItem]:
+        """
+        조회 후, 필요 시 내부에서 비동기 동기화를 스케줄
+
+        - 조회는 동기 세션으로 처리
+        - 데이터가 없고 sync_if_missing=True이면 여기서 바로 create_task로 스케줄
+        - 호출자는 반환된 조회 결과만 사용
+        """
+        holidays = self.get_holidays(start_year, end_year)
+
+        if holidays or not sync_if_missing:
+            return holidays
+
+        asyncio.create_task(sync_holidays_async(start_year, end_year))
+        logger.info(f"Background holiday sync scheduled for years {start_year}-{end_year}")
+        return holidays
+
+
+async def sync_holidays_async(start_year: int, end_year: int) -> None:
+    """
+    공휴일 동기화를 비동기로 수행 (배치/백그라운드용)
+
+    SyncGuard를 사용하여 중복 실행 방지 및 범위 완료 추적
+    """
+    from app.domain.holiday.sync_guard import get_sync_guard
+
+    guard = get_sync_guard()
+
+    async def sync_single_year(year: int) -> None:
+        """단일 연도 동기화 (SyncGuard 콜백용)"""
+        async with async_session_maker() as session:
+            service = HolidayService(session)
+            try:
+                await service.sync_holidays_for_year(year, force_update=True)
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                raise
+
+    await guard.sync_years(start_year, end_year, sync_single_year)
