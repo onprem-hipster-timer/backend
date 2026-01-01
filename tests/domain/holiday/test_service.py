@@ -6,17 +6,37 @@ HolidayService와 HolidayReadService 테스트
 import pytest
 from datetime import datetime
 from sqlmodel import Session
+from zoneinfo import ZoneInfo
+from datetime import timezone as tz
 
 from app.domain.holiday.service import HolidayService, HolidayReadService
 from app.domain.holiday.schema.dto import HolidayItem
 from app.domain.holiday.model import HolidayModel
 
 
+def _create_holiday_date_range(locdate: str) -> tuple[datetime, datetime]:
+    """한국 표준시 기준 24시간 범위 생성"""
+    year = int(locdate[0:4])
+    month = int(locdate[4:6])
+    day = int(locdate[6:8])
+    
+    kst = ZoneInfo("Asia/Seoul")
+    kst_start = datetime(year, month, day, 0, 0, 0, 0, tzinfo=kst)
+    kst_end = datetime(year, month, day, 23, 59, 59, 999999, tzinfo=kst)
+    
+    utc_start = kst_start.astimezone(tz.utc).replace(tzinfo=None)
+    utc_end = kst_end.astimezone(tz.utc).replace(tzinfo=None)
+    
+    return (utc_start, utc_end)
+
+
 def test_holiday_read_service_get_holidays_single_year(test_session):
     """HolidayReadService 단일 연도 조회 테스트"""
     # 테스트 데이터 준비
+    start_date, end_date = _create_holiday_date_range("20240101")
     holiday = HolidayModel(
-        date=datetime(2024, 1, 1),
+        start_date=start_date,
+        end_date=end_date,
         dateName="신정",
         isHoliday=True,
         dateKind="국경일",
@@ -36,24 +56,30 @@ def test_holiday_read_service_get_holidays_single_year(test_session):
 def test_holiday_read_service_get_holidays_range(test_session):
     """HolidayReadService 범위 조회 테스트"""
     # 2024년 데이터
+    start1, end1 = _create_holiday_date_range("20240101")
+    start2, end2 = _create_holiday_date_range("20240301")
     holidays_2024 = [
         HolidayModel(
-            date=datetime(2024, 1, 1),
+            start_date=start1,
+            end_date=end1,
             dateName="신정",
             isHoliday=True,
             dateKind="국경일",
         ),
         HolidayModel(
-            date=datetime(2024, 3, 1),
+            start_date=start2,
+            end_date=end2,
             dateName="삼일절",
             isHoliday=True,
             dateKind="국경일",
         ),
     ]
     # 2025년 데이터
+    start3, end3 = _create_holiday_date_range("20250101")
     holidays_2025 = [
         HolidayModel(
-            date=datetime(2025, 1, 1),
+            start_date=start3,
+            end_date=end3,
             dateName="신정",
             isHoliday=True,
             dateKind="국경일",
@@ -83,8 +109,10 @@ def test_holiday_read_service_get_holidays_empty(test_session):
 
 def test_holiday_read_service_get_holidays_default_end_year(test_session):
     """HolidayReadService end_year 미지정 시 start_year로 처리 테스트"""
+    start_date, end_date = _create_holiday_date_range("20240101")
     holiday = HolidayModel(
-        date=datetime(2024, 1, 1),
+        start_date=start_date,
+        end_date=end_date,
         dateName="신정",
         isHoliday=True,
         dateKind="국경일",

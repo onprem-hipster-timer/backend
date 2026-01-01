@@ -213,18 +213,21 @@ class HolidayService:
         :param day: 일 (DD)
         :return: 공휴일이면 True, 아니면 False
         """
-        # 해당 월의 국경일 조회
-        holidays = await self.get_holidays_by_month(year, month)
-
+        from app.domain.dateutil.service import parse_locdate_to_datetime_range
+        from app.crud import holiday as crud
+        
         # 날짜 형식 변환 (YYYYMMDD)
-        target_date = f"{year}{month:02d}{day:02d}"
-
-        # 해당 날짜의 국경일 찾기
-        for holiday in holidays:
-            if holiday.locdate == target_date:
-                return holiday.isHoliday
-
-        return False
+        target_date_str = f"{year}{month:02d}{day:02d}"
+        
+        # 한국 표준시 기준 날짜 범위로 변환
+        start_date, end_date = parse_locdate_to_datetime_range(target_date_str)
+        
+        # 범위 내에 포함되는 공휴일 조회 (start_date를 기준으로 조회)
+        # 실제로는 start_date가 범위 내에 있는지 확인해야 하므로
+        # DB에서 직접 조회하는 것이 더 정확함
+        holiday = await crud.get_holiday_by_date(self.session, start_date)
+        
+        return holiday.isHoliday if holiday else False
 
     async def sync_holidays_for_year(
             self, year: int, force_update: bool = False

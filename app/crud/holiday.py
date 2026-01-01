@@ -17,21 +17,9 @@ from sqlmodel import Session
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
+from app.domain.dateutil.service import parse_locdate_to_datetime_range
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_locdate_to_datetime(locdate: str) -> datetime:
-    """
-    locdate 문자열(YYYYMMDD)을 datetime으로 변환
-    
-    :param locdate: 날짜 문자열 (YYYYMMDD)
-    :return: datetime 객체 (UTC naive)
-    """
-    year = int(locdate[0:4])
-    month = int(locdate[4:6])
-    day = int(locdate[6:8])
-    return datetime(year, month, day, tzinfo=None)
 
 
 def _parse_datekind_to_label(datekind_str: str) -> str:
@@ -76,13 +64,13 @@ async def get_holidays_by_year(
         end_year = start_year
     
     if start_year == end_year:
-        # 단일 연도 조회
-        stmt = select(HolidayModel).where(extract("year", HolidayModel.date) == start_year)
+        # 단일 연도 조회: start_date의 연도가 해당 연도인 경우
+        stmt = select(HolidayModel).where(extract("year", HolidayModel.start_date) == start_year)
     else:
-        # 범위 조회
+        # 범위 조회: start_date의 연도가 범위 내에 있는 경우
         stmt = select(HolidayModel).where(
-            extract("year", HolidayModel.date) >= start_year,
-            extract("year", HolidayModel.date) <= end_year
+            extract("year", HolidayModel.start_date) >= start_year,
+            extract("year", HolidayModel.start_date) <= end_year
         )
     
     result = await session.execute(stmt)
@@ -104,11 +92,11 @@ def get_holidays_by_year_sync(
         end_year = start_year
 
     if start_year == end_year:
-        stmt = select(HolidayModel).where(extract("year", HolidayModel.date) == start_year)
+        stmt = select(HolidayModel).where(extract("year", HolidayModel.start_date) == start_year)
     else:
         stmt = select(HolidayModel).where(
-            extract("year", HolidayModel.date) >= start_year,
-            extract("year", HolidayModel.date) <= end_year,
+            extract("year", HolidayModel.start_date) >= start_year,
+            extract("year", HolidayModel.start_date) <= end_year,
         )
 
     result = session.execute(stmt)
@@ -119,18 +107,22 @@ async def get_holiday_by_date(
         session: AsyncSession, date: datetime
 ) -> Optional[HolidayModel]:
     """
-    날짜로 공휴일 조회
+    날짜로 공휴일 조회 (날짜가 범위 내에 포함되는 공휴일 조회)
     
     :param session: AsyncSession
     :param date: 날짜 (datetime)
     :return: 공휴일 모델 또는 None
     """
-    # 날짜를 UTC naive로 변환 (시간 부분 제거)
-    date_naive = date.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 날짜를 UTC naive로 변환
+    date_naive = date.replace(hour=0, minute=0, second=0, microsecond=0) if date.tzinfo is None else date
     if date_naive.tzinfo:
         date_naive = date_naive.astimezone(UTC).replace(tzinfo=None)
 
-    stmt = select(HolidayModel).where(HolidayModel.date == date_naive)
+    # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
+    stmt = select(HolidayModel).where(
+        HolidayModel.start_date <= date_naive,
+        HolidayModel.end_date >= date_naive
+    )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -168,21 +160,22 @@ async def save_holidays(
 
     # 2. 기존 데이터 삭제 (해당 연도의 모든 데이터)
     delete_stmt = delete(HolidayModel).where(
-        extract("year", HolidayModel.date) == year
+        extract("year", HolidayModel.start_date) == year
     )
     await session.execute(delete_stmt)
     await session.flush()  # 삭제를 즉시 DB에 반영
 
     # 3. 새 데이터 삽입
     for item in holidays:
-        # locdate 문자열을 datetime으로 변환
-        date = _parse_locdate_to_datetime(item.locdate)
+        # locdate 문자열을 한국 표준시 기준 24시간 범위로 변환
+        start_date, end_date = parse_locdate_to_datetime_range(item.locdate)
 
         # dateKind를 label로 변환 ("01" -> "국경일")
         date_kind_label = _parse_datekind_to_label(item.dateKind)
 
         holiday = HolidayModel(
-            date=date,
+            start_date=start_date,
+            end_date=end_date,
             dateName=item.dateName,
             isHoliday=item.isHoliday,
             dateKind=date_kind_label,
