@@ -14,6 +14,7 @@ from sqlalchemy import delete, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
+from app.db.session import async_session_maker
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
@@ -51,6 +52,18 @@ async def get_holiday_hash(session: AsyncSession, year: int) -> Optional[str]:
     hash_model = result.scalar_one_or_none()
     return hash_model.hash_value if hash_model else None
 
+
+async def get_existing_years(session: AsyncSession) -> set[int]:
+    """
+    해시 테이블에 존재하는 모든 년도 조회
+    
+    :param session: AsyncSession
+    :return: 존재하는 년도 집합
+    """
+    stmt = select(HolidayHashModel.year)
+    result = await session.execute(stmt)
+    years = result.scalars().all()
+    return set(years)
 
 async def get_holidays_by_year(
     session: AsyncSession, start_year: int, end_year: Optional[int] = None

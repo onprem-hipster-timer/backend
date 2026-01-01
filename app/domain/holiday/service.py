@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
 from app.crud import holiday as crud
-from app.db.session import async_session_maker
 from app.domain.holiday import HolidayItem
 from app.domain.holiday.client import HolidayApiClient
 from app.domain.holiday.exceptions import HolidayApiError, HolidayApiResponseError
@@ -301,6 +300,14 @@ class HolidayService:
             f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
         )
 
+    async def get_existing_years(self) -> set[int]:
+        """
+        해시 테이블에 존재하는 모든 년도 조회
+        
+        :return: 존재하는 년도 집합
+        """
+        return await crud.get_existing_years(self.session)
+
 
 class HolidayReadService:
     """
@@ -339,30 +346,7 @@ class HolidayReadService:
         if holidays or not sync_if_missing:
             return holidays
 
+        from app.background.tasks import sync_holidays_async
         asyncio.create_task(sync_holidays_async(start_year, end_year))
         logger.info(f"Background holiday sync scheduled for years {start_year}-{end_year}")
         return holidays
-
-
-async def sync_holidays_async(start_year: int, end_year: int) -> None:
-    """
-    공휴일 동기화를 비동기로 수행 (배치/백그라운드용)
-
-    SyncGuard를 사용하여 중복 실행 방지 및 범위 완료 추적
-    """
-    from app.domain.holiday.sync_guard import get_sync_guard
-
-    guard = get_sync_guard()
-
-    async def sync_single_year(year: int) -> None:
-        """단일 연도 동기화 (SyncGuard 콜백용)"""
-        async with async_session_maker() as session:
-            service = HolidayService(session)
-            try:
-                await service.sync_holidays_for_year(year, force_update=True)
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                raise
-
-    await guard.sync_years(start_year, end_year, sync_single_year)
