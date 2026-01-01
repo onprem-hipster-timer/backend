@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     GRAPHQL_ENABLE_PLAYGROUND: bool = True  # 개발 환경에서만 True
     GRAPHQL_ENABLE_INTROSPECTION: bool = True  # 개발 환경에서만 True
 
+    # 국경일 정보 API (한국천문연구원)
+    HOLIDAY_API_BASE_URL: str = "http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
+    HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
+
     class Config:
         env_file = ".env"
         case_sensitive = True
