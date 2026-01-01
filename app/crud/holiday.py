@@ -10,19 +10,17 @@ import logging
 from datetime import datetime, UTC
 from typing import Optional
 
-from sqlalchemy import delete, extract, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
-from app.db.session import async_session_maker
+from app.domain.dateutil.service import (
+    parse_locdate_to_datetime_range,
+    get_year_range_utc,
+)
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
-from app.domain.dateutil.service import (
-    parse_locdate_to_datetime_range,
-    ensure_utc_naive,
-    get_year_range_utc,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +63,9 @@ async def get_existing_years(session: AsyncSession) -> set[int]:
     years = result.scalars().all()
     return set(years)
 
+
 async def get_holidays_by_year(
-    session: AsyncSession, start_year: int, end_year: Optional[int] = None
+        session: AsyncSession, start_year: int, end_year: Optional[int] = None
 ) -> list[HolidayModel]:
     """
     연도별 공휴일 조회 (단일 연도 또는 범위)
@@ -83,24 +82,24 @@ async def get_holidays_by_year(
     # end_year가 지정되지 않으면 start_year과 동일하게 처리
     if end_year is None:
         end_year = start_year
-    
+
     # 한국 표준시 기준 연도 범위를 UTC로 변환
     range_start, _ = get_year_range_utc(start_year)
     _, range_end = get_year_range_utc(end_year)
-    
+
     # start_date가 UTC 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date >= range_start,
         HolidayModel.start_date <= range_end
     )
-    
+
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
 # ============ 동기 조회 전용 (API 조회용) ============
 def get_holidays_by_year_sync(
-    session: Session, start_year: int, end_year: Optional[int] = None
+        session: Session, start_year: int, end_year: Optional[int] = None
 ) -> list[HolidayModel]:
     """
     연도별 공휴일 조회 (단일 연도 또는 범위) - 동기 버전
@@ -118,7 +117,7 @@ def get_holidays_by_year_sync(
     # 한국 표준시 기준 연도 범위를 UTC로 변환
     range_start, _ = get_year_range_utc(start_year)
     _, range_end = get_year_range_utc(end_year)
-    
+
     # start_date가 UTC 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date >= range_start,
@@ -144,10 +143,10 @@ def get_holiday_by_date_sync(
     :return: 공휴일 모델 또는 None
     """
     from app.domain.dateutil.service import ensure_utc_naive
-    
+
     # 날짜를 UTC naive로 변환
     date_naive = ensure_utc_naive(date)
-    
+
     # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date <= date_naive,
@@ -172,7 +171,7 @@ async def get_holiday_by_date(
     :return: 공휴일 모델 또는 None
     """
     from app.domain.dateutil.service import ensure_utc_naive
-    
+
     # 날짜를 UTC naive로 변환
     date_naive = ensure_utc_naive(date)
 

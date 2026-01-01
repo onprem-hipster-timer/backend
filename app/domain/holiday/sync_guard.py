@@ -34,9 +34,9 @@ class HolidaySyncGuard:
         self._in_flight: dict[int, asyncio.Event] = {}  # year -> completion event
 
     async def sync_year(
-        self,
-        year: int,
-        sync_func: Callable[[int], Awaitable[None]],
+            self,
+            year: int,
+            sync_func: Callable[[int], Awaitable[None]],
     ) -> None:
         """
         단일 연도 동기화 (중복 방지)
@@ -77,10 +77,10 @@ class HolidaySyncGuard:
                 event.set()
 
     async def sync_years(
-        self,
-        start_year: int,
-        end_year: int,
-        sync_func: Callable[[int], Awaitable[None]],
+            self,
+            start_year: int,
+            end_year: int,
+            sync_func: Callable[[int], Awaitable[None]],
     ) -> None:
         """
         범위 동기화 (각 연도별 중복 방지 + 전체 완료 추적)
@@ -125,4 +125,3 @@ def get_sync_guard() -> HolidaySyncGuard:
     if _sync_guard is None:
         _sync_guard = HolidaySyncGuard()
     return _sync_guard
-

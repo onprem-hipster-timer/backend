@@ -11,15 +11,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import List, Optional, Any
+from typing import List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
 from app.crud import holiday as crud
-from app.domain.holiday import HolidayItem
 from app.domain.holiday.client import HolidayApiClient
-from app.domain.holiday.exceptions import HolidayApiError, HolidayApiResponseError
 from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 
 logger = logging.getLogger(__name__)
@@ -57,7 +55,7 @@ class HolidayService:
             holidays,
             key=lambda h: (h.locdate, h.dateName)
         )
-        
+
         # JSON 직렬화 (정렬 필수 - 일관성 보장)
         holidays_json = json.dumps(
             [h.model_dump() for h in sorted_holidays],
@@ -214,18 +212,18 @@ class HolidayService:
         """
         from app.domain.dateutil.service import parse_locdate_to_datetime_range
         from app.crud import holiday as crud
-        
+
         # 날짜 형식 변환 (YYYYMMDD)
         target_date_str = f"{year}{month:02d}{day:02d}"
-        
+
         # 한국 표준시 기준 날짜 범위로 변환
         start_date, end_date = parse_locdate_to_datetime_range(target_date_str)
-        
+
         # 범위 내에 포함되는 공휴일 조회 (start_date를 기준으로 조회)
         # 실제로는 start_date가 범위 내에 있는지 확인해야 하므로
         # DB에서 직접 조회하는 것이 더 정확함
         holiday = await crud.get_holiday_by_date(self.session, start_date)
-        
+
         return holiday.isHoliday if holiday else False
 
     async def sync_holidays_for_year(
@@ -327,12 +325,11 @@ class HolidayReadService:
         models = crud.get_holidays_by_year_sync(self.session, start_year, end_year)
         return [HolidayItem.model_validate(model) for model in models]
 
-
     async def get_with_sync_option(
-        self,
-        start_year: int,
-        end_year: Optional[int],
-        sync_if_missing: bool,
+            self,
+            start_year: int,
+            end_year: Optional[int],
+            sync_if_missing: bool,
     ) -> list[HolidayItem]:
         """
         조회 후, 필요 시 내부에서 비동기 동기화를 스케줄

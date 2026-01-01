@@ -33,7 +33,7 @@ class HolidayModel(UUIDBase, TimestampMixin, table=True):
         # UTC naive datetime을 한국 시간으로 변환하여 날짜 추출
         from zoneinfo import ZoneInfo
         from datetime import timezone as tz
-        
+
         # UTC로 가정하고 한국 시간으로 변환
         utc_aware = self.start_date.replace(tzinfo=tz.utc)
         kst_aware = utc_aware.astimezone(ZoneInfo("Asia/Seoul"))

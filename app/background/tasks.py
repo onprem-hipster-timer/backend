@@ -127,26 +127,26 @@ class HolidayBackgroundTask:
         async with async_session_maker() as session:
             service = HolidayService(session)
             existing_years = await service.get_existing_years()
-        
+
         years_to_sync = list(range(self.INITIAL_YEAR, current_year + 1))
-        
+
         # 해시 테이블에 존재하지 않는 년도만 필터링
         years_to_initialize = [year for year in years_to_sync if year not in existing_years]
         skipped_count = len(years_to_sync) - len(years_to_initialize)
-        
+
         if skipped_count > 0:
             logger.info(
                 f"Skipping {skipped_count} years that already exist in hash table: "
                 f"{sorted(existing_years)}"
             )
-        
+
         if not years_to_initialize:
             logger.info(
                 f"All years from {self.INITIAL_YEAR} to {current_year} already exist in hash table. "
                 f"Skipping initialization."
             )
             return
-        
+
         total_years = len(years_to_initialize)
         logger.info(
             f"Initializing historical holiday data from {self.INITIAL_YEAR} to {current_year} "

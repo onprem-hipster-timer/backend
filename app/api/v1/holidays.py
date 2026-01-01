@@ -4,7 +4,6 @@ Holiday Router
 조회는 동기 DB 세션을 사용하고, 데이터가 없을 때만 비동기 동기화를
 백그라운드 태스크로 트리거합니다.
 """
-import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -22,13 +21,13 @@ router = APIRouter(prefix="/holidays", tags=["Holidays"])
 
 @router.get("", response_model=list[HolidayItem])
 async def get_holidays(
-    year: Optional[int] = Query(None, description="조회 연도 (YYYY)"),
-    start_year: Optional[int] = Query(None, description="시작 연도 (YYYY)"),
-    end_year: Optional[int] = Query(None, description="종료 연도 (YYYY)"),
-    sync_if_missing: bool = Query(
-        False, description="데이터가 없을 경우 백그라운드에서 동기화 실행"
-    ),
-    session: Session = Depends(get_db),
+        year: Optional[int] = Query(None, description="조회 연도 (YYYY)"),
+        start_year: Optional[int] = Query(None, description="시작 연도 (YYYY)"),
+        end_year: Optional[int] = Query(None, description="종료 연도 (YYYY)"),
+        sync_if_missing: bool = Query(
+            False, description="데이터가 없을 경우 백그라운드에서 동기화 실행"
+        ),
+        session: Session = Depends(get_db),
 ):
     """
     공휴일 조회 (DB에 있는 데이터만 반환)
@@ -50,4 +49,3 @@ async def get_holidays(
     holidays = await read_service.get_with_sync_option(s, e, sync_if_missing)
 
     return holidays
-

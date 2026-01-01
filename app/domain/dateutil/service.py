@@ -187,24 +187,24 @@ def parse_locdate_to_datetime_range(locdate: str) -> tuple[datetime, datetime]:
     """
     if len(locdate) != 8:
         raise ValueError(f"Invalid locdate format: {locdate}. Expected YYYYMMDD format (8 digits)")
-    
+
     try:
         year = int(locdate[0:4])
         month = int(locdate[4:6])
         day = int(locdate[6:8])
-        
+
         # 한국 표준시(KST, UTC+9) 기준으로 날짜 해석
         kst = ZoneInfo("Asia/Seoul")
-        
+
         # 시작 시간: 한국 시간 기준 해당 날짜 00:00:00
         kst_start = datetime(year, month, day, 0, 0, 0, 0, tzinfo=kst)
         # 종료 시간: 한국 시간 기준 해당 날짜 23:59:59.999999
         kst_end = datetime(year, month, day, 23, 59, 59, 999999, tzinfo=kst)
-        
+
         # UTC로 변환 후 naive datetime으로 변환 (ensure_utc_naive 사용)
         utc_start = ensure_utc_naive(kst_start)
         utc_end = ensure_utc_naive(kst_end)
-        
+
         return (utc_start, utc_end)
     except (ValueError, IndexError) as e:
         raise ValueError(f"Invalid locdate format: {locdate}. {str(e)}")
