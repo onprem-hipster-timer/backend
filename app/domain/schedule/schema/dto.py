@@ -45,27 +45,35 @@ class ScheduleRead(ScheduleCreate):
     id: UUID
     created_at: datetime
 
-    def to_timezone(self, tz: timezone | str | None) -> "ScheduleRead":
+    def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "ScheduleRead":
         """
         UTC naive datetime 필드를 지정된 타임존의 aware datetime으로 변환
         
         :param tz: 타임존 (timezone 객체, 문자열, 또는 None)
+        :param validate: datetime 필드를 UTC naive로 검증할지 여부 (기본값: True)
+                         False로 설정 시 self가 이미 검증되었다고 가정합니다.
         :return: 타임존이 변환된 새로운 ScheduleRead 인스턴스
         """
         if tz is None:
             return self
         
+        # datetime 필드만 타임존 변환
+        update_data = {}
+        for field_name in ["start_time", "end_time", "recurrence_end", "created_at"]:
+            value = getattr(self, field_name, None)
+            if value is not None and isinstance(value, datetime):
+                if validate:
+                    # validate=True: UTC naive로 보장 (self가 검증되지 않았을 수도 있음)
+                    naive_value = ensure_utc_naive(value)
+                    update_data[field_name] = convert_utc_naive_to_timezone(naive_value, tz)
+                else:
+                    # validate=False: 이미 검증된 것으로 가정
+                    update_data[field_name] = convert_utc_naive_to_timezone(value, tz)
+        
+        # model_construct 사용 (변환된 aware datetime이 validator를 통과하지 못하므로)
         data = self.model_dump()
-        
-        # 타임존 변환: UTC naive → 지정된 타임존 aware
-        datetime_fields = ["start_time", "end_time", "recurrence_end", "created_at"]
-        for field in datetime_fields:
-            if data.get(field) is not None:
-                dt = data[field]
-                if isinstance(dt, datetime):
-                    data[field] = convert_utc_naive_to_timezone(dt, tz)
-        
-        return ScheduleRead(**data)
+        data.update(update_data)
+        return ScheduleRead.model_construct(**data)
 
 
 class ScheduleUpdate(CustomModel):

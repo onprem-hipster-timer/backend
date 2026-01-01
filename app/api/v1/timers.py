@@ -53,21 +53,24 @@ async def create_timer(
     service = TimerService(session)
     timer = service.create_timer(data)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.get("/{timer_id}", response_model=TimerRead)
@@ -93,21 +96,24 @@ async def get_timer(
     service = TimerService(session)
     timer = service.get_timer(timer.id)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.patch("/{timer_id}", response_model=TimerRead)
@@ -131,21 +137,24 @@ async def update_timer(
     service = TimerService(session)
     timer = service.update_timer(timer_id, data)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.patch("/{timer_id}/pause", response_model=TimerRead)
@@ -168,21 +177,24 @@ async def pause_timer(
     service = TimerService(session)
     timer = service.pause_timer(timer_id)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.patch("/{timer_id}/resume", response_model=TimerRead)
@@ -205,21 +217,24 @@ async def resume_timer(
     service = TimerService(session)
     timer = service.resume_timer(timer_id)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.post("/{timer_id}/stop", response_model=TimerRead)
@@ -242,21 +257,24 @@ async def stop_timer(
     service = TimerService(session)
     timer = service.stop_timer(timer_id)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_service = ScheduleService(session)
         schedule = schedule_service.get_schedule(timer.schedule_id)
-        schedule_read = ScheduleRead.model_validate(schedule)
+        if schedule:
+            schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.delete("/{timer_id}", status_code=status.HTTP_200_OK)

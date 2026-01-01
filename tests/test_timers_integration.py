@@ -148,3 +148,80 @@ def test_timer_schedule_relationship_integration(test_session):
     retrieved_timer = timer_service.get_timer(timer.id)
     assert retrieved_timer.schedule_id == schedule.id
 
+
+@pytest.mark.integration
+def test_timer_include_schedule_false_integration(test_session):
+    """타이머 조회 시 include_schedule=False일 때 schedule이 None인지 통합 테스트"""
+    from app.domain.timer.schema.dto import TimerRead
+    from app.domain.schedule.schema.dto import ScheduleRead
+    
+    # 1. 일정 생성
+    schedule_service = ScheduleService(test_session)
+    schedule_data = ScheduleCreate(
+        title="include_schedule False 테스트 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+    )
+    schedule = schedule_service.create_schedule(schedule_data)
+    
+    # 2. 타이머 생성
+    timer_service = TimerService(test_session)
+    timer_data = TimerCreate(
+        schedule_id=schedule.id,
+        title="include_schedule False 테스트 타이머",
+        allocated_duration=1800,
+    )
+    timer = timer_service.create_timer(timer_data)
+    
+    # 3. include_schedule=False로 TimerRead 생성
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=False,
+    )
+    
+    # 4. schedule이 None인지 확인
+    assert timer_read.schedule is None
+    assert timer_read.id == timer.id
+    assert timer_read.schedule_id == schedule.id
+
+
+@pytest.mark.integration
+def test_timer_include_schedule_true_integration(test_session):
+    """타이머 조회 시 include_schedule=True일 때 schedule이 포함되는지 통합 테스트"""
+    from app.domain.timer.schema.dto import TimerRead
+    from app.domain.schedule.schema.dto import ScheduleRead
+    
+    # 1. 일정 생성
+    schedule_service = ScheduleService(test_session)
+    schedule_data = ScheduleCreate(
+        title="include_schedule True 테스트 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+    )
+    schedule = schedule_service.create_schedule(schedule_data)
+    
+    # 2. 타이머 생성
+    timer_service = TimerService(test_session)
+    timer_data = TimerCreate(
+        schedule_id=schedule.id,
+        title="include_schedule True 테스트 타이머",
+        allocated_duration=1800,
+    )
+    timer = timer_service.create_timer(timer_data)
+    
+    # 3. 스케줄 정보 조회
+    schedule_read = ScheduleRead.model_validate(schedule)
+    
+    # 4. include_schedule=True로 TimerRead 생성
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=True,
+        schedule=schedule_read,
+    )
+    
+    # 5. schedule이 포함되어 있는지 확인
+    assert timer_read.schedule is not None
+    assert timer_read.schedule.id == schedule.id
+    assert timer_read.schedule.title == schedule.title
+    assert timer_read.id == timer.id
+    assert timer_read.schedule_id == schedule.id

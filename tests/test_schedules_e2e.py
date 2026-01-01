@@ -206,3 +206,133 @@ def test_create_schedule_invalid_time_e2e(e2e_client):
     # Pydantic validation이 실패해야 함
     assert response.status_code == 422
 
+
+@pytest.mark.e2e
+def test_create_schedule_with_timezone_e2e(e2e_client):
+    """타임존 변환을 포함한 일정 생성 E2E 테스트"""
+    # UTC로 일정 생성
+    response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "타임존 테스트 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+        params={"timezone": "Asia/Seoul"},
+    )
+    
+    assert response.status_code == 201
+    data = response.json()
+    
+    # 타임존이 변환되어야 함 (UTC 10:00 -> KST 19:00)
+    # Python의 strftime %z는 +0900 형식(콜론 없음)을 생성
+    start_time = data["start_time"]
+    assert "+0900" in start_time or start_time.endswith("+0900")
+    # 시간이 19:00으로 변환되었는지 확인
+    assert "19:00:00" in start_time
+    
+    # created_at도 타임존 변환되어야 함
+    created_at = data["created_at"]
+    assert "+0900" in created_at or created_at.endswith("+0900")
+
+
+@pytest.mark.e2e
+def test_get_schedule_with_timezone_e2e(e2e_client):
+    """타임존 변환을 포함한 일정 조회 E2E 테스트"""
+    # 1. 일정 생성 (UTC)
+    create_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "타임존 조회 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    assert create_response.status_code == 201
+    schedule_id = create_response.json()["id"]
+    
+    # 2. 타임존 없이 조회 (UTC 형식으로 직렬화, +0000)
+    get_response_utc = e2e_client.get(f"/v1/schedules/{schedule_id}")
+    assert get_response_utc.status_code == 200
+    utc_data = get_response_utc.json()
+    # UTC 형식으로 직렬화됨 (+0000)
+    assert "+0000" in utc_data["start_time"] or utc_data["start_time"].endswith("+0000")
+    # 원본 시간 값이 유지되어야 함
+    assert "10:00:00" in utc_data["start_time"]
+    
+    # 3. Asia/Seoul 타임존으로 조회
+    get_response_kst = e2e_client.get(
+        f"/v1/schedules/{schedule_id}",
+        params={"timezone": "Asia/Seoul"}
+    )
+    assert get_response_kst.status_code == 200
+    kst_data = get_response_kst.json()
+    # KST로 변환되어야 함 (+0900 형식, Python의 %z는 콜론 없음)
+    assert "+0900" in kst_data["start_time"] or kst_data["start_time"].endswith("+0900")
+    # 시간이 19:00으로 변환되었는지 확인 (UTC 10:00 + 9시간)
+    assert "19:00:00" in kst_data["start_time"]
+    
+    # 4. +09:00 형식으로 조회
+    get_response_offset = e2e_client.get(
+        f"/v1/schedules/{schedule_id}",
+        params={"timezone": "+09:00"}
+    )
+    assert get_response_offset.status_code == 200
+    offset_data = get_response_offset.json()
+    # +0900 형식으로 직렬화됨 (Python의 %z는 콜론 없음)
+    assert "+0900" in offset_data["start_time"] or offset_data["start_time"].endswith("+0900")
+
+
+@pytest.mark.e2e
+def test_get_all_schedules_with_timezone_e2e(e2e_client):
+    """타임존 변환을 포함한 모든 일정 조회 E2E 테스트"""
+    # 1. 일정 생성
+    e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "타임존 리스트 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    
+    # 2. 타임존으로 모든 일정 조회
+    response = e2e_client.get("/v1/schedules", params={"timezone": "Asia/Seoul"})
+    assert response.status_code == 200
+    schedules = response.json()
+    assert isinstance(schedules, list)
+    assert len(schedules) > 0
+    
+    # 모든 일정의 datetime 필드가 타임존 변환되어야 함
+    # Python의 strftime %z는 +0900 형식(콜론 없음)을 생성
+    for schedule in schedules:
+        if schedule.get("start_time"):
+            assert "+0900" in schedule["start_time"] or schedule["start_time"].endswith("+0900")
+
+
+@pytest.mark.e2e
+def test_update_schedule_with_timezone_e2e(e2e_client):
+    """타임존 변환을 포함한 일정 업데이트 E2E 테스트"""
+    # 1. 일정 생성
+    create_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "타임존 업데이트 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    assert create_response.status_code == 201
+    schedule_id = create_response.json()["id"]
+    
+    # 2. 타임존으로 업데이트
+    update_response = e2e_client.patch(
+        f"/v1/schedules/{schedule_id}",
+        json={"title": "업데이트된 제목"},
+        params={"timezone": "Asia/Seoul"},
+    )
+    assert update_response.status_code == 200
+    data = update_response.json()
+    assert data["title"] == "업데이트된 제목"
+    # 타임존 변환 확인 (+0900 형식, Python의 %z는 콜론 없음)
+    assert "+0900" in data["start_time"] or data["start_time"].endswith("+0900")

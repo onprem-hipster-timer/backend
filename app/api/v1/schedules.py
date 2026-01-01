@@ -194,17 +194,18 @@ async def get_schedule_timers(
     timer_service = TimerService(session)
     timers = timer_service.get_timers_by_schedule(schedule.id)
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_read = ScheduleRead.model_validate(schedule)
 
     tz_obj = parse_timezone(tz) if tz else None
     return [
-        TimerRead.model_validate({
-            **timer.model_dump(),
-            "schedule": schedule_read
-        }).to_timezone(tz_obj)
+        TimerRead.from_model(
+            timer,
+            include_schedule=include_schedule,
+            schedule=schedule_read,
+        ).to_timezone(tz_obj, validate=False)
         for timer in timers
     ]
 
@@ -237,16 +238,18 @@ async def get_active_timer(
     if not timer:
         raise TimerNotFoundError()
 
-    # Schedule 정보 가져오기 (include_schedule이 True인 경우만)
+    # Schedule 정보 처리
     schedule_read = None
     if include_schedule:
         schedule_read = ScheduleRead.model_validate(schedule)
 
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.model_validate(timer)
-    if schedule_read:
-        timer_read.schedule = schedule_read
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_schedule=include_schedule,
+        schedule=schedule_read,
+    )
 
-    # 타임존 변환
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
-    return timer_read.to_timezone(tz_obj)
+    return timer_read.to_timezone(tz_obj, validate=False)
