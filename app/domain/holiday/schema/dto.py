@@ -162,6 +162,7 @@ class HolidayQuery(CustomModel):
     solYear: int  # 조회 연도 (YYYY)
     solMonth: Optional[int] = None  # 조회 월 (MM)
     numOfRows: Optional[int] = None  # 페이지당 결과 수 (기본 10)
+    pageNo: Optional[int] = None  # 페이지 번호 (기본 1)
 
     @field_validator("solYear")
     @classmethod
@@ -185,5 +186,13 @@ class HolidayQuery(CustomModel):
         """페이지당 결과 수 검증"""
         if v is not None and v < 1:
             raise ValueError("numOfRows must be greater than 0")
+        return v
+
+    @field_validator("pageNo")
+    @classmethod
+    def validate_page_no(cls, v: Optional[int]) -> Optional[int]:
+        """페이지 번호 검증"""
+        if v is not None and v < 1:
+            raise ValueError("pageNo must be greater than 0")
         return v
 

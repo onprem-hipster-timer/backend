@@ -65,6 +65,7 @@ class HolidayService:
     async def get_holidays(self, query: HolidayQuery) -> List[HolidayItem]:
         """
         국경일 정보 조회
+        모든 페이지를 자동으로 가져옵니다.
         
         비즈니스 로직:
         - 연·월 단위로 국경일 정보 조회
@@ -76,11 +77,8 @@ class HolidayService:
         :raises HolidayApiError: API 호출 실패
         :raises HolidayApiResponseError: API 응답 오류
         """
-        # API 호출
-        api_response = await self.api_client.fetch_holidays(query)
-        
-        # API 응답을 도메인 DTO로 변환
-        domain_items = api_response.to_domain_items()
+        # 모든 페이지를 자동으로 가져오는 메서드 사용
+        domain_items = await self.api_client.fetch_all_holidays(query)
         
         # 국경일 목록 반환 (dateKind == "01"인 것만)
         national_holidays = [item for item in domain_items if item.is_national_holiday]
@@ -107,20 +105,75 @@ class HolidayService:
     async def get_all_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 모든 특일 정보 조회 (국경일, 기념일, 24절기, 잡절 모두)
+        모든 페이지를 자동으로 가져옵니다.
         
         :param year: 조회 연도 (YYYY)
-        :param num_of_rows: 페이지당 결과 수 (기본값: None, API 기본값 사용)
+        :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 모든 특일 목록
         """
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        # API 호출
-        api_response = await self.api_client.fetch_holidays(query)
-        
-        # API 응답을 도메인 DTO로 변환 (모든 dateKind 포함)
-        domain_items = api_response.to_domain_items()
+        # 모든 페이지를 자동으로 가져오는 메서드 사용
+        domain_items = await self.api_client.fetch_all_holidays(query)
         
         logger.info(
             f"Retrieved {len(domain_items)} holidays (all types) for year {year}"
+        )
+        
+        return domain_items
+    
+    async def get_rest_days_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
+        """
+        연도별 공휴일 정보 조회
+        모든 페이지를 자동으로 가져옵니다.
+        
+        :param year: 조회 연도 (YYYY)
+        :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
+        :return: 해당 연도의 공휴일 목록
+        """
+        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
+        # 모든 페이지를 자동으로 가져오는 메서드 사용
+        domain_items = await self.api_client.fetch_all_rest_days(query)
+        
+        logger.info(
+            f"Retrieved {len(domain_items)} rest days for year {year}"
+        )
+        
+        return domain_items
+    
+    async def get_anniversaries_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
+        """
+        연도별 기념일 정보 조회
+        모든 페이지를 자동으로 가져옵니다.
+        
+        :param year: 조회 연도 (YYYY)
+        :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
+        :return: 해당 연도의 기념일 목록
+        """
+        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
+        # 모든 페이지를 자동으로 가져오는 메서드 사용
+        domain_items = await self.api_client.fetch_all_anniversaries(query)
+        
+        logger.info(
+            f"Retrieved {len(domain_items)} anniversaries for year {year}"
+        )
+        
+        return domain_items
+    
+    async def get_24divisions_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
+        """
+        연도별 24절기 정보 조회
+        모든 페이지를 자동으로 가져옵니다.
+        
+        :param year: 조회 연도 (YYYY)
+        :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
+        :return: 해당 연도의 24절기 목록
+        """
+        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
+        # 모든 페이지를 자동으로 가져오는 메서드 사용
+        domain_items = await self.api_client.fetch_all_24divisions(query)
+        
+        logger.info(
+            f"Retrieved {len(domain_items)} 24 divisions for year {year}"
         )
         
         return domain_items
@@ -165,10 +218,10 @@ class HolidayService:
         self, year: int, force_update: bool = False
     ) -> None:
         """
-        특정 연도 공휴일 동기화
+        특정 연도 공휴일 동기화 (국경일 + 공휴일 + 기념일 + 24절기)
         
         비즈니스 로직:
-        - API에서 데이터 조회
+        - API에서 국경일, 공휴일, 기념일, 24절기 데이터 조회
         - 해시 생성 및 비교
         - 변경이 있을 때만 DB 업데이트
         
@@ -176,17 +229,33 @@ class HolidayService:
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
         :raises Exception: 동기화 실패 시 예외 발생
         """
-        # 1. 모든 특일 정보 조회 및 해시 생성
-        holidays = await self.get_all_holidays_by_year(year)
-        new_hash = self.generate_hash(holidays)
+        # 1. 국경일, 공휴일, 기념일, 24절기 정보 조회
+        national_holidays = await self.get_all_holidays_by_year(year)
+        rest_days = await self.get_rest_days_by_year(year)
+        anniversaries = await self.get_anniversaries_by_year(year)
+        divisions_24 = await self.get_24divisions_by_year(year)
         
-        # 2. 기존 해시 조회 및 업데이트 건너뛰기 여부 확인
+        # 2. 모든 목록을 합치고 중복 제거 (date, dateName 기준)
+        # DB 유니크 제약에 의존하지 않고 메모리에서 중복 제거
+        seen = set()  # (locdate, dateName) 튜플의 set
+        all_holidays = []
+        
+        for holiday in national_holidays + rest_days + anniversaries + divisions_24:
+            key = (holiday.locdate, holiday.dateName)
+            if key not in seen:
+                seen.add(key)
+                all_holidays.append(holiday)
+        
+        # 3. 해시 생성
+        new_hash = self.generate_hash(all_holidays)
+        
+        # 4. 기존 해시 조회 및 업데이트 건너뛰기 여부 확인
         old_hash = await crud.get_holiday_hash(self.session, year)
         if not force_update and old_hash == new_hash:
             logger.debug(f"No changes for year {year}, skipping update")
             return
         
-        # 3. 업데이트 결정 로깅
+        # 5. 업데이트 결정 로깅
         if force_update:
             logger.debug(
                 f"Force updating holidays for {year} "
@@ -199,7 +268,21 @@ class HolidayService:
                 f"New: {new_hash[:8]}..."
             )
         
-        # 4. DB 업데이트
-        await crud.save_holidays(self.session, year, holidays, new_hash)
-        logger.info(f"Updated {len(holidays)} holidays for {year}")
+        # 6. DB 업데이트
+        await crud.save_holidays(self.session, year, all_holidays, new_hash)
+        
+        # 중복 제거 정보 로깅
+        total_count = len(national_holidays) + len(rest_days) + len(anniversaries) + len(divisions_24)
+        deduplicated_count = len(all_holidays)
+        if total_count != deduplicated_count:
+            logger.info(
+                f"Removed {total_count - deduplicated_count} duplicate holidays "
+                f"before saving (total: {total_count} -> {deduplicated_count})"
+            )
+        
+        logger.info(
+            f"Updated {len(all_holidays)} holidays for {year} "
+            f"(national: {len(national_holidays)}, rest: {len(rest_days)}, "
+            f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
+        )
 
