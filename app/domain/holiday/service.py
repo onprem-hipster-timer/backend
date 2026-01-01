@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import holiday as crud
 from app.domain.holiday.client import HolidayApiClient
 from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
+from app.domain.holiday.exceptions import HolidayApiError, HolidayApiResponseError
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,10 @@ logger = logging.getLogger(__name__)
 class HolidayService:
     """
     Holiday Service - 국경일 정보 조회 비즈니스 로직
-    
+
     한국천문연구원 특일 정보제공 서비스(OpenAPI)를 활용하여
     국경일 정보를 조회하고 동기화합니다.
-    
+
     FastAPI Best Practices:
     - Repository 패턴 제거, CRUD 함수 직접 사용
     - Session을 받아서 CRUD 함수 호출
@@ -43,7 +44,7 @@ class HolidayService:
     def generate_hash(holidays: List[HolidayItem]) -> str:
         """
         공휴일 목록의 해시 생성
-        
+
         :param holidays: 공휴일 목록
         :return: SHA256 해시
         """
@@ -62,16 +63,16 @@ class HolidayService:
 
         return holiday_hash
 
-    async def get_holidays(self, query: HolidayQuery) -> List[HolidayItem]:
+    async def get_holidays_from_api(self, query: HolidayQuery) -> List[HolidayItem]:
         """
-        국경일 정보 조회
+        API에서 국경일 정보 조회
         모든 페이지를 자동으로 가져옵니다.
-        
+
         비즈니스 로직:
         - 연·월 단위로 국경일 정보 조회
         - dateKind == "01"인 데이터만 반환 (국경일만)
         - isHoliday로 실제 휴일 여부 확인 가능
-        
+
         :param query: 조회 요청 데이터 (solYear, solMonth, numOfRows)
         :return: 국경일 목록
         :raises HolidayApiError: API 호출 실패
@@ -94,19 +95,19 @@ class HolidayService:
     async def get_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 국경일 정보 조회 (국경일만)
-        
+
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, API 기본값 사용)
         :return: 해당 연도의 국경일 목록
         """
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        return await self.get_holidays(query)
+        return await self.get_holidays_from_api(query)
 
     async def get_all_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 모든 특일 정보 조회 (국경일, 기념일, 24절기, 잡절 모두)
         모든 페이지를 자동으로 가져옵니다.
-        
+
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 모든 특일 목록
@@ -125,7 +126,7 @@ class HolidayService:
         """
         연도별 공휴일 정보 조회
         모든 페이지를 자동으로 가져옵니다.
-        
+
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 공휴일 목록
@@ -144,7 +145,7 @@ class HolidayService:
         """
         연도별 기념일 정보 조회
         모든 페이지를 자동으로 가져옵니다.
-        
+
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 기념일 목록
@@ -163,7 +164,7 @@ class HolidayService:
         """
         연도별 24절기 정보 조회
         모든 페이지를 자동으로 가져옵니다.
-        
+
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 24절기 목록
@@ -183,19 +184,19 @@ class HolidayService:
     ) -> List[HolidayItem]:
         """
         연월별 국경일 정보 조회
-        
+
         :param year: 조회 연도 (YYYY)
         :param month: 조회 월 (MM)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, API 기본값 사용)
         :return: 해당 연월의 국경일 목록
         """
         query = HolidayQuery(solYear=year, solMonth=month, numOfRows=num_of_rows)
-        return await self.get_holidays(query)
+        return await self.get_holidays_from_api(query)
 
     async def is_holiday(self, year: int, month: int, day: int) -> bool:
         """
         특정 날짜가 공휴일인지 확인
-        
+
         :param year: 연도 (YYYY)
         :param month: 월 (MM)
         :param day: 일 (DD)
@@ -219,12 +220,12 @@ class HolidayService:
     ) -> None:
         """
         특정 연도 공휴일 동기화 (국경일 + 공휴일 + 기념일 + 24절기)
-        
+
         비즈니스 로직:
         - API에서 국경일, 공휴일, 기념일, 24절기 데이터 조회
         - 해시 생성 및 비교
         - 변경이 있을 때만 DB 업데이트
-        
+
         :param year: 동기화할 연도
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
         :raises Exception: 동기화 실패 시 예외 발생
@@ -285,3 +286,87 @@ class HolidayService:
             f"(national: {len(national_holidays)}, rest: {len(rest_days)}, "
             f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
         )
+
+    async def get_holidays(
+        self, start_year: int, end_year: Optional[int] = None, num_of_rows: Optional[int] = None
+    ) -> List[HolidayItem]:
+        """
+        DB에서 공휴일 조회, 없으면 API 호출
+
+        비즈니스 로직:
+        - 먼저 DB에서 조회 시도
+        - 지정된 범위의 데이터가 없으면 API 호출하여 조회 및 저장
+        - end_year가 지정되지 않으면 start_year과 동일하게 처리 (단일 연도 조회)
+        - 일부 연도 API 호출 실패 시에도 성공한 연도만 반환 (부분 실패 허용)
+
+        :param start_year: 시작 연도
+        :param end_year: 종료 연도 (포함). None이면 start_year과 동일하게 처리
+        :param num_of_rows: 페이지당 결과 수 (API 호출 시 사용)
+        :return: 공휴일 목록 (성공한 연도만 포함)
+        :raises HolidayApiError: 모든 연도가 실패한 경우
+        """
+        # end_year가 지정되지 않으면 start_year과 동일하게 처리
+        if end_year is None:
+            end_year = start_year
+
+        # 1. DB에서 조회 시도 (CRUD 직접 호출)
+        models = await crud.get_holidays_by_year(self.session, start_year, end_year)
+
+        # Model을 DTO로 변환 (DTO의 클래스 메서드 사용)
+        db_items = [HolidayItem.from_model(model) for model in models]
+
+        if db_items:
+            return db_items
+
+        # 2. DB에 데이터가 없으면 API 호출하여 모든 연도 동기화
+        # sync_holidays_for_year가 내부에서 모든 API 호출 및 로깅을 처리
+        # 일부 연도 실패 시에도 성공한 연도만 저장하고 계속 진행
+        successful_years = []
+        failed_years = []
+
+        for year in range(start_year, end_year + 1):
+            try:
+                await self.sync_holidays_for_year(year, force_update=True)
+                successful_years.append(year)
+            except (HolidayApiError, HolidayApiResponseError) as e:
+                failed_years.append(year)
+                logger.warning(
+                    f"Failed to sync holidays for year {year}: {str(e)}. "
+                    f"Continuing with other years."
+                )
+            except Exception as e:
+                # 예상치 못한 예외도 로깅하고 계속 진행
+                failed_years.append(year)
+                logger.error(
+                    f"Unexpected error while syncing holidays for year {year}: {str(e)}. "
+                    f"Continuing with other years.",
+                    exc_info=True
+                )
+
+        # 성공한 연도가 하나라도 있으면 commit
+        if successful_years:
+            await self.session.commit()
+
+            if failed_years:
+                logger.warning(
+                    f"Partially succeeded: {len(successful_years)} years succeeded, "
+                    f"{len(failed_years)} years failed (years: {failed_years})"
+                )
+        else:
+            # 모든 연도가 실패한 경우
+            logger.error(
+                f"All years failed to sync (range: {start_year}-{end_year})"
+            )
+            # commit하지 않고 예외를 다시 발생시켜 호출자가 알 수 있도록
+            if start_year == end_year:
+                raise HolidayApiError(
+                    f"Failed to fetch holiday information for year {start_year}"
+                )
+            else:
+                raise HolidayApiError(
+                    f"Failed to fetch holiday information for all years in range {start_year}-{end_year}"
+                )
+
+        # 동기화 후 다시 DB에서 조회하여 반환 (성공한 연도만 포함)
+        models = await crud.get_holidays_by_year(self.session, start_year, end_year)
+        return [HolidayItem.from_model(model) for model in models]
