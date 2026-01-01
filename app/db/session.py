@@ -1,8 +1,10 @@
 import logging
 from contextlib import contextmanager
 from typing import Generator
+from urllib.parse import urlparse
 
 from sqlalchemy import event
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlmodel import SQLModel, create_engine, Session
 
 from app.core.config import settings
@@ -102,3 +104,72 @@ def get_db_transactional() -> Generator[Session, None, None]:
         except Exception:
             session.rollback()
             raise
+
+
+# ============ 비동기 세션 (제한적 사용) ============
+
+def _get_async_database_url() -> str:
+    """
+    동기 DATABASE_URL을 비동기 URL로 변환
+    
+    SQLite: sqlite:/// -> sqlite+aiosqlite:///
+    PostgreSQL: postgresql:// -> postgresql+asyncpg://
+    Oracle: oracle:// -> oracle+oracledb://
+    """
+    url = settings.DATABASE_URL
+    
+    # SQLite인 경우
+    if url.startswith("sqlite:///"):
+        return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    
+    # PostgreSQL인 경우
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    # Oracle인 경우
+    if url.startswith("oracle://"):
+        return url.replace("oracle://", "oracle+oracledb://", 1)
+    
+    # 이미 비동기 URL인 경우 그대로 반환
+    if "+" in urlparse(url).scheme:
+        return url
+    
+    logger.warning(f"Unknown database URL format: {url}, using as-is")
+    return url
+
+
+# 비동기 엔진 생성
+async_database_url = _get_async_database_url()
+
+# SQLite의 경우 connect_args 필요
+async_connect_args = {}
+if async_database_url.startswith("sqlite+aiosqlite"):
+    async_connect_args = {"check_same_thread": False}
+
+async_engine = create_async_engine(
+    async_database_url,
+    echo=settings.DEBUG,
+    pool_size=settings.POOL_SIZE,
+    max_overflow=settings.MAX_OVERFLOW,
+    connect_args=async_connect_args,
+)
+
+# 비동기 Session factory
+async_session_maker = async_sessionmaker(
+    async_engine, class_=AsyncSession, expire_on_commit=False
+)
+
+
+async def init_db_async() -> None:
+    """
+    비동기 DB 테이블 자동 생성
+    
+    startup 시 호출되어 모든 SQLModel 테이블 생성
+    """
+    async with async_engine.begin() as conn:
+        # 모든 모델 import (테이블 메타데이터 등록)
+        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        
+        # 테이블 생성
+        await conn.run_sync(SQLModel.metadata.create_all)
+        logger.info("✅ Database tables initialized (async)")

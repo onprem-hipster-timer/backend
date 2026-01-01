@@ -1,13 +1,15 @@
 """Holiday Domain Schema"""
 from app.domain.holiday.schema.dto import (
     HolidayItem,
-    HolidayResponse,
+    HolidayApiItem,
+    HolidayApiResponse,
     HolidayQuery,
 )
 
 __all__ = [
     "HolidayItem",
-    "HolidayResponse",
+    "HolidayApiItem",
+    "HolidayApiResponse",
     "HolidayQuery",
 ]
 

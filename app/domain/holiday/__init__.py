@@ -1,8 +1,12 @@
 """Holiday Domain"""
 from app.domain.holiday.service import HolidayService
+from app.domain.holiday.client import HolidayApiClient
+from app.domain.holiday.model import HolidayModel, HolidayHashModel
+from app.domain.holiday.enums import DateKind
 from app.domain.holiday.schema.dto import (
     HolidayItem,
-    HolidayResponse,
+    HolidayApiItem,
+    HolidayApiResponse,
     HolidayQuery,
 )
 from app.domain.holiday.exceptions import (
@@ -13,8 +17,13 @@ from app.domain.holiday.exceptions import (
 
 __all__ = [
     "HolidayService",
+    "HolidayApiClient",
+    "HolidayModel",
+    "HolidayHashModel",
+    "DateKind",
     "HolidayItem",
-    "HolidayResponse",
+    "HolidayApiItem",
+    "HolidayApiResponse",
     "HolidayQuery",
     "HolidayApiError",
     "HolidayApiKeyError",

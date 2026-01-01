@@ -12,8 +12,23 @@ from pydantic import ConfigDict, field_validator, model_validator
 from app.core.base_model import CustomModel
 
 
+class HolidayApiItem(CustomModel):
+    """
+    API 응답용 국경일 정보 항목 (원시 데이터)
+    
+    API에서 정수/문자열이 섞여서 올 수 있으므로 Union 타입 사용
+    """
+    model_config = ConfigDict(from_attributes=True)
+    
+    locdate: Union[str, int]  # 날짜 (YYYYMMDD) - 정수 또는 문자열
+    seq: int  # 순번
+    dateKind: Union[str, int]  # 날짜 종류 코드 (01: 국경일) - 정수 또는 문자열
+    dateName: str  # 국경일 명칭
+    isHoliday: Union[str, int, bool]  # 공공기관 휴일 여부 (Y / N) - 문자열, 정수, boolean 모두 가능
+
+
 class HolidayItem(CustomModel):
-    """국경일 정보 항목"""
+    """도메인 국경일 정보 항목 (정제된 데이터)"""
     model_config = ConfigDict(from_attributes=True)
     
     locdate: str  # 날짜 (YYYYMMDD)
@@ -21,6 +36,39 @@ class HolidayItem(CustomModel):
     dateKind: str  # 날짜 종류 코드 (01: 국경일)
     dateName: str  # 국경일 명칭
     isHoliday: str  # 공공기관 휴일 여부 (Y / N)
+
+    @classmethod
+    def from_api_item(cls, api_item: HolidayApiItem) -> "HolidayItem":
+        """
+        API 응답 DTO를 도메인 DTO로 변환
+        
+        :param api_item: API 응답 DTO
+        :return: 도메인 DTO
+        """
+        # locdate 변환
+        locdate_str = str(api_item.locdate)
+        
+        # dateKind 변환
+        if isinstance(api_item.dateKind, int):
+            date_kind_str = str(api_item.dateKind).zfill(2)  # "01" 형식 보장
+        else:
+            date_kind_str = str(api_item.dateKind)
+        
+        # isHoliday 변환
+        if isinstance(api_item.isHoliday, bool):
+            is_holiday_str = "Y" if api_item.isHoliday else "N"
+        elif isinstance(api_item.isHoliday, int):
+            is_holiday_str = "Y" if api_item.isHoliday else "N"
+        else:
+            is_holiday_str = str(api_item.isHoliday)
+        
+        return cls(
+            locdate=locdate_str,
+            seq=api_item.seq,
+            dateKind=date_kind_str,
+            dateName=api_item.dateName,
+            isHoliday=is_holiday_str,
+        )
 
     @property
     def is_holiday_bool(self) -> bool:
@@ -33,11 +81,11 @@ class HolidayItem(CustomModel):
         return self.dateKind == "01"
 
 
-class HolidayBodyItems(CustomModel):
+class HolidayApiBodyItems(CustomModel):
     """국경일 API 응답 Body의 items (item이 단일 또는 리스트일 수 있음)"""
     model_config = ConfigDict(from_attributes=True)
     
-    item: Optional[Union[HolidayItem, List[HolidayItem]]] = None
+    item: Optional[Union[HolidayApiItem, List[HolidayApiItem]]] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -53,7 +101,7 @@ class HolidayBodyItems(CustomModel):
         return data
 
     @property
-    def items_list(self) -> List[HolidayItem]:
+    def items_list(self) -> List[HolidayApiItem]:
         """item을 리스트로 반환"""
         if self.item is None:
             return []
@@ -62,18 +110,18 @@ class HolidayBodyItems(CustomModel):
         return [self.item]
 
 
-class HolidayBody(CustomModel):
+class HolidayApiBody(CustomModel):
     """국경일 API 응답 Body"""
     model_config = ConfigDict(from_attributes=True)
     
-    items: Optional[HolidayBodyItems] = None
+    items: Optional[HolidayApiBodyItems] = None
     numOfRows: Optional[int] = 10
     pageNo: Optional[int] = 1
     totalCount: Optional[int] = 0
 
     @property
-    def items_list(self) -> List[HolidayItem]:
-        """items에서 HolidayItem 리스트 반환"""
+    def items_list(self) -> List[HolidayApiItem]:
+        """items에서 HolidayApiItem 리스트 반환"""
         if self.items is None:
             return []
         return self.items.items_list
@@ -87,12 +135,12 @@ class HolidayHeader(CustomModel):
     resultMsg: str
 
 
-class HolidayResponse(CustomModel):
-    """국경일 API 응답"""
+class HolidayApiResponse(CustomModel):
+    """국경일 API 응답 (원시 데이터)"""
     model_config = ConfigDict(from_attributes=True)
     
     header: HolidayHeader
-    body: HolidayBody
+    body: HolidayApiBody
 
     @property
     def is_success(self) -> bool:
@@ -100,9 +148,13 @@ class HolidayResponse(CustomModel):
         return self.header.resultCode == "00"
 
     @property
-    def items(self) -> List[HolidayItem]:
-        """국경일 목록 반환"""
+    def api_items(self) -> List[HolidayApiItem]:
+        """API 응답 항목 목록 반환"""
         return self.body.items_list
+    
+    def to_domain_items(self) -> List[HolidayItem]:
+        """API 응답 항목을 도메인 항목으로 변환"""
+        return [HolidayItem.from_api_item(api_item) for api_item in self.api_items]
 
 
 class HolidayQuery(CustomModel):

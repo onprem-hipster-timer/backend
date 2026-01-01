@@ -3,45 +3,64 @@ Holiday Service
 
 FastAPI Best Practices:
 - Service는 비즈니스 로직을 담당
-- 외부 API 호출 로직 포함
+- CRUD 함수를 직접 사용 (Repository 패턴 제거)
+- API 클라이언트를 사용하여 외부 API 호출
 - Domain Exception을 발생시켜 비즈니스 규칙 위반 표현
 """
+import hashlib
+import json
 import logging
 from typing import List, Optional
 
-import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.domain.holiday.exceptions import (
-    HolidayApiError,
-    HolidayApiKeyError,
-    HolidayApiResponseError,
-)
-from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery, HolidayResponse
+from app.crud import holiday as crud
+from app.domain.holiday.client import HolidayApiClient
+from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 
 logger = logging.getLogger(__name__)
 
 
 class HolidayService:
     """
-    Holiday Service - 국경일 정보 조회
+    Holiday Service - 국경일 정보 조회 비즈니스 로직
     
     한국천문연구원 특일 정보제공 서비스(OpenAPI)를 활용하여
-    국경일 정보를 조회합니다.
+    국경일 정보를 조회하고 동기화합니다.
     
     FastAPI Best Practices:
-    - 외부 API 호출 로직 포함
-    - Domain Exception을 발생시켜 오류 표현
-    - httpx를 사용한 비동기 HTTP 클라이언트
+    - Repository 패턴 제거, CRUD 함수 직접 사용
+    - Session을 받아서 CRUD 함수 호출
+    - 비즈니스 로직 담당 (해시 비교, 동기화 로직 등)
     """
 
-    BASE_URL = settings.HOLIDAY_API_BASE_URL
-    ENDPOINT = "/getHoliDeInfo"
-
-    def __init__(self):
+    def __init__(self, session: AsyncSession):
         """HolidayService 초기화"""
-        if not settings.HOLIDAY_API_SERVICE_KEY:
-            raise HolidayApiKeyError("Holiday API service key is not configured")
+        self.session = session
+        self.api_client = HolidayApiClient()
+
+    @staticmethod
+    def generate_hash(holidays: List[HolidayItem]) -> str:
+        """
+        공휴일 목록의 해시 생성
+        
+        :param holidays: 공휴일 목록
+        :return: SHA256 해시
+        """
+        # JSON 직렬화 (정렬 필수 - 일관성 보장)
+        holidays_json = json.dumps(
+            [h.model_dump() for h in holidays],
+            sort_keys=True,
+            default=str,  # datetime 등 처리
+            ensure_ascii=False,  # 한글 깨짐 방지
+        )
+        
+        # SHA256 해시 생성
+        holiday_hash = hashlib.sha256(
+            holidays_json.encode('utf-8')
+        ).hexdigest()
+        
+        return holiday_hash
 
     async def get_holidays(self, query: HolidayQuery) -> List[HolidayItem]:
         """
@@ -57,68 +76,26 @@ class HolidayService:
         :raises HolidayApiError: API 호출 실패
         :raises HolidayApiResponseError: API 응답 오류
         """
-        try:
-            # API 요청 파라미터 준비
-            params = {
-                "solYear": str(query.solYear),
-                "ServiceKey": settings.HOLIDAY_API_SERVICE_KEY,
-                "_type": "json",  # JSON 응답 요청
-            }
+        # API 호출
+        api_response = await self.api_client.fetch_holidays(query)
+        
+        # API 응답을 도메인 DTO로 변환
+        domain_items = api_response.to_domain_items()
+        
+        # 국경일 목록 반환 (dateKind == "01"인 것만)
+        national_holidays = [item for item in domain_items if item.is_national_holiday]
 
-            if query.solMonth is not None:
-                params["solMonth"] = f"{query.solMonth:02d}"  # MM 형식
+        month_info = f", month {query.solMonth}" if query.solMonth else ""
+        logger.info(
+            f"Retrieved {len(national_holidays)} national holidays "
+            f"for year {query.solYear}{month_info}"
+        )
 
-            if query.numOfRows is not None:
-                params["numOfRows"] = str(query.numOfRows)
-
-            # API 호출
-            url = f"{self.BASE_URL}{self.ENDPOINT}"
-            logger.info(f"Calling holiday API: {url} with params: {dict(params, ServiceKey='***')}")
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-
-                # JSON 응답 파싱
-                data = response.json()
-                
-                # API 응답 구조: {"response": {...}} 또는 직접 {...}
-                if "response" in data:
-                    data = data["response"]
-                
-                holiday_response = HolidayResponse(**data)
-
-                # 응답 코드 확인
-                if not holiday_response.is_success:
-                    error_msg = f"API returned error: {holiday_response.header.resultMsg}"
-                    logger.error(error_msg)
-                    raise HolidayApiResponseError(error_msg)
-
-                # 국경일 목록 반환 (dateKind == "01"인 것만)
-                items = holiday_response.items
-                national_holidays = [item for item in items if item.is_national_holiday]
-
-                month_info = f", month {query.solMonth}" if query.solMonth else ""
-                logger.info(
-                    f"Retrieved {len(national_holidays)} national holidays "
-                    f"for year {query.solYear}{month_info}"
-                )
-
-                return national_holidays
-
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error when calling holiday API: {str(e)}")
-            raise HolidayApiError(f"Failed to fetch holiday information: {str(e)}")
-        except KeyError as e:
-            logger.error(f"Missing key in API response: {str(e)}")
-            raise HolidayApiResponseError(f"Invalid API response format: {str(e)}")
-        except Exception as e:
-            logger.error(f"Unexpected error when calling holiday API: {str(e)}")
-            raise HolidayApiError(f"Unexpected error: {str(e)}")
+        return national_holidays
 
     async def get_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
-        연도별 국경일 정보 조회
+        연도별 국경일 정보 조회 (국경일만)
         
         :param year: 조회 연도 (YYYY)
         :param num_of_rows: 페이지당 결과 수 (기본값: None, API 기본값 사용)
@@ -126,6 +103,27 @@ class HolidayService:
         """
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         return await self.get_holidays(query)
+    
+    async def get_all_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
+        """
+        연도별 모든 특일 정보 조회 (국경일, 기념일, 24절기, 잡절 모두)
+        
+        :param year: 조회 연도 (YYYY)
+        :param num_of_rows: 페이지당 결과 수 (기본값: None, API 기본값 사용)
+        :return: 해당 연도의 모든 특일 목록
+        """
+        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
+        # API 호출
+        api_response = await self.api_client.fetch_holidays(query)
+        
+        # API 응답을 도메인 DTO로 변환 (모든 dateKind 포함)
+        domain_items = api_response.to_domain_items()
+        
+        logger.info(
+            f"Retrieved {len(domain_items)} holidays (all types) for year {year}"
+        )
+        
+        return domain_items
 
     async def get_holidays_by_month(
         self, year: int, month: int, num_of_rows: Optional[int] = None
@@ -162,4 +160,46 @@ class HolidayService:
                 return holiday.is_holiday_bool
         
         return False
+    
+    async def sync_holidays_for_year(
+        self, year: int, force_update: bool = False
+    ) -> None:
+        """
+        특정 연도 공휴일 동기화
+        
+        비즈니스 로직:
+        - API에서 데이터 조회
+        - 해시 생성 및 비교
+        - 변경이 있을 때만 DB 업데이트
+        
+        :param year: 동기화할 연도
+        :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
+        :raises Exception: 동기화 실패 시 예외 발생
+        """
+        # 1. 모든 특일 정보 조회 및 해시 생성
+        holidays = await self.get_all_holidays_by_year(year)
+        new_hash = self.generate_hash(holidays)
+        
+        # 2. 기존 해시 조회 및 업데이트 건너뛰기 여부 확인
+        old_hash = await crud.get_holiday_hash(self.session, year)
+        if not force_update and old_hash == new_hash:
+            logger.debug(f"No changes for year {year}, skipping update")
+            return
+        
+        # 3. 업데이트 결정 로깅
+        if force_update:
+            logger.debug(
+                f"Force updating holidays for {year} "
+                f"(hash: {new_hash[:8]}...)"
+            )
+        else:
+            logger.info(
+                f"Holiday changes detected for {year}\n"
+                f"   Old: {old_hash[:8] if old_hash else 'None'}..., "
+                f"New: {new_hash[:8]}..."
+            )
+        
+        # 4. DB 업데이트
+        await crud.save_holidays(self.session, year, holidays, new_hash)
+        logger.info(f"Updated {len(holidays)} holidays for {year}")
 
