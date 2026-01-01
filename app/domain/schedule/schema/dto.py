@@ -41,7 +41,7 @@ class ScheduleCreate(CustomModel):
 class ScheduleRead(ScheduleCreate):
     """일정 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     created_at: datetime
 
@@ -56,7 +56,7 @@ class ScheduleRead(ScheduleCreate):
         """
         if tz is None:
             return self
-        
+
         # datetime 필드만 타임존 변환
         update_data = {}
         for field_name in ["start_time", "end_time", "recurrence_end", "created_at"]:
@@ -69,7 +69,7 @@ class ScheduleRead(ScheduleCreate):
                 else:
                     # validate=False: 이미 검증된 것으로 가정
                     update_data[field_name] = convert_utc_naive_to_timezone(value, tz)
-        
+
         # model_construct 사용 (변환된 aware datetime이 validator를 통과하지 못하므로)
         data = self.model_dump()
         data.update(update_data)

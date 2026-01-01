@@ -36,7 +36,7 @@ class TimerCreate(CustomModel):
 class TimerRead(CustomModel):
     """타이머 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     schedule_id: UUID
     title: Optional[str] = None
@@ -61,11 +61,11 @@ class TimerRead(CustomModel):
 
     @classmethod
     def from_model(
-        cls,
-        timer: "TimerSession",
-        *,
-        include_schedule: bool = False,
-        schedule: Optional[ScheduleRead] = None,
+            cls,
+            timer: "TimerSession",
+            *,
+            include_schedule: bool = False,
+            schedule: Optional[ScheduleRead] = None,
     ) -> "TimerRead":
         """
         TimerSession 모델에서 TimerRead DTO를 안전하게 생성
@@ -81,10 +81,10 @@ class TimerRead(CustomModel):
         # schedule 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
         timer_data = timer.model_dump(exclude={"schedule"})
         timer_read = cls.model_validate(timer_data)
-        
+
         # schedule 필드 명시적으로 설정
         timer_read.schedule = schedule if include_schedule else None
-        
+
         return timer_read
 
     def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "TimerRead":
@@ -98,7 +98,7 @@ class TimerRead(CustomModel):
         """
         if tz is None:
             return self
-        
+
         # datetime 필드만 타임존 변환
         update_data = {}
         for field_name in ["started_at", "paused_at", "ended_at", "created_at", "updated_at"]:
@@ -111,7 +111,7 @@ class TimerRead(CustomModel):
                 else:
                     # validate=False: 이미 검증된 것으로 가정
                     update_data[field_name] = convert_utc_naive_to_timezone(value, tz)
-        
+
         # schedule 필드 처리
         schedule_value = getattr(self, "schedule", None)
         if schedule_value is not None:
@@ -122,7 +122,7 @@ class TimerRead(CustomModel):
                 # dict인 경우 ScheduleRead로 변환 후 변환 (model_construct 사용하여 validator 우회)
                 schedule_read = ScheduleRead.model_construct(**schedule_value)
                 update_data["schedule"] = schedule_read.to_timezone(tz, validate=False)
-        
+
         # model_construct 사용 (변환된 aware datetime이 validator를 통과하지 못하므로)
         data = self.model_dump()
         data.update(update_data)

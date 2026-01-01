@@ -24,4 +24,3 @@ class HolidayApiResponseError(DomainException):
     """국경일 API 응답 오류"""
     status_code = 502
     detail = "Invalid response from holiday API"
-

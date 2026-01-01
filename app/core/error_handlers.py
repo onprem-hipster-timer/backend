@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
-from uuid import uuid4
 from typing import Dict, Any
+from uuid import uuid4
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
@@ -58,9 +58,9 @@ class DomainException(Exception):
 # ============================================================================
 
 def format_error_response(
-    exc: Exception,
-    path: str,
-    method: str = "POST",
+        exc: Exception,
+        path: str,
+        method: str = "POST",
 ) -> ErrorResponse:
     """
     단일 지점에서 에러 응답 포맷팅
@@ -75,7 +75,7 @@ def format_error_response(
     """
     error_id = str(uuid4())
     timestamp = datetime.utcnow().isoformat()
-    
+
     # DomainException 처리
     if isinstance(exc, DomainException):
         logger.warning(
@@ -89,7 +89,7 @@ def format_error_response(
                 "status_code": exc.status_code,
             }
         )
-        
+
         return ErrorResponse(
             error_id=error_id,
             status_code=exc.status_code,
@@ -98,7 +98,7 @@ def format_error_response(
             timestamp=timestamp,
             path=path,
         )
-    
+
     # 내부 예외 처리
     logger.error(
         f"Unexpected exception occurred",
@@ -110,13 +110,13 @@ def format_error_response(
         },
         exc_info=True,
     )
-    
+
     # 프로덕션/개발 환경에 따른 메시지
     if settings.DEBUG:
         message = f"{exc.__class__.__name__}: {str(exc)}"
     else:
         message = "An unexpected error occurred. Please contact support with error_id."
-    
+
     return ErrorResponse(
         error_id=error_id,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -128,8 +128,8 @@ def format_error_response(
 
 
 def format_error_for_graphql(
-    exc: Exception,
-    path: str = "/v1/graphql",
+        exc: Exception,
+        path: str = "/v1/graphql",
 ) -> Dict[str, Any]:
     """
     GraphQL용 에러 포맷팅
@@ -157,7 +157,7 @@ async def domain_exception_handler(
         path=str(request.url.path),
         method=request.method,
     )
-    
+
     return JSONResponse(
         status_code=error_response.status_code,
         content=error_response.dict(),
@@ -173,7 +173,7 @@ async def global_exception_handler(
         path=str(request.url.path),
         method=request.method,
     )
-    
+
     return JSONResponse(
         status_code=error_response.status_code,
         content=error_response.dict(),
@@ -197,11 +197,11 @@ class GraphQLErrorHandlingExtension(Extension):
     error_handlers.py의 format_error_for_graphql을 사용하여
     모든 에러 처리를 단일 지점에서 관리합니다.
     """
-    
+
     def on_request_end(self):
         """요청 종료 시 에러 포맷팅"""
         result = self.execution_context.result
-        
+
         if result and result.errors:
             # GraphQL 경로 추출
             path = "/v1/graphql"
@@ -210,21 +210,22 @@ class GraphQLErrorHandlingExtension(Extension):
                     path = str(self.execution_context.request.url.path)
                 except:
                     pass
-            
+
             formatted_errors = []
             for error in result.errors:
-                original_error = error.original_error if hasattr(error, 'original_error') and error.original_error else None
-                
+                original_error = error.original_error if hasattr(error,
+                                                                 'original_error') and error.original_error else None
+
                 if original_error:
                     # 기존 error_handlers.py의 함수 사용
                     extensions = format_error_for_graphql(original_error, path)
-                    
+
                     # 에러 메시지와 extensions 업데이트
                     error.message = extensions["message"]
                     if not hasattr(error, 'extensions') or error.extensions is None:
                         error.extensions = {}
                     error.extensions.update(extensions)
-                
+
                 formatted_errors.append(error)
-            
+
             result.errors = formatted_errors

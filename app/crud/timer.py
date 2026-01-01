@@ -29,8 +29,6 @@ def get_timer(session: Session, timer_id: UUID) -> TimerSession | None:
     return session.exec(statement).first()
 
 
-
-
 def get_timers_by_schedule(
         session: Session,
         schedule_id: UUID,

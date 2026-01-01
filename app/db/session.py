@@ -117,23 +117,23 @@ def _get_async_database_url() -> str:
     Oracle: oracle:// -> oracle+oracledb://
     """
     url = settings.DATABASE_URL
-    
+
     # SQLite인 경우
     if url.startswith("sqlite:///"):
         return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
-    
+
     # PostgreSQL인 경우
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    
+
     # Oracle인 경우
     if url.startswith("oracle://"):
         return url.replace("oracle://", "oracle+oracledb://", 1)
-    
+
     # 이미 비동기 URL인 경우 그대로 반환
     if "+" in urlparse(url).scheme:
         return url
-    
+
     logger.warning(f"Unknown database URL format: {url}, using as-is")
     return url
 
@@ -169,7 +169,7 @@ async def init_db_async() -> None:
     async with async_engine.begin() as conn:
         # 모든 모델 import (테이블 메타데이터 등록)
         from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
-        
+
         # 테이블 생성
         await conn.run_sync(SQLModel.metadata.create_all)
         logger.info("✅ Database tables initialized (async)")

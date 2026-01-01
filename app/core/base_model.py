@@ -24,7 +24,7 @@ class CustomModel(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    
+
     @field_serializer('*', when_used='json-unless-none')
     def serialize_datetime(self, value, info):
         """datetime 필드를 직렬화"""

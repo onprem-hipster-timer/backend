@@ -13,9 +13,9 @@ from typing import Optional
 from sqlalchemy import select, delete, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
-from app.domain.holiday.enums import DateKind
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ async def get_holidays_by_year(session: AsyncSession, year: int) -> list[Holiday
 
 
 async def get_holiday_by_date(
-    session: AsyncSession, date: datetime
+        session: AsyncSession, date: datetime
 ) -> Optional[HolidayModel]:
     """
     날짜로 공휴일 조회
@@ -90,17 +90,17 @@ async def get_holiday_by_date(
     date_naive = date.replace(hour=0, minute=0, second=0, microsecond=0)
     if date_naive.tzinfo:
         date_naive = date_naive.astimezone(UTC).replace(tzinfo=None)
-    
+
     stmt = select(HolidayModel).where(HolidayModel.date == date_naive)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
 
 async def save_holidays(
-    session: AsyncSession,
-    year: int,
-    holidays: list[HolidayItem],
-    hash_value: str,
+        session: AsyncSession,
+        year: int,
+        holidays: list[HolidayItem],
+        hash_value: str,
 ) -> None:
     """
     공휴일 저장 (업데이트 포함)
@@ -126,22 +126,22 @@ async def save_holidays(
     )
     hash_result = await session.execute(hash_stmt)
     hash_model = hash_result.scalar_one_or_none()
-    
+
     # 2. 기존 데이터 삭제 (해당 연도의 모든 데이터)
     delete_stmt = delete(HolidayModel).where(
         extract("year", HolidayModel.date) == year
     )
     await session.execute(delete_stmt)
     await session.flush()  # 삭제를 즉시 DB에 반영
-    
+
     # 3. 새 데이터 삽입
     for item in holidays:
         # locdate 문자열을 datetime으로 변환
         date = _parse_locdate_to_datetime(item.locdate)
-        
+
         # dateKind를 label로 변환 ("01" -> "국경일")
         date_kind_label = _parse_datekind_to_label(item.dateKind)
-        
+
         holiday = HolidayModel(
             date=date,
             dateName=item.dateName,
@@ -149,7 +149,7 @@ async def save_holidays(
             dateKind=date_kind_label,
         )
         session.add(holiday)
-    
+
     # 4. 해시 저장/업데이트 (이미 조회한 hash_model 사용)
     now = datetime.now(UTC)
     if hash_model:
@@ -161,10 +161,9 @@ async def save_holidays(
             hash_value=hash_value,
         )
         session.add(hash_model)
-    
+
     # commit은 호출자가 처리
     logger.info(
         f"Saved {len(holidays)} holidays for year {year} "
         f"(hash: {hash_value[:8]}...)"
     )
-

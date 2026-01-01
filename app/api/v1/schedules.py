@@ -49,10 +49,10 @@ async def create_schedule(
     """
     service = ScheduleService(session)
     schedule = service.create_schedule(data)
-    
+
     # Schedule 모델을 ScheduleRead로 변환
     schedule_read = ScheduleRead.model_validate(schedule)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return schedule_read.to_timezone(tz_obj)
@@ -75,7 +75,7 @@ async def read_schedules(
     """
     service = ScheduleService(session)
     schedules = service.get_all_schedules()
-    
+
     tz_obj = parse_timezone(tz) if tz else None
     return [
         ScheduleRead.model_validate(schedule).to_timezone(tz_obj)
@@ -102,7 +102,7 @@ async def read_schedule(
     """
     # Schedule 모델을 ScheduleRead로 변환
     schedule_read = ScheduleRead.model_validate(schedule)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return schedule_read.to_timezone(tz_obj)
@@ -136,10 +136,10 @@ async def update_schedule(
         schedule = service.update_recurring_instance(schedule_id, instance_start, data)
     else:
         schedule = service.update_schedule(schedule_id, data)
-    
+
     # Schedule 모델을 ScheduleRead로 변환
     schedule_read = ScheduleRead.model_validate(schedule)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return schedule_read.to_timezone(tz_obj)

@@ -7,6 +7,7 @@ Holiday Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from typing import Optional, List, Union
+
 from pydantic import ConfigDict, field_validator, model_validator
 
 from app.core.base_model import CustomModel
@@ -19,7 +20,7 @@ class HolidayApiItem(CustomModel):
     API에서 정수/문자열이 섞여서 올 수 있으므로 Union 타입 사용
     """
     model_config = ConfigDict(from_attributes=True)
-    
+
     locdate: Union[str, int]  # 날짜 (YYYYMMDD) - 정수 또는 문자열
     seq: int  # 순번
     dateKind: Union[str, int]  # 날짜 종류 코드 (01: 국경일) - 정수 또는 문자열
@@ -30,7 +31,7 @@ class HolidayApiItem(CustomModel):
 class HolidayItem(CustomModel):
     """도메인 국경일 정보 항목 (정제된 데이터)"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     locdate: str  # 날짜 (YYYYMMDD)
     seq: int  # 순번
     dateKind: str  # 날짜 종류 코드 (01: 국경일)
@@ -47,13 +48,13 @@ class HolidayItem(CustomModel):
         """
         # locdate 변환
         locdate_str = str(api_item.locdate)
-        
+
         # dateKind 변환
         if isinstance(api_item.dateKind, int):
             date_kind_str = str(api_item.dateKind).zfill(2)  # "01" 형식 보장
         else:
             date_kind_str = str(api_item.dateKind)
-        
+
         # isHoliday 변환
         if isinstance(api_item.isHoliday, bool):
             is_holiday_str = "Y" if api_item.isHoliday else "N"
@@ -61,7 +62,7 @@ class HolidayItem(CustomModel):
             is_holiday_str = "Y" if api_item.isHoliday else "N"
         else:
             is_holiday_str = str(api_item.isHoliday)
-        
+
         return cls(
             locdate=locdate_str,
             seq=api_item.seq,
@@ -84,7 +85,7 @@ class HolidayItem(CustomModel):
 class HolidayApiBodyItems(CustomModel):
     """국경일 API 응답 Body의 items (item이 단일 또는 리스트일 수 있음)"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     item: Optional[Union[HolidayApiItem, List[HolidayApiItem]]] = None
 
     @model_validator(mode="before")
@@ -113,7 +114,7 @@ class HolidayApiBodyItems(CustomModel):
 class HolidayApiBody(CustomModel):
     """국경일 API 응답 Body"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     items: Optional[HolidayApiBodyItems] = None
     numOfRows: Optional[int] = 10
     pageNo: Optional[int] = 1
@@ -130,7 +131,7 @@ class HolidayApiBody(CustomModel):
 class HolidayHeader(CustomModel):
     """국경일 API 응답 Header"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     resultCode: str
     resultMsg: str
 
@@ -138,7 +139,7 @@ class HolidayHeader(CustomModel):
 class HolidayApiResponse(CustomModel):
     """국경일 API 응답 (원시 데이터)"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     header: HolidayHeader
     body: HolidayApiBody
 
@@ -151,7 +152,7 @@ class HolidayApiResponse(CustomModel):
     def api_items(self) -> List[HolidayApiItem]:
         """API 응답 항목 목록 반환"""
         return self.body.items_list
-    
+
     def to_domain_items(self) -> List[HolidayItem]:
         """API 응답 항목을 도메인 항목으로 변환"""
         return [HolidayItem.from_api_item(api_item) for api_item in self.api_items]
@@ -195,4 +196,3 @@ class HolidayQuery(CustomModel):
         if v is not None and v < 1:
             raise ValueError("pageNo must be greater than 0")
         return v
-

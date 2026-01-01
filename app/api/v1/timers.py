@@ -14,8 +14,8 @@ from sqlmodel import Session
 
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.service import ScheduleService
 from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.schedule.service import ScheduleService
 from app.domain.timer.dependencies import valid_timer_id
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import (

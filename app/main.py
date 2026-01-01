@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
+from app.background.tasks import HolidayBackgroundTask
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import setup_logging
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
-from app.background.tasks import HolidayBackgroundTask
 from app.middleware.request_logger import RequestLoggerMiddleware
 
 logger = logging.getLogger(__name__)
@@ -31,50 +31,50 @@ async def lifespan(app: FastAPI):
     이 패턴으로 startup/shutdown 로직 연결 가능
     """
     global _asyncio_task
-    
+
     # ============ STARTUP ============
     logger.info("🌍 Starting FastAPI application")
-    
+
     try:
         # 1. 로깅 설정
         setup_logging()
-        
+
         # 2. 동기 DB 초기화 (기존 코드 호환성)
         init_db_sync()
         logger.info("✅ Database tables initialized (sync)")
-        
+
         # 3. 비동기 DB 초기화 (새로운 holiday 테이블)
         await init_db_async()
         logger.info("✅ Database tables initialized (async)")
-        
+
         # 4. 공휴일 배경 태스크 시작
         _asyncio_task = asyncio.create_task(holiday_task.run())
         logger.info("✅ Holiday background task scheduled")
-    
+
     except Exception as e:
         logger.error(f"❌ Startup failed: {str(e)}", exc_info=True)
         raise
-    
+
     # ============ APP 실행 중... ============
     yield
-    
+
     # ============ SHUTDOWN ============
     logger.info("🛑 Shutting down FastAPI application")
-    
+
     try:
         # 1. 백그라운드 태스크 정상 종료
         if _asyncio_task:
             holiday_task.is_running = False
             _asyncio_task.cancel()
-            
+
             try:
                 await _asyncio_task
             except asyncio.CancelledError:
                 logger.info("✅ Holiday background task stopped")
-    
+
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
-    
+
     logger.info("✅ FastAPI application shutdown complete")
 
 

@@ -54,12 +54,12 @@ class HolidayService:
             default=str,  # datetime 등 처리
             ensure_ascii=False,  # 한글 깨짐 방지
         )
-        
+
         # SHA256 해시 생성
         holiday_hash = hashlib.sha256(
             holidays_json.encode('utf-8')
         ).hexdigest()
-        
+
         return holiday_hash
 
     async def get_holidays(self, query: HolidayQuery) -> List[HolidayItem]:
@@ -79,7 +79,7 @@ class HolidayService:
         """
         # 모든 페이지를 자동으로 가져오는 메서드 사용
         domain_items = await self.api_client.fetch_all_holidays(query)
-        
+
         # 국경일 목록 반환 (dateKind == "01"인 것만)
         national_holidays = [item for item in domain_items if item.is_national_holiday]
 
@@ -101,7 +101,7 @@ class HolidayService:
         """
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         return await self.get_holidays(query)
-    
+
     async def get_all_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 모든 특일 정보 조회 (국경일, 기념일, 24절기, 잡절 모두)
@@ -114,13 +114,13 @@ class HolidayService:
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         # 모든 페이지를 자동으로 가져오는 메서드 사용
         domain_items = await self.api_client.fetch_all_holidays(query)
-        
+
         logger.info(
             f"Retrieved {len(domain_items)} holidays (all types) for year {year}"
         )
-        
+
         return domain_items
-    
+
     async def get_rest_days_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 공휴일 정보 조회
@@ -133,13 +133,13 @@ class HolidayService:
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         # 모든 페이지를 자동으로 가져오는 메서드 사용
         domain_items = await self.api_client.fetch_all_rest_days(query)
-        
+
         logger.info(
             f"Retrieved {len(domain_items)} rest days for year {year}"
         )
-        
+
         return domain_items
-    
+
     async def get_anniversaries_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 기념일 정보 조회
@@ -152,13 +152,13 @@ class HolidayService:
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         # 모든 페이지를 자동으로 가져오는 메서드 사용
         domain_items = await self.api_client.fetch_all_anniversaries(query)
-        
+
         logger.info(
             f"Retrieved {len(domain_items)} anniversaries for year {year}"
         )
-        
+
         return domain_items
-    
+
     async def get_24divisions_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 24절기 정보 조회
@@ -171,15 +171,15 @@ class HolidayService:
         query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
         # 모든 페이지를 자동으로 가져오는 메서드 사용
         domain_items = await self.api_client.fetch_all_24divisions(query)
-        
+
         logger.info(
             f"Retrieved {len(domain_items)} 24 divisions for year {year}"
         )
-        
+
         return domain_items
 
     async def get_holidays_by_month(
-        self, year: int, month: int, num_of_rows: Optional[int] = None
+            self, year: int, month: int, num_of_rows: Optional[int] = None
     ) -> List[HolidayItem]:
         """
         연월별 국경일 정보 조회
@@ -203,19 +203,19 @@ class HolidayService:
         """
         # 해당 월의 국경일 조회
         holidays = await self.get_holidays_by_month(year, month)
-        
+
         # 날짜 형식 변환 (YYYYMMDD)
         target_date = f"{year}{month:02d}{day:02d}"
-        
+
         # 해당 날짜의 국경일 찾기
         for holiday in holidays:
             if holiday.locdate == target_date:
                 return holiday.is_holiday_bool
-        
+
         return False
-    
+
     async def sync_holidays_for_year(
-        self, year: int, force_update: bool = False
+            self, year: int, force_update: bool = False
     ) -> None:
         """
         특정 연도 공휴일 동기화 (국경일 + 공휴일 + 기념일 + 24절기)
@@ -234,27 +234,27 @@ class HolidayService:
         rest_days = await self.get_rest_days_by_year(year)
         anniversaries = await self.get_anniversaries_by_year(year)
         divisions_24 = await self.get_24divisions_by_year(year)
-        
+
         # 2. 모든 목록을 합치고 중복 제거 (date, dateName 기준)
         # DB 유니크 제약에 의존하지 않고 메모리에서 중복 제거
         seen = set()  # (locdate, dateName) 튜플의 set
         all_holidays = []
-        
+
         for holiday in national_holidays + rest_days + anniversaries + divisions_24:
             key = (holiday.locdate, holiday.dateName)
             if key not in seen:
                 seen.add(key)
                 all_holidays.append(holiday)
-        
+
         # 3. 해시 생성
         new_hash = self.generate_hash(all_holidays)
-        
+
         # 4. 기존 해시 조회 및 업데이트 건너뛰기 여부 확인
         old_hash = await crud.get_holiday_hash(self.session, year)
         if not force_update and old_hash == new_hash:
             logger.debug(f"No changes for year {year}, skipping update")
             return
-        
+
         # 5. 업데이트 결정 로깅
         if force_update:
             logger.debug(
@@ -267,10 +267,10 @@ class HolidayService:
                 f"   Old: {old_hash[:8] if old_hash else 'None'}..., "
                 f"New: {new_hash[:8]}..."
             )
-        
+
         # 6. DB 업데이트
         await crud.save_holidays(self.session, year, all_holidays, new_hash)
-        
+
         # 중복 제거 정보 로깅
         total_count = len(national_holidays) + len(rest_days) + len(anniversaries) + len(divisions_24)
         deduplicated_count = len(all_holidays)
@@ -279,10 +279,9 @@ class HolidayService:
                 f"Removed {total_count - deduplicated_count} duplicate holidays "
                 f"before saving (total: {total_count} -> {deduplicated_count})"
             )
-        
+
         logger.info(
             f"Updated {len(all_holidays)} holidays for {year} "
             f"(national: {len(national_holidays)}, rest: {len(rest_days)}, "
             f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
         )
-
