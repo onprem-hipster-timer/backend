@@ -126,6 +126,129 @@ def test_holiday_read_service_get_holidays_default_end_year(test_session):
     assert len(holidays) == 1
 
 
+def test_holiday_read_service_get_holidays_with_kst_year_boundary(test_session):
+    """HolidayReadService 한국 시간 기준 연도 경계 테스트"""
+    # 2023년 12월 31일과 2024년 1월 1일 데이터 (한국 시간 기준)
+    # 한국 시간 2023-12-31 → UTC 2023-12-30 15:00
+    start1, end1 = _create_holiday_date_range("20231231")
+    # 한국 시간 2024-01-01 → UTC 2023-12-31 15:00
+    start2, end2 = _create_holiday_date_range("20240101")
+    
+    holidays = [
+        HolidayModel(
+            start_date=start1,
+            end_date=end1,
+            dateName="연말",
+            isHoliday=True,
+            dateKind="국경일",
+        ),
+        HolidayModel(
+            start_date=start2,
+            end_date=end2,
+            dateName="신정",
+            isHoliday=True,
+            dateKind="국경일",
+        ),
+    ]
+    
+    for h in holidays:
+        test_session.add(h)
+    test_session.flush()
+    
+    service = HolidayReadService(test_session)
+    
+    # 2023년 조회 (한국 시간 기준)
+    holidays_2023 = service.get_holidays(2023)
+    assert len(holidays_2023) == 1
+    assert holidays_2023[0].dateName == "연말"
+    assert holidays_2023[0].locdate == "20231231"
+    
+    # 2024년 조회 (한국 시간 기준)
+    holidays_2024 = service.get_holidays(2024)
+    assert len(holidays_2024) == 1
+    assert holidays_2024[0].dateName == "신정"
+    assert holidays_2024[0].locdate == "20240101"
+
+
+def test_get_holiday_by_date_with_kst_datetime(test_session):
+    """한국 시간 기준 datetime으로 공휴일 조회 테스트"""
+    from app.crud import holiday as crud
+    
+    # 한국 시간 2024년 1월 1일 신정 데이터 저장
+    start_date, end_date = _create_holiday_date_range("20240101")
+    holiday = HolidayModel(
+        start_date=start_date,
+        end_date=end_date,
+        dateName="신정",
+        isHoliday=True,
+        dateKind="국경일",
+    )
+    test_session.add(holiday)
+    test_session.flush()
+    
+    # 한국 시간 기준 datetime으로 조회
+    kst = ZoneInfo("Asia/Seoul")
+    kst_date = datetime(2024, 1, 1, 12, 0, 0, tzinfo=kst)  # 한국 시간 2024-01-01 12:00
+    
+    result = crud.get_holiday_by_date_sync(test_session, kst_date)
+    
+    assert result is not None
+    assert result.dateName == "신정"
+    assert result.isHoliday is True
+
+
+def test_get_holiday_by_date_with_kst_datetime_not_found(test_session):
+    """한국 시간 기준 datetime으로 조회 시 없는 날짜 테스트"""
+    from app.crud import holiday as crud
+    
+    # 한국 시간 2024년 1월 1일 신정 데이터 저장
+    start_date, end_date = _create_holiday_date_range("20240101")
+    holiday = HolidayModel(
+        start_date=start_date,
+        end_date=end_date,
+        dateName="신정",
+        isHoliday=True,
+        dateKind="국경일",
+    )
+    test_session.add(holiday)
+    test_session.flush()
+    
+    # 한국 시간 기준 다른 날짜로 조회
+    kst = ZoneInfo("Asia/Seoul")
+    kst_date = datetime(2024, 1, 2, 12, 0, 0, tzinfo=kst)  # 한국 시간 2024-01-02 12:00
+    
+    result = crud.get_holiday_by_date_sync(test_session, kst_date)
+    
+    assert result is None
+
+
+def test_get_holiday_by_date_with_utc_datetime(test_session):
+    """UTC datetime으로 공휴일 조회 테스트 (한국 시간 기준 날짜 확인)"""
+    from app.crud import holiday as crud
+    
+    # 한국 시간 2024년 1월 1일 신정 데이터 저장
+    # DB에는 UTC 2023-12-31 15:00 ~ 2024-01-01 14:59로 저장됨
+    start_date, end_date = _create_holiday_date_range("20240101")
+    holiday = HolidayModel(
+        start_date=start_date,
+        end_date=end_date,
+        dateName="신정",
+        isHoliday=True,
+        dateKind="국경일",
+    )
+    test_session.add(holiday)
+    test_session.flush()
+    
+    # UTC datetime으로 조회 (한국 시간 2024-01-01에 해당하는 UTC 시간)
+    utc_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=tz.utc)  # UTC 2024-01-01 00:00 (한국 시간 2024-01-01 09:00)
+    
+    result = crud.get_holiday_by_date_sync(test_session, utc_date)
+    
+    # UTC 2024-01-01 00:00은 한국 시간 2024-01-01 09:00이므로 신정 범위에 포함됨
+    assert result is not None
+    assert result.dateName == "신정"
+
+
 def test_holiday_service_generate_hash():
     """HolidayService.generate_hash 테스트"""
     holidays = [

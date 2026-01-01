@@ -149,6 +149,29 @@ def get_datetime_range(
     return (start_range, end_range)
 
 
+def get_year_range_utc(year: int) -> tuple[datetime, datetime]:
+    """
+    한국 표준시 기준 연도 범위를 UTC naive datetime으로 변환
+
+    한국 표준시(KST, UTC+9) 기준으로 해당 연도의 시작과 끝을 UTC로 변환합니다.
+    DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
+    연도 범위를 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
+
+    :param year: 연도 (한국 표준시 기준)
+    :return: (시작 datetime, 종료 datetime) 튜플 (UTC naive)
+    """
+    kst = ZoneInfo("Asia/Seoul")
+    # 한국 시간 기준 해당 연도 1월 1일 00:00:00
+    kst_start = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=kst)
+    # 한국 시간 기준 해당 연도 12월 31일 23:59:59.999999
+    kst_end = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=kst)
+
+    utc_start = ensure_utc_naive(kst_start)
+    utc_end = ensure_utc_naive(kst_end)
+
+    return (utc_start, utc_end)
+
+
 def parse_locdate_to_datetime_range(locdate: str) -> tuple[datetime, datetime]:
     """
     locdate 문자열(YYYYMMDD)을 한국 표준시(KST) 기준 24시간 범위로 변환

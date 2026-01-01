@@ -213,3 +213,56 @@ class TestGetDatetimeRange:
         assert start_range == dt
         assert end_range == dt
 
+    def test_ensure_utc_naive_vs_to_utc_naive_difference(self):
+        """ensure_utc_naive와 to_utc_naive의 차이점 확인"""
+        from app.domain.dateutil.service import to_utc_naive
+        
+        # UTC timezone이 있는 경우
+        utc_dt = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        result_ensure = ensure_utc_naive(utc_dt)
+        result_to = to_utc_naive(utc_dt)
+        
+        # 둘 다 같은 결과를 반환해야 함
+        assert result_ensure == result_to
+        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)
+        
+        # KST timezone이 있는 경우
+        kst = timezone(timedelta(hours=9))
+        kst_dt = datetime(2024, 1, 1, 19, 0, 0, tzinfo=kst)
+        result_ensure = ensure_utc_naive(kst_dt)
+        result_to = to_utc_naive(kst_dt)
+        
+        # 둘 다 같은 결과를 반환해야 함
+        assert result_ensure == result_to
+        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)
+
+    def test_ensure_utc_naive_with_microseconds(self):
+        """마이크로초가 포함된 datetime 처리"""
+        dt = datetime(2024, 1, 1, 10, 0, 0, 123456, tzinfo=timezone.utc)
+        result = ensure_utc_naive(dt)
+        
+        assert result == datetime(2024, 1, 1, 10, 0, 0, 123456)
+        assert result.microsecond == 123456
+
+    def test_get_datetime_range_with_microseconds(self):
+        """마이크로초가 포함된 datetime 범위 계산"""
+        dt = datetime(2024, 1, 1, 10, 0, 0, 500000)
+        start_range, end_range = get_datetime_range(dt, tolerance_seconds=30)
+        
+        expected_start = datetime(2024, 1, 1, 9, 59, 30, 500000)
+        expected_end = datetime(2024, 1, 1, 10, 0, 30, 500000)
+        
+        assert start_range == expected_start
+        assert end_range == expected_end
+
+    def test_is_datetime_within_tolerance_with_microseconds(self):
+        """마이크로초 차이가 있는 datetime 비교"""
+        dt1 = datetime(2024, 1, 1, 10, 0, 0, 0)
+        dt2 = datetime(2024, 1, 1, 10, 0, 0, 500000)  # 0.5초 차이
+        
+        # 1초 허용 오차 내에 있어야 함
+        assert is_datetime_within_tolerance(dt1, dt2, tolerance_seconds=1) is True
+        
+        # 0.1초 허용 오차 밖에 있어야 함
+        assert is_datetime_within_tolerance(dt1, dt2, tolerance_seconds=0) is False
+

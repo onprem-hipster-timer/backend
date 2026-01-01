@@ -17,7 +17,11 @@ from sqlmodel import Session
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.model import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
-from app.domain.dateutil.service import parse_locdate_to_datetime_range
+from app.domain.dateutil.service import (
+    parse_locdate_to_datetime_range,
+    ensure_utc_naive,
+    get_year_range_utc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +58,12 @@ async def get_holidays_by_year(
     """
     연도별 공휴일 조회 (단일 연도 또는 범위)
     
+    한국 표준시(KST) 기준 연도 범위를 UTC로 변환하여 조회합니다.
+    DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
+    연도 범위를 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
+    
     :param session: AsyncSession
-    :param start_year: 시작 연도
+    :param start_year: 시작 연도 (한국 표준시 기준)
     :param end_year: 종료 연도 (포함). None이면 start_year과 동일하게 처리 (단일 연도 조회)
     :return: 공휴일 모델 리스트
     """
@@ -63,15 +71,15 @@ async def get_holidays_by_year(
     if end_year is None:
         end_year = start_year
     
-    if start_year == end_year:
-        # 단일 연도 조회: start_date의 연도가 해당 연도인 경우
-        stmt = select(HolidayModel).where(extract("year", HolidayModel.start_date) == start_year)
-    else:
-        # 범위 조회: start_date의 연도가 범위 내에 있는 경우
-        stmt = select(HolidayModel).where(
-            extract("year", HolidayModel.start_date) >= start_year,
-            extract("year", HolidayModel.start_date) <= end_year
-        )
+    # 한국 표준시 기준 연도 범위를 UTC로 변환
+    range_start, _ = get_year_range_utc(start_year)
+    _, range_end = get_year_range_utc(end_year)
+    
+    # start_date가 UTC 범위 내에 있는 공휴일 조회
+    stmt = select(HolidayModel).where(
+        HolidayModel.start_date >= range_start,
+        HolidayModel.start_date <= range_end
+    )
     
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -84,23 +92,56 @@ def get_holidays_by_year_sync(
     """
     연도별 공휴일 조회 (단일 연도 또는 범위) - 동기 버전
 
+    한국 표준시(KST) 기준 연도 범위를 UTC로 변환하여 조회합니다.
+    DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
+    연도 범위를 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
+    
     - API 조회용 (외부 호출 없이 DB 조회만)
     - commit/rollback은 호출자가 관리
-    - 스케줄과 동일한 패턴: datetime 타입으로 직접 비교
     """
     if end_year is None:
         end_year = start_year
 
-    if start_year == end_year:
-        stmt = select(HolidayModel).where(extract("year", HolidayModel.start_date) == start_year)
-    else:
-        stmt = select(HolidayModel).where(
-            extract("year", HolidayModel.start_date) >= start_year,
-            extract("year", HolidayModel.start_date) <= end_year,
-        )
+    # 한국 표준시 기준 연도 범위를 UTC로 변환
+    range_start, _ = get_year_range_utc(start_year)
+    _, range_end = get_year_range_utc(end_year)
+    
+    # start_date가 UTC 범위 내에 있는 공휴일 조회
+    stmt = select(HolidayModel).where(
+        HolidayModel.start_date >= range_start,
+        HolidayModel.start_date <= range_end,
+    )
 
     result = session.execute(stmt)
     return list(result.scalars().all())
+
+
+def get_holiday_by_date_sync(
+        session: Session, date: datetime
+) -> Optional[HolidayModel]:
+    """
+    날짜로 공휴일 조회 (날짜가 범위 내에 포함되는 공휴일 조회) - 동기 버전
+    
+    한국 표준시(KST) 기준 datetime을 UTC로 변환하여 조회합니다.
+    DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
+    datetime을 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
+    
+    :param session: Session
+    :param date: 날짜 (datetime, timezone 있거나 없음)
+    :return: 공휴일 모델 또는 None
+    """
+    from app.domain.dateutil.service import ensure_utc_naive
+    
+    # 날짜를 UTC naive로 변환
+    date_naive = ensure_utc_naive(date)
+    
+    # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
+    stmt = select(HolidayModel).where(
+        HolidayModel.start_date <= date_naive,
+        HolidayModel.end_date >= date_naive
+    )
+    result = session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def get_holiday_by_date(
@@ -109,14 +150,18 @@ async def get_holiday_by_date(
     """
     날짜로 공휴일 조회 (날짜가 범위 내에 포함되는 공휴일 조회)
     
+    한국 표준시(KST) 기준 datetime을 UTC로 변환하여 조회합니다.
+    DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
+    datetime을 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
+    
     :param session: AsyncSession
-    :param date: 날짜 (datetime)
+    :param date: 날짜 (datetime, timezone 있거나 없음)
     :return: 공휴일 모델 또는 None
     """
+    from app.domain.dateutil.service import ensure_utc_naive
+    
     # 날짜를 UTC naive로 변환
-    date_naive = date.replace(hour=0, minute=0, second=0, microsecond=0) if date.tzinfo is None else date
-    if date_naive.tzinfo:
-        date_naive = date_naive.astimezone(UTC).replace(tzinfo=None)
+    date_naive = ensure_utc_naive(date)
 
     # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
@@ -159,8 +204,11 @@ async def save_holidays(
     hash_model = hash_result.scalar_one_or_none()
 
     # 2. 기존 데이터 삭제 (해당 연도의 모든 데이터)
+    # 한국 표준시 기준 연도 범위를 UTC로 변환하여 삭제
+    range_start, range_end = get_year_range_utc(year)
     delete_stmt = delete(HolidayModel).where(
-        extract("year", HolidayModel.start_date) == year
+        HolidayModel.start_date >= range_start,
+        HolidayModel.start_date <= range_end
     )
     await session.execute(delete_stmt)
     await session.flush()  # 삭제를 즉시 DB에 반영
