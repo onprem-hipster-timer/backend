@@ -42,7 +42,7 @@ class HolidaySyncGuard:
         단일 연도 동기화 (중복 방지)
 
         - 이미 진행 중이면 완료를 기다림
-        - 진행 중이 아니면 동기화 시작 후 완료 시 Event.set()
+        - 진행 중이 아니면 동기화 직접 실행
 
         :param year: 동기화할 연도
         :param sync_func: 실제 동기화를 수행하는 비동기 함수
@@ -51,40 +51,30 @@ class HolidaySyncGuard:
             if year in self._in_flight:
                 # 이미 진행 중: 완료 이벤트만 가져옴
                 event = self._in_flight[year]
+                waiting = True
                 logger.debug(f"Year {year} sync already in progress, waiting...")
             else:
-                # 새로 시작: 이벤트 생성 및 태스크 시작
+                # 새로 시작: 이벤트 생성
                 event = asyncio.Event()
                 self._in_flight[year] = event
-                asyncio.create_task(self._run_sync(year, sync_func, event))
+                waiting = False
                 logger.debug(f"Year {year} sync started")
 
-        # 락 해제 후 완료 대기
-        await event.wait()
-
-    async def _run_sync(
-        self,
-        year: int,
-        sync_func: Callable[[int], Awaitable[None]],
-        event: asyncio.Event,
-    ) -> None:
-        """
-        실제 동기화 실행 및 완료 처리
-
-        :param year: 동기화할 연도
-        :param sync_func: 실제 동기화를 수행하는 비동기 함수
-        :param event: 완료 시 set할 이벤트
-        """
-        try:
-            await sync_func(year)
-            logger.info(f"Year {year} sync completed successfully")
-        except Exception as e:
-            logger.error(f"Year {year} sync failed: {str(e)}", exc_info=True)
-        finally:
-            # 완료 처리: in_flight에서 제거 후 이벤트 set
-            async with self._lock:
-                self._in_flight.pop(year, None)
-            event.set()
+        if waiting:
+            # 이미 진행 중인 경우: 완료 대기만
+            await event.wait()
+        else:
+            # 새로 시작: 직접 실행
+            try:
+                await sync_func(year)
+                logger.info(f"Year {year} sync completed successfully")
+            except Exception as e:
+                logger.error(f"Year {year} sync failed: {str(e)}", exc_info=True)
+                raise  # 예외를 호출자에게 전파
+            finally:
+                async with self._lock:
+                    self._in_flight.pop(year, None)
+                event.set()
 
     async def sync_years(
         self,

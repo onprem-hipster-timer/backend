@@ -98,6 +98,7 @@ def get_holidays_by_year_sync(
 
     - API 조회용 (외부 호출 없이 DB 조회만)
     - commit/rollback은 호출자가 관리
+    - 스케줄과 동일한 패턴: datetime 타입으로 직접 비교
     """
     if end_year is None:
         end_year = start_year
@@ -110,8 +111,8 @@ def get_holidays_by_year_sync(
             extract("year", HolidayModel.date) <= end_year,
         )
 
-    result = session.exec(stmt)
-    return list(result.all())
+    result = session.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def get_holiday_by_date(

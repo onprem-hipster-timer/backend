@@ -27,7 +27,12 @@ async def test_sync_year_single_execution():
 async def test_sync_year_duplicate_prevention():
     """동일 연도 중복 실행 방지 테스트"""
     guard = HolidaySyncGuard()
-    mock_sync = AsyncMock()
+    
+    # 시간이 걸리는 mock 설정 (동기화 진행 중 상태 유지)
+    async def slow_sync(year: int):
+        await asyncio.sleep(0.1)
+    
+    mock_sync = AsyncMock(side_effect=slow_sync)
     
     # 첫 번째 호출 시작 (비동기)
     task1 = asyncio.create_task(guard.sync_year(2024, mock_sync))
@@ -84,7 +89,12 @@ async def test_sync_years_range():
 async def test_sync_years_overlapping_requests():
     """겹치는 범위 요청 시 중복 방지 테스트"""
     guard = HolidaySyncGuard()
-    mock_sync = AsyncMock()
+    
+    # 시간이 걸리는 mock 설정 (동기화 진행 중 상태 유지)
+    async def slow_sync(year: int):
+        await asyncio.sleep(0.1)
+    
+    mock_sync = AsyncMock(side_effect=slow_sync)
     
     # 두 범위가 겹침: 2024-2025, 2025-2026
     task1 = asyncio.create_task(guard.sync_years(2024, 2025, mock_sync))
@@ -121,7 +131,12 @@ async def test_sync_year_exception_handling():
 async def test_is_syncing():
     """is_syncing 메서드 테스트"""
     guard = HolidaySyncGuard()
-    mock_sync = AsyncMock()
+    
+    # 시간이 걸리는 mock 설정 (동기화 진행 중 상태 유지)
+    async def slow_sync(year: int):
+        await asyncio.sleep(0.1)
+    
+    mock_sync = AsyncMock(side_effect=slow_sync)
     
     # 동기화 시작 (비동기)
     task = asyncio.create_task(guard.sync_year(2024, mock_sync))
