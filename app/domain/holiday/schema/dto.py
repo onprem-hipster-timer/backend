@@ -8,7 +8,7 @@ Holiday Domain DTO (Data Transfer Objects)
 """
 from typing import Optional, List, Union
 
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import ConfigDict, model_validator
 
 from app.core.base_model import CustomModel
 
@@ -36,7 +36,7 @@ class HolidayItem(CustomModel):
     seq: int  # 순번
     dateKind: str  # 날짜 종류 코드 (01: 국경일)
     dateName: str  # 국경일 명칭
-    isHoliday: str  # 공공기관 휴일 여부 (Y / N)
+    isHoliday: bool  # 공공기관 휴일 여부
 
     @classmethod
     def from_api_item(cls, api_item: HolidayApiItem) -> "HolidayItem":
@@ -55,26 +55,22 @@ class HolidayItem(CustomModel):
         else:
             date_kind_str = str(api_item.dateKind)
 
-        # isHoliday 변환
+        # isHoliday 변환 (bool로 변환)
         if isinstance(api_item.isHoliday, bool):
-            is_holiday_str = "Y" if api_item.isHoliday else "N"
+            is_holiday_bool = api_item.isHoliday
         elif isinstance(api_item.isHoliday, int):
-            is_holiday_str = "Y" if api_item.isHoliday else "N"
+            is_holiday_bool = bool(api_item.isHoliday)
         else:
-            is_holiday_str = str(api_item.isHoliday)
+            # 문자열인 경우 "Y"면 True, 아니면 False
+            is_holiday_bool = str(api_item.isHoliday).upper() == "Y"
 
         return cls(
             locdate=locdate_str,
             seq=api_item.seq,
             dateKind=date_kind_str,
             dateName=api_item.dateName,
-            isHoliday=is_holiday_str,
+            isHoliday=is_holiday_bool,
         )
-
-    @property
-    def is_holiday_bool(self) -> bool:
-        """isHoliday를 boolean으로 변환"""
-        return self.isHoliday == "Y"
 
     @property
     def is_national_holiday(self) -> bool:
@@ -164,35 +160,3 @@ class HolidayQuery(CustomModel):
     solMonth: Optional[int] = None  # 조회 월 (MM)
     numOfRows: Optional[int] = None  # 페이지당 결과 수 (기본 10)
     pageNo: Optional[int] = None  # 페이지 번호 (기본 1)
-
-    @field_validator("solYear")
-    @classmethod
-    def validate_year(cls, v: int) -> int:
-        """연도 검증"""
-        if v < 1900 or v > 2100:
-            raise ValueError("Year must be between 1900 and 2100")
-        return v
-
-    @field_validator("solMonth")
-    @classmethod
-    def validate_month(cls, v: Optional[int]) -> Optional[int]:
-        """월 검증"""
-        if v is not None and (v < 1 or v > 12):
-            raise ValueError("Month must be between 1 and 12")
-        return v
-
-    @field_validator("numOfRows")
-    @classmethod
-    def validate_num_of_rows(cls, v: Optional[int]) -> Optional[int]:
-        """페이지당 결과 수 검증"""
-        if v is not None and v < 1:
-            raise ValueError("numOfRows must be greater than 0")
-        return v
-
-    @field_validator("pageNo")
-    @classmethod
-    def validate_page_no(cls, v: Optional[int]) -> Optional[int]:
-        """페이지 번호 검증"""
-        if v is not None and v < 1:
-            raise ValueError("pageNo must be greater than 0")
-        return v

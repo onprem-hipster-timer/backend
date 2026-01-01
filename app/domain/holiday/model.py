@@ -18,13 +18,23 @@ class HolidayModel(UUIDBase, TimestampMixin, table=True):
     dateName: str  # 국경일 명칭
     isHoliday: bool = Field(default=False)  # 공공기관 휴일 여부
     dateKind: str = Field(
-        sa_column=Column(String(20), nullable=False, default="국경일")
+        sa_column=Column(String(20), nullable=False)
     )  # 날짜 종류 (label: "국경일", "기념일", "24절기", "잡절")
 
     # 같은 날짜에 같은 이름의 공휴일은 중복 방지
     __table_args__ = (
         UniqueConstraint("date", "dateName", name="uq_holiday_date_name"),
     )
+
+    @property
+    def locdate(self) -> str:
+        """date를 YYYYMMDD 형식으로 변환"""
+        return self.date.strftime("%Y%m%d")
+
+    @property
+    def seq(self) -> int:
+        """seq는 DB에 없으므로 0 반환"""
+        return 0
 
 
 class HolidayHashModel(UUIDBase, TimestampMixin, table=True):

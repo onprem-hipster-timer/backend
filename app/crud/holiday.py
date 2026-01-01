@@ -39,14 +39,10 @@ def _parse_datekind_to_label(datekind_str: str) -> str:
     
     :param datekind_str: dateKind 문자열 ("01", "02", "03", "04")
     :return: dateKind label ("국경일", "기념일", "24절기", "잡절")
+    :raises ValueError: 알 수 없는 dateKind 값인 경우
     """
-    try:
-        date_kind_enum = DateKind(datekind_str)
-        return date_kind_enum.label
-    except ValueError:
-        # 알 수 없는 값이면 기본값(국경일) 반환
-        logger.warning(f"Unknown dateKind: {datekind_str}, using default (국경일)")
-        return DateKind.NATIONAL_HOLIDAY.label
+    date_kind_enum = DateKind(datekind_str)
+    return date_kind_enum.label
 
 
 async def get_holiday_hash(session: AsyncSession, year: int) -> Optional[str]:
@@ -63,15 +59,31 @@ async def get_holiday_hash(session: AsyncSession, year: int) -> Optional[str]:
     return hash_model.hash_value if hash_model else None
 
 
-async def get_holidays_by_year(session: AsyncSession, year: int) -> list[HolidayModel]:
+async def get_holidays_by_year(
+    session: AsyncSession, start_year: int, end_year: Optional[int] = None
+) -> list[HolidayModel]:
     """
-    연도별 공휴일 조회
+    연도별 공휴일 조회 (단일 연도 또는 범위)
     
     :param session: AsyncSession
-    :param year: 연도
+    :param start_year: 시작 연도
+    :param end_year: 종료 연도 (포함). None이면 start_year과 동일하게 처리 (단일 연도 조회)
     :return: 공휴일 모델 리스트
     """
-    stmt = select(HolidayModel).where(extract("year", HolidayModel.date) == year)
+    # end_year가 지정되지 않으면 start_year과 동일하게 처리
+    if end_year is None:
+        end_year = start_year
+    
+    if start_year == end_year:
+        # 단일 연도 조회
+        stmt = select(HolidayModel).where(extract("year", HolidayModel.date) == start_year)
+    else:
+        # 범위 조회
+        stmt = select(HolidayModel).where(
+            extract("year", HolidayModel.date) >= start_year,
+            extract("year", HolidayModel.date) <= end_year
+        )
+    
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -145,7 +157,7 @@ async def save_holidays(
         holiday = HolidayModel(
             date=date,
             dateName=item.dateName,
-            isHoliday=item.is_holiday_bool,
+            isHoliday=item.isHoliday,
             dateKind=date_kind_label,
         )
         session.add(holiday)

@@ -48,9 +48,16 @@ class HolidayService:
         :param holidays: 공휴일 목록
         :return: SHA256 해시
         """
+        # 리스트를 정렬하여 순서에 무관하게 동일한 해시 생성
+        # locdate와 dateName을 기준으로 정렬 (여러 페이지 조회 시에도 일관성 보장)
+        sorted_holidays = sorted(
+            holidays,
+            key=lambda h: (h.locdate, h.dateName)
+        )
+        
         # JSON 직렬화 (정렬 필수 - 일관성 보장)
         holidays_json = json.dumps(
-            [h.model_dump() for h in holidays],
+            [h.model_dump() for h in sorted_holidays],
             sort_keys=True,
             default=str,  # datetime 등 처리
             ensure_ascii=False,  # 한글 깨짐 방지
@@ -211,7 +218,7 @@ class HolidayService:
         # 해당 날짜의 국경일 찾기
         for holiday in holidays:
             if holiday.locdate == target_date:
-                return holiday.is_holiday_bool
+                return holiday.isHoliday
 
         return False
 
@@ -312,8 +319,8 @@ class HolidayService:
         # 1. DB에서 조회 시도 (CRUD 직접 호출)
         models = await crud.get_holidays_by_year(self.session, start_year, end_year)
 
-        # Model을 DTO로 변환 (DTO의 클래스 메서드 사용)
-        db_items = [HolidayItem.from_model(model) for model in models]
+        # Model을 DTO로 변환 (Pydantic from_attributes 사용)
+        db_items = [HolidayItem.model_validate(model) for model in models]
 
         if db_items:
             return db_items
@@ -369,4 +376,4 @@ class HolidayService:
 
         # 동기화 후 다시 DB에서 조회하여 반환 (성공한 연도만 포함)
         models = await crud.get_holidays_by_year(self.session, start_year, end_year)
-        return [HolidayItem.from_model(model) for model in models]
+        return [HolidayItem.model_validate(model) for model in models]
