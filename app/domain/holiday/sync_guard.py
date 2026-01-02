@@ -10,7 +10,7 @@ Holiday Sync Guard
 """
 import asyncio
 import logging
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,8 @@ class HolidaySyncGuard:
 
     사용 예시:
         guard = HolidaySyncGuard()
-        await guard.sync_years(2024, 2026, sync_func)
+        await guard.sync_year(2024, sync_func)  # 단일 연도
+        await guard.sync_year(2024, 2026, sync_func)  # 범위
     """
 
     def __init__(self):
@@ -33,13 +34,13 @@ class HolidaySyncGuard:
         self._lock = asyncio.Lock()
         self._in_flight: dict[int, asyncio.Event] = {}  # year -> completion event
 
-    async def sync_year(
+    async def _sync_single_year(
             self,
             year: int,
             sync_func: Callable[[int], Awaitable[None]],
     ) -> None:
         """
-        단일 연도 동기화 (중복 방지)
+        단일 연도 동기화 내부 구현 (중복 방지)
 
         - 이미 진행 중이면 완료를 기다림
         - 진행 중이 아니면 동기화 직접 실행
@@ -76,28 +77,33 @@ class HolidaySyncGuard:
                     self._in_flight.pop(year, None)
                 event.set()
 
-    async def sync_years(
+    async def sync_year(
             self,
-            start_year: int,
-            end_year: int,
+            year: int,
             sync_func: Callable[[int], Awaitable[None]],
+            end_year: Optional[int] = None,
     ) -> None:
         """
-        범위 동기화 (각 연도별 중복 방지 + 전체 완료 추적)
+        공휴일 동기화 (중복 방지)
 
-        - 각 연도별로 sync_year 호출
-        - 모든 연도가 완료될 때까지 기다림
+        - 단일 연도: end_year가 None인 경우
+        - 범위 동기화: end_year가 지정된 경우 (각 연도별 중복 방지 + 전체 완료 추적)
 
-        :param start_year: 시작 연도
-        :param end_year: 종료 연도 (포함)
+        :param year: 동기화할 연도 (또는 시작 연도)
         :param sync_func: 실제 동기화를 수행하는 비동기 함수
+        :param end_year: 종료 연도 (포함). None이면 year만 동기화
         """
-        tasks = [
-            self.sync_year(year, sync_func)
-            for year in range(start_year, end_year + 1)
-        ]
-        await asyncio.gather(*tasks)
-        logger.info(f"All years {start_year}-{end_year} sync completed")
+        if end_year is None:
+            # 단일 연도 동기화
+            await self._sync_single_year(year, sync_func)
+        else:
+            # 범위 동기화: 각 연도별로 병렬 실행
+            tasks = [
+                self._sync_single_year(y, sync_func)
+                for y in range(year, end_year + 1)
+            ]
+            await asyncio.gather(*tasks)
+            logger.info(f"All years {year}-{end_year} sync completed")
 
     def is_syncing(self, year: int) -> bool:
         """

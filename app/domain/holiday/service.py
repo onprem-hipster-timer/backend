@@ -7,17 +7,17 @@ FastAPI Best Practices:
 - API 클라이언트를 사용하여 외부 API 호출
 - Domain Exception을 발생시켜 비즈니스 규칙 위반 표현
 """
-import asyncio
 import hashlib
 import json
 import logging
-from typing import List, Optional
+from typing import Awaitable, Callable, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
 from app.crud import holiday as crud
 from app.domain.holiday.client import HolidayApiClient
+from app.domain.holiday import logger as domain_log
 from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 from app.domain.holiday.sync_guard import get_sync_guard
 
@@ -103,6 +103,27 @@ class HolidayService:
 
         return national_holidays
 
+    async def _fetch_by_year(
+            self,
+            year: int,
+            fetch_func: Callable[[HolidayQuery], Awaitable[List[HolidayItem]]],
+            data_type_name: str,
+            num_of_rows: Optional[int] = None,
+    ) -> List[HolidayItem]:
+        """
+        연도별 데이터 조회 공통 로직
+
+        :param year: 조회 연도 (YYYY)
+        :param fetch_func: API 클라이언트의 fetch 함수
+        :param data_type_name: 로깅용 데이터 타입 이름
+        :param num_of_rows: 페이지당 결과 수 (기본값: None)
+        :return: HolidayItem 리스트
+        """
+        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
+        domain_items = await fetch_func(query)
+        logger.info(f"Retrieved {len(domain_items)} {data_type_name} for year {year}")
+        return domain_items
+
     async def get_holidays_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
         연도별 국경일 정보 조회 (국경일만)
@@ -123,15 +144,12 @@ class HolidayService:
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 모든 특일 목록
         """
-        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        # 모든 페이지를 자동으로 가져오는 메서드 사용
-        domain_items = await self.api_client.fetch_all_holidays(query)
-
-        logger.info(
-            f"Retrieved {len(domain_items)} holidays (all types) for year {year}"
+        return await self._fetch_by_year(
+            year,
+            self.api_client.fetch_all_holidays,
+            "holidays (all types)",
+            num_of_rows
         )
-
-        return domain_items
 
     async def get_rest_days_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
@@ -142,15 +160,12 @@ class HolidayService:
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 공휴일 목록
         """
-        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        # 모든 페이지를 자동으로 가져오는 메서드 사용
-        domain_items = await self.api_client.fetch_all_rest_days(query)
-
-        logger.info(
-            f"Retrieved {len(domain_items)} rest days for year {year}"
+        return await self._fetch_by_year(
+            year,
+            self.api_client.fetch_all_rest_days,
+            "rest days",
+            num_of_rows
         )
-
-        return domain_items
 
     async def get_anniversaries_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
@@ -161,15 +176,12 @@ class HolidayService:
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 기념일 목록
         """
-        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        # 모든 페이지를 자동으로 가져오는 메서드 사용
-        domain_items = await self.api_client.fetch_all_anniversaries(query)
-
-        logger.info(
-            f"Retrieved {len(domain_items)} anniversaries for year {year}"
+        return await self._fetch_by_year(
+            year,
+            self.api_client.fetch_all_anniversaries,
+            "anniversaries",
+            num_of_rows
         )
-
-        return domain_items
 
     async def get_24divisions_by_year(self, year: int, num_of_rows: Optional[int] = None) -> List[HolidayItem]:
         """
@@ -180,15 +192,12 @@ class HolidayService:
         :param num_of_rows: 페이지당 결과 수 (기본값: None, 100 사용)
         :return: 해당 연도의 24절기 목록
         """
-        query = HolidayQuery(solYear=year, numOfRows=num_of_rows)
-        # 모든 페이지를 자동으로 가져오는 메서드 사용
-        domain_items = await self.api_client.fetch_all_24divisions(query)
-
-        logger.info(
-            f"Retrieved {len(domain_items)} 24 divisions for year {year}"
+        return await self._fetch_by_year(
+            year,
+            self.api_client.fetch_all_24divisions,
+            "24 divisions",
+            num_of_rows
         )
-
-        return domain_items
 
     async def get_holidays_by_month(
             self, year: int, month: int, num_of_rows: Optional[int] = None
@@ -229,118 +238,107 @@ class HolidayService:
 
         return holiday.isHoliday if holiday else False
 
-    async def _sync_holidays_for_year_impl(
-            self, year: int, force_update: bool = False
-    ) -> None:
+    # ============ 동기화 관련 메서드 ============
+
+    async def _fetch_all_holidays_for_year(self, year: int) -> dict[str, List[HolidayItem]]:
         """
-        특정 연도 공휴일 동기화 실제 구현 (내부용)
-
-        비즈니스 로직:
-        - API에서 국경일, 공휴일, 기념일, 24절기 데이터 조회
-        - 해시 생성 및 비교
-        - 변경이 있을 때만 DB 업데이트
-
-        :param year: 동기화할 연도
-        :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
-        :raises Exception: 동기화 실패 시 예외 발생
+        API에서 모든 종류의 공휴일 데이터 조회
+        
+        :param year: 조회 연도
+        :return: 종류별 공휴일 딕셔너리
         """
-        # 1. 국경일, 공휴일, 기념일, 24절기 정보 조회
-        national_holidays = await self.get_all_holidays_by_year(year)
-        rest_days = await self.get_rest_days_by_year(year)
-        anniversaries = await self.get_anniversaries_by_year(year)
-        divisions_24 = await self.get_24divisions_by_year(year)
+        return {
+            "national": await self.get_all_holidays_by_year(year),
+            "rest": await self.get_rest_days_by_year(year),
+            "anniversaries": await self.get_anniversaries_by_year(year),
+            "divisions_24": await self.get_24divisions_by_year(year),
+        }
 
-        # 2. 모든 목록을 합치고 중복 제거 (date, dateName 기준)
-        # DB 유니크 제약에 의존하지 않고 메모리에서 중복 제거
-        seen = set()  # (locdate, dateName) 튜플의 set
-        all_holidays = []
-
-        for holiday in national_holidays + rest_days + anniversaries + divisions_24:
+    @staticmethod
+    def _deduplicate_holidays(holidays_by_type: dict[str, List[HolidayItem]]) -> List[HolidayItem]:
+        """
+        중복 공휴일 제거 (locdate, dateName 기준)
+        
+        :param holidays_by_type: 종류별 공휴일 딕셔너리
+        :return: 중복 제거된 공휴일 리스트
+        """
+        seen: set[tuple[str, str]] = set()
+        deduplicated: List[HolidayItem] = []
+        
+        all_holidays = (
+            holidays_by_type["national"] +
+            holidays_by_type["rest"] +
+            holidays_by_type["anniversaries"] +
+            holidays_by_type["divisions_24"]
+        )
+        
+        for holiday in all_holidays:
             key = (holiday.locdate, holiday.dateName)
             if key not in seen:
                 seen.add(key)
-                all_holidays.append(holiday)
+                deduplicated.append(holiday)
+        
+        return deduplicated
 
-        # 3. 해시 생성
-        new_hash = self.generate_hash(all_holidays)
-
-        # 4. 기존 해시 조회 및 업데이트 건너뛰기 여부 확인
+    async def _should_update(
+            self, year: int, new_hash: str, force_update: bool
+    ) -> tuple[bool, Optional[str]]:
+        """
+        해시 비교하여 업데이트 필요 여부 확인
+        
+        :param year: 연도
+        :param new_hash: 새 해시값
+        :param force_update: 강제 업데이트 여부
+        :return: (업데이트 필요 여부, 기존 해시값)
+        """
         old_hash = await crud.get_holiday_hash(self.session, year)
-        if not force_update and old_hash == new_hash:
-            logger.debug(f"No changes for year {year}, skipping update")
-            return
-
-        # 5. 업데이트 결정 로깅
+        
         if force_update:
-            logger.debug(
-                f"Force updating holidays for {year} "
-                f"(hash: {new_hash[:8]}...)"
-            )
-        else:
-            logger.info(
-                f"Holiday changes detected for {year}\n"
-                f"   Old: {old_hash[:8] if old_hash else 'None'}..., "
-                f"New: {new_hash[:8]}..."
-            )
+            return True, old_hash
+        
+        return old_hash != new_hash, old_hash
 
-        # 6. DB 업데이트
-        await crud.save_holidays(self.session, year, all_holidays, new_hash)
-
-        # 중복 제거 정보 로깅
-        total_count = len(national_holidays) + len(rest_days) + len(anniversaries) + len(divisions_24)
-        deduplicated_count = len(all_holidays)
-        if total_count != deduplicated_count:
-            logger.info(
-                f"Removed {total_count - deduplicated_count} duplicate holidays "
-                f"before saving (total: {total_count} -> {deduplicated_count})"
-            )
-
-        logger.info(
-            f"Updated {len(all_holidays)} holidays for {year} "
-            f"(national: {len(national_holidays)}, rest: {len(rest_days)}, "
-            f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
-        )
 
     async def sync_holidays_for_year(
-            self, year: int, force_update: bool = False
+            self,
+            year: int,
+            end_year: Optional[int] = None,
+            force_update: bool = False
     ) -> None:
         """
-        특정 연도 공휴일 동기화 (중복 방지 적용)
+        공휴일 동기화 (중복 방지 적용)
 
         SyncGuard를 통해 동일 연도 중복 실행 방지:
         - 이미 진행 중이면 완료를 기다림
         - 진행 중이 아니면 동기화 직접 실행
 
-        :param year: 동기화할 연도
+        :param year: 동기화할 연도 (또는 시작 연도)
+        :param end_year: 종료 연도 (포함). None이면 year만 동기화
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
         :raises Exception: 동기화 실패 시 예외 발생
         """
         async def _do_sync(y: int) -> None:
-            """실제 동기화 수행 (SyncGuard 콜백)"""
-            await self._sync_holidays_for_year_impl(y, force_update)
+            # 1. API에서 데이터 조회
+            holidays_by_type = await self._fetch_all_holidays_for_year(y)
+            
+            # 2. 중복 제거
+            deduplicated = self._deduplicate_holidays(holidays_by_type)
+            
+            # 3. 해시 생성 및 비교
+            new_hash = self.generate_hash(deduplicated)
+            should_update, old_hash = await self._should_update(y, new_hash, force_update)
+            
+            if not should_update:
+                logger.debug(f"No changes for year {y}, skipping update")
+                return
+            
+            # 4. DB 저장
+            await crud.save_holidays(self.session, y, deduplicated, new_hash)
+            
+            # 5. 로깅
+            domain_log.log_sync_result(y, holidays_by_type, deduplicated, new_hash, old_hash, force_update)
 
-        await self.sync_guard.sync_year(year, _do_sync)
-
-    async def sync_holidays_for_years(
-            self, start_year: int, end_year: int, force_update: bool = False
-    ) -> None:
-        """
-        여러 연도 공휴일 동기화 (범위 동기화, 중복 방지 적용)
-
-        SyncGuard를 통해 각 연도별 중복 실행 방지:
-        - 각 연도별로 병렬 실행
-        - 모든 연도가 완료될 때까지 기다림
-
-        :param start_year: 시작 연도
-        :param end_year: 종료 연도 (포함)
-        :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
-        :raises Exception: 동기화 실패 시 예외 발생
-        """
-        async def _do_sync(year: int) -> None:
-            """실제 동기화 수행 (SyncGuard 콜백)"""
-            await self._sync_holidays_for_year_impl(year, force_update)
-
-        await self.sync_guard.sync_years(start_year, end_year, _do_sync)
+        await self.sync_guard.sync_year(year, _do_sync, end_year=end_year)
 
     async def get_existing_years(self) -> set[int]:
         """
@@ -349,6 +347,70 @@ class HolidayService:
         :return: 존재하는 년도 집합
         """
         return await crud.get_existing_years(self.session)
+
+    def _filter_missing_years(
+            self, existing_years: set[int], start_year: int, end_year: int
+    ) -> tuple[list[int], int]:
+        """
+        존재하지 않는 연도 필터링
+        
+        :param existing_years: 이미 존재하는 연도 집합
+        :param start_year: 시작 연도
+        :param end_year: 종료 연도 (포함)
+        :return: (동기화할 연도 리스트, 건너뛴 연도 수)
+        """
+        all_years = list(range(start_year, end_year + 1))
+        missing_years = [y for y in all_years if y not in existing_years]
+        skipped_count = len(all_years) - len(missing_years)
+        return missing_years, skipped_count
+
+
+    async def initialize_historical_data(
+            self, initial_year: int, current_year: int
+    ) -> bool:
+        """
+        초기 데이터 로드: initial_year부터 current_year까지 모든 연도 동기화
+        
+        서버 처음 실행 시:
+        - 해시 테이블에 이미 존재하는 년도는 건너뜀
+        - 존재하지 않는 년도만 동기화
+        
+        :param initial_year: 시작 연도
+        :param current_year: 현재 연도
+        :return: 초기화 작업이 수행되었으면 True, 이미 완료되었으면 False
+        :raises Exception: 동기화 실패 시 예외 발생
+        """
+        existing_years = await self.get_existing_years()
+        years_to_initialize, skipped_count = self._filter_missing_years(
+            existing_years, initial_year, current_year
+        )
+
+        domain_log.log_initialization_skipped(skipped_count, existing_years)
+
+        if not years_to_initialize:
+            domain_log.log_initialization_not_needed(initial_year, current_year)
+            return False
+
+        total_years = len(years_to_initialize)
+        domain_log.log_initialization_start(initial_year, current_year, total_years, skipped_count)
+
+        for idx, year in enumerate(years_to_initialize, 1):
+            await self.sync_holidays_for_year(year, force_update=True)
+            domain_log.log_initialization_progress(year, idx, total_years)
+
+        domain_log.log_initialization_complete(total_years)
+        return True
+
+    async def sync_current_and_next_year(self) -> None:
+        """
+        현재 연도 + 내년 공휴일 동기화 (정기 동기화용)
+        
+        백그라운드 태스크에서 주기적으로 호출하여 최신 데이터 유지
+        로깅은 sync_holidays_for_year가 처리
+        """
+        from datetime import datetime
+        current_year = datetime.now().year
+        await self.sync_holidays_for_year(current_year, current_year + 1)
 
 
 class HolidayReadService:
@@ -362,32 +424,31 @@ class HolidayReadService:
     def __init__(self, session: Session):
         self.session = session
 
-    def get_holidays(self, start_year: int, end_year: Optional[int] = None) -> List[HolidayItem]:
+    def get_holidays(
+            self,
+            start_year: int,
+            end_year: Optional[int] = None,
+            auto_sync: bool = False
+    ) -> List[HolidayItem]:
+        """
+        공휴일 조회 (DB에 있는 데이터만 반환)
+
+        :param start_year: 시작 연도
+        :param end_year: 종료 연도 (None이면 start_year와 동일)
+        :param auto_sync: 데이터가 없을 경우 자동으로 동기화 태스크 스케줄
+        :return: 공휴일 목록
+        """
         if end_year is None:
             end_year = start_year
 
         models = crud.get_holidays_by_year_sync(self.session, start_year, end_year)
-        return [HolidayItem.model_validate(model) for model in models]
+        holidays = [HolidayItem.model_validate(model) for model in models]
 
-    async def get_with_sync_option(
-            self,
-            start_year: int,
-            end_year: Optional[int],
-            sync_if_missing: bool,
-    ) -> list[HolidayItem]:
-        """
-        조회 후, 필요 시 내부에서 비동기 동기화를 스케줄
+        # 데이터가 없고 auto_sync=True이면 백그라운드 동기화 태스크 스케줄
+        if not holidays and auto_sync:
+            import asyncio
+            from app.domain.holiday.tasks import sync_holidays_async
+            asyncio.create_task(sync_holidays_async(start_year, end_year))
+            logger.info(f"Background holiday sync scheduled for years {start_year}-{end_year}")
 
-        - 조회는 동기 세션으로 처리
-        - 데이터가 없고 sync_if_missing=True이면 여기서 바로 create_task로 스케줄
-        - 호출자는 반환된 조회 결과만 사용
-        """
-        holidays = self.get_holidays(start_year, end_year)
-
-        if holidays or not sync_if_missing:
-            return holidays
-
-        from app.background.tasks import sync_holidays_async
-        asyncio.create_task(sync_holidays_async(start_year, end_year))
-        logger.info(f"Background holiday sync scheduled for years {start_year}-{end_year}")
         return holidays

@@ -77,7 +77,7 @@ async def test_sync_years_range():
     guard = HolidaySyncGuard()
     mock_sync = AsyncMock()
     
-    await guard.sync_years(2024, 2026, mock_sync)
+    await guard.sync_year(2024, mock_sync, end_year=2026)
     
     # 2024, 2025, 2026 각각 한 번씩 호출
     assert mock_sync.call_count == 3
@@ -97,9 +97,9 @@ async def test_sync_years_overlapping_requests():
     mock_sync = AsyncMock(side_effect=slow_sync)
     
     # 두 범위가 겹침: 2024-2025, 2025-2026
-    task1 = asyncio.create_task(guard.sync_years(2024, 2025, mock_sync))
+    task1 = asyncio.create_task(guard.sync_year(2024, mock_sync, end_year=2025))
     await asyncio.sleep(0.01)  # 첫 번째가 시작되도록
-    task2 = asyncio.create_task(guard.sync_years(2025, 2026, mock_sync))
+    task2 = asyncio.create_task(guard.sync_year(2025, mock_sync, end_year=2026))
     
     await asyncio.gather(task1, task2)
     
