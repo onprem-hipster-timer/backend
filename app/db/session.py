@@ -1,6 +1,6 @@
 import logging
-from contextlib import contextmanager
-from typing import Generator
+from contextlib import asynccontextmanager, contextmanager
+from typing import AsyncGenerator, Generator
 from urllib.parse import urlparse
 
 from sqlalchemy import event
@@ -158,6 +158,23 @@ async_engine = create_async_engine(
 async_session_maker = async_sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False
 )
+
+
+@asynccontextmanager
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    비동기 트랜잭션 자동 관리 세션
+    - Background tasks 등에서 사용
+    - 함수 종료 성공: commit 자동
+    - 예외 발생: rollback 자동
+    """
+    async with async_session_maker() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 async def init_db_async() -> None:

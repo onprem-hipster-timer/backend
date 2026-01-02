@@ -14,7 +14,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from app.db.session import async_session_maker
+from app.db.session import get_async_db
 from app.domain.holiday.service import HolidayService
 from app.domain.holiday.sync_guard import get_sync_guard
 
@@ -124,7 +124,7 @@ class HolidayBackgroundTask:
         :raises Exception: 모든 예외를 그대로 전파하여 배치 작업 중단
         """
         # 해시 테이블에 존재하는 년도 조회
-        async with async_session_maker() as session:
+        async with get_async_db() as session:
             service = HolidayService(session)
             existing_years = await service.get_existing_years()
 
@@ -181,14 +181,9 @@ class HolidayBackgroundTask:
 
         async def do_sync(y: int) -> None:
             """실제 동기화 수행 (SyncGuard 콜백)"""
-            async with async_session_maker() as session:
-                try:
-                    service = HolidayService(session)
-                    await service.sync_holidays_for_year(y, force_update)
-                    await session.commit()
-                except Exception as e:
-                    await session.rollback()
-                    raise
+            async with get_async_db() as session:
+                service = HolidayService(session)
+                await service.sync_holidays_for_year(y, force_update)
 
         await guard.sync_year(year, do_sync)
 
@@ -203,13 +198,8 @@ async def sync_holidays_async(start_year: int, end_year: int) -> None:
 
     async def sync_single_year(year: int) -> None:
         """단일 연도 동기화 (SyncGuard 콜백용)"""
-        async with async_session_maker() as session:
+        async with get_async_db() as session:
             service = HolidayService(session)
-            try:
-                await service.sync_holidays_for_year(year, force_update=True)
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                raise
+            await service.sync_holidays_for_year(year, force_update=True)
 
     await guard.sync_years(start_year, end_year, sync_single_year)
