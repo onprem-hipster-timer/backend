@@ -1,7 +1,9 @@
 import pytest
+import pytest_asyncio
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.pool import StaticPool
 from sqlalchemy import event
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.models.schedule import Schedule
 
 
@@ -43,6 +45,58 @@ def test_session(test_engine):
             transaction.rollback()
         except Exception:
             transaction.rollback()
+            raise
+
+
+@pytest_asyncio.fixture
+async def test_async_engine():
+    """테스트용 비동기 DB 엔진"""
+    # SQLite 비동기 엔진 생성
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    
+    # SQLite에서 외래 키 제약 조건 활성화
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+    
+    # 테스트용 테이블 생성
+    # 모든 모델 import (테이블 메타데이터 등록)
+    from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+    
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    
+    yield engine
+    
+    # 테스트 후 정리
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def test_async_session(test_async_engine):
+    """트랜잭션 기반 비동기 테스트 세션"""
+    async_session_maker = async_sessionmaker(
+        test_async_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    async with async_session_maker() as session:
+        # 트랜잭션 시작
+        transaction = await session.begin()
+        try:
+            yield session
+            # 각 테스트 후 자동 rollback
+            await transaction.rollback()
+        except Exception:
+            await transaction.rollback()
             raise
 
 

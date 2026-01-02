@@ -72,7 +72,7 @@ async def test_sync_year_different_years():
 
 
 @pytest.mark.asyncio
-async def test_sync_years_range():
+async def test_sync_year_range():
     """범위 동기화가 모든 연도를 처리하는지 테스트"""
     guard = HolidaySyncGuard()
     mock_sync = AsyncMock()
@@ -86,7 +86,7 @@ async def test_sync_years_range():
 
 
 @pytest.mark.asyncio
-async def test_sync_years_overlapping_requests():
+async def test_sync_year_overlapping_requests():
     """겹치는 범위 요청 시 중복 방지 테스트"""
     guard = HolidaySyncGuard()
     

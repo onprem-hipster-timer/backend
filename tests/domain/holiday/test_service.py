@@ -5,13 +5,13 @@ HolidayService와 HolidayReadService 테스트
 """
 import pytest
 from datetime import datetime
-from sqlmodel import Session
 from zoneinfo import ZoneInfo
 from datetime import timezone as tz
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.domain.holiday.service import HolidayService, HolidayReadService
 from app.domain.holiday.schema.dto import HolidayItem
-from app.domain.holiday.model import HolidayModel
+from app.domain.holiday.model import HolidayModel, HolidayHashModel
 
 
 def _create_holiday_date_range(locdate: str) -> tuple[datetime, datetime]:
@@ -344,3 +344,390 @@ def test_holiday_service_generate_hash_empty():
     
     assert hash_value is not None
     assert len(hash_value) == 64  # SHA256 해시 길이
+
+
+# ============ 동기화 관련 테스트 ============
+
+def test_deduplicate_holidays():
+    """중복 공휴일 제거 테스트"""
+    holidays_by_type = {
+        "national": [
+            HolidayItem(
+                locdate="20240101",
+                seq=1,
+                dateKind="01",
+                dateName="신정",
+                isHoliday=True,
+            ),
+            HolidayItem(
+                locdate="20240301",
+                seq=1,
+                dateKind="01",
+                dateName="삼일절",
+                isHoliday=True,
+            ),
+        ],
+        "rest": [
+            HolidayItem(
+                locdate="20240101",  # 중복 (national과 동일)
+                seq=1,
+                dateKind="02",
+                dateName="신정",
+                isHoliday=True,
+            ),
+        ],
+        "anniversaries": [],
+        "divisions_24": [],
+    }
+    
+    deduplicated = HolidayService._deduplicate_holidays(holidays_by_type)
+    
+    # 중복 제거되어 2개만 남아야 함
+    assert len(deduplicated) == 2
+    locdates = {h.locdate for h in deduplicated}
+    assert locdates == {"20240101", "20240301"}
+
+
+def test_deduplicate_holidays_empty():
+    """빈 공휴일 딕셔너리 중복 제거 테스트"""
+    holidays_by_type = {
+        "national": [],
+        "rest": [],
+        "anniversaries": [],
+        "divisions_24": [],
+    }
+    
+    deduplicated = HolidayService._deduplicate_holidays(holidays_by_type)
+    
+    assert len(deduplicated) == 0
+    assert deduplicated == []
+
+
+@pytest.mark.asyncio
+async def test_should_update_with_hash_change(test_async_session):
+    """해시 변경 시 업데이트 필요 확인 테스트"""
+    from app.crud import holiday as crud
+    
+    # 기존 해시 저장
+    old_hash = "old_hash_value"
+    hash_model = HolidayHashModel(year=2024, hash_value=old_hash)
+    test_async_session.add(hash_model)
+    await test_async_session.flush()
+    
+    service = HolidayService(test_async_session)
+    new_hash = "new_hash_value"
+    
+    should_update, retrieved_hash = await service._should_update(2024, new_hash, False)
+    
+    assert should_update is True
+    assert retrieved_hash == old_hash
+
+
+@pytest.mark.asyncio
+async def test_should_update_with_same_hash(test_async_session):
+    """해시 동일 시 업데이트 불필요 확인 테스트"""
+    from app.crud import holiday as crud
+    
+    # 기존 해시 저장
+    same_hash = "same_hash_value"
+    hash_model = HolidayHashModel(year=2024, hash_value=same_hash)
+    test_async_session.add(hash_model)
+    await test_async_session.flush()
+    
+    service = HolidayService(test_async_session)
+    
+    should_update, retrieved_hash = await service._should_update(2024, same_hash, False)
+    
+    assert should_update is False
+    assert retrieved_hash == same_hash
+
+
+@pytest.mark.asyncio
+async def test_should_update_with_force(test_async_session):
+    """강제 업데이트 시 항상 True 반환 테스트"""
+    from app.crud import holiday as crud
+    
+    # 기존 해시 저장
+    old_hash = "old_hash_value"
+    hash_model = HolidayHashModel(year=2024, hash_value=old_hash)
+    test_async_session.add(hash_model)
+    await test_async_session.flush()
+    
+    service = HolidayService(test_async_session)
+    new_hash = "new_hash_value"
+    
+    # 해시가 같아도 force_update=True면 True 반환
+    should_update, retrieved_hash = await service._should_update(2024, old_hash, True)
+    
+    assert should_update is True
+    assert retrieved_hash == old_hash
+
+
+@pytest.mark.asyncio
+async def test_should_update_with_no_existing_hash(test_async_session):
+    """기존 해시가 없을 때 업데이트 필요 확인 테스트"""
+    service = HolidayService(test_async_session)
+    new_hash = "new_hash_value"
+    
+    should_update, retrieved_hash = await service._should_update(2024, new_hash, False)
+    
+    assert should_update is True
+    assert retrieved_hash is None
+
+
+def test_filter_missing_years():
+    """존재하지 않는 연도 필터링 테스트"""
+    existing_years = {2022, 2024, 2026}
+    start_year = 2022
+    end_year = 2026
+    
+    # HolidayService 인스턴스 생성 (session은 Mock)
+    mock_session = MagicMock()
+    service = HolidayService(mock_session)
+    
+    missing_years, skipped_count = service._filter_missing_years(
+        existing_years, start_year, end_year
+    )
+    
+    # 2022, 2024, 2026은 존재하므로 제외
+    # 2023, 2025만 missing_years에 포함되어야 함
+    assert set(missing_years) == {2023, 2025}
+    assert skipped_count == 3  # 2022, 2024, 2026
+
+
+def test_filter_missing_years_all_missing():
+    """모든 연도가 존재하지 않을 때 테스트"""
+    existing_years = set()
+    start_year = 2024
+    end_year = 2026
+    
+    mock_session = MagicMock()
+    service = HolidayService(mock_session)
+    
+    missing_years, skipped_count = service._filter_missing_years(
+        existing_years, start_year, end_year
+    )
+    
+    assert set(missing_years) == {2024, 2025, 2026}
+    assert skipped_count == 0
+
+
+def test_filter_missing_years_all_exist():
+    """모든 연도가 이미 존재할 때 테스트"""
+    existing_years = {2024, 2025, 2026}
+    start_year = 2024
+    end_year = 2026
+    
+    mock_session = MagicMock()
+    service = HolidayService(mock_session)
+    
+    missing_years, skipped_count = service._filter_missing_years(
+        existing_years, start_year, end_year
+    )
+    
+    assert len(missing_years) == 0
+    assert skipped_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_existing_years(test_async_session):
+    """존재하는 연도 조회 테스트"""
+    # 해시 모델 생성
+    hash_models = [
+        HolidayHashModel(year=2022, hash_value="hash1"),
+        HolidayHashModel(year=2024, hash_value="hash2"),
+        HolidayHashModel(year=2026, hash_value="hash3"),
+    ]
+    for model in hash_models:
+        test_async_session.add(model)
+    await test_async_session.flush()
+    
+    service = HolidayService(test_async_session)
+    existing_years = await service.get_existing_years()
+    
+    assert existing_years == {2022, 2024, 2026}
+
+
+@pytest.mark.asyncio
+async def test_get_existing_years_empty(test_async_session):
+    """존재하는 연도가 없을 때 테스트"""
+    service = HolidayService(test_async_session)
+    existing_years = await service.get_existing_years()
+    
+    assert existing_years == set()
+
+
+@pytest.mark.asyncio
+async def test_sync_holidays_for_year_single(test_async_session):
+    """단일 연도 동기화 테스트 (Mock 사용)"""
+    from app.crud import holiday as crud
+    
+    # Mock API 클라이언트 설정
+    mock_holidays = [
+        HolidayItem(
+            locdate="20240101",
+            seq=1,
+            dateKind="01",
+            dateName="신정",
+            isHoliday=True,
+        ),
+    ]
+    
+    with patch.object(HolidayService, '_fetch_all_holidays_for_year', new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = {
+            "national": mock_holidays,
+            "rest": [],
+            "anniversaries": [],
+            "divisions_24": [],
+        }
+        
+        # save_holidays Mock
+        with patch.object(crud, 'save_holidays', new_callable=AsyncMock) as mock_save:
+            with patch.object(crud, 'get_holiday_hash', new_callable=AsyncMock) as mock_get_hash:
+                mock_get_hash.return_value = None  # 기존 해시 없음
+                
+                service = HolidayService(test_async_session)
+                await service.sync_holidays_for_year(2024)
+                
+                # save_holidays가 호출되었는지 확인
+                mock_save.assert_called_once()
+                call_args = mock_save.call_args
+                assert call_args[0][1] == 2024  # year 파라미터
+                assert len(call_args[0][2]) == 1  # deduplicated holidays
+
+
+@pytest.mark.asyncio
+async def test_sync_holidays_for_year_skip_when_hash_same(test_async_session):
+    """해시가 같을 때 동기화 건너뛰기 테스트"""
+    from app.crud import holiday as crud
+    
+    # 기존 해시 저장
+    existing_hash = "existing_hash"
+    hash_model = HolidayHashModel(year=2024, hash_value=existing_hash)
+    test_async_session.add(hash_model)
+    await test_async_session.flush()
+    
+    mock_holidays = [
+        HolidayItem(
+            locdate="20240101",
+            seq=1,
+            dateKind="01",
+            dateName="신정",
+            isHoliday=True,
+        ),
+    ]
+    
+    with patch.object(HolidayService, '_fetch_all_holidays_for_year', new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = {
+            "national": mock_holidays,
+            "rest": [],
+            "anniversaries": [],
+            "divisions_24": [],
+        }
+        
+        with patch.object(crud, 'save_holidays', new_callable=AsyncMock) as mock_save:
+            # 해시가 같다고 가정 (generate_hash가 같은 해시 반환)
+            # get_holiday_hash는 실제 DB 조회 사용 (이미 DB에 저장했으므로)
+            with patch.object(HolidayService, 'generate_hash') as mock_hash:
+                mock_hash.return_value = existing_hash
+                
+                service = HolidayService(test_async_session)
+                await service.sync_holidays_for_year(2024)
+                
+                # save_holidays가 호출되지 않아야 함
+                mock_save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sync_holidays_for_year_range(test_async_session):
+    """범위 동기화 테스트"""
+    from app.crud import holiday as crud
+    
+    mock_holidays = [
+        HolidayItem(
+            locdate="20240101",
+            seq=1,
+            dateKind="01",
+            dateName="신정",
+            isHoliday=True,
+        ),
+    ]
+    
+    with patch.object(HolidayService, '_fetch_all_holidays_for_year', new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = {
+            "national": mock_holidays,
+            "rest": [],
+            "anniversaries": [],
+            "divisions_24": [],
+        }
+        
+        with patch.object(crud, 'save_holidays', new_callable=AsyncMock) as mock_save:
+            with patch.object(crud, 'get_holiday_hash', new_callable=AsyncMock) as mock_get_hash:
+                mock_get_hash.return_value = None
+                
+                service = HolidayService(test_async_session)
+                await service.sync_holidays_for_year(2024, end_year=2026)
+                
+                # 2024, 2025, 2026 각각 한 번씩 호출되어야 함
+                assert mock_fetch.call_count == 3
+                assert mock_save.call_count == 3
+                
+                # 호출된 연도 확인
+                called_years = [call[0][1] for call in mock_save.call_args_list]
+                assert set(called_years) == {2024, 2025, 2026}
+
+
+@pytest.mark.asyncio
+async def test_initialize_historical_data(test_async_session):
+    """초기 데이터 로드 테스트"""
+    from app.crud import holiday as crud
+    
+    # 일부 연도는 이미 존재
+    existing_hash = HolidayHashModel(year=2022, hash_value="hash1")
+    test_async_session.add(existing_hash)
+    await test_async_session.flush()
+    
+    mock_holidays = [
+        HolidayItem(
+            locdate="20240101",
+            seq=1,
+            dateKind="01",
+            dateName="신정",
+            isHoliday=True,
+        ),
+    ]
+    
+    with patch.object(HolidayService, '_fetch_all_holidays_for_year', new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = {
+            "national": mock_holidays,
+            "rest": [],
+            "anniversaries": [],
+            "divisions_24": [],
+        }
+        
+        with patch.object(crud, 'save_holidays', new_callable=AsyncMock) as mock_save:
+            # get_holiday_hash는 실제 DB 조회 사용 (2022는 이미 저장했으므로)
+            service = HolidayService(test_async_session)
+            result = await service.initialize_historical_data(2022, 2024)
+            
+            # 2022는 이미 존재하므로 제외, 2023, 2024만 동기화
+            assert result is True
+            assert mock_save.call_count == 2
+            called_years = [call[0][1] for call in mock_save.call_args_list]
+            assert set(called_years) == {2023, 2024}
+
+
+@pytest.mark.asyncio
+async def test_initialize_historical_data_all_exist(test_async_session):
+    """모든 연도가 이미 존재할 때 초기화 건너뛰기 테스트"""
+    # 모든 연도 존재
+    for year in range(2022, 2025):
+        hash_model = HolidayHashModel(year=year, hash_value=f"hash{year}")
+        test_async_session.add(hash_model)
+    await test_async_session.flush()
+    
+    service = HolidayService(test_async_session)
+    result = await service.initialize_historical_data(2022, 2024)
+    
+    # 모든 연도가 이미 존재하므로 False 반환
+    assert result is False
