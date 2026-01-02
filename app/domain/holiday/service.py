@@ -19,6 +19,7 @@ from sqlmodel import Session
 from app.crud import holiday as crud
 from app.domain.holiday.client import HolidayApiClient
 from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
+from app.domain.holiday.sync_guard import get_sync_guard
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,14 @@ class HolidayService:
     - Repository 패턴 제거, CRUD 함수 직접 사용
     - Session을 받아서 CRUD 함수 호출
     - 비즈니스 로직 담당 (해시 비교, 동기화 로직 등)
+    - SyncGuard를 통한 중복 방지 (모든 호출 경로에서 자동 적용)
     """
 
     def __init__(self, session: AsyncSession):
         """HolidayService 초기화"""
         self.session = session
         self.api_client = HolidayApiClient()
+        self.sync_guard = get_sync_guard()
 
     @staticmethod
     def generate_hash(holidays: List[HolidayItem]) -> str:
@@ -226,11 +229,11 @@ class HolidayService:
 
         return holiday.isHoliday if holiday else False
 
-    async def sync_holidays_for_year(
+    async def _sync_holidays_for_year_impl(
             self, year: int, force_update: bool = False
     ) -> None:
         """
-        특정 연도 공휴일 동기화 (국경일 + 공휴일 + 기념일 + 24절기)
+        특정 연도 공휴일 동기화 실제 구현 (내부용)
 
         비즈니스 로직:
         - API에서 국경일, 공휴일, 기념일, 24절기 데이터 조회
@@ -297,6 +300,47 @@ class HolidayService:
             f"(national: {len(national_holidays)}, rest: {len(rest_days)}, "
             f"anniversaries: {len(anniversaries)}, 24divisions: {len(divisions_24)})"
         )
+
+    async def sync_holidays_for_year(
+            self, year: int, force_update: bool = False
+    ) -> None:
+        """
+        특정 연도 공휴일 동기화 (중복 방지 적용)
+
+        SyncGuard를 통해 동일 연도 중복 실행 방지:
+        - 이미 진행 중이면 완료를 기다림
+        - 진행 중이 아니면 동기화 직접 실행
+
+        :param year: 동기화할 연도
+        :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
+        :raises Exception: 동기화 실패 시 예외 발생
+        """
+        async def _do_sync(y: int) -> None:
+            """실제 동기화 수행 (SyncGuard 콜백)"""
+            await self._sync_holidays_for_year_impl(y, force_update)
+
+        await self.sync_guard.sync_year(year, _do_sync)
+
+    async def sync_holidays_for_years(
+            self, start_year: int, end_year: int, force_update: bool = False
+    ) -> None:
+        """
+        여러 연도 공휴일 동기화 (범위 동기화, 중복 방지 적용)
+
+        SyncGuard를 통해 각 연도별 중복 실행 방지:
+        - 각 연도별로 병렬 실행
+        - 모든 연도가 완료될 때까지 기다림
+
+        :param start_year: 시작 연도
+        :param end_year: 종료 연도 (포함)
+        :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
+        :raises Exception: 동기화 실패 시 예외 발생
+        """
+        async def _do_sync(year: int) -> None:
+            """실제 동기화 수행 (SyncGuard 콜백)"""
+            await self._sync_holidays_for_year_impl(year, force_update)
+
+        await self.sync_guard.sync_years(start_year, end_year, _do_sync)
 
     async def get_existing_years(self) -> set[int]:
         """

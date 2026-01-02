@@ -16,7 +16,6 @@ from datetime import datetime
 
 from app.db.session import get_async_db
 from app.domain.holiday.service import HolidayService
-from app.domain.holiday.sync_guard import get_sync_guard
 
 logger = logging.getLogger(__name__)
 
@@ -164,42 +163,28 @@ class HolidayBackgroundTask:
 
     async def _sync_holidays(self, year: int, force_update: bool = False) -> None:
         """
-        특정 연도 공휴일 동기화 로직 (SyncGuard를 통해 중복 방지)
+        특정 연도 공휴일 동기화 로직
         
-        객체지향 원칙 준수:
-        - 각 단계를 별도 메서드로 분리
-        - Service를 통해 모든 비즈니스 로직 처리
-        - SyncGuard를 통해 동기화 중복 방지
-        
-        해시가 중복되면 해당 연도는 수정을 시도하지 않음
+        Service를 통해 모든 비즈니스 로직 처리:
+        - Service에서 SyncGuard를 통해 중복 방지
+        - 해시가 중복되면 해당 연도는 수정을 시도하지 않음
         
         :param year: 동기화할 연도
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트 (초기화 시 사용)
         :raises Exception: 모든 예외를 그대로 전파
         """
-        guard = get_sync_guard()
-
-        async def do_sync(y: int) -> None:
-            """실제 동기화 수행 (SyncGuard 콜백)"""
-            async with get_async_db() as session:
-                service = HolidayService(session)
-                await service.sync_holidays_for_year(y, force_update)
-
-        await guard.sync_year(year, do_sync)
+        async with get_async_db() as session:
+            service = HolidayService(session)
+            await service.sync_holidays_for_year(year, force_update)
 
 
 async def sync_holidays_async(start_year: int, end_year: int) -> None:
     """
     공휴일 동기화를 비동기로 수행 (배치/백그라운드용)
 
-    SyncGuard를 사용하여 중복 실행 방지 및 범위 완료 추적
+    Service를 통해 범위 동기화:
+    - Service에서 SyncGuard를 통해 중복 실행 방지 및 범위 완료 추적
     """
-    guard = get_sync_guard()
-
-    async def sync_single_year(year: int) -> None:
-        """단일 연도 동기화 (SyncGuard 콜백용)"""
-        async with get_async_db() as session:
-            service = HolidayService(session)
-            await service.sync_holidays_for_year(year, force_update=True)
-
-    await guard.sync_years(start_year, end_year, sync_single_year)
+    async with get_async_db() as session:
+        service = HolidayService(session)
+        await service.sync_holidays_for_years(start_year, end_year, force_update=True)
