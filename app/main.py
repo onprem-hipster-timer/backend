@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
-from app.domain.holiday.tasks import HolidayBackgroundTask
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import setup_logging
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
+from app.domain.holiday.tasks import HolidayBackgroundTask
 from app.middleware.request_logger import RequestLoggerMiddleware
 
 logger = logging.getLogger(__name__)

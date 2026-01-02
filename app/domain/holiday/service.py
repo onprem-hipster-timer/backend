@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
 from app.crud import holiday as crud
-from app.domain.holiday.client import HolidayApiClient
 from app.domain.holiday import logger as domain_log
+from app.domain.holiday.client import HolidayApiClient
 from app.domain.holiday.schema.dto import HolidayItem, HolidayQuery
 from app.domain.holiday.sync_guard import get_sync_guard
 
@@ -264,20 +264,20 @@ class HolidayService:
         """
         seen: set[tuple[str, str]] = set()
         deduplicated: List[HolidayItem] = []
-        
+
         all_holidays = (
-            holidays_by_type["national"] +
-            holidays_by_type["rest"] +
-            holidays_by_type["anniversaries"] +
-            holidays_by_type["divisions_24"]
+                holidays_by_type["national"] +
+                holidays_by_type["rest"] +
+                holidays_by_type["anniversaries"] +
+                holidays_by_type["divisions_24"]
         )
-        
+
         for holiday in all_holidays:
             key = (holiday.locdate, holiday.dateName)
             if key not in seen:
                 seen.add(key)
                 deduplicated.append(holiday)
-        
+
         return deduplicated
 
     async def _should_update(
@@ -292,12 +292,11 @@ class HolidayService:
         :return: (업데이트 필요 여부, 기존 해시값)
         """
         old_hash = await crud.get_holiday_hash(self.session, year)
-        
+
         if force_update:
             return True, old_hash
-        
-        return old_hash != new_hash, old_hash
 
+        return old_hash != new_hash, old_hash
 
     async def sync_holidays_for_year(
             self,
@@ -317,24 +316,25 @@ class HolidayService:
         :param force_update: True인 경우 해시 비교 없이 무조건 업데이트
         :raises Exception: 동기화 실패 시 예외 발생
         """
+
         async def _do_sync(y: int) -> None:
             # 1. API에서 데이터 조회
             holidays_by_type = await self._fetch_all_holidays_for_year(y)
-            
+
             # 2. 중복 제거
             deduplicated = self._deduplicate_holidays(holidays_by_type)
-            
+
             # 3. 해시 생성 및 비교
             new_hash = self.generate_hash(deduplicated)
             should_update, old_hash = await self._should_update(y, new_hash, force_update)
-            
+
             if not should_update:
                 logger.debug(f"No changes for year {y}, skipping update")
                 return
-            
+
             # 4. DB 저장
             await crud.save_holidays(self.session, y, deduplicated, new_hash)
-            
+
             # 5. 로깅
             domain_log.log_sync_result(y, holidays_by_type, deduplicated, new_hash, old_hash, force_update)
 
@@ -363,7 +363,6 @@ class HolidayService:
         missing_years = [y for y in all_years if y not in existing_years]
         skipped_count = len(all_years) - len(missing_years)
         return missing_years, skipped_count
-
 
     async def initialize_historical_data(
             self, initial_year: int, current_year: int

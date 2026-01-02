@@ -1,9 +1,10 @@
 import pytest
 import pytest_asyncio
-from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy.pool import StaticPool
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import StaticPool
+from sqlmodel import SQLModel, create_engine, Session
+
 from app.models.schedule import Schedule
 
 
@@ -15,19 +16,19 @@ def test_engine():
         echo=False,
         connect_args={"check_same_thread": False},
     )
-    
+
     # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # 테스트용 테이블 생성
     SQLModel.metadata.create_all(engine)
-    
+
     yield engine
-    
+
     # 테스트 후 정리
     SQLModel.metadata.drop_all(engine)
     engine.dispose()
@@ -58,23 +59,23 @@ async def test_async_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    
+
     # SQLite에서 외래 키 제약 조건 활성화
     @event.listens_for(engine.sync_engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # 테스트용 테이블 생성
     # 모든 모델 import (테이블 메타데이터 등록)
     from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
-    
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    
+
     yield engine
-    
+
     # 테스트 후 정리
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
@@ -87,7 +88,7 @@ async def test_async_session(test_async_engine):
     async_session_maker = async_sessionmaker(
         test_async_engine, class_=AsyncSession, expire_on_commit=False
     )
-    
+
     async with async_session_maker() as session:
         # 트랜잭션 시작
         transaction = await session.begin()
@@ -112,14 +113,14 @@ def sample_schedule(test_session):
     """
     from datetime import datetime, UTC
     from app.domain.schedule.schema.dto import ScheduleCreate
-    
+
     schedule_data = ScheduleCreate(
         title="테스트 일정",
         description="테스트 설명",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
-    
+
     schedule = Schedule.model_validate(schedule_data)
     test_session.add(schedule)
     # Bug Fix: commit() 대신 flush() 사용 (트랜잭션 격리 유지)
@@ -135,17 +136,16 @@ def sample_timer(test_session, sample_schedule):
     
     sample_schedule에 의존하여 일정이 먼저 생성되어야 함
     """
-    from datetime import datetime, UTC
     from app.domain.timer.schema.dto import TimerCreate
     from app.domain.timer.service import TimerService
-    
+
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         title="테스트 타이머",
         description="테스트 설명",
         allocated_duration=1800,  # 30분
     )
-    
+
     service = TimerService(test_session)
     timer = service.create_timer(timer_data)
     test_session.flush()
@@ -167,7 +167,7 @@ def e2e_client():
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db.session import _session_manager
-    
+
     # 테스트용 메모리 데이터베이스 엔진 생성
     # StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB를 공유
     test_engine = create_engine(
@@ -176,21 +176,21 @@ def e2e_client():
         poolclass=StaticPool,
         echo=False,
     )
-    
+
     # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
     @event.listens_for(test_engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # SessionManager의 엔진을 테스트용으로 임시 교체 (init_db 전에 교체)
     original_engine = _session_manager.engine
     _session_manager.engine = test_engine
-    
+
     # 테이블 생성 (교체된 엔진에 대해)
     SQLModel.metadata.create_all(test_engine)
-    
+
     try:
         # TestClient 생성 (lifespan이 실행되지만 이미 테이블이 생성되어 있음)
         client = TestClient(app)
@@ -201,4 +201,3 @@ def e2e_client():
         # 테스트용 엔진 정리
         SQLModel.metadata.drop_all(test_engine)
         test_engine.dispose()
-

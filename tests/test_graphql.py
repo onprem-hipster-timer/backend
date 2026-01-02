@@ -4,7 +4,6 @@ GraphQL API 테스트
 Strawberry GraphQL 엔드포인트를 테스트합니다.
 """
 import pytest
-from datetime import date, datetime, UTC
 
 
 @pytest.mark.e2e
@@ -43,7 +42,7 @@ def test_graphql_calendar_query(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
@@ -59,26 +58,26 @@ def test_graphql_calendar_query(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     # GraphQL 응답 구조 확인
     assert "data" in data
     assert "calendar" in data["data"]
     assert "days" in data["data"]["calendar"]
-    
+
     # 일정이 포함된 날짜 찾기
     days = data["data"]["calendar"]["days"]
     assert isinstance(days, list)
-    
+
     # 2024-01-15 날짜 찾기
     target_day = None
     for day in days:
         if day["date"] == "2024-01-15":
             target_day = day
             break
-    
+
     assert target_day is not None, "일정이 포함된 날짜를 찾을 수 없습니다"
     assert len(target_day["events"]) > 0, "일정이 포함되어야 합니다"
-    
+
     # 일정 데이터 확인
     event = target_day["events"][0]
     assert event["title"] == "GraphQL 테스트 일정"
@@ -100,9 +99,9 @@ def test_graphql_calendar_query_multiple_events(e2e_client):
         e2e_client.post(
             "/v1/schedules",
             json={
-                "title": f"일정 {i+1}",
-                "start_time": f"2024-02-{10+i:02d}T10:00:00Z",
-                "end_time": f"2024-02-{10+i:02d}T12:00:00Z",
+                "title": f"일정 {i + 1}",
+                "start_time": f"2024-02-{10 + i:02d}T10:00:00Z",
+                "end_time": f"2024-02-{10 + i:02d}T12:00:00Z",
             },
         )
 
@@ -122,7 +121,7 @@ def test_graphql_calendar_query_multiple_events(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-02-01",
         "endDate": "2024-02-28",
@@ -138,7 +137,7 @@ def test_graphql_calendar_query_multiple_events(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     # 모든 날짜에 일정이 있는지 확인
     days = data["data"]["calendar"]["days"]
     event_count = sum(len(day["events"]) for day in days)
@@ -163,7 +162,7 @@ def test_graphql_calendar_query_empty_range(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-03-01",
         "endDate": "2024-03-07",
@@ -179,15 +178,15 @@ def test_graphql_calendar_query_empty_range(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     # 일정이 없는 날짜 범위도 정상적으로 반환되어야 함
     assert "data" in data
     assert "calendar" in data["data"]
     days = data["data"]["calendar"]["days"]
-    
+
     # 7일이 모두 포함되어야 함
     assert len(days) == 7
-    
+
     # 모든 날짜의 events가 빈 배열이어야 함
     for day in days:
         assert day["events"] == []
@@ -222,7 +221,7 @@ def test_graphql_calendar_query_cross_day_event(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-04-14",
         "endDate": "2024-04-17",
@@ -238,9 +237,9 @@ def test_graphql_calendar_query_cross_day_event(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     days = data["data"]["calendar"]["days"]
-    
+
     # 4월 15일과 16일 모두에 일정이 포함되어야 함
     dates_with_events = [day["date"] for day in days if len(day["events"]) > 0]
     assert "2024-04-15" in dates_with_events
@@ -267,7 +266,7 @@ def test_graphql_invalid_query(e2e_client):
 
     assert response.status_code == 200  # GraphQL은 항상 200을 반환
     data = response.json()
-    
+
     # 에러가 포함되어야 함
     assert "errors" in data
     assert len(data["errors"]) > 0
@@ -296,7 +295,7 @@ def test_graphql_missing_variables(e2e_client):
 
     assert response.status_code == 200  # GraphQL은 항상 200을 반환
     data = response.json()
-    
+
     # 에러가 포함되어야 함
     assert "errors" in data
     assert len(data["errors"]) > 0
@@ -327,7 +326,7 @@ def test_graphql_introspection_query(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     # Introspection이 정상적으로 작동해야 함
     assert "data" in data
     assert "__schema" in data["data"]
@@ -366,7 +365,7 @@ def test_graphql_calendar_query_with_recurring_schedule(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-05-01",
         "endDate": "2024-05-31",
@@ -382,18 +381,18 @@ def test_graphql_calendar_query_with_recurring_schedule(e2e_client):
 
     assert response.status_code == 200
     data = response.json()
-    
+
     days = data["data"]["calendar"]["days"]
-    
+
     # 반복 일정이 여러 날짜에 나타나야 함
     recurring_events = []
     for day in days:
         for event in day["events"]:
             if event["title"] == "매주 반복 일정":
                 recurring_events.append(event)
-    
+
     assert len(recurring_events) >= 4, "최소 4개의 반복 일정 인스턴스가 있어야 합니다"
-    
+
     # 첫 번째 일정은 isRecurring이 True여야 함
     if recurring_events:
         assert recurring_events[0]["isRecurring"] is True
@@ -403,4 +402,3 @@ def test_graphql_calendar_query_with_recurring_schedule(e2e_client):
         for event in recurring_events:
             assert "parentId" in event
             assert "instanceStart" in event
-

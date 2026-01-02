@@ -36,7 +36,7 @@ def log_sync_result(
             f"Holiday changes detected for {year}\n"
             f"   Old: {old_hash_str}..., New: {new_hash[:8]}..."
         )
-    
+
     # 중복 제거 정보 로깅
     total = sum(len(v) for v in holidays_by_type.values())
     if total != len(deduplicated):
@@ -44,7 +44,7 @@ def log_sync_result(
             f"Removed {total - len(deduplicated)} duplicate holidays "
             f"before saving (total: {total} -> {len(deduplicated)})"
         )
-    
+
     # 최종 결과 로깅
     logger.info(
         f"Updated {len(deduplicated)} holidays for {year} "
@@ -120,4 +120,3 @@ def log_initialization_complete(total_years: int) -> None:
         f"Historical data initialization completed: "
         f"all {total_years} years succeeded"
     )
-

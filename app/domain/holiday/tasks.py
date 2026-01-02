@@ -54,7 +54,7 @@ class HolidayBackgroundTask:
             while self.is_running:
                 async with get_async_db() as session:
                     service = HolidayService(session)
-                    
+
                     # 초기화 (최초 1회)
                     if not self.is_initialized:
                         current_year = datetime.now().year
@@ -62,10 +62,10 @@ class HolidayBackgroundTask:
                             self.INITIAL_YEAR, current_year
                         )
                         self.is_initialized = True
-                    
+
                     # 정기 동기화
                     await service.sync_current_and_next_year()
-                
+
                 await asyncio.sleep(self.INTERVAL_SECONDS)
 
         except asyncio.CancelledError:
@@ -89,4 +89,3 @@ async def sync_holidays_async(start_year: int, end_year: int) -> None:
     async with get_async_db() as session:
         service = HolidayService(session)
         await service.sync_holidays_for_year(start_year, end_year, force_update=True)
-
