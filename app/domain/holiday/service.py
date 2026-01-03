@@ -416,6 +416,7 @@ class HolidayReadService:
 
     - API 요청 시 DB 조회만 수행
     - 동기화/API 호출은 배치/백그라운드에서 처리
+    - auto_sync 지원: 데이터 없을 시 자동 동기화 후 결과 반환
     """
 
     def __init__(self, session: Session):
@@ -425,14 +426,12 @@ class HolidayReadService:
             self,
             start_year: int,
             end_year: Optional[int] = None,
-            auto_sync: bool = False
     ) -> List[HolidayItem]:
         """
         공휴일 조회 (DB에 있는 데이터만 반환)
 
         :param start_year: 시작 연도
         :param end_year: 종료 연도 (None이면 start_year와 동일)
-        :param auto_sync: 데이터가 없을 경우 자동으로 동기화 태스크 스케줄
         :return: 공휴일 목록
         """
         if end_year is None:
@@ -441,11 +440,43 @@ class HolidayReadService:
         models = crud.get_holidays_by_year_sync(self.session, start_year, end_year)
         holidays = [HolidayItem.model_validate(model) for model in models]
 
-        # 데이터가 없고 auto_sync=True이면 백그라운드 동기화 태스크 스케줄
-        if not holidays and auto_sync:
-            import asyncio
-            from app.domain.holiday.tasks import sync_holidays_async
-            asyncio.create_task(sync_holidays_async(start_year, end_year))
-            logger.info(f"Background holiday sync scheduled for years {start_year}-{end_year}")
+        return holidays
+
+    async def get_holidays_with_auto_sync(
+            self,
+            start_year: int,
+            end_year: Optional[int] = None,
+    ) -> List[HolidayItem]:
+        """
+        공휴일 조회 (데이터 없으면 자동 동기화)
+
+        내부적으로 비동기 동기화를 수행하고 완료 후 결과 반환
+        사용자는 구현 디테일을 몰라도 됨
+
+        :param start_year: 시작 연도
+        :param end_year: 종료 연도 (None이면 start_year와 동일)
+        :return: 공휴일 목록 (동기화 후 재조회한 결과)
+        """
+        if end_year is None:
+            end_year = start_year
+
+        # 1. 먼저 조회
+        holidays = self.get_holidays(start_year, end_year)
+
+        if not holidays:
+            # 2. 데이터 없으면 비동기 세션으로 동기화 수행
+            # get_async_db는 자동으로 commit/rollback을 처리함
+            from app.db.session import get_async_db
+
+            async with get_async_db() as async_session:
+                sync_service = HolidayService(async_session)
+                await sync_service.sync_holidays_for_year(
+                    start_year, end_year, force_update=True
+                )
+                # get_async_db의 context manager가 자동으로 commit 처리
+
+            # 3. 동기화 완료 후 다시 조회
+            # 새로운 쿼리를 실행하므로 최신 데이터를 가져옴
+            holidays = self.get_holidays(start_year, end_year)
 
         return holidays

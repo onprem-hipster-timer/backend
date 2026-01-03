@@ -1,8 +1,8 @@
 """
 Holiday Router
 
-조회는 동기 DB 세션을 사용하고, 데이터가 없을 때만 비동기 동기화를
-백그라운드 태스크로 트리거합니다.
+조회는 동기 DB 세션을 사용하고, auto_sync=True일 경우
+비동기 동기화를 수행한 후 결과를 반환합니다.
 """
 import logging
 from datetime import datetime
@@ -30,12 +30,13 @@ async def get_holidays(
         session: Session = Depends(get_db),
 ):
     """
-    공휴일 조회 (DB에 있는 데이터만 반환)
+    공휴일 조회
 
     - year만 지정: 해당 연도 조회
     - start_year/end_year 지정: 범위 조회 (end_year 없으면 start_year로 대체)
     - 미지정: 현재 연도 조회
-    - 데이터가 없고 auto_sync=True이면 비동기 동기화 태스크를 스케줄
+    - auto_sync=False (기본값): DB에 있는 데이터만 반환
+    - auto_sync=True: 데이터가 없으면 자동으로 동기화 수행 후 결과 반환
     """
     if year:
         s, e = year, year
@@ -46,4 +47,10 @@ async def get_holidays(
         s, e = cur, cur
 
     read_service = HolidayReadService(session)
-    return read_service.get_holidays(s, e, auto_sync=auto_sync)
+
+    if auto_sync:
+        # 자동 동기화 포함 조회 (async)
+        return await read_service.get_holidays_with_auto_sync(s, e)
+    else:
+        # 단순 조회 (sync)
+        return read_service.get_holidays(s, e)

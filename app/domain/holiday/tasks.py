@@ -78,14 +78,3 @@ class HolidayBackgroundTask:
             )
             self.is_running = False
 
-
-async def sync_holidays_async(start_year: int, end_year: int) -> None:
-    """
-    공휴일 동기화를 비동기로 수행 (API 트리거용)
-
-    Service를 통해 범위 동기화:
-    - SyncGuard를 통해 중복 실행 방지
-    """
-    async with get_async_db() as session:
-        service = HolidayService(session)
-        await service.sync_holidays_for_year(start_year, end_year, force_update=True)
