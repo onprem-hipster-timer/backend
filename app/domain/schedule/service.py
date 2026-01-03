@@ -72,6 +72,8 @@ class ScheduleService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
             tag_service.set_schedule_tags(schedule.id, data.tag_ids)
+            # 태그 설정 후 relationship 갱신
+            self.session.refresh(schedule)
         
         return schedule
 
@@ -327,7 +329,8 @@ class ScheduleService:
                 raise InvalidRecurrenceEndError()
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
-        if 'tag_ids' in update_dict:
+        tag_ids_updated = 'tag_ids' in update_dict
+        if tag_ids_updated:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
@@ -336,7 +339,13 @@ class ScheduleService:
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
 
-        return crud.update_schedule(self.session, schedule, update_data)
+        updated_schedule = crud.update_schedule(self.session, schedule, update_data)
+        
+        # 태그가 업데이트된 경우 relationship 갱신
+        if tag_ids_updated:
+            self.session.refresh(updated_schedule)
+        
+        return updated_schedule
 
     def delete_schedule(self, schedule_id: UUID) -> None:
         """
