@@ -8,7 +8,6 @@ Holiday API Client
 - Single Responsibility: 각 메서드는 하나의 책임만 담당
 - 메서드 분리로 재사용성 및 테스트 용이성 향상
 """
-import logging
 from typing import Dict, Any, List
 
 import httpx
@@ -19,9 +18,14 @@ from app.domain.holiday.exceptions import (
     HolidayApiKeyError,
     HolidayApiResponseError,
 )
+from app.domain.holiday.logger import (
+    log_api_request,
+    log_api_error,
+    log_fetch_complete,
+    paginated_fetch_context,
+    log_page_progress,
+)
 from app.domain.holiday.schema.dto import HolidayQuery, HolidayApiResponse, HolidayItem
-
-logger = logging.getLogger(__name__)
 
 
 class HolidayApiClient:
@@ -86,7 +90,7 @@ class HolidayApiClient:
         :raises HolidayApiError: HTTP 요청 실패
         """
         try:
-            logger.info(f"Calling holiday API: {url} with params: {dict(params, ServiceKey='***')}")
+            log_api_request(url, params)
 
             async with httpx.AsyncClient(timeout=self.TIMEOUT) as client:
                 response = await client.get(url, params=params)
@@ -94,7 +98,7 @@ class HolidayApiClient:
                 return response.json()
 
         except httpx.HTTPError as e:
-            logger.error(f"HTTP error when calling holiday API: {str(e)}")
+            log_api_error(e, "HTTP")
             raise HolidayApiError(f"Failed to fetch holiday information: {str(e)}")
 
     def _normalize_response_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,7 +125,7 @@ class HolidayApiClient:
         try:
             return HolidayApiResponse(**data)
         except (KeyError, TypeError) as e:
-            logger.error(f"Failed to parse API response: {str(e)}")
+            log_api_error(e, "parse")
             raise HolidayApiResponseError(f"Invalid API response format: {str(e)}")
 
     def _validate_response(self, api_response: HolidayApiResponse) -> HolidayApiResponse:
@@ -134,7 +138,7 @@ class HolidayApiClient:
         """
         if not api_response.is_success:
             error_msg = f"API returned error: {api_response.header.resultMsg}"
-            logger.error(error_msg)
+            log_api_error(error_msg, "response")
             raise HolidayApiResponseError(error_msg)
         return api_response
 
@@ -208,24 +212,20 @@ class HolidayApiClient:
         if total_count > num_of_rows:
             total_pages = (total_count + num_of_rows - 1) // num_of_rows  # 올림 계산
 
-            logger.info(
-                f"Fetching all pages for holidays: "
-                f"totalCount={total_count}, numOfRows={num_of_rows}, totalPages={total_pages}"
-            )
+            with paginated_fetch_context("holidays", total_count, num_of_rows, total_pages):
+                # 나머지 페이지들 조회
+                for page_no in range(2, total_pages + 1):
+                    page_query = HolidayQuery(
+                        solYear=query.solYear,
+                        solMonth=query.solMonth,
+                        numOfRows=num_of_rows,
+                        pageNo=page_no
+                    )
+                    page_response = await self._fetch_holidays_page(page_query)
+                    all_items.extend(page_response.to_domain_items())
+                    log_page_progress(page_no, total_pages, "holidays")
 
-            # 나머지 페이지들 조회
-            for page_no in range(2, total_pages + 1):
-                page_query = HolidayQuery(
-                    solYear=query.solYear,
-                    solMonth=query.solMonth,
-                    numOfRows=num_of_rows,
-                    pageNo=page_no
-                )
-                page_response = await self._fetch_holidays_page(page_query)
-                all_items.extend(page_response.to_domain_items())
-                logger.debug(f"Fetched page {page_no}/{total_pages} for holidays")
-
-        logger.info(f"Fetched total {len(all_items)} holidays from all pages")
+        log_fetch_complete(len(all_items), "holidays")
         return all_items
 
     async def fetch_all_rest_days(self, query: HolidayQuery) -> List[HolidayItem]:
@@ -254,24 +254,20 @@ class HolidayApiClient:
         if total_count > num_of_rows:
             total_pages = (total_count + num_of_rows - 1) // num_of_rows  # 올림 계산
 
-            logger.info(
-                f"Fetching all pages for rest days: "
-                f"totalCount={total_count}, numOfRows={num_of_rows}, totalPages={total_pages}"
-            )
+            with paginated_fetch_context("rest days", total_count, num_of_rows, total_pages):
+                # 나머지 페이지들 조회
+                for page_no in range(2, total_pages + 1):
+                    page_query = HolidayQuery(
+                        solYear=query.solYear,
+                        solMonth=query.solMonth,
+                        numOfRows=num_of_rows,
+                        pageNo=page_no
+                    )
+                    page_response = await self._fetch_rest_days_page(page_query)
+                    all_items.extend(page_response.to_domain_items())
+                    log_page_progress(page_no, total_pages, "rest days")
 
-            # 나머지 페이지들 조회
-            for page_no in range(2, total_pages + 1):
-                page_query = HolidayQuery(
-                    solYear=query.solYear,
-                    solMonth=query.solMonth,
-                    numOfRows=num_of_rows,
-                    pageNo=page_no
-                )
-                page_response = await self._fetch_rest_days_page(page_query)
-                all_items.extend(page_response.to_domain_items())
-                logger.debug(f"Fetched page {page_no}/{total_pages} for rest days")
-
-        logger.info(f"Fetched total {len(all_items)} rest days from all pages")
+        log_fetch_complete(len(all_items), "rest days")
         return all_items
 
     async def _fetch_anniversary_page(self, query: HolidayQuery) -> HolidayApiResponse:
@@ -344,24 +340,20 @@ class HolidayApiClient:
         if total_count > num_of_rows:
             total_pages = (total_count + num_of_rows - 1) // num_of_rows  # 올림 계산
 
-            logger.info(
-                f"Fetching all pages for anniversaries: "
-                f"totalCount={total_count}, numOfRows={num_of_rows}, totalPages={total_pages}"
-            )
+            with paginated_fetch_context("anniversaries", total_count, num_of_rows, total_pages):
+                # 나머지 페이지들 조회
+                for page_no in range(2, total_pages + 1):
+                    page_query = HolidayQuery(
+                        solYear=query.solYear,
+                        solMonth=query.solMonth,
+                        numOfRows=num_of_rows,
+                        pageNo=page_no
+                    )
+                    page_response = await self._fetch_anniversary_page(page_query)
+                    all_items.extend(page_response.to_domain_items())
+                    log_page_progress(page_no, total_pages, "anniversaries")
 
-            # 나머지 페이지들 조회
-            for page_no in range(2, total_pages + 1):
-                page_query = HolidayQuery(
-                    solYear=query.solYear,
-                    solMonth=query.solMonth,
-                    numOfRows=num_of_rows,
-                    pageNo=page_no
-                )
-                page_response = await self._fetch_anniversary_page(page_query)
-                all_items.extend(page_response.to_domain_items())
-                logger.debug(f"Fetched page {page_no}/{total_pages} for anniversaries")
-
-        logger.info(f"Fetched total {len(all_items)} anniversaries from all pages")
+        log_fetch_complete(len(all_items), "anniversaries")
         return all_items
 
     async def fetch_all_24divisions(self, query: HolidayQuery) -> List[HolidayItem]:
@@ -390,22 +382,18 @@ class HolidayApiClient:
         if total_count > num_of_rows:
             total_pages = (total_count + num_of_rows - 1) // num_of_rows  # 올림 계산
 
-            logger.info(
-                f"Fetching all pages for 24 divisions: "
-                f"totalCount={total_count}, numOfRows={num_of_rows}, totalPages={total_pages}"
-            )
+            with paginated_fetch_context("24 divisions", total_count, num_of_rows, total_pages):
+                # 나머지 페이지들 조회
+                for page_no in range(2, total_pages + 1):
+                    page_query = HolidayQuery(
+                        solYear=query.solYear,
+                        solMonth=query.solMonth,
+                        numOfRows=num_of_rows,
+                        pageNo=page_no
+                    )
+                    page_response = await self._fetch_24divisions_page(page_query)
+                    all_items.extend(page_response.to_domain_items())
+                    log_page_progress(page_no, total_pages, "24 divisions")
 
-            # 나머지 페이지들 조회
-            for page_no in range(2, total_pages + 1):
-                page_query = HolidayQuery(
-                    solYear=query.solYear,
-                    solMonth=query.solMonth,
-                    numOfRows=num_of_rows,
-                    pageNo=page_no
-                )
-                page_response = await self._fetch_24divisions_page(page_query)
-                all_items.extend(page_response.to_domain_items())
-                logger.debug(f"Fetched page {page_no}/{total_pages} for 24 divisions")
-
-        logger.info(f"Fetched total {len(all_items)} 24 divisions from all pages")
+        log_fetch_complete(len(all_items), "24 divisions")
         return all_items

@@ -384,20 +384,18 @@ class HolidayService:
             existing_years, initial_year, current_year
         )
 
-        domain_log.log_initialization_skipped(skipped_count, existing_years)
-
-        if not years_to_initialize:
-            domain_log.log_initialization_not_needed(initial_year, current_year)
-            return False
-
         total_years = len(years_to_initialize)
-        domain_log.log_initialization_start(initial_year, current_year, total_years, skipped_count)
 
-        for idx, year in enumerate(years_to_initialize, 1):
-            await self.sync_holidays_for_year(year, force_update=True)
-            domain_log.log_initialization_progress(year, idx, total_years)
+        with domain_log.initialization_context(
+            initial_year, current_year, total_years, skipped_count, existing_years
+        ):
+            if not years_to_initialize:
+                return False
 
-        domain_log.log_initialization_complete(total_years)
+            for idx, year in enumerate(years_to_initialize, 1):
+                await self.sync_holidays_for_year(year, force_update=True)
+                domain_log.log_initialization_progress(year, idx, total_years)
+
         return True
 
     async def sync_current_and_next_year(self) -> None:
