@@ -475,8 +475,6 @@ class HolidayReadService:
                 )
                 # get_async_db의 context manager가 자동으로 commit 처리
 
-            # 3. 동기화 완료 후 다시 조회
-            # 새로운 쿼리를 실행하므로 최신 데이터를 가져옴
             holidays = self.get_holidays(start_year, end_year)
 
         return holidays
