@@ -7,7 +7,7 @@ FastAPI Best Practices:
 - Service는 session을 받아서 CRUD 직접 사용
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -60,6 +60,14 @@ async def create_schedule(
 
 @router.get("", response_model=list[ScheduleRead])
 async def read_schedules(
+        tag_ids: Optional[List[UUID]] = Query(
+            None,
+            description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 일정만 반환)"
+        ),
+        group_ids: Optional[List[UUID]] = Query(
+            None,
+            description="태그 그룹 ID 리스트 (해당 그룹의 태그를 가진 일정 반환)"
+        ),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -68,13 +76,24 @@ async def read_schedules(
         session: Session = Depends(get_db_transactional),
 ):
     """
-    모든 일정 조회
+    모든 일정 조회 (태그 필터링 지원)
+    
+    태그 필터링:
+    - tag_ids: AND 방식 (모든 지정 태그를 포함한 일정만 반환)
+    - group_ids: 해당 그룹의 태그 중 하나라도 있는 일정 반환
+    - 둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
     
     FastAPI Best Practices:
     - async 라우트 사용
     """
     service = ScheduleService(session)
-    schedules = service.get_all_schedules()
+    
+    if tag_ids or group_ids:
+        # 태그 필터링이 필요한 경우
+        schedules = service.get_all_schedules_with_tag_filter(tag_ids, group_ids)
+    else:
+        # 태그 필터링 없이 모든 일정 조회
+        schedules = service.get_all_schedules()
 
     tz_obj = parse_timezone(tz) if tz else None
     return [

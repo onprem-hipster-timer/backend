@@ -539,3 +539,303 @@ def test_update_schedule_tags_e2e(e2e_client):
     assert update_response3.status_code == 200
     updated_data3 = update_response3.json()
     assert len(updated_data3["tags"]) == 0
+
+
+@pytest.mark.e2e
+def test_get_all_schedules_with_tag_filter_e2e(e2e_client):
+    """태그 ID로 일정 필터링 E2E 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+    
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+    
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "긴급", "color": "#00FF00", "group_id": group_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+    
+    # 2. 여러 일정 생성 (다양한 태그 조합)
+    schedule1_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그1과 태그2 모두 있는 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag1_id, tag2_id]
+        }
+    )
+    schedule1_id = schedule1_response.json()["id"]
+    
+    schedule2_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그1만 있는 일정",
+            "start_time": "2024-01-02T10:00:00Z",
+            "end_time": "2024-01-02T12:00:00Z",
+            "tag_ids": [tag1_id]
+        }
+    )
+    schedule2_id = schedule2_response.json()["id"]
+    
+    schedule3_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 없는 일정",
+            "start_time": "2024-01-03T10:00:00Z",
+            "end_time": "2024-01-03T12:00:00Z",
+        }
+    )
+    schedule3_id = schedule3_response.json()["id"]
+    
+    # 3. tag1으로 필터링 (AND 방식이므로 tag1만 있는 일정도 포함)
+    filter_response = e2e_client.get(
+        "/v1/schedules",
+        params={"tag_ids": [tag1_id]}
+    )
+    assert filter_response.status_code == 200
+    filtered_schedules = filter_response.json()
+    schedule_ids = [s["id"] for s in filtered_schedules]
+    assert schedule1_id in schedule_ids  # tag1과 tag2 모두 있음
+    assert schedule2_id in schedule_ids  # tag1만 있음
+    assert schedule3_id not in schedule_ids  # 태그 없음
+    
+    # 4. tag1 AND tag2로 필터링 (둘 다 있어야 함)
+    filter_response2 = e2e_client.get(
+        "/v1/schedules",
+        params={"tag_ids": [tag1_id, tag2_id]}
+    )
+    assert filter_response2.status_code == 200
+    filtered_schedules2 = filter_response2.json()
+    schedule_ids2 = [s["id"] for s in filtered_schedules2]
+    assert schedule1_id in schedule_ids2  # tag1과 tag2 모두 있음
+    assert schedule2_id not in schedule_ids2  # tag1만 있음
+    assert schedule3_id not in schedule_ids2  # 태그 없음
+
+
+@pytest.mark.e2e
+def test_get_all_schedules_with_group_filter_e2e(e2e_client):
+    """태그 그룹 ID로 일정 필터링 E2E 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group1_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group1_id = group1_response.json()["id"]
+    
+    group2_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "개인", "color": "#00FF00"}
+    )
+    group2_id = group2_response.json()["id"]
+    
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group1_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+    
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "긴급", "color": "#0000FF", "group_id": group1_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+    
+    tag3_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "개인용", "color": "#FFFF00", "group_id": group2_id}
+    )
+    tag3_id = tag3_response.json()["id"]
+    
+    # 2. 여러 일정 생성 (다양한 그룹의 태그)
+    schedule1_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "업무 그룹 태그 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag1_id]  # 업무 그룹
+        }
+    )
+    schedule1_id = schedule1_response.json()["id"]
+    
+    schedule2_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "개인 그룹 태그 일정",
+            "start_time": "2024-01-02T10:00:00Z",
+            "end_time": "2024-01-02T12:00:00Z",
+            "tag_ids": [tag3_id]  # 개인 그룹
+        }
+    )
+    schedule2_id = schedule2_response.json()["id"]
+    
+    schedule3_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 없는 일정",
+            "start_time": "2024-01-03T10:00:00Z",
+            "end_time": "2024-01-03T12:00:00Z",
+        }
+    )
+    schedule3_id = schedule3_response.json()["id"]
+    
+    # 3. 업무 그룹으로 필터링
+    filter_response = e2e_client.get(
+        "/v1/schedules",
+        params={"group_ids": [group1_id]}
+    )
+    assert filter_response.status_code == 200
+    filtered_schedules = filter_response.json()
+    schedule_ids = [s["id"] for s in filtered_schedules]
+    assert schedule1_id in schedule_ids  # 업무 그룹 태그 있음
+    assert schedule2_id not in schedule_ids  # 개인 그룹 태그만 있음
+    assert schedule3_id not in schedule_ids  # 태그 없음
+    
+    # 4. 개인 그룹으로 필터링
+    filter_response2 = e2e_client.get(
+        "/v1/schedules",
+        params={"group_ids": [group2_id]}
+    )
+    assert filter_response2.status_code == 200
+    filtered_schedules2 = filter_response2.json()
+    schedule_ids2 = [s["id"] for s in filtered_schedules2]
+    assert schedule1_id not in schedule_ids2  # 업무 그룹 태그만 있음
+    assert schedule2_id in schedule_ids2  # 개인 그룹 태그 있음
+    assert schedule3_id not in schedule_ids2  # 태그 없음
+
+
+@pytest.mark.e2e
+def test_get_all_schedules_with_tag_and_group_filter_e2e(e2e_client):
+    """태그 ID와 그룹 ID 조합 필터링 E2E 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group1_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group1_id = group1_response.json()["id"]
+    
+    group2_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "개인", "color": "#00FF00"}
+    )
+    group2_id = group2_response.json()["id"]
+    
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group1_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+    
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "긴급", "color": "#0000FF", "group_id": group1_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+    
+    tag3_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "개인용", "color": "#FFFF00", "group_id": group2_id}
+    )
+    tag3_id = tag3_response.json()["id"]
+    
+    # 2. 여러 일정 생성
+    schedule1_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "업무 그룹 태그1 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag1_id]  # 업무 그룹, tag1
+        }
+    )
+    schedule1_id = schedule1_response.json()["id"]
+    
+    schedule2_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "업무 그룹 태그2 일정",
+            "start_time": "2024-01-02T10:00:00Z",
+            "end_time": "2024-01-02T12:00:00Z",
+            "tag_ids": [tag2_id]  # 업무 그룹, tag2
+        }
+    )
+    schedule2_id = schedule2_response.json()["id"]
+    
+    schedule3_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "개인 그룹 태그 일정",
+            "start_time": "2024-01-03T10:00:00Z",
+            "end_time": "2024-01-03T12:00:00Z",
+            "tag_ids": [tag3_id]  # 개인 그룹
+        }
+    )
+    schedule3_id = schedule3_response.json()["id"]
+    
+    # 3. tag1 AND 업무 그룹 필터링
+    filter_response = e2e_client.get(
+        "/v1/schedules",
+        params={"tag_ids": [tag1_id], "group_ids": [group1_id]}
+    )
+    assert filter_response.status_code == 200
+    filtered_schedules = filter_response.json()
+    schedule_ids = [s["id"] for s in filtered_schedules]
+    assert schedule1_id in schedule_ids  # tag1과 업무 그룹 모두 만족
+    assert schedule2_id not in schedule_ids  # tag1 없음
+    assert schedule3_id not in schedule_ids  # 개인 그룹
+
+
+@pytest.mark.e2e
+def test_get_all_schedules_without_tag_filter_e2e(e2e_client):
+    """태그 필터링 없이 모든 일정 조회 E2E 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+    
+    tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group_id}
+    )
+    tag_id = tag_response.json()["id"]
+    
+    # 2. 태그 있는 일정과 태그 없는 일정 생성
+    schedule1_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 있는 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag_id]
+        }
+    )
+    schedule1_id = schedule1_response.json()["id"]
+    
+    schedule2_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 없는 일정",
+            "start_time": "2024-01-02T10:00:00Z",
+            "end_time": "2024-01-02T12:00:00Z",
+        }
+    )
+    schedule2_id = schedule2_response.json()["id"]
+    
+    # 3. 필터링 없이 모든 일정 조회
+    response = e2e_client.get("/v1/schedules")
+    assert response.status_code == 200
+    schedules = response.json()
+    schedule_ids = [s["id"] for s in schedules]
+    assert schedule1_id in schedule_ids  # 태그 있는 일정 포함
+    assert schedule2_id in schedule_ids  # 태그 없는 일정도 포함

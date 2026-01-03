@@ -98,6 +98,31 @@ class ScheduleService:
         """
         return crud.get_schedules(self.session)
 
+    def get_all_schedules_with_tag_filter(
+            self,
+            tag_ids: Optional[List[UUID]] = None,
+            group_ids: Optional[List[UUID]] = None,
+    ) -> list[Schedule]:
+        """
+        모든 일정 조회 (태그 필터링 지원)
+        
+        비즈니스 로직:
+        - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
+        - group_ids: 해당 그룹의 태그 중 하나라도 있으면 포함
+        - 둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
+        
+        :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
+        :param group_ids: 필터링할 그룹 ID 리스트
+        :return: 필터링된 일정 리스트
+        """
+        all_schedules = crud.get_schedules(self.session)
+        
+        # 태그 필터링 적용
+        if tag_ids or group_ids:
+            return self._filter_schedules_by_tags(all_schedules, tag_ids, group_ids)
+        
+        return all_schedules
+
     def get_schedules_by_date_range(
             self,
             start_date: datetime,
