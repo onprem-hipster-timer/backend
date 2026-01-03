@@ -125,42 +125,6 @@ def log_initialization_progress(year: int, current: int, total: int) -> None:
     logger.debug(f"   [{current}/{total}] {year} year initialized")
 
 
-# 하위 호환성을 위한 별칭
-def log_initialization_skipped(skipped_count: int, existing_years: set[int]) -> None:
-    """초기화 건너뛴 연도 로깅 (하위 호환성)"""
-    if skipped_count > 0:
-        logger.info(
-            f"Skipping {skipped_count} years that already exist in hash table: "
-            f"{sorted(existing_years)}"
-        )
-
-
-def log_initialization_not_needed(initial_year: int, current_year: int) -> None:
-    """초기화 불필요 로깅 (하위 호환성)"""
-    logger.info(
-        f"All years from {initial_year} to {current_year} already exist in hash table. "
-        f"Skipping initialization."
-    )
-
-
-def log_initialization_start(
-        initial_year: int, current_year: int, total_years: int, skipped_count: int
-) -> None:
-    """초기화 시작 로깅 (하위 호환성)"""
-    logger.info(
-        f"Initializing historical holiday data from {initial_year} to {current_year} "
-        f"({total_years} years to sync, {skipped_count} years skipped)"
-    )
-
-
-def log_initialization_complete(total_years: int) -> None:
-    """초기화 완료 로깅 (하위 호환성)"""
-    logger.info(
-        f"Historical data initialization completed: "
-        f"all {total_years} years succeeded"
-    )
-
-
 def mask_service_key_in_url(url: str) -> str:
     """
     URL의 쿼리 파라미터에서 ServiceKey를 마스킹
@@ -226,22 +190,6 @@ def log_api_error(error: Exception | str, error_type: str = "API") -> None:
     logger.error(f"Holiday {error_type} error: {error_msg}")
 
 
-# 하위 호환성을 위한 별칭
-def log_api_http_error(error: Exception) -> None:
-    """API HTTP 에러 로깅 (하위 호환성)"""
-    log_api_error(error, "HTTP")
-
-
-def log_api_parse_error(error: Exception) -> None:
-    """API 응답 파싱 에러 로깅 (하위 호환성)"""
-    log_api_error(error, "parse")
-
-
-def log_api_response_error(error_msg: str) -> None:
-    """API 응답 검증 에러 로깅 (하위 호환성)"""
-    log_api_error(error_msg, "response")
-
-
 @contextmanager
 def paginated_fetch_context(
     item_type: str,
@@ -295,22 +243,3 @@ def log_fetch_complete(item_count: int, item_type: str) -> None:
     :param item_type: 항목 타입
     """
     logger.info(f"Fetched total {item_count} {item_type} from all pages")
-
-
-# 하위 호환성을 위한 별칭
-def log_fetching_all_pages(
-    item_type: str,
-    total_count: int,
-    num_of_rows: int,
-    total_pages: int
-) -> None:
-    """모든 페이지 조회 시작 로깅 (하위 호환성)"""
-    logger.info(
-        f"Fetching all pages for {item_type}: "
-        f"totalCount={total_count}, numOfRows={num_of_rows}, totalPages={total_pages}"
-    )
-
-
-def log_page_fetched(page_no: int, total_pages: int, item_type: str) -> None:
-    """페이지 조회 완료 로깅 (하위 호환성)"""
-    log_page_progress(page_no, total_pages, item_type)
