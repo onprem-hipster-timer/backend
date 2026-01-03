@@ -12,8 +12,9 @@ from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
 
 from app.db.session import get_db_transactional
-from app.domain.schedule.dependencies import valid_schedule_id
+from app.domain.schedule.dependencies import valid_schedule_id, valid_schedule_exception_id
 from app.domain.schedule.model import Schedule
+from app.models.schedule import ScheduleException
 from app.domain.tag.dependencies import valid_tag_group_id, valid_tag_id
 from app.domain.tag.model import Tag, TagGroup
 from app.domain.tag.schema.dto import (
@@ -187,4 +188,51 @@ async def set_schedule_tags(
     return service.set_schedule_tags(schedule.id, tag_ids)
 
 
+# ============================================================
+# ScheduleException-Tag Relationship Endpoints
+# ============================================================
+
+@router.post("/schedule-exceptions/{exception_id}/tags/{tag_id}", status_code=status.HTTP_201_CREATED)
+async def add_tag_to_schedule_exception(
+        exception: ScheduleException = Depends(valid_schedule_exception_id),
+        tag: Tag = Depends(valid_tag_id),
+        session: Session = Depends(get_db_transactional),
+):
+    """예외 일정에 태그 추가"""
+    service = TagService(session)
+    service.add_tag_to_schedule_exception(exception.id, tag.id)
+    return {"ok": True}
+
+
+@router.delete("/schedule-exceptions/{exception_id}/tags/{tag_id}", status_code=status.HTTP_200_OK)
+async def remove_tag_from_schedule_exception(
+        exception: ScheduleException = Depends(valid_schedule_exception_id),
+        tag: Tag = Depends(valid_tag_id),
+        session: Session = Depends(get_db_transactional),
+):
+    """예외 일정에서 태그 제거"""
+    service = TagService(session)
+    service.remove_tag_from_schedule_exception(exception.id, tag.id)
+    return {"ok": True}
+
+
+@router.get("/schedule-exceptions/{exception_id}/tags", response_model=List[TagRead])
+async def get_schedule_exception_tags(
+        exception: ScheduleException = Depends(valid_schedule_exception_id),
+        session: Session = Depends(get_db_transactional),
+):
+    """예외 일정의 태그 조회"""
+    service = TagService(session)
+    return service.get_schedule_exception_tags(exception.id)
+
+
+@router.put("/schedule-exceptions/{exception_id}/tags", response_model=List[TagRead])
+async def set_schedule_exception_tags(
+        exception: ScheduleException = Depends(valid_schedule_exception_id),
+        tag_ids: List[UUID] = ...,
+        session: Session = Depends(get_db_transactional),
+):
+    """예외 일정의 태그 일괄 설정 (기존 태그 교체)"""
+    service = TagService(session)
+    return service.set_schedule_exception_tags(exception.id, tag_ids)
 

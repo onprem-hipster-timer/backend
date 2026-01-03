@@ -141,12 +141,36 @@ class TagService:
         return crud.update_tag(self.session, tag)
     
     def delete_tag(self, tag_id: UUID) -> None:
-        """태그 삭제 (일정에서 태그 연결만 제거, 일정은 유지)"""
+        """
+        태그 삭제 (일정에서 태그 연결만 제거, 일정은 유지)
+        
+        모든 태그가 삭제되었으면 그룹도 자동 삭제됩니다.
+        """
         tag = crud.get_tag(self.session, tag_id)
         if not tag:
             _raise_tag_not_found(tag_id)
         
+        group_id = tag.group_id
         crud.delete_tag(self.session, tag)
+        
+        # 모든 태그가 삭제되었는지 확인 (반복 일정 패턴과 동일)
+        if self._are_all_tags_deleted(group_id):
+            # 모든 태그가 삭제되었으면 그룹도 삭제
+            group = crud.get_tag_group(self.session, group_id)
+            if group:
+                crud.delete_tag_group(self.session, group)
+    
+    def _are_all_tags_deleted(self, group_id: UUID) -> bool:
+        """
+        그룹의 모든 태그가 삭제되었는지 확인
+        
+        반복 일정의 _are_all_instances_deleted 패턴과 동일합니다.
+        
+        :param group_id: 태그 그룹 ID
+        :return: 모든 태그가 삭제되었으면 True
+        """
+        remaining_tags = crud.get_tags_by_group(self.session, group_id)
+        return len(remaining_tags) == 0
     
     # ============================================================
     # Schedule-Tag 관계 관리

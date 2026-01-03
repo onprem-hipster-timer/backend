@@ -404,3 +404,323 @@ def test_set_schedule_exception_tags(test_session, sample_schedule, sample_tag_g
     assert tag1.id in tag_ids
     assert tag2.id in tag_ids
 
+
+def test_remove_tag_from_schedule_exception(test_session, sample_schedule, sample_tag):
+    """예외 일정에서 태그 제거"""
+    from app.crud import schedule as schedule_crud
+    from datetime import datetime, UTC
+    
+    service = TagService(test_session)
+    
+    # 예외 일정 생성
+    exception = schedule_crud.create_schedule_exception(
+        test_session,
+        parent_id=sample_schedule.id,
+        exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        is_deleted=False,
+    )
+    test_session.flush()
+    
+    # 태그 추가
+    service.add_tag_to_schedule_exception(exception.id, sample_tag.id)
+    
+    # 태그 제거
+    service.remove_tag_from_schedule_exception(exception.id, sample_tag.id)
+    
+    # 태그가 제거되었는지 확인
+    tags = service.get_schedule_exception_tags(exception.id)
+    assert len(tags) == 0
+
+
+def test_get_schedule_exception_tags_empty(test_session, sample_schedule):
+    """예외 일정의 태그 조회 (태그 없음)"""
+    from app.crud import schedule as schedule_crud
+    from datetime import datetime, UTC
+    
+    service = TagService(test_session)
+    
+    # 예외 일정 생성
+    exception = schedule_crud.create_schedule_exception(
+        test_session,
+        parent_id=sample_schedule.id,
+        exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        is_deleted=False,
+    )
+    test_session.flush()
+    
+    # 태그 조회 (빈 결과)
+    tags = service.get_schedule_exception_tags(exception.id)
+    assert len(tags) == 0
+
+
+def test_add_tag_to_schedule_exception_duplicate(test_session, sample_schedule, sample_tag):
+    """예외 일정에 같은 태그 중복 추가 (무시)"""
+    from app.crud import schedule as schedule_crud
+    from datetime import datetime, UTC
+    
+    service = TagService(test_session)
+    
+    # 예외 일정 생성
+    exception = schedule_crud.create_schedule_exception(
+        test_session,
+        parent_id=sample_schedule.id,
+        exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        is_deleted=False,
+    )
+    test_session.flush()
+    
+    # 태그 추가
+    service.add_tag_to_schedule_exception(exception.id, sample_tag.id)
+    
+    # 같은 태그 중복 추가
+    service.add_tag_to_schedule_exception(exception.id, sample_tag.id)
+    
+    # 중복되지 않았는지 확인
+    tags = service.get_schedule_exception_tags(exception.id)
+    assert len(tags) == 1
+    assert tags[0].id == sample_tag.id
+
+
+# ============================================================
+# CASCADE 삭제 테스트
+# ============================================================
+
+def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag):
+    """일정 삭제 시 태그 관계 CASCADE 삭제"""
+    from sqlmodel import Session
+    from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.exceptions import ScheduleNotFoundError
+    
+    schedule_id = sample_schedule.id
+    tag_id = sample_tag.id
+    
+    # 태그 추가
+    with Session(test_engine) as add_session:
+        tag_service = TagService(add_session)
+        tag_service.add_tag_to_schedule(schedule_id, tag_id)
+        add_session.commit()
+    
+    # 태그 관계 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        tags = tag_service.get_schedule_tags(schedule_id)
+        assert len(tags) == 1
+        assert tags[0].id == tag_id
+    
+    # 일정 삭제
+    with Session(test_engine) as delete_session:
+        schedule_service = ScheduleService(delete_session)
+        schedule_service.delete_schedule(schedule_id)
+        delete_session.commit()
+    
+    # 일정이 삭제되었는지 확인
+    with Session(test_engine) as check_session:
+        schedule_service = ScheduleService(check_session)
+        with pytest.raises(ScheduleNotFoundError):
+            schedule_service.get_schedule(schedule_id)
+    
+    # 태그 관계도 CASCADE로 삭제되었는지 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        tags = tag_service.get_schedule_tags(schedule_id)
+        assert len(tags) == 0  # 일정이 삭제되어 태그 관계도 삭제됨
+
+
+def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sample_tag):
+    """예외 일정 삭제 시 태그 관계 CASCADE 삭제"""
+    from sqlmodel import Session
+    from app.crud import schedule as schedule_crud
+    from app.domain.schedule.service import ScheduleService
+    from datetime import datetime, UTC
+    
+    # 예외 일정 생성
+    with Session(test_engine) as create_session:
+        exception = schedule_crud.create_schedule_exception(
+            create_session,
+            parent_id=sample_schedule.id,
+            exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+            is_deleted=False,
+        )
+        create_session.commit()
+        exception_id = exception.id
+    
+    # 태그 추가
+    with Session(test_engine) as add_session:
+        tag_service = TagService(add_session)
+        tag_service.add_tag_to_schedule_exception(exception_id, sample_tag.id)
+        add_session.commit()
+    
+    # 태그 관계 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        tags = tag_service.get_schedule_exception_tags(exception_id)
+        assert len(tags) == 1
+        assert tags[0].id == sample_tag.id
+    
+    # 예외 일정 삭제 (부모 일정 삭제로 인한 CASCADE)
+    with Session(test_engine) as delete_session:
+        schedule_service = ScheduleService(delete_session)
+        schedule_service.delete_schedule(sample_schedule.id)
+        delete_session.commit()
+    
+    # 예외 일정이 삭제되었는지 확인 (부모 일정 삭제로 CASCADE)
+    with Session(test_engine) as check_session:
+        exception_check = schedule_crud.get_schedule_exception(check_session, exception_id)
+        assert exception_check is None
+    
+    # 태그 관계도 CASCADE로 삭제되었는지 확인
+    # (예외 일정이 삭제되어 태그 관계도 삭제됨)
+
+
+def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sample_tag_group):
+    """태그 삭제 시 일정/예외 일정과의 관계 CASCADE 삭제"""
+    from sqlmodel import Session
+    from app.crud import schedule as schedule_crud
+    from datetime import datetime, UTC
+    
+    # 태그 생성
+    with Session(test_engine) as create_session:
+        tag_service = TagService(create_session)
+        tag = tag_service.create_tag(TagCreate(
+            name="삭제 테스트 태그",
+            color="#FF0000",
+            group_id=sample_tag_group.id,
+        ))
+        create_session.commit()
+        tag_id = tag.id
+    
+    # 일정에 태그 추가
+    with Session(test_engine) as add_session:
+        tag_service = TagService(add_session)
+        tag_service.add_tag_to_schedule(sample_schedule.id, tag_id)
+        add_session.commit()
+    
+    # 예외 일정 생성 및 태그 추가
+    with Session(test_engine) as create_session:
+        exception = schedule_crud.create_schedule_exception(
+            create_session,
+            parent_id=sample_schedule.id,
+            exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+            is_deleted=False,
+        )
+        create_session.commit()
+        exception_id = exception.id
+    
+    with Session(test_engine) as add_session:
+        tag_service = TagService(add_session)
+        tag_service.add_tag_to_schedule_exception(exception_id, tag_id)
+        add_session.commit()
+    
+    # 태그 관계 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
+        exception_tags = tag_service.get_schedule_exception_tags(exception_id)
+        assert len(schedule_tags) == 1
+        assert len(exception_tags) == 1
+    
+    # 태그 삭제
+    with Session(test_engine) as delete_session:
+        tag_service = TagService(delete_session)
+        tag_service.delete_tag(tag_id)
+        delete_session.commit()
+    
+    # 태그 관계가 CASCADE로 삭제되었는지 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
+        exception_tags = tag_service.get_schedule_exception_tags(exception_id)
+        assert len(schedule_tags) == 0  # 태그 삭제로 관계 삭제
+        assert len(exception_tags) == 0  # 태그 삭제로 관계 삭제
+
+
+# ============================================================
+# 빈 그룹 자동 삭제 테스트 (반복 일정 패턴과 동일)
+# ============================================================
+
+def test_delete_all_tags_deletes_group(test_engine, sample_tag_group):
+    """모든 태그 삭제 시 그룹도 자동 삭제 (반복 일정 패턴과 동일)"""
+    from sqlmodel import Session
+    
+    group_id = sample_tag_group.id
+    
+    # 태그 여러 개 생성
+    with Session(test_engine) as create_session:
+        tag_service = TagService(create_session)
+        tag1 = tag_service.create_tag(TagCreate(
+            name="태그1",
+            color="#FF0000",
+            group_id=group_id,
+        ))
+        tag2 = tag_service.create_tag(TagCreate(
+            name="태그2",
+            color="#00FF00",
+            group_id=group_id,
+        ))
+        create_session.commit()
+        tag1_id = tag1.id
+        tag2_id = tag2.id
+    
+    # 첫 번째 태그 삭제 (그룹은 아직 남아있어야 함)
+    with Session(test_engine) as delete_session:
+        tag_service = TagService(delete_session)
+        tag_service.delete_tag(tag1_id)
+        delete_session.commit()
+    
+    # 그룹이 아직 존재하는지 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        group = tag_service.get_tag_group(group_id)
+        assert group is not None
+        remaining_tags = tag_service.get_tags_by_group(group_id)
+        assert len(remaining_tags) == 1  # tag2만 남음
+    
+    # 마지막 태그 삭제 (그룹도 자동 삭제되어야 함)
+    with Session(test_engine) as delete_session:
+        tag_service = TagService(delete_session)
+        tag_service.delete_tag(tag2_id)
+        delete_session.commit()
+    
+    # 그룹이 자동으로 삭제되었는지 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        with pytest.raises(TagGroupNotFoundError):
+            tag_service.get_tag_group(group_id)
+
+
+def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_group):
+    """태그 삭제 시 다른 태그가 남아있으면 그룹 유지"""
+    from sqlmodel import Session
+    
+    group_id = sample_tag_group.id
+    
+    # 태그 여러 개 생성
+    with Session(test_engine) as create_session:
+        tag_service = TagService(create_session)
+        tag1 = tag_service.create_tag(TagCreate(
+            name="태그1",
+            color="#FF0000",
+            group_id=group_id,
+        ))
+        tag2 = tag_service.create_tag(TagCreate(
+            name="태그2",
+            color="#00FF00",
+            group_id=group_id,
+        ))
+        create_session.commit()
+        tag1_id = tag1.id
+    
+    # 하나의 태그만 삭제
+    with Session(test_engine) as delete_session:
+        tag_service = TagService(delete_session)
+        tag_service.delete_tag(tag1_id)
+        delete_session.commit()
+    
+    # 그룹이 여전히 존재하는지 확인
+    with Session(test_engine) as check_session:
+        tag_service = TagService(check_session)
+        group = tag_service.get_tag_group(group_id)
+        assert group is not None
+        remaining_tags = tag_service.get_tags_by_group(group_id)
+        assert len(remaining_tags) == 1  # tag2가 남아있음
+

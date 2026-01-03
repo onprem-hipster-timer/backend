@@ -15,6 +15,7 @@ from app.crud import schedule as crud
 from app.db.session import get_db
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.schedule.model import Schedule
+from app.models.schedule import ScheduleException
 
 
 async def valid_schedule_id(
@@ -39,3 +40,28 @@ async def valid_schedule_id(
     if not schedule:
         raise ScheduleNotFoundError()
     return schedule
+
+
+async def valid_schedule_exception_id(
+        exception_id: UUID,
+        session: Session = Depends(get_db),
+) -> ScheduleException:
+    """
+    ScheduleException ID 검증 및 ScheduleException 반환
+
+    FastAPI Best Practices:
+    - Dependency로 데이터 검증
+    - 여러 엔드포인트에서 재사용 가능
+    - FastAPI가 결과를 캐싱하여 중복 호출 방지
+    - 읽기 전용이므로 get_db 사용 (commit 불필요)
+
+    :param exception_id: ScheduleException ID
+    :param session: DB 세션
+    :return: ScheduleException 객체
+    :raises ScheduleNotFoundError: 예외 일정을 찾을 수 없는 경우
+    """
+    from app.models.schedule import ScheduleException
+    exception = session.get(ScheduleException, exception_id)
+    if not exception:
+        raise ScheduleNotFoundError()
+    return exception

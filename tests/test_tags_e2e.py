@@ -205,3 +205,84 @@ def test_tag_duplicate_name_in_group_e2e(e2e_client):
     )
     assert response.status_code == 409  # Conflict
 
+
+@pytest.mark.e2e
+def test_delete_all_tags_deletes_group_e2e(e2e_client):
+    """모든 태그 삭제 시 그룹도 자동 삭제 E2E (반복 일정 패턴과 동일)"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+    
+    # 태그 여러 개 생성
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그1", "color": "#FF0000", "group_id": group_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+    
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그2", "color": "#00FF00", "group_id": group_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+    
+    # 첫 번째 태그 삭제 (그룹은 아직 남아있어야 함)
+    e2e_client.delete(f"/v1/tags/{tag1_id}")
+    
+    # 그룹이 아직 존재하는지 확인
+    group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
+    assert group_check.status_code == 200
+    
+    # 남은 태그 확인
+    tags_response = e2e_client.get("/v1/tags")
+    tags = tags_response.json()
+    remaining_tags = [t for t in tags if t["group_id"] == group_id]
+    assert len(remaining_tags) == 1  # tag2만 남음
+    
+    # 마지막 태그 삭제 (그룹도 자동 삭제되어야 함)
+    e2e_client.delete(f"/v1/tags/{tag2_id}")
+    
+    # 그룹이 자동으로 삭제되었는지 확인
+    group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
+    assert group_check.status_code == 404  # 그룹이 삭제됨
+
+
+@pytest.mark.e2e
+def test_delete_tag_keeps_group_with_remaining_tags_e2e(e2e_client):
+    """태그 삭제 시 다른 태그가 남아있으면 그룹 유지 E2E"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+    
+    # 태그 여러 개 생성
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그1", "color": "#FF0000", "group_id": group_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+    
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그2", "color": "#00FF00", "group_id": group_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+    
+    # 하나의 태그만 삭제
+    e2e_client.delete(f"/v1/tags/{tag1_id}")
+    
+    # 그룹이 여전히 존재하는지 확인
+    group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
+    assert group_check.status_code == 200
+    
+    # 남은 태그 확인
+    tags_response = e2e_client.get("/v1/tags")
+    tags = tags_response.json()
+    remaining_tags = [t for t in tags if t["group_id"] == group_id]
+    assert len(remaining_tags) == 1  # tag2가 남아있음
+
