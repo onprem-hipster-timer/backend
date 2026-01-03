@@ -433,13 +433,10 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
             "title": "태그 있는 일정 1",
             "start_time": "2024-01-15T10:00:00Z",
             "end_time": "2024-01-15T12:00:00Z",
+            "tag_ids": [tag1_id, tag2_id]  # 두 태그 모두
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule1_id}/tags",
-        json=[tag1_id, tag2_id]  # 두 태그 모두
-    )
     
     schedule2_response = e2e_client.post(
         "/v1/schedules",
@@ -447,13 +444,10 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
             "title": "태그 있는 일정 2",
             "start_time": "2024-01-16T10:00:00Z",
             "end_time": "2024-01-16T12:00:00Z",
+            "tag_ids": [tag1_id]  # tag1만
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule2_id}/tags",
-        json=[tag1_id]  # tag1만
-    )
     
     schedule3_response = e2e_client.post(
         "/v1/schedules",
@@ -543,13 +537,10 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
             "title": "업무 그룹 태그 일정",
             "start_time": "2024-01-15T10:00:00Z",
             "end_time": "2024-01-15T12:00:00Z",
+            "tag_ids": [tag1_id]
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule1_id}/tags",
-        json=[tag1_id]
-    )
     
     schedule2_response = e2e_client.post(
         "/v1/schedules",
@@ -557,13 +548,10 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
             "title": "개인 그룹 태그 일정",
             "start_time": "2024-01-16T10:00:00Z",
             "end_time": "2024-01-16T12:00:00Z",
+            "tag_ids": [tag2_id]
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule2_id}/tags",
-        json=[tag2_id]
-    )
     
     # 3. 그룹 필터링 쿼리
     query = """
@@ -649,13 +637,10 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
             "title": "업무 그룹 태그 2개 일정",
             "start_time": "2024-01-15T10:00:00Z",
             "end_time": "2024-01-15T12:00:00Z",
+            "tag_ids": [tag1_id, tag2_id]  # 업무 그룹 태그 2개
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule1_id}/tags",
-        json=[tag1_id, tag2_id]  # 업무 그룹 태그 2개
-    )
     
     schedule2_response = e2e_client.post(
         "/v1/schedules",
@@ -663,13 +648,10 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
             "title": "개인 그룹 태그 일정",
             "start_time": "2024-01-16T10:00:00Z",
             "end_time": "2024-01-16T12:00:00Z",
+            "tag_ids": [tag3_id]  # 개인 그룹 태그
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule2_id}/tags",
-        json=[tag3_id]  # 개인 그룹 태그
-    )
     
     # 3. 태그 ID와 그룹 ID 필터링 조합 (tag1 AND group1)
     query = """
@@ -739,13 +721,10 @@ def test_graphql_calendar_query_without_tag_filter(e2e_client):
             "title": "태그 있는 일정",
             "start_time": "2024-01-15T10:00:00Z",
             "end_time": "2024-01-15T12:00:00Z",
+            "tag_ids": [tag_id]
         }
     )
     schedule_id = schedule_response.json()["id"]
-    e2e_client.put(
-        f"/v1/tags/schedules/{schedule_id}/tags",
-        json=[tag_id]
-    )
     
     # 3. 태그 필터링 없이 쿼리 (태그 정보 포함)
     query = """

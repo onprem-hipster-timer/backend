@@ -132,6 +132,20 @@ def get_recurring_schedules(
     return results.all()
 
 
+def get_schedule_exception(
+        session: Session,
+        exception_id,
+) -> ScheduleException | None:
+    """
+    ID로 예외 인스턴스를 조회합니다.
+    
+    :param session: DB 세션
+    :param exception_id: 예외 인스턴스 ID
+    :return: 예외 인스턴스 또는 None
+    """
+    return session.get(ScheduleException, exception_id)
+
+
 def get_schedule_exceptions(
         session: Session,
         start_date: datetime,

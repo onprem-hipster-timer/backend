@@ -50,6 +50,7 @@ class ScheduleService:
         - 모든 DB 구조에서 일관성 보장
         - 반복 일정 필드도 함께 저장
         - RRULE 검증
+        - 태그 설정 (tag_ids가 있는 경우)
         
         :param data: 일정 생성 데이터 (datetime은 DTO에서 UTC naive로 변환됨)
         :return: 생성된 일정
@@ -64,7 +65,15 @@ class ScheduleService:
             if data.recurrence_end and data.recurrence_end < data.start_time:
                 raise InvalidRecurrenceEndError()
 
-        return crud.create_schedule(self.session, data)
+        schedule = crud.create_schedule(self.session, data)
+        
+        # 태그 설정
+        if data.tag_ids:
+            from app.domain.tag.service import TagService
+            tag_service = TagService(self.session)
+            tag_service.set_schedule_tags(schedule.id, data.tag_ids)
+        
+        return schedule
 
     def get_schedule(self, schedule_id: UUID) -> Schedule:
         """
@@ -317,6 +326,13 @@ class ScheduleService:
                 # start_time이 업데이트되어 기존 recurrence_end와 충돌하는 경우
                 raise InvalidRecurrenceEndError()
 
+        # 태그 업데이트 (tag_ids가 설정된 경우에만)
+        if 'tag_ids' in update_dict:
+            from app.domain.tag.service import TagService
+            tag_service = TagService(self.session)
+            tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
+            del update_dict['tag_ids']  # CRUD에 전달하지 않음
+        
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
 
@@ -376,6 +392,9 @@ class ScheduleService:
         # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨)
         update_dict = data.model_dump(exclude_unset=True)
 
+        # 태그 ID 추출 (별도 처리)
+        tag_ids = update_dict.pop('tag_ids', None)
+        
         # 예외 인스턴스 생성 또는 업데이트
         if existing_exception:
             # 기존 예외 인스턴스 업데이트
@@ -393,6 +412,12 @@ class ScheduleService:
 
             self.session.flush()
             self.session.refresh(existing_exception)
+            
+            # 태그 업데이트 (tag_ids가 설정된 경우에만)
+            if tag_ids is not None:
+                from app.domain.tag.service import TagService
+                tag_service = TagService(self.session)
+                tag_service.set_schedule_exception_tags(existing_exception.id, tag_ids)
 
             # 가상 인스턴스 반환
             instance_end = existing_exception.end_time or (
@@ -416,6 +441,12 @@ class ScheduleService:
                 start_time=update_dict.get('start_time'),
                 end_time=update_dict.get('end_time'),
             )
+            
+            # 태그 설정 (tag_ids가 설정된 경우에만)
+            if tag_ids is not None:
+                from app.domain.tag.service import TagService
+                tag_service = TagService(self.session)
+                tag_service.set_schedule_exception_tags(exception.id, tag_ids)
 
             # 가상 인스턴스 반환
             instance_end = exception.end_time or (

@@ -78,19 +78,8 @@ def test_create_tag_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_add_tag_to_schedule_e2e(e2e_client):
-    """일정에 태그 추가 E2E"""
-    # 일정 생성
-    schedule_response = e2e_client.post(
-        "/v1/schedules",
-        json={
-            "title": "회의",
-            "start_time": "2024-01-01T10:00:00Z",
-            "end_time": "2024-01-01T12:00:00Z",
-        }
-    )
-    schedule_id = schedule_response.json()["id"]
-    
+def test_create_schedule_with_tags_e2e(e2e_client):
+    """일정 생성 시 태그 함께 설정 E2E"""
     # 그룹 및 태그 생성
     group_response = e2e_client.post(
         "/v1/tags/groups",
@@ -108,23 +97,30 @@ def test_add_tag_to_schedule_e2e(e2e_client):
     )
     tag_id = tag_response.json()["id"]
     
-    # 일정에 태그 추가
-    response = e2e_client.post(
-        f"/v1/tags/schedules/{schedule_id}/tags/{tag_id}"
+    # 일정 생성 시 태그 함께 설정
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "회의",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag_id],
+        }
     )
-    assert response.status_code == 201
+    assert schedule_response.status_code == 201
+    schedule_data = schedule_response.json()
+    schedule_id = schedule_data["id"]
     
-    # 일정의 태그 조회
-    tags_response = e2e_client.get(f"/v1/tags/schedules/{schedule_id}/tags")
-    assert tags_response.status_code == 200
-    tags = tags_response.json()
+    # 일정의 태그 확인
+    assert "tags" in schedule_data
+    tags = schedule_data["tags"]
     assert len(tags) == 1
     assert tags[0]["id"] == tag_id
 
 
 @pytest.mark.e2e
-def test_set_schedule_tags_e2e(e2e_client):
-    """일정의 태그 일괄 설정 E2E"""
+def test_update_schedule_tags_e2e(e2e_client):
+    """일정 수정 시 태그 업데이트 E2E"""
     # 일정 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
@@ -155,13 +151,17 @@ def test_set_schedule_tags_e2e(e2e_client):
     )
     tag2_id = tag2_response.json()["id"]
     
-    # 태그 일괄 설정
-    response = e2e_client.put(
-        f"/v1/tags/schedules/{schedule_id}/tags",
-        json=[tag1_id, tag2_id]
+    # 일정 수정 시 태그 업데이트
+    update_response = e2e_client.patch(
+        f"/v1/schedules/{schedule_id}",
+        json={"tag_ids": [tag1_id, tag2_id]}
     )
-    assert response.status_code == 200
-    tags = response.json()
+    assert update_response.status_code == 200
+    schedule_data = update_response.json()
+    
+    # 일정의 태그 확인
+    assert "tags" in schedule_data
+    tags = schedule_data["tags"]
     assert len(tags) == 2
     tag_ids = [t["id"] for t in tags]
     assert tag1_id in tag_ids

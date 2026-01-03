@@ -7,7 +7,7 @@ Schedule Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
@@ -15,6 +15,9 @@ from pydantic import ConfigDict, field_validator
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.utils.validators import validate_time_order
+
+if TYPE_CHECKING:
+    from app.domain.tag.schema.dto import TagRead
 
 
 class ScheduleCreate(CustomModel):
@@ -25,6 +28,7 @@ class ScheduleCreate(CustomModel):
     end_time: datetime
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
+    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -38,12 +42,19 @@ class ScheduleCreate(CustomModel):
         return end_time
 
 
-class ScheduleRead(ScheduleCreate):
+class ScheduleRead(CustomModel):
     """일정 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    title: str
+    description: Optional[str] = None
+    start_time: datetime
+    end_time: datetime
+    recurrence_rule: Optional[str] = None
+    recurrence_end: Optional[datetime] = None
     created_at: datetime
+    tags: List["TagRead"] = []  # 태그 목록
 
     def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "ScheduleRead":
         """
@@ -84,6 +95,7 @@ class ScheduleUpdate(CustomModel):
     end_time: Optional[datetime] = None
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
+    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -95,3 +107,8 @@ class ScheduleUpdate(CustomModel):
     def validate_time(cls, end_time, info):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
+
+
+# Forward reference 해결 (TagRead 임포트)
+from app.domain.tag.schema.dto import TagRead  # noqa: E402
+ScheduleRead.model_rebuild()

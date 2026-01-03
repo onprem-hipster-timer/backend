@@ -6,6 +6,9 @@ from sqlalchemy import Column, ForeignKey
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
+# ScheduleTag, ScheduleExceptionTag는 순환 참조 없이 import 가능
+# (tag.py에서 Schedule을 import하지 않으므로)
+from app.models.tag import ScheduleTag, ScheduleExceptionTag
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
@@ -26,7 +29,11 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
     
-    # 태그 관계 (다대다) - Relationship은 tag.py에서 설정
+    # 태그 관계 (다대다)
+    tags: List["Tag"] = Relationship(
+        link_model=ScheduleTag,
+        sa_relationship_kwargs={"lazy": "selectin"}  # N+1 방지
+    )
 
 
 class ScheduleException(UUIDBase, TimestampMixin, table=True):
@@ -45,4 +52,8 @@ class ScheduleException(UUIDBase, TimestampMixin, table=True):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     
-    # 태그 관계 (다대다) - Relationship은 tag.py에서 설정
+    # 태그 관계 (다대다)
+    tags: List["Tag"] = Relationship(
+        link_model=ScheduleExceptionTag,
+        sa_relationship_kwargs={"lazy": "selectin"}  # N+1 방지
+    )
