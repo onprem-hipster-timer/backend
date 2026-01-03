@@ -9,6 +9,7 @@ from app.models.base import UUIDBase, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
+    from app.models.tag import Tag
 
 
 class Schedule(UUIDBase, TimestampMixin, table=True):
@@ -24,6 +25,8 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
 
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
+    
+    # 태그 관계 (다대다) - Relationship은 tag.py에서 설정
 
 
 class ScheduleException(UUIDBase, TimestampMixin, table=True):
@@ -41,3 +44,5 @@ class ScheduleException(UUIDBase, TimestampMixin, table=True):
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    
+    # 태그 관계 (다대다) - Relationship은 tag.py에서 설정

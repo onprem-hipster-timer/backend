@@ -247,7 +247,8 @@ def test_update_schedule_utc_conversion_kst(test_session, sample_schedule):
 def test_update_schedule_utc_conversion_partial(test_session, sample_schedule):
     """부분 업데이트 시에도 UTC 변환이 적용되는지 검증"""
     kst = timezone(timedelta(hours=9))
-    kst_start = datetime(2024, 1, 3, 19, 0, 0, tzinfo=kst)  # KST 19:00
+    # 기존 end_time(2024-01-01 12:00)보다 이전으로 설정
+    kst_start = datetime(2024, 1, 1, 18, 0, 0, tzinfo=kst)  # KST 18:00 = UTC 09:00
 
     # start_time만 업데이트
     update_data = ScheduleUpdate(
@@ -259,9 +260,11 @@ def test_update_schedule_utc_conversion_partial(test_session, sample_schedule):
 
     # start_time만 UTC로 변환되어야 함
     assert updated_schedule.start_time.tzinfo is None
-    assert updated_schedule.start_time == datetime(2024, 1, 3, 10, 0, 0)
+    assert updated_schedule.start_time == datetime(2024, 1, 1, 9, 0, 0)  # UTC 09:00
     # end_time은 기존 값 유지
     assert updated_schedule.end_time == sample_schedule.end_time
+    # start_time < end_time 검증
+    assert updated_schedule.start_time < updated_schedule.end_time
 
 
 def test_get_schedules_by_date_range_utc_conversion(test_session):

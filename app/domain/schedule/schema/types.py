@@ -13,6 +13,7 @@ from uuid import UUID
 import strawberry
 
 from app.domain.schedule.model import Schedule
+from app.domain.tag.schema.types import TagType
 
 
 @strawberry.type
@@ -32,15 +33,24 @@ class Event:
     is_recurring: bool = False  # 반복 일정인지 여부
     parent_id: UUID | None = None  # 반복 일정의 원본 ID (가상 인스턴스인 경우)
     instance_start: datetime | None = None  # 가상 인스턴스인 경우 시작 시간 (수정/삭제용)
+    # 태그
+    tags: List[TagType] = strawberry.field(default_factory=list)
 
     @classmethod
-    def from_schedule(cls, schedule: Schedule) -> "Event":
+    def from_schedule(cls, schedule: Schedule, tags: List = None) -> "Event":
         """
         Domain 모델을 GraphQL 타입으로 변환
         
         :param schedule: Schedule 도메인 모델
+        :param tags: 태그 리스트 (Tag ORM 모델)
         :return: Event GraphQL 타입
         """
+        tag_types = []
+        if tags:
+            tag_types = [TagType.from_model(tag) for tag in tags]
+        elif hasattr(schedule, 'tags') and schedule.tags:
+            tag_types = [TagType.from_model(tag) for tag in schedule.tags]
+        
         return cls(
             id=schedule.id,
             title=schedule.title,
@@ -51,6 +61,7 @@ class Event:
             is_recurring=schedule.recurrence_rule is not None or schedule.parent_id is not None,
             parent_id=schedule.parent_id,
             instance_start=schedule.start_time if schedule.parent_id else None,  # 가상 인스턴스인 경우
+            tags=tag_types,
         )
 
 

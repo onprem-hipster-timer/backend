@@ -6,7 +6,8 @@ Schedule Domain GraphQL Query
 - Resolver는 thin하게, 실제 작업은 Domain Service에 위임
 """
 from datetime import date, datetime, timedelta
-from typing import List, TypedDict
+from typing import List, TypedDict, Optional
+from uuid import UUID
 
 import strawberry
 from sqlmodel import Session
@@ -14,6 +15,7 @@ from strawberry.types import Info
 
 from app.domain.schedule.schema.types import Event, Day, Calendar
 from app.domain.schedule.service import ScheduleService
+from app.domain.tag.schema.types import TagFilterInput
 
 
 class GraphQLContext(TypedDict):
@@ -46,6 +48,7 @@ class ScheduleQuery:
             info: Info[GraphQLContext, None],
             start_date: date,
             end_date: date,
+            tag_filter: Optional[TagFilterInput] = None,
     ) -> Calendar:
         """
         날짜 범위로 캘린더 데이터를 조회합니다.
@@ -58,6 +61,10 @@ class ScheduleQuery:
         주간 뷰(7일) 또는 월간 뷰(30일) 모두 지원합니다.
         모든 필요한 데이터를 단일 GraphQL 쿼리로 가져옵니다.
         
+        태그 필터링:
+        - tag_ids: AND 방식 (모든 지정 태그 포함)
+        - group_ids: 해당 그룹의 태그 중 하나라도 있으면 포함
+        
         Bug Fix: Generator cleanup 보장
         - try-finally를 통해 세션 Generator를 명시적으로 정리
         - 요청 종료 시 세션 정리 보장
@@ -65,6 +72,7 @@ class ScheduleQuery:
         :param info: GraphQL info 객체 (컨텍스트 접근용)
         :param start_date: 시작 날짜
         :param end_date: 종료 날짜
+        :param tag_filter: 태그 필터링 입력 (선택)
         :return: Calendar 객체 (days와 events 포함)
         """
         context: GraphQLContext = info.context
@@ -76,12 +84,18 @@ class ScheduleQuery:
             start_datetime = datetime.combine(start_date, datetime.min.time())
             end_datetime = datetime.combine(end_date, datetime.max.time())
 
+            # 태그 필터 파라미터 추출
+            tag_ids = tag_filter.tag_ids if tag_filter else None
+            group_ids = tag_filter.group_ids if tag_filter else None
+
             # ✅ Domain Service 사용 (N+1 문제 방지)
             # FastAPI Best Practices: Service는 session을 받아서 CRUD 직접 사용
             service = ScheduleService(session)
             schedules = service.get_schedules_by_date_range(
                 start_datetime,
                 end_datetime,
+                tag_ids=tag_ids,
+                group_ids=group_ids,
             )
 
             # 날짜별로 일정을 그룹화 (메모리에서 처리)
@@ -93,9 +107,19 @@ class ScheduleQuery:
                 events_by_date[current_date] = []
                 current_date += timedelta(days=1)
 
+            # 일정별 태그 조회 (N+1 방지)
+            schedule_tags_map = {}
+            for schedule in schedules:
+                tags = service.get_schedule_tags(schedule.id)
+                # 가상 인스턴스의 경우 부모 태그 상속
+                if schedule.parent_id and not tags:
+                    tags = service.get_schedule_tags(schedule.parent_id)
+                schedule_tags_map[schedule.id] = tags
+
             # 일정을 날짜별로 분류
             for schedule in schedules:
-                event = Event.from_schedule(schedule)
+                tags = schedule_tags_map.get(schedule.id, [])
+                event = Event.from_schedule(schedule, tags=tags)
 
                 # 일정이 겹치는 모든 날짜에 추가
                 schedule_start_date = schedule.start_time.date()
