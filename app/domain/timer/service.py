@@ -22,6 +22,7 @@ from app.domain.timer.exceptions import (
 )
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
+from app.domain.tag.service import TagService
 
 
 class TimerService:
@@ -66,7 +67,16 @@ class TimerService:
             "status": TimerStatus.RUNNING.value,
             "started_at": now,
         }
-        return crud.create_timer(self.session, timer_data)
+        timer = crud.create_timer(self.session, timer_data)
+        
+        # 태그 설정
+        if data.tag_ids:
+            tag_service = TagService(self.session)
+            tag_service.set_timer_tags(timer.id, data.tag_ids)
+            # 태그 설정 후 relationship 갱신
+            self.session.refresh(timer)
+        
+        return timer
 
     def get_timer(self, timer_id: UUID) -> TimerSession:
         """
@@ -262,7 +272,7 @@ class TimerService:
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
-        타이머 메타데이터 업데이트 (title, description)
+        타이머 메타데이터 업데이트 (title, description, tags)
         
         :param timer_id: 타이머 ID
         :param data: 업데이트 데이터
@@ -274,11 +284,25 @@ class TimerService:
             raise TimerNotFoundError()
 
         update_data = data.model_dump(exclude_unset=True, exclude_none=True)
+        
+        # 태그 업데이트 (tag_ids가 설정된 경우에만)
+        tag_ids_updated = 'tag_ids' in update_data
+        if tag_ids_updated:
+            tag_service = TagService(self.session)
+            tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
+            del update_data['tag_ids']  # CRUD에 전달하지 않음
+        
+        # 나머지 필드 업데이트
         for field, value in update_data.items():
             setattr(timer, field, value)
 
         self.session.flush()
         self.session.refresh(timer)
+        
+        # 태그가 업데이트된 경우 relationship 갱신
+        if tag_ids_updated:
+            self.session.refresh(timer)
+        
         return timer
 
     def delete_timer(self, timer_id: UUID) -> None:

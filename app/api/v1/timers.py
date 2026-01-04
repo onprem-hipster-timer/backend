@@ -16,6 +16,8 @@ from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
+from app.domain.tag.schema.dto import TagRead
+from app.domain.tag.service import TagService
 from app.domain.timer.dependencies import valid_timer_id
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import (
@@ -34,6 +36,10 @@ async def create_timer(
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -61,11 +67,20 @@ async def create_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
@@ -79,6 +94,10 @@ async def get_timer(
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -104,11 +123,20 @@ async def get_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
@@ -124,6 +152,10 @@ async def update_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
+        ),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -132,7 +164,7 @@ async def update_timer(
         session: Session = Depends(get_db_transactional),
 ):
     """
-    타이머 메타데이터 업데이트 (title, description)
+    타이머 메타데이터 업데이트 (title, description, tags)
     """
     service = TimerService(session)
     timer = service.update_timer(timer_id, data)
@@ -145,11 +177,20 @@ async def update_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
@@ -163,6 +204,10 @@ async def pause_timer(
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -185,11 +230,20 @@ async def pause_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
@@ -203,6 +257,10 @@ async def resume_timer(
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -225,11 +283,20 @@ async def resume_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
@@ -243,6 +310,10 @@ async def stop_timer(
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_tags: bool = Query(
+            False,
+            description="Tags 정보 포함 여부 (기본값: false)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -265,11 +336,20 @@ async def stop_timer(
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Tags 정보 처리
+    tags_read = None
+    if include_tags:
+        tag_service = TagService(session)
+        tags = tag_service.get_timer_tags(timer.id)
+        tags_read = [TagRead.model_validate(tag) for tag in tags]
+
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_tags=include_tags,
+        tags=tags_read,
     )
 
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)

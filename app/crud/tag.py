@@ -11,7 +11,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag
+from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TimerTag
 
 
 # ============================================================
@@ -199,5 +199,53 @@ def delete_all_schedule_exception_tags(session: Session, exception_id: UUID) -> 
     exception_tags = session.exec(statement).all()
     for et in exception_tags:
         session.delete(et)
+    # commit은 get_db_transactional이 처리
+
+
+# ============================================================
+# Timer-Tag 관계 CRUD
+# ============================================================
+
+def add_timer_tag(session: Session, timer_id: UUID, tag_id: UUID) -> TimerTag:
+    """타이머에 태그 추가"""
+    timer_tag = TimerTag(timer_id=timer_id, tag_id=tag_id)
+    session.add(timer_tag)
+    session.flush()  # ID를 얻기 위해 flush
+    session.refresh(timer_tag)
+    return timer_tag
+
+
+def get_timer_tag(session: Session, timer_id: UUID, tag_id: UUID) -> Optional[TimerTag]:
+    """타이머-태그 관계 조회"""
+    statement = select(TimerTag).where(
+        TimerTag.timer_id == timer_id,
+        TimerTag.tag_id == tag_id
+    )
+    return session.exec(statement).first()
+
+
+def get_timer_tags(session: Session, timer_id: UUID) -> List[Tag]:
+    """타이머의 모든 태그 조회"""
+    statement = (
+        select(Tag)
+        .join(TimerTag)
+        .where(TimerTag.timer_id == timer_id)
+        .order_by(Tag.name)
+    )
+    return list(session.exec(statement).all())
+
+
+def delete_timer_tag(session: Session, timer_tag: TimerTag) -> None:
+    """타이머에서 태그 제거"""
+    session.delete(timer_tag)
+    # commit은 get_db_transactional이 처리
+
+
+def delete_all_timer_tags(session: Session, timer_id: UUID) -> None:
+    """타이머의 모든 태그 제거"""
+    statement = select(TimerTag).where(TimerTag.timer_id == timer_id)
+    timer_tags = session.exec(statement).all()
+    for tt in timer_tags:
+        session.delete(tt)
     # commit은 get_db_transactional이 처리
 

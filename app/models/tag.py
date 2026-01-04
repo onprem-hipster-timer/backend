@@ -5,6 +5,7 @@
 - Tag: 개별 태그 (그룹에 속함)
 - ScheduleTag: Schedule ↔ Tag 다대다 관계 중간 테이블
 - ScheduleExceptionTag: ScheduleException ↔ Tag 다대다 관계 중간 테이블
+- TimerTag: TimerSession ↔ Tag 다대다 관계 중간 테이블
 
 Note: SQLModel에서 link_model을 사용할 때 순환 참조 문제를 피하기 위해
 중간 테이블을 먼저 정의하고, Relationship에서 link_model 클래스를 직접 참조합니다.
@@ -55,6 +56,29 @@ class ScheduleExceptionTag(SQLModel, table=True):
     schedule_exception_id: UUID = Field(
         sa_column=Column(
             ForeignKey("scheduleexception.id", ondelete="CASCADE"),
+            nullable=False,
+            primary_key=True,
+        )
+    )
+    tag_id: UUID = Field(
+        sa_column=Column(
+            ForeignKey("tag.id", ondelete="CASCADE"),
+            nullable=False,
+            primary_key=True,
+        )
+    )
+
+
+class TimerTag(SQLModel, table=True):
+    """TimerSession ↔ Tag 다대다 중간 테이블"""
+    __tablename__ = "timer_tag"
+    __table_args__ = (
+        UniqueConstraint('timer_id', 'tag_id', name='uq_timer_tag'),
+    )
+    
+    timer_id: UUID = Field(
+        sa_column=Column(
+            ForeignKey("timersession.id", ondelete="CASCADE"),
             nullable=False,
             primary_key=True,
         )

@@ -1,14 +1,16 @@
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
 from sqlalchemy import Column, ForeignKey
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
+from app.models.tag import TimerTag
 
 if TYPE_CHECKING:
     from app.models.schedule import Schedule
+    from app.models.tag import Tag
 
 
 class TimerSession(UUIDBase, TimestampMixin, table=True):
@@ -37,3 +39,9 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
 
     # Relationship
     schedule: "Schedule" = Relationship(back_populates="timers")
+    
+    # 태그 관계 (다대다)
+    tags: List["Tag"] = Relationship(
+        link_model=TimerTag,
+        sa_relationship_kwargs={"lazy": "selectin"}  # N+1 방지
+    )

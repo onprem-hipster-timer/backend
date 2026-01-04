@@ -259,4 +259,49 @@ class TagService:
             crud.add_schedule_exception_tag(self.session, exception_id, tag_id)
         
         return self.get_schedule_exception_tags(exception_id)
+    
+    # ============================================================
+    # Timer-Tag 관계 관리
+    # ============================================================
+    
+    def add_tag_to_timer(self, timer_id: UUID, tag_id: UUID) -> None:
+        """타이머에 태그 추가"""
+        # 태그 존재 확인
+        tag = crud.get_tag(self.session, tag_id)
+        if not tag:
+            _raise_tag_not_found(tag_id)
+        
+        # 이미 연결되어 있는지 확인
+        existing = crud.get_timer_tag(self.session, timer_id, tag_id)
+        if existing:
+            return  # 이미 연결됨
+        
+        crud.add_timer_tag(self.session, timer_id, tag_id)
+    
+    def remove_tag_from_timer(self, timer_id: UUID, tag_id: UUID) -> None:
+        """타이머에서 태그 제거"""
+        timer_tag = crud.get_timer_tag(self.session, timer_id, tag_id)
+        if timer_tag:
+            crud.delete_timer_tag(self.session, timer_tag)
+    
+    def get_timer_tags(self, timer_id: UUID) -> List[Tag]:
+        """타이머의 태그 조회"""
+        return crud.get_timer_tags(self.session, timer_id)
+    
+    def set_timer_tags(self, timer_id: UUID, tag_ids: List[UUID]) -> List[Tag]:
+        """타이머의 태그 일괄 설정 (기존 태그 교체)"""
+        # 태그 존재 확인
+        for tag_id in tag_ids:
+            tag = crud.get_tag(self.session, tag_id)
+            if not tag:
+                _raise_tag_not_found(tag_id)
+        
+        # 기존 태그 연결 삭제
+        crud.delete_all_timer_tags(self.session, timer_id)
+        
+        # 새 태그 연결
+        for tag_id in tag_ids:
+            crud.add_timer_tag(self.session, timer_id, tag_id)
+        
+        return self.get_timer_tags(timer_id)
 

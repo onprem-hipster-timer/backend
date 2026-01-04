@@ -7,7 +7,7 @@ Timer Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
@@ -16,6 +16,9 @@ from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
 
+if TYPE_CHECKING:
+    from app.domain.tag.schema.dto import TagRead
+
 
 class TimerCreate(CustomModel):
     """타이머 생성 DTO"""
@@ -23,6 +26,7 @@ class TimerCreate(CustomModel):
     title: Optional[str] = None
     description: Optional[str] = None
     allocated_duration: int  # 할당 시간 (초 단위)
+    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
     @field_validator("allocated_duration")
     @classmethod
@@ -52,6 +56,9 @@ class TimerRead(CustomModel):
 
     # 일정 정보 포함 (선택적)
     schedule: Optional[ScheduleRead] = None
+    
+    # 태그 목록
+    tags: List["TagRead"] = []
 
     @field_validator("started_at", "paused_at", "ended_at", "created_at", "updated_at")
     @classmethod
@@ -66,24 +73,32 @@ class TimerRead(CustomModel):
             *,
             include_schedule: bool = False,
             schedule: Optional[ScheduleRead] = None,
+            include_tags: bool = False,
+            tags: Optional[List["TagRead"]] = None,
     ) -> "TimerRead":
         """
         TimerSession 모델에서 TimerRead DTO를 안전하게 생성
         
-        관계 필드(schedule)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
+        관계 필드(schedule, tags)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
         include_schedule=True일 때만 schedule 정보를 포함
+        include_tags=True일 때만 tags 정보를 포함
         
         :param timer: TimerSession 모델 인스턴스
         :param include_schedule: Schedule 정보 포함 여부
         :param schedule: ScheduleRead 인스턴스 (include_schedule=True일 때만 사용)
+        :param include_tags: Tags 정보 포함 여부
+        :param tags: TagRead 리스트 (include_tags=True일 때만 사용)
         :return: TimerRead DTO 인스턴스
         """
-        # schedule 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
-        timer_data = timer.model_dump(exclude={"schedule"})
+        # schedule, tags 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
+        timer_data = timer.model_dump(exclude={"schedule", "tags"})
         timer_read = cls.model_validate(timer_data)
 
         # schedule 필드 명시적으로 설정
         timer_read.schedule = schedule if include_schedule else None
+        
+        # tags 필드 명시적으로 설정
+        timer_read.tags = tags if include_tags else []
 
         return timer_read
 
@@ -133,3 +148,9 @@ class TimerUpdate(CustomModel):
     """타이머 업데이트 DTO"""
     title: Optional[str] = None
     description: Optional[str] = None
+    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
+
+
+# Forward reference 해결 (TagRead 임포트)
+from app.domain.tag.schema.dto import TagRead  # noqa: E402
+TimerRead.model_rebuild()
