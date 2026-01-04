@@ -16,9 +16,10 @@ from app.core.base_model import CustomModel
 from app.core.constants import TagIncludeMode
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.tag.schema.dto import TagRead
 
 if TYPE_CHECKING:
-    from app.domain.tag.schema.dto import TagRead
+    pass  # TagRead는 이미 import됨
 
 
 class TimerCreate(CustomModel):
@@ -156,5 +157,4 @@ class TimerUpdate(CustomModel):
 
 
 # Forward reference 해결 (TagRead 임포트)
-
 TimerRead.model_rebuild()

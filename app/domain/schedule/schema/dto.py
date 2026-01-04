@@ -9,6 +9,7 @@ Schedule Domain DTO (Data Transfer Objects)
 from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
+from app.domain.tag.schema.dto import TagRead
 
 from pydantic import ConfigDict, field_validator
 
