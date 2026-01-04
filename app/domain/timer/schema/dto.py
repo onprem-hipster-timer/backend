@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
+from app.core.constants import TagIncludeMode
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
 
@@ -73,7 +74,7 @@ class TimerRead(CustomModel):
             *,
             include_schedule: bool = False,
             schedule: Optional[ScheduleRead] = None,
-            include_tags: bool = False,
+            tag_include_mode: TagIncludeMode = TagIncludeMode.NONE,
             tags: Optional[List["TagRead"]] = None,
     ) -> "TimerRead":
         """
@@ -81,13 +82,13 @@ class TimerRead(CustomModel):
         
         관계 필드(schedule, tags)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
         include_schedule=True일 때만 schedule 정보를 포함
-        include_tags=True일 때만 tags 정보를 포함
+        tag_include_mode에 따라 tags 정보를 포함
         
         :param timer: TimerSession 모델 인스턴스
         :param include_schedule: Schedule 정보 포함 여부
         :param schedule: ScheduleRead 인스턴스 (include_schedule=True일 때만 사용)
-        :param include_tags: Tags 정보 포함 여부
-        :param tags: TagRead 리스트 (include_tags=True일 때만 사용)
+        :param tag_include_mode: 태그 포함 모드 (NONE, TIMER_ONLY, INHERIT_FROM_SCHEDULE)
+        :param tags: TagRead 리스트 (tag_include_mode가 NONE이 아닐 때 사용)
         :return: TimerRead DTO 인스턴스
         """
         # schedule, tags 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
@@ -98,7 +99,10 @@ class TimerRead(CustomModel):
         timer_read.schedule = schedule if include_schedule else None
         
         # tags 필드 명시적으로 설정
-        timer_read.tags = tags if include_tags else []
+        if tag_include_mode == TagIncludeMode.NONE:
+            timer_read.tags = []
+        else:
+            timer_read.tags = tags if tags is not None else []
 
         return timer_read
 

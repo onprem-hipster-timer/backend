@@ -14,3 +14,10 @@ class TimerStatus(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+
+class TagIncludeMode(str, Enum):
+    """타이머 태그 포함 모드"""
+    NONE = "none"  # 태그 포함 안 함
+    TIMER_ONLY = "timer_only"  # 타이머의 태그만 포함
+    INHERIT_FROM_SCHEDULE = "inherit_from_schedule"  # 스케줄의 태그를 상속 (타이머 태그 + 스케줄 태그)

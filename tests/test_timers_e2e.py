@@ -917,7 +917,7 @@ def test_create_timer_with_tags_e2e(e2e_client):
             "allocated_duration": 1800,
             "tag_ids": [tag_id],
         },
-        params={"include_tags": True}
+        params={"tag_include_mode": "timer_only"}
     )
     assert timer_response.status_code == 201
     timer_data = timer_response.json()
@@ -978,7 +978,7 @@ def test_update_timer_tags_e2e(e2e_client):
     update_response = e2e_client.patch(
         f"/v1/timers/{timer_id}",
         json={"tag_ids": [tag1_id, tag2_id]},
-        params={"include_tags": True}
+        params={"tag_include_mode": "timer_only"}
     )
     assert update_response.status_code == 200
     timer_data = update_response.json()
@@ -993,13 +993,13 @@ def test_update_timer_tags_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_get_timer_with_include_tags_false_e2e(e2e_client):
-    """타이머 조회 시 include_tags=False일 때 tags가 빈 배열인지 테스트"""
+def test_get_timer_with_tag_include_mode_none_e2e(e2e_client):
+    """타이머 조회 시 tag_include_mode=none일 때 tags가 빈 배열인지 테스트"""
     # 1. 일정 및 타이머 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
         json={
-            "title": "조회 include_tags False 테스트",
+            "title": "조회 tag_include_mode none 테스트",
             "start_time": "2024-01-01T10:00:00Z",
             "end_time": "2024-01-01T12:00:00Z",
         },
@@ -1030,10 +1030,10 @@ def test_get_timer_with_include_tags_false_e2e(e2e_client):
     )
     timer_id = timer_response.json()["id"]
 
-    # 4. 타이머 조회 (include_tags=False)
+    # 4. 타이머 조회 (tag_include_mode=none)
     get_response = e2e_client.get(
         f"/v1/timers/{timer_id}",
-        params={"include_tags": False},
+        params={"tag_include_mode": "none"},
     )
     assert get_response.status_code == 200
     data = get_response.json()
@@ -1042,13 +1042,13 @@ def test_get_timer_with_include_tags_false_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_get_timer_with_include_tags_true_e2e(e2e_client):
-    """타이머 조회 시 include_tags=True일 때 tags가 포함되는지 테스트"""
+def test_get_timer_with_tag_include_mode_timer_only_e2e(e2e_client):
+    """타이머 조회 시 tag_include_mode=timer_only일 때 tags가 포함되는지 테스트"""
     # 1. 일정 및 타이머 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
         json={
-            "title": "조회 include_tags True 테스트",
+            "title": "조회 tag_include_mode timer_only 테스트",
             "start_time": "2024-01-01T10:00:00Z",
             "end_time": "2024-01-01T12:00:00Z",
         },
@@ -1080,10 +1080,10 @@ def test_get_timer_with_include_tags_true_e2e(e2e_client):
     )
     timer_id = timer_response.json()["id"]
 
-    # 4. 타이머 조회 (include_tags=True)
+    # 4. 타이머 조회 (tag_include_mode=timer_only)
     get_response = e2e_client.get(
         f"/v1/timers/{timer_id}",
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert get_response.status_code == 200
     data = get_response.json()
@@ -1094,13 +1094,13 @@ def test_get_timer_with_include_tags_true_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_update_timer_with_include_tags_false_e2e(e2e_client):
-    """타이머 업데이트 시 include_tags=False일 때 tags가 빈 배열인지 테스트"""
+def test_update_timer_with_tag_include_mode_none_e2e(e2e_client):
+    """타이머 업데이트 시 tag_include_mode=none일 때 tags가 빈 배열인지 테스트"""
     # 1. 일정 및 타이머 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
         json={
-            "title": "업데이트 include_tags False 테스트",
+            "title": "업데이트 tag_include_mode none 테스트",
             "start_time": "2024-01-01T10:00:00Z",
             "end_time": "2024-01-01T12:00:00Z",
         },
@@ -1132,11 +1132,11 @@ def test_update_timer_with_include_tags_false_e2e(e2e_client):
     )
     timer_id = timer_response.json()["id"]
 
-    # 4. 타이머 업데이트 (include_tags=False)
+    # 4. 타이머 업데이트 (tag_include_mode=none)
     update_response = e2e_client.patch(
         f"/v1/timers/{timer_id}",
         json={"title": "업데이트된 제목"},
-        params={"include_tags": False},
+        params={"tag_include_mode": "none"},
     )
     assert update_response.status_code == 200
     data = update_response.json()
@@ -1146,13 +1146,13 @@ def test_update_timer_with_include_tags_false_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_pause_timer_with_include_tags_true_e2e(e2e_client):
-    """타이머 일시정지 시 include_tags=True일 때 tags가 포함되는지 테스트"""
+def test_pause_timer_with_tag_include_mode_timer_only_e2e(e2e_client):
+    """타이머 일시정지 시 tag_include_mode=timer_only일 때 tags가 포함되는지 테스트"""
     # 1. 일정 및 타이머 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
         json={
-            "title": "일시정지 include_tags True 테스트",
+            "title": "일시정지 tag_include_mode timer_only 테스트",
             "start_time": "2024-01-01T10:00:00Z",
             "end_time": "2024-01-01T12:00:00Z",
         },
@@ -1183,10 +1183,10 @@ def test_pause_timer_with_include_tags_true_e2e(e2e_client):
     )
     timer_id = timer_response.json()["id"]
 
-    # 4. 타이머 일시정지 (include_tags=True)
+    # 4. 타이머 일시정지 (tag_include_mode=timer_only)
     pause_response = e2e_client.patch(
         f"/v1/timers/{timer_id}/pause",
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert pause_response.status_code == 200
     data = pause_response.json()
@@ -1238,7 +1238,7 @@ def test_timer_tags_workflow_e2e(e2e_client):
             "allocated_duration": 1800,
             "tag_ids": [tag1_id],
         },
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert create_response.status_code == 201
     timer_id = create_response.json()["id"]
@@ -1248,7 +1248,7 @@ def test_timer_tags_workflow_e2e(e2e_client):
     update_response = e2e_client.patch(
         f"/v1/timers/{timer_id}",
         json={"tag_ids": [tag1_id, tag2_id]},
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert update_response.status_code == 200
     assert len(update_response.json()["tags"]) == 2
@@ -1256,7 +1256,7 @@ def test_timer_tags_workflow_e2e(e2e_client):
     # 5. 타이머 조회 시 태그 확인
     get_response = e2e_client.get(
         f"/v1/timers/{timer_id}",
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert get_response.status_code == 200
     tags = get_response.json()["tags"]
@@ -1269,7 +1269,84 @@ def test_timer_tags_workflow_e2e(e2e_client):
     remove_response = e2e_client.patch(
         f"/v1/timers/{timer_id}",
         json={"tag_ids": []},
-        params={"include_tags": True},
+        params={"tag_include_mode": "timer_only"},
     )
     assert remove_response.status_code == 200
     assert len(remove_response.json()["tags"]) == 0
+
+
+@pytest.mark.e2e
+def test_timer_with_inherit_from_schedule_e2e(e2e_client):
+    """타이머 조회 시 tag_include_mode=inherit_from_schedule일 때 스케줄 태그 상속 테스트"""
+    # 1. 일정 생성 및 태그 설정
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "스케줄 태그 상속 테스트 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 그룹 및 태그 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    schedule_tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "스케줄태그", "color": "#0000FF", "group_id": group_id}
+    )
+    schedule_tag_id = schedule_tag_response.json()["id"]
+
+    timer_tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "타이머태그", "color": "#FF0000", "group_id": group_id}
+    )
+    timer_tag_id = timer_tag_response.json()["id"]
+
+    # 3. 일정에 태그 설정
+    e2e_client.patch(
+        f"/v1/schedules/{schedule_id}",
+        json={"tag_ids": [schedule_tag_id]},
+    )
+
+    # 4. 타이머 생성 시 태그 설정
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "스케줄 태그 상속 테스트 타이머",
+            "allocated_duration": 1800,
+            "tag_ids": [timer_tag_id],
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 5. 타이머 조회 (tag_include_mode=inherit_from_schedule)
+    get_response = e2e_client.get(
+        f"/v1/timers/{timer_id}",
+        params={"tag_include_mode": "inherit_from_schedule"},
+    )
+    assert get_response.status_code == 200
+    data = get_response.json()
+    assert "tags" in data
+    tags = data["tags"]
+    # 타이머 태그 + 스케줄 태그 모두 포함되어야 함
+    assert len(tags) == 2
+    tag_ids = [t["id"] for t in tags]
+    assert schedule_tag_id in tag_ids
+    assert timer_tag_id in tag_ids
+
+    # 6. 타이머 태그만 조회 (tag_include_mode=timer_only)
+    get_timer_only_response = e2e_client.get(
+        f"/v1/timers/{timer_id}",
+        params={"tag_include_mode": "timer_only"},
+    )
+    assert get_timer_only_response.status_code == 200
+    timer_only_tags = get_timer_only_response.json()["tags"]
+    assert len(timer_only_tags) == 1
+    assert timer_only_tags[0]["id"] == timer_tag_id

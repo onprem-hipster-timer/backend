@@ -366,27 +366,31 @@ def test_timer_tags_workflow_integration(test_session):
     timer_tags = tag_service.get_timer_tags(removed_timer.id)
     assert len(timer_tags) == 0
 
-    # 7. TimerRead에서 태그 확인 (include_tags=True)
-    tags_read = [tag_service.get_timer_tags(timer.id)]
+    # 7. TimerRead에서 태그 확인 (tag_include_mode=TIMER_ONLY)
+    tags_read = tag_service.get_timer_tags(timer.id)
+    from app.domain.tag.schema.dto import TagRead
+    tags_read_dto = [TagRead.model_validate(tag) for tag in tags_read]
+    from app.core.constants import TagIncludeMode
     timer_read = TimerRead.from_model(
         timer,
-        include_tags=True,
-        tags=tags_read[0] if tags_read[0] else [],
+        tag_include_mode=TagIncludeMode.TIMER_ONLY,
+        tags=tags_read_dto,
     )
     assert len(timer_read.tags) == 0  # 태그가 제거되었으므로 빈 배열
 
 
 @pytest.mark.integration
-def test_timer_include_tags_false_integration(test_session):
-    """타이머 조회 시 include_tags=False일 때 tags가 빈 배열인지 통합 테스트"""
+def test_timer_tag_include_mode_none_integration(test_session):
+    """타이머 조회 시 tag_include_mode=NONE일 때 tags가 빈 배열인지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
     from app.domain.tag.service import TagService
+    from app.core.constants import TagIncludeMode
 
     # 1. 일정 생성
     schedule_service = ScheduleService(test_session)
     schedule_data = ScheduleCreate(
-        title="include_tags False 테스트 일정",
+        title="tag_include_mode NONE 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
@@ -404,16 +408,16 @@ def test_timer_include_tags_false_integration(test_session):
     timer_service = TimerService(test_session)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
-        title="include_tags False 테스트 타이머",
+        title="tag_include_mode NONE 테스트 타이머",
         allocated_duration=1800,
         tag_ids=[tag.id],
     )
     timer = timer_service.create_timer(timer_data)
 
-    # 4. include_tags=False로 TimerRead 생성
+    # 4. tag_include_mode=NONE으로 TimerRead 생성
     timer_read = TimerRead.from_model(
         timer,
-        include_tags=False,
+        tag_include_mode=TagIncludeMode.NONE,
     )
 
     # 5. tags가 빈 배열인지 확인
@@ -422,16 +426,17 @@ def test_timer_include_tags_false_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_include_tags_true_integration(test_session):
-    """타이머 조회 시 include_tags=True일 때 tags가 포함되는지 통합 테스트"""
+def test_timer_tag_include_mode_timer_only_integration(test_session):
+    """타이머 조회 시 tag_include_mode=TIMER_ONLY일 때 tags가 포함되는지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate, TagRead
     from app.domain.tag.service import TagService
+    from app.core.constants import TagIncludeMode
 
     # 1. 일정 생성
     schedule_service = ScheduleService(test_session)
     schedule_data = ScheduleCreate(
-        title="include_tags True 테스트 일정",
+        title="tag_include_mode TIMER_ONLY 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
@@ -449,7 +454,7 @@ def test_timer_include_tags_true_integration(test_session):
     timer_service = TimerService(test_session)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
-        title="include_tags True 테스트 타이머",
+        title="tag_include_mode TIMER_ONLY 테스트 타이머",
         allocated_duration=1800,
         tag_ids=[tag.id],
     )
@@ -459,10 +464,10 @@ def test_timer_include_tags_true_integration(test_session):
     tags = tag_service.get_timer_tags(timer.id)
     tags_read = [TagRead.model_validate(tag) for tag in tags]
 
-    # 5. include_tags=True로 TimerRead 생성
+    # 5. tag_include_mode=TIMER_ONLY로 TimerRead 생성
     timer_read = TimerRead.from_model(
         timer,
-        include_tags=True,
+        tag_include_mode=TagIncludeMode.TIMER_ONLY,
         tags=tags_read,
     )
 
@@ -471,3 +476,71 @@ def test_timer_include_tags_true_integration(test_session):
     assert timer_read.tags[0].id == tag.id
     assert timer_read.tags[0].name == "중요"
     assert timer_read.id == timer.id
+
+
+@pytest.mark.integration
+def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
+    """타이머 조회 시 tag_include_mode=INHERIT_FROM_SCHEDULE일 때 스케줄 태그 상속 통합 테스트"""
+    from app.domain.timer.schema.dto import TimerRead
+    from app.domain.tag.schema.dto import TagGroupCreate, TagCreate, TagRead
+    from app.domain.tag.service import TagService
+    from app.domain.schedule.schema.dto import ScheduleUpdate
+    from app.core.constants import TagIncludeMode
+
+    # 1. 일정 생성
+    schedule_service = ScheduleService(test_session)
+    schedule_data = ScheduleCreate(
+        title="스케줄 태그 상속 테스트 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+    )
+    schedule = schedule_service.create_schedule(schedule_data)
+
+    # 2. 그룹 및 태그 생성
+    tag_service = TagService(test_session)
+    group_data = TagGroupCreate(name="업무", color="#FF5733")
+    group = tag_service.create_tag_group(group_data)
+
+    schedule_tag_data = TagCreate(name="스케줄태그", color="#0000FF", group_id=group.id)
+    schedule_tag = tag_service.create_tag(schedule_tag_data)
+
+    timer_tag_data = TagCreate(name="타이머태그", color="#FF0000", group_id=group.id)
+    timer_tag = tag_service.create_tag(timer_tag_data)
+
+    # 3. 일정에 태그 설정
+    schedule_update = ScheduleUpdate(tag_ids=[schedule_tag.id])
+    schedule_service.update_schedule(schedule.id, schedule_update)
+
+    # 4. 타이머 생성 시 태그 설정
+    timer_service = TimerService(test_session)
+    timer_data = TimerCreate(
+        schedule_id=schedule.id,
+        title="스케줄 태그 상속 테스트 타이머",
+        allocated_duration=1800,
+        tag_ids=[timer_tag.id],
+    )
+    timer = timer_service.create_timer(timer_data)
+
+    # 5. 태그 정보 조회 (타이머 태그 + 스케줄 태그)
+    timer_tags = tag_service.get_timer_tags(timer.id)
+    schedule_tags = schedule_service.get_schedule_tags(schedule.id)
+    
+    # 중복 제거하여 합치기
+    all_tags = {tag.id: tag for tag in timer_tags}
+    for tag in schedule_tags:
+        all_tags[tag.id] = tag
+    
+    tags_read = [TagRead.model_validate(tag) for tag in all_tags.values()]
+
+    # 6. tag_include_mode=INHERIT_FROM_SCHEDULE로 TimerRead 생성
+    timer_read = TimerRead.from_model(
+        timer,
+        tag_include_mode=TagIncludeMode.INHERIT_FROM_SCHEDULE,
+        tags=tags_read,
+    )
+
+    # 7. tags가 타이머 태그 + 스케줄 태그 모두 포함되어 있는지 확인
+    assert len(timer_read.tags) == 2
+    tag_ids = [t.id for t in timer_read.tags]
+    assert schedule_tag.id in tag_ids
+    assert timer_tag.id in tag_ids
