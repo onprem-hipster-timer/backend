@@ -153,7 +153,7 @@ def delete_all_schedule_tags(session: Session, schedule_id: UUID) -> None:
 # ============================================================
 
 def add_schedule_exception_tag(
-    session: Session, exception_id: UUID, tag_id: UUID
+        session: Session, exception_id: UUID, tag_id: UUID
 ) -> ScheduleExceptionTag:
     """예외 일정에 태그 추가"""
     exception_tag = ScheduleExceptionTag(schedule_exception_id=exception_id, tag_id=tag_id)
@@ -164,7 +164,7 @@ def add_schedule_exception_tag(
 
 
 def get_schedule_exception_tag(
-    session: Session, exception_id: UUID, tag_id: UUID
+        session: Session, exception_id: UUID, tag_id: UUID
 ) -> Optional[ScheduleExceptionTag]:
     """예외 일정-태그 관계 조회"""
     statement = select(ScheduleExceptionTag).where(
@@ -248,4 +248,3 @@ def delete_all_timer_tags(session: Session, timer_id: UUID) -> None:
     for tt in timer_tags:
         session.delete(tt)
     # commit은 get_db_transactional이 처리
-

@@ -7,7 +7,6 @@ Schedule Domain GraphQL Query
 """
 from datetime import date, datetime, timedelta
 from typing import List, TypedDict, Optional
-from uuid import UUID
 
 import strawberry
 from sqlmodel import Session

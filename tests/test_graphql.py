@@ -413,19 +413,19 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "긴급", "color": "#00FF00", "group_id": group_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     # 2. 일정 생성 및 태그 추가
     schedule1_response = e2e_client.post(
         "/v1/schedules",
@@ -437,7 +437,7 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    
+
     schedule2_response = e2e_client.post(
         "/v1/schedules",
         json={
@@ -448,7 +448,7 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    
+
     schedule3_response = e2e_client.post(
         "/v1/schedules",
         json={
@@ -457,7 +457,7 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
             "end_time": "2024-01-17T12:00:00Z",
         }
     )
-    
+
     # 3. 태그 필터링 쿼리 (tag1 AND tag2)
     query = """
     query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
@@ -476,7 +476,7 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
@@ -484,18 +484,18 @@ def test_graphql_calendar_query_with_tag_filter(e2e_client):
             "tagIds": [tag1_id, tag2_id]  # AND 방식
         }
     }
-    
+
     response = e2e_client.post(
         "/v1/graphql",
         json={"query": query, "variables": variables}
     )
     assert response.status_code == 200
-    
+
     data = response.json()["data"]["calendar"]
     events = []
     for day in data["days"]:
         events.extend(day["events"])
-    
+
     # tag1 AND tag2를 가진 일정만 반환되어야 함 (schedule1만)
     assert len(events) == 1
     assert events[0]["id"] == schedule1_id
@@ -511,25 +511,25 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group1_id = group1_response.json()["id"]
-    
+
     group2_response = e2e_client.post(
         "/v1/tags/groups",
         json={"name": "개인", "color": "#00FF00"}
     )
     group2_id = group2_response.json()["id"]
-    
+
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group1_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "긴급", "color": "#0000FF", "group_id": group2_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     # 2. 일정 생성 및 태그 추가
     schedule1_response = e2e_client.post(
         "/v1/schedules",
@@ -541,7 +541,7 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    
+
     schedule2_response = e2e_client.post(
         "/v1/schedules",
         json={
@@ -552,7 +552,7 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    
+
     # 3. 그룹 필터링 쿼리
     query = """
     query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
@@ -571,7 +571,7 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
@@ -579,18 +579,18 @@ def test_graphql_calendar_query_with_group_filter(e2e_client):
             "groupIds": [group1_id]  # 업무 그룹만
         }
     }
-    
+
     response = e2e_client.post(
         "/v1/graphql",
         json={"query": query, "variables": variables}
     )
     assert response.status_code == 200
-    
+
     data = response.json()["data"]["calendar"]
     events = []
     for day in data["days"]:
         events.extend(day["events"])
-    
+
     # 업무 그룹의 태그를 가진 일정만 반환되어야 함 (schedule1만)
     assert len(events) == 1
     assert events[0]["id"] == schedule1_id
@@ -605,31 +605,31 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group1_id = group1_response.json()["id"]
-    
+
     group2_response = e2e_client.post(
         "/v1/tags/groups",
         json={"name": "개인", "color": "#00FF00"}
     )
     group2_id = group2_response.json()["id"]
-    
+
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group1_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "긴급", "color": "#0000FF", "group_id": group1_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     tag3_response = e2e_client.post(
         "/v1/tags",
         json={"name": "개인용", "color": "#FFFF00", "group_id": group2_id}
     )
     tag3_id = tag3_response.json()["id"]
-    
+
     # 2. 일정 생성 및 태그 추가
     schedule1_response = e2e_client.post(
         "/v1/schedules",
@@ -641,7 +641,7 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
         }
     )
     schedule1_id = schedule1_response.json()["id"]
-    
+
     schedule2_response = e2e_client.post(
         "/v1/schedules",
         json={
@@ -652,7 +652,7 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
         }
     )
     schedule2_id = schedule2_response.json()["id"]
-    
+
     # 3. 태그 ID와 그룹 ID 필터링 조합 (tag1 AND group1)
     query = """
     query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
@@ -671,7 +671,7 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
@@ -680,18 +680,18 @@ def test_graphql_calendar_query_with_tag_and_group_filter(e2e_client):
             "groupIds": [group1_id]  # 업무 그룹 포함
         }
     }
-    
+
     response = e2e_client.post(
         "/v1/graphql",
         json={"query": query, "variables": variables}
     )
     assert response.status_code == 200
-    
+
     data = response.json()["data"]["calendar"]
     events = []
     for day in data["days"]:
         events.extend(day["events"])
-    
+
     # tag1을 가진 일정이어야 하고, 업무 그룹의 태그를 가진 일정도 포함
     # schedule1 (tag1, tag2 모두 업무 그룹)만 반환되어야 함
     assert len(events) == 1
@@ -707,13 +707,13 @@ def test_graphql_calendar_query_without_tag_filter(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     tag_response = e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group_id}
     )
     tag_id = tag_response.json()["id"]
-    
+
     # 2. 일정 생성 및 태그 추가
     schedule_response = e2e_client.post(
         "/v1/schedules",
@@ -725,7 +725,7 @@ def test_graphql_calendar_query_without_tag_filter(e2e_client):
         }
     )
     schedule_id = schedule_response.json()["id"]
-    
+
     # 3. 태그 필터링 없이 쿼리 (태그 정보 포함)
     query = """
     query GetCalendar($startDate: Date!, $endDate: Date!) {
@@ -745,27 +745,27 @@ def test_graphql_calendar_query_without_tag_filter(e2e_client):
         }
     }
     """
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
     }
-    
+
     response = e2e_client.post(
         "/v1/graphql",
         json={"query": query, "variables": variables}
     )
     assert response.status_code == 200
-    
+
     data = response.json()["data"]["calendar"]
     events = []
     for day in data["days"]:
         events.extend(day["events"])
-    
+
     # 태그 필터링 없이 모든 일정 반환 (태그 정보 포함)
     tagged_events = [e for e in events if e.get("tags")]
     assert len(tagged_events) >= 1
-    
+
     # 태그가 있는 일정 확인
     tagged_event = next((e for e in events if e["id"] == schedule_id), None)
     assert tagged_event is not None
@@ -783,13 +783,13 @@ def test_graphql_calendar_query_tag_filter_empty_result(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     tag_response = e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group_id}
     )
     tag_id = tag_response.json()["id"]
-    
+
     # 2. 태그 없는 일정 생성
     schedule_response = e2e_client.post(
         "/v1/schedules",
@@ -799,7 +799,7 @@ def test_graphql_calendar_query_tag_filter_empty_result(e2e_client):
             "end_time": "2024-01-15T12:00:00Z",
         }
     )
-    
+
     # 3. 존재하지 않는 태그로 필터링
     query = """
     query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
@@ -814,10 +814,10 @@ def test_graphql_calendar_query_tag_filter_empty_result(e2e_client):
         }
     }
     """
-    
+
     from uuid import uuid4
     fake_tag_id = str(uuid4())
-    
+
     variables = {
         "startDate": "2024-01-01",
         "endDate": "2024-01-31",
@@ -825,17 +825,17 @@ def test_graphql_calendar_query_tag_filter_empty_result(e2e_client):
             "tagIds": [fake_tag_id]  # 존재하지 않는 태그
         }
     }
-    
+
     response = e2e_client.post(
         "/v1/graphql",
         json={"query": query, "variables": variables}
     )
     assert response.status_code == 200
-    
+
     data = response.json()["data"]["calendar"]
     events = []
     for day in data["days"]:
         events.extend(day["events"])
-    
+
     # 존재하지 않는 태그로 필터링하면 빈 결과
     assert len(events) == 0

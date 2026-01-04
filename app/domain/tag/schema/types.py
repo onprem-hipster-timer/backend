@@ -24,7 +24,7 @@ class TagType:
     group_id: UUID
     created_at: datetime
     updated_at: datetime
-    
+
     @classmethod
     def from_model(cls, tag: TagModel) -> "TagType":
         """ORM 모델을 GraphQL 타입으로 변환"""
@@ -49,7 +49,7 @@ class TagGroupType:
     created_at: datetime
     updated_at: datetime
     tags: List[TagType]
-    
+
     @classmethod
     def from_model(cls, group: TagGroupModel) -> "TagGroupType":
         """ORM 모델을 GraphQL 타입으로 변환"""
@@ -69,7 +69,3 @@ class TagFilterInput:
     """태그 필터링 입력 타입"""
     tag_ids: List[UUID] | None = None  # 특정 태그들로 필터링 (AND 방식)
     group_ids: List[UUID] | None = None  # 특정 그룹의 모든 태그로 필터링
-
-
-
-

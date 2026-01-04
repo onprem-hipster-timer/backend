@@ -201,7 +201,7 @@ class GraphQLErrorHandlingExtension(SchemaExtension):
     def on_operation(self):
         """요청 종료 시 에러 포맷팅 (on_operation 사용)"""
         yield  # operation 실행
-        
+
         # operation 후 에러 포맷팅
         result = self.execution_context.result
 

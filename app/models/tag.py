@@ -29,7 +29,7 @@ class ScheduleTag(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint('schedule_id', 'tag_id', name='uq_schedule_tag'),
     )
-    
+
     schedule_id: UUID = Field(
         sa_column=Column(
             ForeignKey("schedule.id", ondelete="CASCADE"),
@@ -52,7 +52,7 @@ class ScheduleExceptionTag(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint('schedule_exception_id', 'tag_id', name='uq_schedule_exception_tag'),
     )
-    
+
     schedule_exception_id: UUID = Field(
         sa_column=Column(
             ForeignKey("scheduleexception.id", ondelete="CASCADE"),
@@ -75,7 +75,7 @@ class TimerTag(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint('timer_id', 'tag_id', name='uq_timer_tag'),
     )
-    
+
     timer_id: UUID = Field(
         sa_column=Column(
             ForeignKey("timersession.id", ondelete="CASCADE"),
@@ -99,11 +99,11 @@ class TimerTag(SQLModel, table=True):
 class TagGroup(UUIDBase, TimestampMixin, table=True):
     """태그 그룹"""
     __tablename__ = "tag_group"
-    
+
     name: str = Field(index=True)  # 그룹 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
-    
+
     # Relationship (일대다)
     tags: List["Tag"] = Relationship(
         back_populates="group",
@@ -118,11 +118,11 @@ class Tag(UUIDBase, TimestampMixin, table=True):
         # 그룹 내 태그 이름 고유성 제약
         UniqueConstraint('group_id', 'name', name='uq_tag_group_name'),
     )
-    
+
     name: str = Field(index=True)  # 태그 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
-    
+
     # 그룹 참조 (다대일)
     group_id: UUID = Field(
         sa_column=Column(
@@ -130,7 +130,6 @@ class Tag(UUIDBase, TimestampMixin, table=True):
             nullable=False,
         )
     )
-    
+
     # Relationship
     group: "TagGroup" = Relationship(back_populates="tags")
-

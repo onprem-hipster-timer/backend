@@ -87,7 +87,7 @@ async def read_schedules(
     - async 라우트 사용
     """
     service = ScheduleService(session)
-    
+
     if tag_ids or group_ids:
         # 태그 필터링이 필요한 경우
         schedules = service.get_all_schedules_with_tag_filter(tag_ids, group_ids)

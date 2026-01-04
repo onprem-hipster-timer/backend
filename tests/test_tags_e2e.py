@@ -1,11 +1,9 @@
 """
 Tag E2E Tests
 """
-import pytest
 from uuid import uuid4
 
-from app.domain.schedule.schema.dto import ScheduleCreate
-from datetime import datetime, UTC
+import pytest
 
 
 @pytest.mark.e2e
@@ -35,7 +33,7 @@ def test_get_tag_group_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = create_response.json()["id"]
-    
+
     # 조회
     response = e2e_client.get(f"/v1/tags/groups/{group_id}")
     assert response.status_code == 200
@@ -61,7 +59,7 @@ def test_create_tag_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 태그 생성
     response = e2e_client.post(
         "/v1/tags",
@@ -86,7 +84,7 @@ def test_create_schedule_with_tags_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     tag_response = e2e_client.post(
         "/v1/tags",
         json={
@@ -96,7 +94,7 @@ def test_create_schedule_with_tags_e2e(e2e_client):
         }
     )
     tag_id = tag_response.json()["id"]
-    
+
     # 일정 생성 시 태그 함께 설정
     schedule_response = e2e_client.post(
         "/v1/schedules",
@@ -110,7 +108,7 @@ def test_create_schedule_with_tags_e2e(e2e_client):
     assert schedule_response.status_code == 201
     schedule_data = schedule_response.json()
     schedule_id = schedule_data["id"]
-    
+
     # 일정의 태그 확인
     assert "tags" in schedule_data
     tags = schedule_data["tags"]
@@ -131,26 +129,26 @@ def test_update_schedule_tags_e2e(e2e_client):
         }
     )
     schedule_id = schedule_response.json()["id"]
-    
+
     # 그룹 및 태그 생성
     group_response = e2e_client.post(
         "/v1/tags/groups",
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그1", "color": "#FF0000", "group_id": group_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그2", "color": "#00FF00", "group_id": group_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     # 일정 수정 시 태그 업데이트
     update_response = e2e_client.patch(
         f"/v1/schedules/{schedule_id}",
@@ -158,7 +156,7 @@ def test_update_schedule_tags_e2e(e2e_client):
     )
     assert update_response.status_code == 200
     schedule_data = update_response.json()
-    
+
     # 일정의 태그 확인
     assert "tags" in schedule_data
     tags = schedule_data["tags"]
@@ -191,13 +189,13 @@ def test_tag_duplicate_name_in_group_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 첫 번째 태그 생성
     e2e_client.post(
         "/v1/tags",
         json={"name": "중요", "color": "#FF0000", "group_id": group_id}
     )
-    
+
     # 같은 이름의 태그 생성 시도
     response = e2e_client.post(
         "/v1/tags",
@@ -215,36 +213,36 @@ def test_delete_all_tags_deletes_group_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 태그 여러 개 생성
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그1", "color": "#FF0000", "group_id": group_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그2", "color": "#00FF00", "group_id": group_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     # 첫 번째 태그 삭제 (그룹은 아직 남아있어야 함)
     e2e_client.delete(f"/v1/tags/{tag1_id}")
-    
+
     # 그룹이 아직 존재하는지 확인
     group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
     assert group_check.status_code == 200
-    
+
     # 남은 태그 확인
     tags_response = e2e_client.get("/v1/tags")
     tags = tags_response.json()
     remaining_tags = [t for t in tags if t["group_id"] == group_id]
     assert len(remaining_tags) == 1  # tag2만 남음
-    
+
     # 마지막 태그 삭제 (그룹도 자동 삭제되어야 함)
     e2e_client.delete(f"/v1/tags/{tag2_id}")
-    
+
     # 그룹이 자동으로 삭제되었는지 확인
     group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
     assert group_check.status_code == 404  # 그룹이 삭제됨
@@ -259,30 +257,29 @@ def test_delete_tag_keeps_group_with_remaining_tags_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 태그 여러 개 생성
     tag1_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그1", "color": "#FF0000", "group_id": group_id}
     )
     tag1_id = tag1_response.json()["id"]
-    
+
     tag2_response = e2e_client.post(
         "/v1/tags",
         json={"name": "태그2", "color": "#00FF00", "group_id": group_id}
     )
     tag2_id = tag2_response.json()["id"]
-    
+
     # 하나의 태그만 삭제
     e2e_client.delete(f"/v1/tags/{tag1_id}")
-    
+
     # 그룹이 여전히 존재하는지 확인
     group_check = e2e_client.get(f"/v1/tags/groups/{group_id}")
     assert group_check.status_code == 200
-    
+
     # 남은 태그 확인
     tags_response = e2e_client.get("/v1/tags")
     tags = tags_response.json()
     remaining_tags = [t for t in tags if t["group_id"] == group_id]
     assert len(remaining_tags) == 1  # tag2가 남아있음
-

@@ -77,4 +77,3 @@ class HolidayBackgroundTask:
                 exc_info=True
             )
             self.is_running = False
-

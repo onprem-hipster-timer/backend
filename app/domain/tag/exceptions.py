@@ -22,4 +22,3 @@ class DuplicateTagNameError(DomainException):
     """그룹 내 태그 이름 중복"""
     status_code = status.HTTP_409_CONFLICT
     detail = "그룹 내 태그 이름이 중복됩니다"
-

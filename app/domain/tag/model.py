@@ -17,7 +17,3 @@ TagGroup = TagGroupModel
 Tag = TagModel
 ScheduleTag = ScheduleTagModel
 ScheduleExceptionTag = ScheduleExceptionTagModel
-
-
-
-

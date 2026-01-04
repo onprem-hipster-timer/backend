@@ -32,10 +32,10 @@ router = APIRouter(prefix="/timers", tags=["Timers"])
 
 
 def get_timer_tags(
-    session: Session,
-    timer_id: UUID,
-    schedule_id: UUID,
-    tag_include_mode: TagIncludeMode,
+        session: Session,
+        timer_id: UUID,
+        schedule_id: UUID,
+        tag_include_mode: TagIncludeMode,
 ) -> list[TagRead]:
     """
     타이머 태그 조회 헬퍼 함수
@@ -48,28 +48,28 @@ def get_timer_tags(
     """
     if tag_include_mode == TagIncludeMode.NONE:
         return []
-    
+
     tag_service = TagService(session)
-    
+
     if tag_include_mode == TagIncludeMode.TIMER_ONLY:
         tags = tag_service.get_timer_tags(timer_id)
         return [TagRead.model_validate(tag) for tag in tags]
-    
+
     elif tag_include_mode == TagIncludeMode.INHERIT_FROM_SCHEDULE:
         # 타이머 태그 조회
         timer_tags = tag_service.get_timer_tags(timer_id)
-        
+
         # 스케줄 태그 조회
         schedule_service = ScheduleService(session)
         schedule_tags = schedule_service.get_schedule_tags(schedule_id)
-        
+
         # 타이머 태그 + 스케줄 태그 합치기 (중복 제거 - ID 기준)
         all_tags = {tag.id: tag for tag in timer_tags}
         for tag in schedule_tags:
             all_tags[tag.id] = tag
-        
+
         return [TagRead.model_validate(tag) for tag in all_tags.values()]
-    
+
     return []
 
 

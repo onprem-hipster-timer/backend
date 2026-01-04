@@ -39,7 +39,7 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
 
     # Relationship
     schedule: "Schedule" = Relationship(back_populates="timers")
-    
+
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(
         link_model=TimerTag,

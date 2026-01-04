@@ -136,4 +136,3 @@ async def delete_tag(
     service = TagService(session)
     service.delete_tag(tag.id)
     return {"ok": True}
-

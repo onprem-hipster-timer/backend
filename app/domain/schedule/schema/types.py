@@ -50,7 +50,7 @@ class Event:
             tag_types = [TagType.from_model(tag) for tag in tags]
         elif hasattr(schedule, 'tags') and schedule.tags:
             tag_types = [TagType.from_model(tag) for tag in schedule.tags]
-        
+
         return cls(
             id=schedule.id,
             title=schedule.title,

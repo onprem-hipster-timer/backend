@@ -4,11 +4,11 @@ Datetime Domain Service
 타임존 파싱 서비스
 """
 import datetime
-from typing import Optional
 from datetime import timezone, timedelta
+from typing import Optional
 from zoneinfo import ZoneInfo
 
-from app.domain.datetime.exceptions import InvalidTimezoneError
+from app.domain.dateutil.exceptions import InvalidTimezoneError
 
 # 기본 시간 허용 오차 (1분)
 DEFAULT_TIME_TOLERANCE_SECONDS = 60
@@ -39,7 +39,9 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
     # timezone 정보 제거 (naive datetime)
     return dt.replace(tzinfo=None)
 
-`
+
+
+
 def ensure_utc_naive(dt: datetime | None) -> datetime | None:
     """
     datetime이 UTC naive인지 보장하고 변환
@@ -165,12 +167,12 @@ def parse_timezone(tz_str: Optional[str]) -> Optional[timezone]:
     """
     if tz_str is None or tz_str.upper() == "UTC":
         return timezone.utc
-    
+
     # UTC offset 형식 (+09:00, -05:00, +09:00:30 등)
     if tz_str.startswith(("+", "-")):
         sign = -1 if tz_str[0] == "-" else 1
         parts = tz_str[1:].split(":")
-        
+
         try:
             # "+09:00:30" -> hours=9, minutes=0, seconds=30
             hours = int(parts[0])
@@ -182,7 +184,7 @@ def parse_timezone(tz_str: Optional[str]) -> Optional[timezone]:
             raise InvalidTimezoneError(
                 detail=f"Invalid timezone offset format: {tz_str}. Use format like +09:00 or +09:00:30"
             )
-    
+
     # 타임존 이름 (예: "Asia/Seoul", "America/New_York")
     try:
         return ZoneInfo(tz_str)

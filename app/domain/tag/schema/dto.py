@@ -25,7 +25,7 @@ class TagGroupCreate(CustomModel):
     name: str
     color: str  # 예: "#FF5733"
     description: Optional[str] = None
-    
+
     @field_validator("color")
     @classmethod
     def validate_color_field(cls, v: str) -> str:
@@ -36,7 +36,7 @@ class TagGroupCreate(CustomModel):
 class TagGroupRead(CustomModel):
     """태그 그룹 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     name: str
     color: str
@@ -55,7 +55,7 @@ class TagGroupUpdate(CustomModel):
     name: Optional[str] = None
     color: Optional[str] = None
     description: Optional[str] = None
-    
+
     @field_validator("color")
     @classmethod
     def validate_color_field(cls, v: Optional[str]) -> Optional[str]:
@@ -73,7 +73,7 @@ class TagCreate(CustomModel):
     color: str  # 예: "#FF5733"
     description: Optional[str] = None
     group_id: UUID
-    
+
     @field_validator("color")
     @classmethod
     def validate_color_field(cls, v: str) -> str:
@@ -84,7 +84,7 @@ class TagCreate(CustomModel):
 class TagRead(CustomModel):
     """태그 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     name: str
     color: str
@@ -104,8 +104,9 @@ class TagUpdate(CustomModel):
     name: Optional[str] = None
     color: Optional[str] = None
     description: Optional[str] = None
+
     # group_id는 변경 불가 (태그 이동 시 삭제 후 재생성)
-    
+
     @field_validator("color")
     @classmethod
     def validate_color_field(cls, v: Optional[str]) -> Optional[str]:
@@ -115,6 +116,3 @@ class TagUpdate(CustomModel):
 
 # Forward reference 해결
 TagGroupReadWithTags.model_rebuild()
-
-
-

@@ -59,11 +59,11 @@ def log_sync_result(
 
 @contextmanager
 def initialization_context(
-    initial_year: int,
-    current_year: int,
-    total_years: int,
-    skipped_count: int = 0,
-    existing_years: Optional[set[int]] = None,
+        initial_year: int,
+        current_year: int,
+        total_years: int,
+        skipped_count: int = 0,
+        existing_years: Optional[set[int]] = None,
 ) -> Iterator[None]:
     """
     초기화 프로세스 컨텍스트 매니저
@@ -88,7 +88,7 @@ def initialization_context(
             f"Skipping {skipped_count} years that already exist in hash table: "
             f"{sorted(existing_years)}"
         )
-    
+
     # 초기화 불필요 체크
     if total_years == 0:
         logger.info(
@@ -97,13 +97,13 @@ def initialization_context(
         )
         yield
         return
-    
+
     # 초기화 시작 로깅
     logger.info(
         f"Initializing historical holiday data from {initial_year} to {current_year} "
         f"({total_years} years to sync, {skipped_count} years skipped)"
     )
-    
+
     try:
         yield
     finally:
@@ -135,7 +135,7 @@ def mask_service_key_in_url(url: str) -> str:
     try:
         parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
-        
+
         # ServiceKey를 마스킹 (대소문자 구분 없이)
         masked_params = {}
         for key, values in query_params.items():
@@ -143,7 +143,7 @@ def mask_service_key_in_url(url: str) -> str:
                 masked_params[key] = ['***']
             else:
                 masked_params[key] = values
-        
+
         # 쿼리 문자열 재구성
         masked_query = urlencode(masked_params, doseq=True)
         masked_parsed = parsed._replace(query=masked_query)
@@ -192,10 +192,10 @@ def log_api_error(error: Exception | str, error_type: str = "API") -> None:
 
 @contextmanager
 def paginated_fetch_context(
-    item_type: str,
-    total_count: int,
-    num_of_rows: int,
-    total_pages: int
+        item_type: str,
+        total_count: int,
+        num_of_rows: int,
+        total_pages: int
 ) -> Iterator[None]:
     """
     페이지네이션된 데이터 페칭 컨텍스트 매니저

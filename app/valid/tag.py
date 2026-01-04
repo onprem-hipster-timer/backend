@@ -40,5 +40,3 @@ event.listen(Tag, "before_update", _validate_tag_color)
 # TagGroup 색상 검증
 event.listen(TagGroup, "before_insert", _validate_tag_group_color)
 event.listen(TagGroup, "before_update", _validate_tag_group_color)
-
-

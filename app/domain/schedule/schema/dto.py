@@ -110,5 +110,5 @@ class ScheduleUpdate(CustomModel):
 
 
 # Forward reference 해결 (TagRead 임포트)
-from app.domain.tag.schema.dto import TagRead  # noqa: E402
+
 ScheduleRead.model_rebuild()

@@ -387,7 +387,7 @@ class HolidayService:
         total_years = len(years_to_initialize)
 
         with domain_log.initialization_context(
-            initial_year, current_year, total_years, skipped_count, existing_years
+                initial_year, current_year, total_years, skipped_count, existing_years
         ):
             if not years_to_initialize:
                 return False

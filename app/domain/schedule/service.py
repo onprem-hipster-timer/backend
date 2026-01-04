@@ -66,7 +66,7 @@ class ScheduleService:
                 raise InvalidRecurrenceEndError()
 
         schedule = crud.create_schedule(self.session, data)
-        
+
         # 태그 설정
         if data.tag_ids:
             from app.domain.tag.service import TagService
@@ -74,7 +74,7 @@ class ScheduleService:
             tag_service.set_schedule_tags(schedule.id, data.tag_ids)
             # 태그 설정 후 relationship 갱신
             self.session.refresh(schedule)
-        
+
         return schedule
 
     def get_schedule(self, schedule_id: UUID) -> Schedule:
@@ -116,11 +116,11 @@ class ScheduleService:
         :return: 필터링된 일정 리스트
         """
         all_schedules = crud.get_schedules(self.session)
-        
+
         # 태그 필터링 적용
         if tag_ids or group_ids:
             return self._filter_schedules_by_tags(all_schedules, tag_ids, group_ids)
-        
+
         return all_schedules
 
     def get_schedules_by_date_range(
@@ -360,16 +360,16 @@ class ScheduleService:
             tag_service = TagService(self.session)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
             del update_dict['tag_ids']  # CRUD에 전달하지 않음
-        
+
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
 
         updated_schedule = crud.update_schedule(self.session, schedule, update_data)
-        
+
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:
             self.session.refresh(updated_schedule)
-        
+
         return updated_schedule
 
     def delete_schedule(self, schedule_id: UUID) -> None:
@@ -428,7 +428,7 @@ class ScheduleService:
 
         # 태그 ID 추출 (별도 처리)
         tag_ids = update_dict.pop('tag_ids', None)
-        
+
         # 예외 인스턴스 생성 또는 업데이트
         if existing_exception:
             # 기존 예외 인스턴스 업데이트
@@ -446,7 +446,7 @@ class ScheduleService:
 
             self.session.flush()
             self.session.refresh(existing_exception)
-            
+
             # 태그 업데이트 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:
                 from app.domain.tag.service import TagService
@@ -475,7 +475,7 @@ class ScheduleService:
                 start_time=update_dict.get('start_time'),
                 end_time=update_dict.get('end_time'),
             )
-            
+
             # 태그 설정 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:
                 from app.domain.tag.service import TagService
@@ -595,7 +595,7 @@ class ScheduleService:
 
         # 모든 인스턴스가 삭제되었음
         return True
-    
+
     def _filter_schedules_by_tags(
             self,
             schedules: list[Schedule],
@@ -617,13 +617,13 @@ class ScheduleService:
         """
         if not schedules:
             return schedules
-        
+
         # 그룹 ID가 지정된 경우, 해당 그룹의 태그 ID 조회
         group_tag_ids: set[UUID] = set()
         if group_ids:
             statement = select(Tag.id).where(Tag.group_id.in_(group_ids))
             group_tag_ids = set(self.session.exec(statement).all())
-        
+
         # 일정별 태그 조회 (한 번에 조회하여 N+1 방지)
         schedule_ids = [s.id for s in schedules]
         statement = (
@@ -631,14 +631,14 @@ class ScheduleService:
             .where(ScheduleTag.schedule_id.in_(schedule_ids))
         )
         schedule_tag_rows = self.session.exec(statement).all()
-        
+
         # 일정별 태그 매핑
         schedule_tag_map: dict[UUID, set[UUID]] = {}
         for schedule_id, tag_id in schedule_tag_rows:
             if schedule_id not in schedule_tag_map:
                 schedule_tag_map[schedule_id] = set()
             schedule_tag_map[schedule_id].add(tag_id)
-        
+
         # 가상 인스턴스(parent_id가 있는)의 경우, 부모 일정의 태그를 상속
         parent_ids = [s.parent_id for s in schedules if s.parent_id]
         if parent_ids:
@@ -647,39 +647,39 @@ class ScheduleService:
                 .where(ScheduleTag.schedule_id.in_(parent_ids))
             )
             parent_tag_rows = self.session.exec(parent_statement).all()
-            
+
             # 부모 태그 매핑
             parent_tag_map: dict[UUID, set[UUID]] = {}
             for schedule_id, tag_id in parent_tag_rows:
                 if schedule_id not in parent_tag_map:
                     parent_tag_map[schedule_id] = set()
                 parent_tag_map[schedule_id].add(tag_id)
-            
+
             # 가상 인스턴스에 부모 태그 상속
             for schedule in schedules:
                 if schedule.parent_id and schedule.parent_id in parent_tag_map:
                     if schedule.id not in schedule_tag_map:
                         schedule_tag_map[schedule.id] = set()
                     schedule_tag_map[schedule.id].update(parent_tag_map[schedule.parent_id])
-        
+
         filtered_schedules = []
         for schedule in schedules:
             schedule_tags = schedule_tag_map.get(schedule.id, set())
-            
+
             # 그룹 필터링: 해당 그룹의 태그 중 하나라도 있어야 함
             if group_ids:
                 if not schedule_tags.intersection(group_tag_ids):
                     continue
-            
+
             # 태그 필터링: 모든 지정 태그를 포함해야 함 (AND 방식)
             if tag_ids:
                 if not set(tag_ids).issubset(schedule_tags):
                     continue
-            
+
             filtered_schedules.append(schedule)
-        
+
         return filtered_schedules
-    
+
     def get_schedule_tags(self, schedule_id: UUID) -> list[Tag]:
         """
         일정의 태그 조회

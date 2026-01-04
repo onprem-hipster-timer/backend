@@ -10,13 +10,9 @@ from app.domain.tag.schema.dto import (
 
 __all__ = [
     "TagGroupCreate",
-    "TagGroupRead", 
+    "TagGroupRead",
     "TagGroupUpdate",
     "TagCreate",
     "TagRead",
     "TagUpdate",
 ]
-
-
-
-

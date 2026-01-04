@@ -57,7 +57,7 @@ class TimerRead(CustomModel):
 
     # 일정 정보 포함 (선택적)
     schedule: Optional[ScheduleRead] = None
-    
+
     # 태그 목록
     tags: List["TagRead"] = []
 
@@ -97,7 +97,7 @@ class TimerRead(CustomModel):
 
         # schedule 필드 명시적으로 설정
         timer_read.schedule = schedule if include_schedule else None
-        
+
         # tags 필드 명시적으로 설정
         if tag_include_mode == TagIncludeMode.NONE:
             timer_read.tags = []
@@ -156,5 +156,5 @@ class TimerUpdate(CustomModel):
 
 
 # Forward reference 해결 (TagRead 임포트)
-from app.domain.tag.schema.dto import TagRead  # noqa: E402
+
 TimerRead.model_rebuild()

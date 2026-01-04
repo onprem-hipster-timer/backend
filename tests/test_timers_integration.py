@@ -524,12 +524,12 @@ def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
     # 5. 태그 정보 조회 (타이머 태그 + 스케줄 태그)
     timer_tags = tag_service.get_timer_tags(timer.id)
     schedule_tags = schedule_service.get_schedule_tags(schedule.id)
-    
+
     # 중복 제거하여 합치기
     all_tags = {tag.id: tag for tag in timer_tags}
     for tag in schedule_tags:
         all_tags[tag.id] = tag
-    
+
     tags_read = [TagRead.model_validate(tag) for tag in all_tags.values()]
 
     # 6. tag_include_mode=INHERIT_FROM_SCHEDULE로 TimerRead 생성

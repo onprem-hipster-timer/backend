@@ -28,7 +28,7 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
 
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
-    
+
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(
         link_model=ScheduleTag,
@@ -51,7 +51,7 @@ class ScheduleException(UUIDBase, TimestampMixin, table=True):
     description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    
+
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(
         link_model=ScheduleExceptionTag,
