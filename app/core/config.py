@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,9 +26,10 @@ class Settings(BaseSettings):
     HOLIDAY_API_BASE_URL: str = "http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+    )
 
 
 settings = Settings()

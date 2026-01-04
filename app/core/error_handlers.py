@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any
 from uuid import uuid4
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
-from strawberry.extensions import Extension
+from strawberry.extensions import SchemaExtension
 
 from app.core.config import settings
 
@@ -74,7 +74,7 @@ def format_error_response(
     :return: ErrorResponse 객체
     """
     error_id = str(uuid4())
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     # DomainException 처리
     if isinstance(exc, DomainException):
@@ -190,7 +190,7 @@ def register_exception_handlers(app):
 # GraphQL Extension
 # ============================================================================
 
-class GraphQLErrorHandlingExtension(Extension):
+class GraphQLErrorHandlingExtension(SchemaExtension):
     """
     GraphQL 에러 처리 Extension
     
@@ -198,8 +198,11 @@ class GraphQLErrorHandlingExtension(Extension):
     모든 에러 처리를 단일 지점에서 관리합니다.
     """
 
-    def on_request_end(self):
-        """요청 종료 시 에러 포맷팅"""
+    def on_operation(self):
+        """요청 종료 시 에러 포맷팅 (on_operation 사용)"""
+        yield  # operation 실행
+        
+        # operation 후 에러 포맷팅
         result = self.execution_context.result
 
         if result and result.errors:
