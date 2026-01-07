@@ -534,3 +534,505 @@ def test_update_deleted_instance_restores_it(test_session):
     )
     assert restored_instance is not None
     assert restored_instance.title == "복원된 회의"
+
+
+# ==================== RRULE 패턴 테스트 ====================
+
+def test_weekly_multiple_weekdays(test_session):
+    """여러 요일을 사용하는 주간 반복 테스트"""
+    # 매주 화요일과 수요일 반복
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),  # 2024-01-02는 화요일
+        end_time=datetime(2024, 1, 2, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE",
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월 전체 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 1월에는 화요일 5개, 수요일 5개 = 총 10개
+    assert len(recurring_instances) == 10
+    
+    # 각 인스턴스가 화요일 또는 수요일인지 확인
+    for instance in recurring_instances:
+        weekday = instance.start_time.weekday()
+        assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
+    
+    # 날짜 순서 확인
+    dates = [s.start_time.date() for s in recurring_instances]
+    assert dates == sorted(dates), "날짜가 순서대로 정렬되어야 함"
+
+
+def test_weekly_multiple_weekdays_three_days(test_session):
+    """3개 요일을 사용하는 주간 반복 테스트"""
+    # 매주 월/수/금 반복
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO,WE,FR",
+        recurrence_end=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월 전체 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 1월에는 월요일 5개, 수요일 5개, 금요일 4개 = 총 14개
+    assert len(recurring_instances) == 14
+    
+    # 각 인스턴스가 월/수/금인지 확인
+    for instance in recurring_instances:
+        weekday = instance.start_time.weekday()
+        assert weekday in [0, 2, 4], f"인스턴스는 월요일(0), 수요일(2), 또는 금요일(4)이어야 함, 실제: {weekday}"
+
+
+def test_weekly_with_count(test_session):
+    """COUNT를 사용하는 주간 반복 테스트"""
+    # 매주 월요일, 5회만 반복
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 충분한 범위로 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 3, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # COUNT=5이므로 정확히 5개만 생성되어야 함
+    assert len(recurring_instances) == 5
+    
+    # 각 인스턴스가 월요일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.weekday() == 0  # 월요일
+    
+    # 예상 날짜: 1/1, 1/8, 1/15, 1/22, 1/29
+    expected_dates = [
+        datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 8, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 22, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 29, 10, 0, 0, tzinfo=UTC).date(),
+    ]
+    actual_dates = [s.start_time.date() for s in recurring_instances]
+    assert set(actual_dates) == set(expected_dates)
+
+
+def test_daily_with_count(test_session):
+    """COUNT를 사용하는 일일 반복 테스트"""
+    # 매일, 7일간만 반복
+    schedule_data = ScheduleCreate(
+        title="일일 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=DAILY;COUNT=7",
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 충분한 범위로 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # COUNT=7이므로 정확히 7개만 생성되어야 함
+    assert len(recurring_instances) == 7
+    
+    # 예상 날짜: 1/1 ~ 1/7
+    expected_dates = [
+        datetime(2024, 1, i, 10, 0, 0, tzinfo=UTC).date()
+        for i in range(1, 8)
+    ]
+    actual_dates = [s.start_time.date() for s in recurring_instances]
+    assert set(actual_dates) == set(expected_dates)
+
+
+def test_weekly_count_with_multiple_days(test_session):
+    """COUNT와 여러 요일을 함께 사용하는 테스트"""
+    # 매주 화요일과 수요일, 총 10회 반복 (5주간)
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),  # 2024-01-02는 화요일
+        end_time=datetime(2024, 1, 2, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE;COUNT=10",
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 충분한 범위로 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 3, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # COUNT=10이므로 정확히 10개만 생성되어야 함 (5주 * 2일)
+    assert len(recurring_instances) == 10
+    
+    # 각 인스턴스가 화요일 또는 수요일인지 확인
+    for instance in recurring_instances:
+        weekday = instance.start_time.weekday()
+        assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
+
+
+def test_weekly_with_interval(test_session):
+    """INTERVAL을 사용하는 주간 반복 테스트 (격주)"""
+    # 격주 월요일 반복
+    schedule_data = ScheduleCreate(
+        title="격주 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;INTERVAL=2;BYDAY=MO",
+        recurrence_end=datetime(2024, 2, 29, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월~2월 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 2, 29, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 격주이므로 1월에는 1/1, 1/15, 1/29 = 3개, 2월에는 2/12, 2/26 = 2개, 총 5개
+    assert len(recurring_instances) == 5
+    
+    # 각 인스턴스가 월요일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.weekday() == 0  # 월요일
+    
+    # 예상 날짜 확인
+    expected_dates = [
+        datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 1, 29, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 2, 12, 10, 0, 0, tzinfo=UTC).date(),
+        datetime(2024, 2, 26, 10, 0, 0, tzinfo=UTC).date(),
+    ]
+    actual_dates = [s.start_time.date() for s in recurring_instances]
+    assert set(actual_dates) == set(expected_dates)
+
+
+def test_monthly_by_monthday(test_session):
+    """월간 반복 테스트 (일자 기준)"""
+    # 매월 15일 반복
+    schedule_data = ScheduleCreate(
+        title="월간 회의",
+        start_time=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=MONTHLY;BYMONTHDAY=15",
+        recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월~6월 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 6개월이므로 6개 생성되어야 함
+    assert len(recurring_instances) == 6
+    
+    # 각 인스턴스가 15일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.day == 15
+
+
+def test_monthly_by_weekday_first(test_session):
+    """월간 반복 테스트 (첫 번째 요일)"""
+    # 매월 첫 번째 월요일 반복
+    schedule_data = ScheduleCreate(
+        title="월간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=MONTHLY;BYDAY=1MO",
+        recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월~6월 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 6개월이므로 6개 생성되어야 함
+    assert len(recurring_instances) == 6
+    
+    # 각 인스턴스가 첫 번째 월요일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.weekday() == 0  # 월요일
+        # 해당 월의 첫 번째 월요일인지 확인 (1일~7일 사이)
+        assert 1 <= instance.start_time.day <= 7
+
+
+def test_monthly_by_weekday_last(test_session):
+    """월간 반복 테스트 (마지막 요일)"""
+    # 매월 마지막 금요일 반복
+    schedule_data = ScheduleCreate(
+        title="월간 회의",
+        start_time=datetime(2024, 1, 26, 10, 0, 0, tzinfo=UTC),  # 2024-01-26은 금요일 (마지막 금요일)
+        end_time=datetime(2024, 1, 26, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=MONTHLY;BYDAY=-1FR",
+        recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월~6월 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 6개월이므로 6개 생성되어야 함
+    assert len(recurring_instances) == 6
+    
+    # 각 인스턴스가 마지막 금요일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.weekday() == 4  # 금요일
+        # 해당 월의 마지막 주 금요일인지 확인 (23일 이후)
+        assert instance.start_time.day >= 23
+
+
+def test_monthly_with_interval(test_session):
+    """INTERVAL을 사용하는 월간 반복 테스트 (격월)"""
+    # 3개월마다 반복
+    schedule_data = ScheduleCreate(
+        title="분기 회의",
+        start_time=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15",
+        recurrence_end=datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월~12월 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 3개월마다이므로 1월, 4월, 7월, 10월 = 4개
+    assert len(recurring_instances) == 4
+    
+    # 각 인스턴스가 15일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.day == 15
+    
+    # 예상 월 확인
+    expected_months = [1, 4, 7, 10]
+    actual_months = [s.start_time.month for s in recurring_instances]
+    assert set(actual_months) == set(expected_months)
+
+
+def test_yearly_by_month_and_day(test_session):
+    """연간 반복 테스트 (월과 일자)"""
+    # 매년 1월 1일 반복
+    schedule_data = ScheduleCreate(
+        title="신년 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1",
+        recurrence_end=datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 2024~2026년 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 3년이므로 3개 생성되어야 함
+    assert len(recurring_instances) == 3
+    
+    # 각 인스턴스가 1월 1일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.month == 1
+        assert instance.start_time.day == 1
+    
+    # 예상 연도 확인
+    expected_years = [2024, 2025, 2026]
+    actual_years = [s.start_time.year for s in recurring_instances]
+    assert set(actual_years) == set(expected_years)
+
+
+def test_yearly_by_month_and_weekday(test_session):
+    """연간 반복 테스트 (월과 요일)"""
+    # 매년 12월 25일 반복 (크리스마스)
+    schedule_data = ScheduleCreate(
+        title="크리스마스",
+        start_time=datetime(2024, 12, 25, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 12, 25, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=YEARLY;BYMONTH=12;BYMONTHDAY=25",
+        recurrence_end=datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC),
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 2024~2026년 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 3년이므로 3개 생성되어야 함
+    assert len(recurring_instances) == 3
+    
+    # 각 인스턴스가 12월 25일인지 확인
+    for instance in recurring_instances:
+        assert instance.start_time.month == 12
+        assert instance.start_time.day == 25
+
+
+def test_start_date_not_in_byday(test_session):
+    """시작 날짜가 BYDAY에 포함되지 않는 경우 테스트"""
+    # 매주 화요일과 수요일 반복이지만, 시작 날짜는 월요일
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE",  # 화요일과 수요일만
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 1월 전체 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # 시작 날짜가 월요일이지만, 첫 번째 인스턴스는 다음 화요일(1/2)부터 시작되어야 함
+    # 1월에는 화요일 5개, 수요일 5개 = 총 10개
+    assert len(recurring_instances) == 10
+    
+    # 첫 번째 인스턴스가 화요일인지 확인
+    first_instance = min(recurring_instances, key=lambda s: s.start_time)
+    assert first_instance.start_time.weekday() == 1  # 화요일
+    assert first_instance.start_time.date() == datetime(2024, 1, 2).date()
+    
+    # 모든 인스턴스가 화요일 또는 수요일인지 확인
+    for instance in recurring_instances:
+        weekday = instance.start_time.weekday()
+        assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
+
+
+def test_count_vs_recurrence_end(test_session):
+    """COUNT와 recurrence_end 동시 사용 시 우선순위 테스트"""
+    # COUNT=5와 recurrence_end가 모두 있는 경우
+    # COUNT가 우선되어야 함
+    schedule_data = ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 2024-01-01은 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+        recurrence_end=datetime(2024, 3, 31, 23, 59, 59, tzinfo=UTC),  # COUNT보다 더 늦은 날짜
+    )
+
+    service = ScheduleService(test_session)
+    parent_schedule = service.create_schedule(schedule_data)
+
+    # 충분한 범위로 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 3, 31, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
+
+    recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
+    
+    # COUNT=5가 우선되어야 하므로 정확히 5개만 생성되어야 함
+    assert len(recurring_instances) == 5
+    
+    # 모든 인스턴스가 1월에 있어야 함 (COUNT=5이므로)
+    for instance in recurring_instances:
+        assert instance.start_time.month == 1
+
+
+def test_invalid_rrule_count_zero(test_session):
+    """COUNT=0인 잘못된 RRULE 패턴 테스트"""
+    schedule_data = ScheduleCreate(
+        title="잘못된 반복 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO;COUNT=0",
+    )
+
+    service = ScheduleService(test_session)
+    with pytest.raises(InvalidRecurrenceRuleError):
+        service.create_schedule(schedule_data)
+
+
+def test_invalid_rrule_invalid_weekday(test_session):
+    """잘못된 요일 코드를 사용하는 RRULE 패턴 테스트"""
+    schedule_data = ScheduleCreate(
+        title="잘못된 반복 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=XX",  # 잘못된 요일 코드
+    )
+
+    service = ScheduleService(test_session)
+    with pytest.raises(InvalidRecurrenceRuleError):
+        service.create_schedule(schedule_data)
+
+
+def test_invalid_rrule_invalid_freq(test_session):
+    """잘못된 FREQ 값을 사용하는 RRULE 패턴 테스트"""
+    schedule_data = ScheduleCreate(
+        title="잘못된 반복 일정",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=INVALID;BYDAY=MO",
+    )
+
+    service = ScheduleService(test_session)
+    with pytest.raises(InvalidRecurrenceRuleError):
+        service.create_schedule(schedule_data)

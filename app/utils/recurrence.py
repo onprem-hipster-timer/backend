@@ -3,6 +3,7 @@
 
 RRULE 기반으로 반복 일정의 가상 인스턴스를 생성합니다.
 """
+import re
 from datetime import datetime
 from typing import List, Optional
 
@@ -88,6 +89,13 @@ class RecurrenceCalculator:
         """
         if not rrule_str:
             return False
+
+        # COUNT=0 또는 COUNT가 음수인 경우 검증
+        count_match = re.search(r'COUNT=(\d+)', rrule_str.upper())
+        if count_match:
+            count_value = int(count_match.group(1))
+            if count_value <= 0:
+                return False
 
         try:
             # 임시 datetime으로 파싱 테스트
