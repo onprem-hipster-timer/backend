@@ -74,7 +74,7 @@ def test_delete_schedule_integration(test_engine, sample_schedule):
 
 @pytest.mark.integration
 def test_get_all_schedules_integration(test_session):
-    """DB를 포함한 모든 일정 조회 통합 테스트"""
+    """DB를 포함한 날짜 범위 기반 일정 조회 통합 테스트"""
     service = ScheduleService(test_session)
 
     # 1. 여러 일정 생성
@@ -92,8 +92,10 @@ def test_get_all_schedules_integration(test_session):
         schedule = service.create_schedule(schedule_data)
         created_ids.append(schedule.id)
 
-    # 2. 모든 일정 조회
-    all_schedules = service.get_all_schedules()
+    # 2. 날짜 범위로 일정 조회
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
+    all_schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     # 3. 생성한 일정들이 모두 포함되어 있는지 확인
     assert len(all_schedules) >= 3

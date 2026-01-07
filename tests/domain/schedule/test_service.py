@@ -70,9 +70,15 @@ def test_create_schedule_invalid_time(test_session):
 
 
 def test_get_schedules(test_session, sample_schedule):
-    """모든 일정 조회 테스트"""
+    """날짜 범위 기반 일정 조회 테스트"""
+    from datetime import UTC
+    
     service = ScheduleService(test_session)
-    schedules = service.get_all_schedules()
+    
+    # 날짜 범위로 일정 조회 (sample_schedule이 포함되는 범위)
+    start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+    end_date = datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
+    schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     assert len(schedules) >= 1
     assert any(s.id == sample_schedule.id for s in schedules)

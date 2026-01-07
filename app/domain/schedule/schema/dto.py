@@ -54,6 +54,7 @@ class ScheduleRead(CustomModel):
     end_time: datetime
     recurrence_rule: Optional[str] = None
     recurrence_end: Optional[datetime] = None
+    parent_id: Optional[UUID] = None  # 원본 일정 ID (가상 인스턴스인 경우)
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
 

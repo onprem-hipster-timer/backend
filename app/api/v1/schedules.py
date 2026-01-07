@@ -60,6 +60,14 @@ async def create_schedule(
 
 @router.get("", response_model=list[ScheduleRead])
 async def read_schedules(
+        start_date: datetime = Query(
+            ...,
+            description="조회 시작 날짜/시간 (ISO 8601 형식)"
+        ),
+        end_date: datetime = Query(
+            ...,
+            description="조회 종료 날짜/시간 (ISO 8601 형식)"
+        ),
         tag_ids: Optional[List[UUID]] = Query(
             None,
             description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 일정만 반환)"
@@ -76,7 +84,12 @@ async def read_schedules(
         session: Session = Depends(get_db_transactional),
 ):
     """
-    모든 일정 조회 (태그 필터링 지원)
+    날짜 범위 기반 일정 조회 (반복 일정 포함, 태그 필터링 지원)
+    
+    날짜 범위:
+    - start_date: 조회 시작 날짜/시간 (필수)
+    - end_date: 조회 종료 날짜/시간 (필수)
+    - 지정된 날짜 범위와 겹치는 모든 일정을 반환 (반복 일정은 가상 인스턴스로 확장)
     
     태그 필터링:
     - tag_ids: AND 방식 (모든 지정 태그를 포함한 일정만 반환)
@@ -87,13 +100,14 @@ async def read_schedules(
     - async 라우트 사용
     """
     service = ScheduleService(session)
-
-    if tag_ids or group_ids:
-        # 태그 필터링이 필요한 경우
-        schedules = service.get_all_schedules_with_tag_filter(tag_ids, group_ids)
-    else:
-        # 태그 필터링 없이 모든 일정 조회
-        schedules = service.get_all_schedules()
+    
+    # 날짜 범위 기반 조회 (태그 필터링 포함)
+    schedules = service.get_schedules_by_date_range(
+        start_date=start_date,
+        end_date=end_date,
+        tag_ids=tag_ids,
+        group_ids=group_ids,
+    )
 
     tz_obj = parse_timezone(tz) if tz else None
     return [
