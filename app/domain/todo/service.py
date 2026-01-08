@@ -40,12 +40,13 @@ class TodoService:
     def create_todo(self, data: TodoCreate) -> Todo:
         """
         Todo 생성
-        
+
         비즈니스 로직:
         - is_todo=True로 설정
         - start_time/end_time이 제공되지 않으면 TODO_DATETIME (917초)으로 설정
-        - 태그 설정 (tag_ids가 있는 경우)
-        
+        - tag_group_id 필수 (그룹에 속해야 함)
+        - 태그 설정 (tag_ids가 있는 경우, 선택 사항)
+
         :param data: Todo 생성 데이터
         :return: 생성된 Todo
         """
@@ -60,6 +61,7 @@ class TodoService:
             start_time=start_time,
             end_time=end_time,
             tag_ids=data.tag_ids,
+            tag_group_id=data.tag_group_id,  # 그룹 직접 연결
             is_todo=True,  # Todo 플래그 설정
         )
         
@@ -99,28 +101,34 @@ class TodoService:
             group_ids: Optional[List[UUID]] = None,
     ) -> List[Todo]:
         """
-        모든 Todo 조회 (태그 필터링 지원)
+        모든 Todo 조회 (태그/그룹 필터링 지원)
         
         비즈니스 로직:
         - is_todo=True인 일정만 조회
         - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
-        - group_ids: 해당 그룹의 태그 중 하나라도 있으면 포함
+        - group_ids: 해당 그룹에 속한 Todo 반환 (tag_group_id로 직접 연결)
         
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
         :param group_ids: 필터링할 그룹 ID 리스트
         :return: Todo 리스트
         """
-        # Todo만 조회 (is_todo=True인 일정)
+        # Todo만 조회 (is_todo=True인 일정, 그룹 필수)
         statement = (
             select(Todo)
             .where(Todo.is_todo == True)
+            .where(Todo.tag_group_id.isnot(None))  # 그룹이 있는 Todo만
             .order_by(Todo.created_at.desc())
         )
+        
+        # 그룹 필터링
+        if group_ids:
+            statement = statement.where(Todo.tag_group_id.in_(group_ids))
+        
         todos = list(self.session.exec(statement).all())
         
-        # 태그 필터링
-        if tag_ids or group_ids:
-            todos = self._filter_todos_by_tags(todos, tag_ids, group_ids)
+        # 태그 필터링 (태그가 지정된 경우)
+        if tag_ids:
+            todos = self._filter_todos_by_tags(todos, tag_ids)
         
         return todos
 
@@ -128,24 +136,16 @@ class TodoService:
             self,
             todos: List[Todo],
             tag_ids: Optional[List[UUID]] = None,
-            group_ids: Optional[List[UUID]] = None,
     ) -> List[Todo]:
         """
         Todo를 태그로 필터링
         
         :param todos: 필터링할 Todo 리스트
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
-        :param group_ids: 필터링할 그룹 ID 리스트
         :return: 필터링된 Todo 리스트
         """
-        if not todos:
+        if not todos or not tag_ids:
             return todos
-        
-        # 그룹 ID가 지정된 경우, 해당 그룹의 태그 ID 조회
-        group_tag_ids: set[UUID] = set()
-        if group_ids:
-            statement = select(Tag.id).where(Tag.group_id.in_(group_ids))
-            group_tag_ids = set(self.session.exec(statement).all())
         
         # Todo별 태그 조회 (N+1 방지)
         todo_ids = [t.id for t in todos]
@@ -162,21 +162,13 @@ class TodoService:
                 todo_tag_map[todo_id] = set()
             todo_tag_map[todo_id].add(tag_id)
         
+        # 태그 필터링 (AND 방식)
         filtered_todos = []
+        tag_ids_set = set(tag_ids)
         for todo in todos:
             todo_tags = todo_tag_map.get(todo.id, set())
-            
-            # 그룹 필터링
-            if group_ids:
-                if not todo_tags.intersection(group_tag_ids):
-                    continue
-            
-            # 태그 필터링 (AND 방식)
-            if tag_ids:
-                if not set(tag_ids).issubset(todo_tags):
-                    continue
-            
-            filtered_todos.append(todo)
+            if tag_ids_set.issubset(todo_tags):
+                filtered_todos.append(todo)
         
         return filtered_todos
 

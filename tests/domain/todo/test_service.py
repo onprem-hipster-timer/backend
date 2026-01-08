@@ -42,12 +42,13 @@ def sample_tag(test_session, sample_tag_group):
 
 
 @pytest.fixture
-def sample_todo(test_session):
+def sample_todo(test_session, sample_tag_group):
     """테스트용 Todo"""
     service = TodoService(test_session)
     data = TodoCreate(
         title="테스트 Todo",
         description="테스트 설명",
+        tag_group_id=sample_tag_group.id,
     )
     todo = service.create_todo(data)
     test_session.flush()
@@ -56,12 +57,13 @@ def sample_todo(test_session):
 
 
 @pytest.fixture
-def sample_todo_with_tags(test_session, sample_tag):
+def sample_todo_with_tags(test_session, sample_tag, sample_tag_group):
     """태그가 있는 테스트용 Todo"""
     service = TodoService(test_session)
     data = TodoCreate(
         title="태그 있는 Todo",
         description="태그가 있는 Todo",
+        tag_group_id=sample_tag_group.id,
         tag_ids=[sample_tag.id],
     )
     todo = service.create_todo(data)
@@ -74,12 +76,13 @@ def sample_todo_with_tags(test_session, sample_tag):
 # Todo 생성 테스트
 # ============================================================
 
-def test_create_todo_success(test_session):
+def test_create_todo_success(test_session, sample_tag_group):
     """Todo 생성 성공 테스트"""
     service = TodoService(test_session)
     data = TodoCreate(
         title="회의 준비",
         description="회의 자료 준비",
+        tag_group_id=sample_tag_group.id,
     )
 
     todo = service.create_todo(data)
@@ -92,7 +95,7 @@ def test_create_todo_success(test_session):
     assert isinstance(todo.id, UUID)
 
 
-def test_create_todo_with_custom_datetime(test_session):
+def test_create_todo_with_custom_datetime(test_session, sample_tag_group):
     """마감 시간이 있는 Todo 생성 테스트"""
     service = TodoService(test_session)
     custom_start = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
@@ -102,6 +105,7 @@ def test_create_todo_with_custom_datetime(test_session):
         title="마감 시간 있는 Todo",
         start_time=custom_start,
         end_time=custom_end,
+        tag_group_id=sample_tag_group.id,
     )
 
     todo = service.create_todo(data)
@@ -115,11 +119,12 @@ def test_create_todo_with_custom_datetime(test_session):
     assert todo.end_time == custom_end.replace(tzinfo=None)
 
 
-def test_create_todo_with_tags(test_session, sample_tag):
+def test_create_todo_with_tags(test_session, sample_tag, sample_tag_group):
     """태그와 함께 Todo 생성 테스트"""
     service = TodoService(test_session)
     data = TodoCreate(
         title="태그 있는 Todo",
+        tag_group_id=sample_tag_group.id,
         tag_ids=[sample_tag.id],
     )
 
@@ -133,10 +138,13 @@ def test_create_todo_with_tags(test_session, sample_tag):
     assert tags[0].id == sample_tag.id
 
 
-def test_create_todo_without_description(test_session):
+def test_create_todo_without_description(test_session, sample_tag_group):
     """설명 없이 Todo 생성 테스트"""
     service = TodoService(test_session)
-    data = TodoCreate(title="제목만 있는 Todo")
+    data = TodoCreate(
+        title="제목만 있는 Todo",
+        tag_group_id=sample_tag_group.id,
+    )
 
     todo = service.create_todo(data)
 

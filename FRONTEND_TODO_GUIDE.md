@@ -5,6 +5,49 @@
 이 백엔드 API는 **Todo**와 **일정(Schedule)** 간 양방향 변환을 지원합니다.
 프론트엔드에서 Todo를 일정으로 변환하거나 일정을 Todo로 변환하려면 이 가이드를 참고하세요.
 
+## Todo와 그룹의 관계 ⚠️ 중요 변경사항
+
+**Todo 생성 시 그룹은 필수입니다!**
+
+- **그룹 (`tag_group_id`)**: **필수** - Todo 생성 시 반드시 지정해야 함
+- **태그 (`tag_ids`)**: **선택** - 그룹 내에서 세부 분류를 위해 사용 가능
+
+### 왜 그룹이 필수인가?
+
+- 모든 Todo는 반드시 하나의 그룹에 속해야 합니다
+- 그룹별로 Todo를 체계적으로 관리할 수 있습니다
+- 태그 없이도 그룹별로 Todo를 조회하고 관리할 수 있습니다
+- 태그는 그룹 내에서 추가 분류를 위한 선택적 도구입니다
+
+### 그룹 필수로 인한 장점
+
+1. **조회 단순화**: `tag_group_id`만 확인하면 그룹별 조회 가능
+2. **데이터 일관성**: 그룹 없는 "미분류" Todo 방지
+3. **UI 설계 명확**: 그룹 선택이 필수이므로 UX 흐름이 명확
+
+```typescript
+// 그룹만 지정된 Todo (태그 없음)
+const todoWithGroupOnly: Todo = {
+  id: "123e4567-e89b-12d3-a456-426614174000",
+  title: "그룹에 속한 할 일",
+  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
+  tags: [],  // 선택: 태그 없음
+  // ...
+};
+
+// 그룹과 태그가 모두 있는 Todo
+const todoWithGroupAndTag: Todo = {
+  id: "223e4567-e89b-12d3-a456-426614174000",
+  title: "태그가 있는 할 일",
+  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
+  tags: [{ id: "tag-uuid", group_id: "group-uuid", name: "태그" }],  // 선택: 세부 분류
+  // ...
+};
+
+// 그룹별 조회
+// GET /v1/todos?group_ids=group-uuid
+```
+
 ## Todo와 일정의 구분
 
 ### Todo
@@ -25,10 +68,11 @@ interface Todo {
   title: string;
   description: string | null;
   is_todo: true;  // ✅ 항상 true
+  tag_group_id: string;  // ✅ 필수: 소속 그룹 ID
   start_time: string;  // 917초 또는 실제 마감 시간
   end_time: string;
   created_at: string;
-  tags: Tag[];
+  tags: Tag[];  // 선택: 세부 분류
 }
 
 // 마감 시간이 없는 Todo
@@ -37,10 +81,11 @@ const todoWithoutDeadline: Todo = {
   title: "할 일",
   description: "해야 할 일",
   is_todo: true,
+  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
   start_time: "1970-01-01T00:15:17Z",  // ✅ 917초
   end_time: "1970-01-01T00:30:34Z",
   created_at: "2024-01-01T00:00:00Z",
-  tags: []
+  tags: []  // 선택: 태그 없음
 };
 
 // 마감 시간이 있는 Todo
@@ -49,10 +94,11 @@ const todoWithDeadline: Todo = {
   title: "마감 있는 할 일",
   description: "2024-01-20까지 완료",
   is_todo: true,
+  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
   start_time: "2024-01-20T10:00:00Z",  // ✅ 실제 마감 시간
   end_time: "2024-01-20T12:00:00Z",
   created_at: "2024-01-01T00:00:00Z",
-  tags: []
+  tags: [{ id: "tag-uuid", name: "긴급", group_id: "group-uuid" }]  // 선택: 세부 분류
 };
 ```
 
@@ -100,6 +146,7 @@ interface Schedule {
   title: string;
   description: string | null;
   is_todo: boolean;
+  tag_group_id: string | null;  // Todo인 경우 필수, 일반 일정인 경우 선택
   start_time: string;
   end_time: string;
   created_at: string;
@@ -154,6 +201,52 @@ if (isTodo(item)) {
 ```
 
 ## API 사용 가이드
+
+### Todo 생성 ⚠️ 필수 변경사항
+
+**Todo 생성 시 `tag_group_id`는 필수입니다!**
+
+```typescript
+// POST /v1/todos
+const response = await fetch('/v1/todos', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    title: "새 할 일",
+    description: "설명",
+    tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
+    tag_ids: ["tag-uuid-1", "tag-uuid-2"],  // 선택: 세부 분류 태그
+    // start_time, end_time: 선택 (없으면 917초로 설정됨)
+  })
+});
+
+const todo = await response.json();
+// { id: "...", title: "새 할 일", tag_group_id: "group-uuid", tags: [...], ... }
+
+// ❌ 에러: tag_group_id 없이 생성 시도
+const invalidResponse = await fetch('/v1/todos', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    title: "할 일",
+    // tag_group_id 누락!
+  })
+});
+// 422 Validation Error 발생
+```
+
+### Todo 그룹별 조회
+
+`group_ids` 파라미터로 특정 그룹에 속한 Todo를 조회할 수 있습니다.
+
+```typescript
+// GET /v1/todos?group_ids=group-uuid-1&group_ids=group-uuid-2
+const response = await fetch('/v1/todos?group_ids=group-uuid-1&group_ids=group-uuid-2');
+const todos = await response.json();
+
+// 결과: group-uuid-1 또는 group-uuid-2에 속한 모든 Todo
+// 모든 Todo는 tag_group_id를 가지므로 그룹별 필터링이 명확합니다
+```
 
 ### Todo -> 일정 변환
 
@@ -383,13 +476,28 @@ function ScheduleToTodoButton({ schedule }: { schedule: Schedule }) {
    - 마감 시간이 없는 Todo는 `start_time`이 `1970-01-01T00:15:17Z` (917초)로 설정됩니다.
    - 이 값을 상수로 정의하여 비교에 사용하세요.
 
+6. **그룹과 태그의 관계**
+   - Todo는 반드시 `tag_group_id`로 그룹을 지정해야 합니다 (필수).
+   - 태그는 그룹 내에서 세부 분류를 위한 선택적 도구입니다.
+   - `group_ids`로 조회 시 해당 그룹의 모든 Todo가 반환됩니다.
+
 ## 요약
+
+### 변환 API
 
 | 변환 방향 | API | 필수 필드 | 설명 |
 |---------|-----|----------|------|
 | Todo(마감시간 있음) -> 일정 | `PATCH /v1/todos/{id}` | `is_todo: false` | 마감 시간 유지 |
 | Todo(마감시간 없음) -> 일정 | `PATCH /v1/todos/{id}` | `is_todo: false`, `start_time`, `end_time` | 마감 시간 필수 |
 | 일정 -> Todo | `PATCH /v1/schedules/{id}` | `is_todo: true` | 마감 시간 유지 (있는 Todo가 됨) |
+
+### 그룹 관련 API
+
+| 기능 | API | 파라미터 | 설명 |
+|-----|-----|---------|------|
+| Todo 생성 | `POST /v1/todos` | `tag_group_id` (필수), `tag_ids` (선택) | 그룹 지정 필수, 태그는 선택 |
+| 그룹별 Todo 조회 | `GET /v1/todos` | `group_ids` | 지정된 그룹의 모든 Todo 조회 |
+| Todo 그룹 변경 | `PATCH /v1/todos/{id}` | `tag_group_id` | 그룹 연결 변경 |
 
 이 가이드를 참고하여 프론트엔드에서 Todo와 일정 변환을 올바르게 처리하세요!
 

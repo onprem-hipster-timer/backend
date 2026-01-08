@@ -12,7 +12,7 @@ from app.models.tag import ScheduleTag, ScheduleExceptionTag
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
-    from app.models.tag import Tag
+    from app.models.tag import Tag, TagGroup
 
 
 class Schedule(UUIDBase, TimestampMixin, table=True):
@@ -29,8 +29,15 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     # Todo 플래그
     is_todo: bool = Field(default=False)  # Todo 여부 (True면 Todo 목록에 표시)
 
+    # Todo 그룹 직접 연결 (Todo 생성 시 필수)
+    tag_group_id: Optional[UUID] = Field(
+        default=None,
+        sa_column=Column(ForeignKey("tag_group.id", ondelete="SET NULL"), nullable=True)
+    )
+
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
+    tag_group: Optional["TagGroup"] = Relationship()
 
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(

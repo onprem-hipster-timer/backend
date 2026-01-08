@@ -49,17 +49,22 @@ async def read_todos(
         ),
         group_ids: Optional[List[UUID]] = Query(
             None,
-            description="태그 그룹 ID 리스트 (해당 그룹의 태그를 가진 Todo 반환)"
+            description="태그 그룹 ID 리스트 (해당 그룹에 속한 Todo 반환 - 직접 연결 또는 태그 기반)"
         ),
         session: Session = Depends(get_db_transactional),
 ):
     """
     Todo 목록 조회 (태그/그룹 필터링 지원)
     
+    그룹 필터링:
+    - group_ids: 해당 그룹에 속한 Todo 반환
+      - tag_group_id로 직접 연결된 Todo
+      - OR 해당 그룹의 태그를 가진 Todo
+    
     태그 필터링:
     - tag_ids: AND 방식 (모든 지정 태그를 포함한 Todo만 반환)
-    - group_ids: 해당 그룹의 태그 중 하나라도 있는 Todo 반환
-    - 둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
+    
+    둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
     """
     service = TodoService(session)
     todos = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
