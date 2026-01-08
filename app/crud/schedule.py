@@ -199,6 +199,24 @@ def get_schedule_exception_by_date(
     return result
 
 
+def get_todo_schedules(session: Session) -> list[Schedule]:
+    """
+    Todo 일정만 조회 (start_time=917초인 일정)
+    
+    :param session: DB 세션
+    :return: Todo 일정 리스트
+    """
+    from app.domain.todo.constants import TODO_DATETIME
+    
+    statement = (
+        select(Schedule)
+        .where(Schedule.start_time == TODO_DATETIME)
+        .order_by(Schedule.created_at.desc())
+    )
+    results = session.exec(statement)
+    return results.all()
+
+
 def create_schedule_exception(
         session: Session,
         parent_id,

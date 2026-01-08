@@ -10,10 +10,10 @@
 Note: SQLModel에서 link_model을 사용할 때 순환 참조 문제를 피하기 위해
 중간 테이블을 먼저 정의하고, Relationship에서 link_model 클래스를 직접 참조합니다.
 """
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, UniqueConstraint, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -103,6 +103,13 @@ class TagGroup(UUIDBase, TimestampMixin, table=True):
     name: str = Field(index=True)  # 그룹 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
+    
+    # Todo 관련 필드
+    goal_ratios: Optional[Dict[str, float]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True)
+    )  # 태그별 목표 비율 (예: {"tag_id": 0.3})
+    is_todo_group: bool = Field(default=False)  # Todo 그룹 여부
 
     # Relationship (일대다)
     tags: List["Tag"] = Relationship(

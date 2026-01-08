@@ -244,3 +244,4 @@ def log_fetch_complete(item_count: int, item_type: str) -> None:
     """
     logger.info(f"Fetched total {item_count} {item_type} from all pages")
 
+

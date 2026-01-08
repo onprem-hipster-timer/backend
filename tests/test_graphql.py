@@ -839,3 +839,268 @@ def test_graphql_calendar_query_tag_filter_empty_result(e2e_client):
 
     # 존재하지 않는 태그로 필터링하면 빈 결과
     assert len(events) == 0
+
+
+@pytest.mark.e2e
+def test_graphql_calendar_query_with_todo(e2e_client):
+    """GraphQL calendar 쿼리 Todo 포함 테스트"""
+    # 1. Todo 생성 (마감 시간 없음 - 917초로 설정됨)
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "캘린더 테스트 Todo",
+            "description": "Todo 설명",
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+
+    # 2. 일반 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "일반 일정",
+            "start_time": "2024-01-15T10:00:00Z",
+            "end_time": "2024-01-15T12:00:00Z",
+        },
+    )
+    assert schedule_response.status_code == 201
+    schedule_id = schedule_response.json()["id"]
+
+    # 3. GraphQL 쿼리 실행
+    query = """
+    query GetCalendar($startDate: Date!, $endDate: Date!) {
+        calendar(startDate: $startDate, endDate: $endDate) {
+            days {
+                date
+                events {
+                    id
+                    title
+                    description
+                    startAt
+                    endAt
+                }
+            }
+        }
+    }
+    """
+
+    variables = {
+        "startDate": "1970-01-01",  # Todo의 917초 날짜 포함
+        "endDate": "2024-01-31",
+    }
+
+    response = e2e_client.post(
+        "/v1/graphql",
+        json={
+            "query": query,
+            "variables": variables,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # 일정이 포함된 날짜 찾기
+    days = data["data"]["calendar"]["days"]
+    events = []
+    for day in days:
+        events.extend(day["events"])
+
+    # Todo와 일반 일정 모두 포함되어야 함
+    event_ids = [e["id"] for e in events]
+    assert todo_id in event_ids, "Todo가 캘린더에 포함되어야 합니다"
+    assert schedule_id in event_ids, "일반 일정이 캘린더에 포함되어야 합니다"
+
+
+@pytest.mark.e2e
+def test_graphql_calendar_query_with_todo_and_deadline(e2e_client):
+    """마감 시간이 있는 Todo가 캘린더에 포함되는지 테스트"""
+    # 1. 마감 시간이 있는 Todo 생성
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "마감 시간 있는 Todo",
+            "start_time": "2024-01-20T10:00:00Z",
+            "end_time": "2024-01-20T12:00:00Z",
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+
+    # 2. GraphQL 쿼리 실행
+    query = """
+    query GetCalendar($startDate: Date!, $endDate: Date!) {
+        calendar(startDate: $startDate, endDate: $endDate) {
+            days {
+                date
+                events {
+                    id
+                    title
+                    startAt
+                    endAt
+                }
+            }
+        }
+    }
+    """
+
+    variables = {
+        "startDate": "2024-01-01",
+        "endDate": "2024-01-31",
+    }
+
+    response = e2e_client.post(
+        "/v1/graphql",
+        json={
+            "query": query,
+            "variables": variables,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # 2024-01-20 날짜 찾기
+    days = data["data"]["calendar"]["days"]
+    target_day = None
+    for day in days:
+        if day["date"] == "2024-01-20":
+            target_day = day
+            break
+
+    assert target_day is not None, "2024-01-20 날짜를 찾을 수 없습니다"
+    assert len(target_day["events"]) > 0, "Todo가 포함되어야 합니다"
+
+    # Todo 확인
+    todo_event = next((e for e in target_day["events"] if e["id"] == todo_id), None)
+    assert todo_event is not None, "Todo가 해당 날짜에 포함되어야 합니다"
+    assert todo_event["title"] == "마감 시간 있는 Todo"
+
+
+@pytest.mark.e2e
+def test_graphql_calendar_query_todo_with_tags(e2e_client):
+    """태그가 있는 Todo가 캘린더에 포함되는지 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group_id}
+    )
+    tag_id = tag_response.json()["id"]
+
+    # 2. 태그와 함께 Todo 생성
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "태그 있는 Todo",
+            "tag_ids": [tag_id],
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+
+    # 3. GraphQL 쿼리 실행 (태그 필터링)
+    query = """
+    query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
+        calendar(startDate: $startDate, endDate: $endDate, tagFilter: $tagFilter) {
+            days {
+                date
+                events {
+                    id
+                    title
+                    tags {
+                        id
+                        name
+                    }
+                }
+            }
+        }
+    }
+    """
+
+    variables = {
+        "startDate": "1970-01-01",  # Todo의 917초 날짜 포함
+        "endDate": "2024-01-31",
+        "tagFilter": {
+            "tagIds": [tag_id]
+        }
+    }
+
+    response = e2e_client.post(
+        "/v1/graphql",
+        json={"query": query, "variables": variables}
+    )
+    assert response.status_code == 200
+
+    data = response.json()["data"]["calendar"]
+    events = []
+    for day in data["days"]:
+        events.extend(day["events"])
+
+    # 태그 필터링으로 Todo가 반환되어야 함
+    todo_events = [e for e in events if e["id"] == todo_id]
+    assert len(todo_events) > 0, "태그 필터링으로 Todo가 반환되어야 합니다"
+    assert len(todo_events[0]["tags"]) == 1
+    assert todo_events[0]["tags"][0]["id"] == tag_id
+
+
+@pytest.mark.e2e
+def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
+    """날짜 범위 밖의 Todo는 캘린더에서 제외되는지 테스트"""
+    # 1. 마감 시간이 있는 Todo 생성 (2024-01-20)
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "날짜 범위 밖 Todo",
+            "start_time": "2024-01-20T10:00:00Z",
+            "end_time": "2024-01-20T12:00:00Z",
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+
+    # 2. GraphQL 쿼리 실행 (2024-01-01 ~ 2024-01-15 범위)
+    query = """
+    query GetCalendar($startDate: Date!, $endDate: Date!) {
+        calendar(startDate: $startDate, endDate: $endDate) {
+            days {
+                date
+                events {
+                    id
+                    title
+                }
+            }
+        }
+    }
+    """
+
+    variables = {
+        "startDate": "2024-01-01",
+        "endDate": "2024-01-15",  # Todo 날짜(2024-01-20) 제외
+    }
+
+    response = e2e_client.post(
+        "/v1/graphql",
+        json={
+            "query": query,
+            "variables": variables,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # 날짜 범위 밖의 Todo는 포함되지 않아야 함
+    days = data["data"]["calendar"]["days"]
+    events = []
+    for day in days:
+        events.extend(day["events"])
+
+    event_ids = [e["id"] for e in events]
+    assert todo_id not in event_ids, "날짜 범위 밖의 Todo는 포함되지 않아야 합니다"

@@ -26,6 +26,9 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     parent_id: Optional[UUID] = None  # 원본 일정 ID (예외 인스턴스용)
 
+    # Todo 플래그
+    is_todo: bool = Field(default=False)  # Todo 여부 (True면 Todo 목록에 표시)
+
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
 

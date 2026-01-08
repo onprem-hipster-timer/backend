@@ -30,6 +30,7 @@ class ScheduleCreate(CustomModel):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
+    is_todo: bool = False  # Todo 여부
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -55,6 +56,7 @@ class ScheduleRead(CustomModel):
     recurrence_rule: Optional[str] = None
     recurrence_end: Optional[datetime] = None
     parent_id: Optional[UUID] = None  # 원본 일정 ID (가상 인스턴스인 경우)
+    is_todo: bool = False  # Todo 여부
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
 
@@ -98,6 +100,7 @@ class ScheduleUpdate(CustomModel):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
+    is_todo: Optional[bool] = None  # Todo 여부
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

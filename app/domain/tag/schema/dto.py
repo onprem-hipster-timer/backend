@@ -7,7 +7,7 @@ Tag Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
@@ -25,6 +25,8 @@ class TagGroupCreate(CustomModel):
     name: str
     color: str  # 예: "#FF5733"
     description: Optional[str] = None
+    goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
+    is_todo_group: bool = False  # Todo 그룹 여부
 
     @field_validator("color")
     @classmethod
@@ -41,6 +43,8 @@ class TagGroupRead(CustomModel):
     name: str
     color: str
     description: Optional[str] = None
+    goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
+    is_todo_group: bool  # Todo 그룹 여부
     created_at: datetime
     updated_at: datetime
 
@@ -55,6 +59,8 @@ class TagGroupUpdate(CustomModel):
     name: Optional[str] = None
     color: Optional[str] = None
     description: Optional[str] = None
+    goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
+    is_todo_group: Optional[bool] = None  # Todo 그룹 여부
 
     @field_validator("color")
     @classmethod
