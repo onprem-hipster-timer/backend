@@ -243,3 +243,4 @@ def log_fetch_complete(item_count: int, item_type: str) -> None:
     :param item_type: 항목 타입
     """
     logger.info(f"Fetched total {item_count} {item_type} from all pages")
+
