@@ -60,7 +60,14 @@ class TodoService:
         self.session.flush()
         self.session.refresh(todo)
         
-        # deadline이 있으면 Schedule 생성
+        # 태그 설정 (Schedule 생성 전에 먼저 설정하여 Schedule에도 태그 복사 가능)
+        if data.tag_ids:
+            from app.domain.tag.service import TagService
+            tag_service = TagService(self.session)
+            tag_service.set_todo_tags(todo.id, data.tag_ids)
+            self.session.refresh(todo)
+        
+        # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
             from datetime import timedelta
             # deadline을 start_time으로, end_time은 deadline + 1시간으로 설정
@@ -70,17 +77,11 @@ class TodoService:
                 start_time=data.deadline,
                 end_time=data.deadline + timedelta(hours=1),  # deadline + 1시간
                 source_todo_id=todo.id,
-                state=None,  # 기본값 PLANNED
+                tag_ids=data.tag_ids,  # Todo의 태그를 Schedule에도 복사
+                # state는 기본값 PLANNED 사용
             )
             schedule_service = ScheduleService(self.session)
             schedule_service.create_schedule(schedule_data)
-        
-        # 태그 설정
-        if data.tag_ids:
-            from app.domain.tag.service import TagService
-            tag_service = TagService(self.session)
-            tag_service.set_todo_tags(todo.id, data.tag_ids)
-            self.session.refresh(todo)
         
         return todo
 
@@ -215,13 +216,18 @@ class TodoService:
                     schedule_service.delete_schedule(schedule.id)
             elif not old_deadline and new_deadline:
                 # deadline 추가: 새 Schedule 생성
+                from datetime import timedelta
+                # Todo의 기존 태그 가져오기
+                todo_tags = self.get_todo_tags(todo.id)
+                tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
                 schedule_data = ScheduleCreate(
                     title=todo.title,
                     description=todo.description,
                     start_time=new_deadline,
-                    end_time=new_deadline,
+                    end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
                     source_todo_id=todo.id,
-                    state=None,  # 기본값 PLANNED
+                    tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 복사
+                    # state는 기본값 PLANNED 사용
                 )
                 schedule_service = ScheduleService(self.session)
                 schedule_service.create_schedule(schedule_data)
@@ -231,9 +237,13 @@ class TodoService:
                     from datetime import timedelta
                     schedule_service = ScheduleService(self.session)
                     from app.domain.schedule.schema.dto import ScheduleUpdate
+                    # Todo의 기존 태그 가져오기
+                    todo_tags = self.get_todo_tags(todo.id)
+                    tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
                     schedule_update = ScheduleUpdate(
                         start_time=new_deadline,
                         end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
+                        tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 동기화
                     )
                     schedule_service.update_schedule(existing_schedules[0].id, schedule_update)
         
@@ -243,6 +253,15 @@ class TodoService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
             tag_service.set_todo_tags(todo.id, update_dict['tag_ids'] or [])
+            # Todo의 Schedule이 있으면 태그도 동기화
+            from app.crud.schedule import get_schedules_by_source_todo_id
+            schedules = get_schedules_by_source_todo_id(self.session, todo_id)
+            if schedules:
+                schedule_service = ScheduleService(self.session)
+                from app.domain.schedule.schema.dto import ScheduleUpdate
+                for schedule in schedules:
+                    schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
+                    schedule_service.update_schedule(schedule.id, schedule_update)
             del update_dict['tag_ids']
         
         # 나머지 필드 업데이트

@@ -8,12 +8,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.domain.todo.constants import TODO_DATETIME, TODO_DATETIME_END
-from app.domain.todo.exceptions import TodoNotFoundError, NotATodoError
+from app.domain.todo.exceptions import TodoNotFoundError
+from app.domain.todo.enums import TodoStatus
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
 from app.domain.tag.service import TagService
 from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
+from app.domain.schedule.enums import ScheduleState
 
 
 @pytest.fixture
@@ -89,34 +90,40 @@ def test_create_todo_success(test_session, sample_tag_group):
 
     assert todo.title == "회의 준비"
     assert todo.description == "회의 자료 준비"
-    assert todo.is_todo is True
-    assert todo.start_time == TODO_DATETIME
-    assert todo.end_time == TODO_DATETIME_END
+    assert todo.tag_group_id == sample_tag_group.id
+    assert todo.status == TodoStatus.UNSCHEDULED
+    assert todo.deadline is None
     assert isinstance(todo.id, UUID)
 
 
-def test_create_todo_with_custom_datetime(test_session, sample_tag_group):
+def test_create_todo_with_deadline(test_session, sample_tag_group):
     """마감 시간이 있는 Todo 생성 테스트"""
     service = TodoService(test_session)
-    custom_start = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
-    custom_end = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    deadline = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     
     data = TodoCreate(
         title="마감 시간 있는 Todo",
-        start_time=custom_start,
-        end_time=custom_end,
+        deadline=deadline,
         tag_group_id=sample_tag_group.id,
     )
 
     todo = service.create_todo(data)
+    test_session.flush()
+    test_session.refresh(todo)
 
     assert todo.title == "마감 시간 있는 Todo"
-    assert todo.is_todo is True
+    assert todo.deadline is not None
     # UTC timezone이 있는 datetime은 naive datetime으로 저장됨
-    assert todo.start_time.tzinfo is None
-    assert todo.end_time.tzinfo is None
-    assert todo.start_time == custom_start.replace(tzinfo=None)
-    assert todo.end_time == custom_end.replace(tzinfo=None)
+    assert todo.deadline.tzinfo is None
+    assert todo.deadline == deadline.replace(tzinfo=None)
+    
+    # Schedule이 생성되었는지 확인
+    assert len(todo.schedules) == 1
+    schedule = todo.schedules[0]
+    assert schedule.source_todo_id == todo.id
+    assert schedule.title == todo.title
+    # Schedule의 state는 기본값 PLANNED로 설정되어야 함
+    assert schedule.state == ScheduleState.PLANNED
 
 
 def test_create_todo_with_tags(test_session, sample_tag, sample_tag_group):
@@ -138,6 +145,46 @@ def test_create_todo_with_tags(test_session, sample_tag, sample_tag_group):
     assert tags[0].id == sample_tag.id
 
 
+def test_create_todo_with_parent(test_session, sample_tag_group):
+    """부모 Todo가 있는 Todo 생성 테스트"""
+    service = TodoService(test_session)
+    
+    # 부모 Todo 생성
+    parent_data = TodoCreate(
+        title="부모 Todo",
+        tag_group_id=sample_tag_group.id,
+    )
+    parent = service.create_todo(parent_data)
+    test_session.flush()
+    
+    # 자식 Todo 생성
+    child_data = TodoCreate(
+        title="자식 Todo",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+    )
+    child = service.create_todo(child_data)
+    test_session.flush()
+    test_session.refresh(child)
+
+    assert child.parent_id == parent.id
+    assert child.title == "자식 Todo"
+
+
+def test_create_todo_with_status(test_session, sample_tag_group):
+    """상태가 지정된 Todo 생성 테스트"""
+    service = TodoService(test_session)
+    data = TodoCreate(
+        title="완료된 Todo",
+        tag_group_id=sample_tag_group.id,
+        status=TodoStatus.DONE,
+    )
+
+    todo = service.create_todo(data)
+
+    assert todo.status == TodoStatus.DONE
+
+
 def test_create_todo_without_description(test_session, sample_tag_group):
     """설명 없이 Todo 생성 테스트"""
     service = TodoService(test_session)
@@ -150,7 +197,7 @@ def test_create_todo_without_description(test_session, sample_tag_group):
 
     assert todo.title == "제목만 있는 Todo"
     assert todo.description is None
-    assert todo.is_todo is True
+    assert todo.status == TodoStatus.UNSCHEDULED
 
 
 # ============================================================
@@ -164,7 +211,7 @@ def test_get_todo_success(test_session, sample_todo):
 
     assert retrieved_todo.id == sample_todo.id
     assert retrieved_todo.title == sample_todo.title
-    assert retrieved_todo.is_todo is True
+    assert retrieved_todo.tag_group_id == sample_todo.tag_group_id
 
 
 def test_get_todo_not_found(test_session):
@@ -174,15 +221,6 @@ def test_get_todo_not_found(test_session):
 
     with pytest.raises(TodoNotFoundError):
         service.get_todo(fake_id)
-
-
-def test_get_todo_not_a_todo(test_session, sample_schedule):
-    """일정이 Todo가 아닌 경우 조회 실패 테스트"""
-    service = TodoService(test_session)
-    
-    # sample_schedule은 is_todo=False인 일정
-    with pytest.raises(NotATodoError):
-        service.get_todo(sample_schedule.id)
 
 
 def test_get_all_todos_empty(test_session):
@@ -284,7 +322,7 @@ def test_get_all_todos_filtered_by_group_ids(test_session, sample_tag_group):
     todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id))  # 태그 없음
     test_session.flush()
 
-    # sample_tag_group에 속한 Todo 조회 (tag_group_id로 직접 연결)
+    # sample_tag_group에 속한 Todo 조회
     todos = service.get_all_todos(group_ids=[sample_tag_group.id])
     todo_ids = [t.id for t in todos]
     
@@ -345,9 +383,6 @@ def test_update_todo_success(test_session, sample_todo):
     assert updated_todo.title == "업데이트된 제목"
     assert updated_todo.description == "업데이트된 설명"
     assert updated_todo.id == sample_todo.id
-    # start_time/end_time은 변경되지 않아야 함
-    assert updated_todo.start_time == sample_todo.start_time
-    assert updated_todo.end_time == sample_todo.end_time
 
 
 def test_update_todo_partial(test_session, sample_todo):
@@ -361,6 +396,148 @@ def test_update_todo_partial(test_session, sample_todo):
 
     assert updated_todo.title == original_title  # 제목은 변경되지 않음
     assert updated_todo.description == "설명만 업데이트"
+
+
+def test_update_todo_deadline(test_session, sample_todo):
+    """Todo 마감 시간 업데이트 테스트"""
+    service = TodoService(test_session)
+    new_deadline = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
+    
+    update_data = TodoUpdate(deadline=new_deadline)
+    updated_todo = service.update_todo(sample_todo.id, update_data)
+    test_session.flush()
+    test_session.refresh(updated_todo)
+
+    assert updated_todo.deadline is not None
+    assert updated_todo.deadline == new_deadline.replace(tzinfo=None)
+    
+    # Schedule이 생성되었는지 확인
+    assert len(updated_todo.schedules) == 1
+    schedule = updated_todo.schedules[0]
+    # Schedule의 state는 기본값 PLANNED로 설정되어야 함
+    assert schedule.state == ScheduleState.PLANNED
+
+
+def test_update_todo_deadline_removal(test_session, sample_tag_group):
+    """Todo 마감 시간 제거 테스트"""
+    service = TodoService(test_session)
+    
+    # 마감 시간이 있는 Todo 생성
+    deadline = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    todo = service.create_todo(TodoCreate(
+        title="마감 시간 있는 Todo",
+        tag_group_id=sample_tag_group.id,
+        deadline=deadline,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+    
+    assert len(todo.schedules) == 1
+    
+    # 마감 시간 제거
+    update_data = TodoUpdate(deadline=None)
+    updated_todo = service.update_todo(todo.id, update_data)
+    test_session.flush()
+    test_session.refresh(updated_todo)
+
+    assert updated_todo.deadline is None
+    # Schedule이 삭제되었는지 확인
+    assert len(updated_todo.schedules) == 0
+
+
+def test_update_todo_status(test_session, sample_todo):
+    """Todo 상태 업데이트 테스트"""
+    service = TodoService(test_session)
+    update_data = TodoUpdate(status=TodoStatus.DONE)
+
+    updated_todo = service.update_todo(sample_todo.id, update_data)
+
+    assert updated_todo.status == TodoStatus.DONE
+
+
+def test_todo_schedule_state_default(test_session, sample_tag_group):
+    """Todo로 생성된 Schedule의 state 기본값 테스트"""
+    service = TodoService(test_session)
+    deadline = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    
+    # 마감 시간이 있는 Todo 생성
+    todo = service.create_todo(TodoCreate(
+        title="Schedule state 테스트",
+        tag_group_id=sample_tag_group.id,
+        deadline=deadline,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+    
+    # Schedule이 생성되었는지 확인
+    assert len(todo.schedules) == 1
+    schedule = todo.schedules[0]
+    
+    # Schedule의 state는 기본값 PLANNED로 설정되어야 함
+    assert schedule.state == ScheduleState.PLANNED
+    assert schedule.source_todo_id == todo.id
+
+
+def test_todo_schedule_state_when_adding_deadline(test_session, sample_tag_group):
+    """deadline 추가 시 생성된 Schedule의 state 기본값 테스트"""
+    service = TodoService(test_session)
+    
+    # 마감 시간이 없는 Todo 생성
+    todo = service.create_todo(TodoCreate(
+        title="초기에는 deadline 없음",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+    
+    assert len(todo.schedules) == 0
+    
+    # deadline 추가
+    deadline = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    update_data = TodoUpdate(deadline=deadline)
+    updated_todo = service.update_todo(todo.id, update_data)
+    test_session.flush()
+    test_session.refresh(updated_todo)
+    
+    # Schedule이 생성되었는지 확인
+    assert len(updated_todo.schedules) == 1
+    schedule = updated_todo.schedules[0]
+    
+    # Schedule의 state는 기본값 PLANNED로 설정되어야 함
+    assert schedule.state == ScheduleState.PLANNED
+
+
+def test_update_todo_parent(test_session, sample_tag_group):
+    """Todo 부모 변경 테스트"""
+    service = TodoService(test_session)
+    
+    # 부모 Todo 생성
+    parent1 = service.create_todo(TodoCreate(
+        title="부모 1",
+        tag_group_id=sample_tag_group.id,
+    ))
+    parent2 = service.create_todo(TodoCreate(
+        title="부모 2",
+        tag_group_id=sample_tag_group.id,
+    ))
+    
+    # 자식 Todo 생성
+    child = service.create_todo(TodoCreate(
+        title="자식",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent1.id,
+    ))
+    test_session.flush()
+    
+    assert child.parent_id == parent1.id
+    
+    # 부모 변경
+    update_data = TodoUpdate(parent_id=parent2.id)
+    updated_todo = service.update_todo(child.id, update_data)
+    test_session.flush()
+    test_session.refresh(updated_todo)
+
+    assert updated_todo.parent_id == parent2.id
 
 
 def test_update_todo_tags(test_session, sample_todo, sample_tag_group):
@@ -414,15 +591,6 @@ def test_update_todo_not_found(test_session):
         service.update_todo(fake_id, update_data)
 
 
-def test_update_todo_not_a_todo(test_session, sample_schedule):
-    """일정이 Todo가 아닌 경우 업데이트 실패 테스트"""
-    service = TodoService(test_session)
-    update_data = TodoUpdate(title="업데이트")
-
-    with pytest.raises(NotATodoError):
-        service.update_todo(sample_schedule.id, update_data)
-
-
 # ============================================================
 # Todo 삭제 테스트
 # ============================================================
@@ -441,6 +609,81 @@ def test_delete_todo_success(test_session, sample_todo):
         service.get_todo(todo_id)
 
 
+def test_delete_todo_with_schedule(test_session, sample_tag_group):
+    """Schedule이 연관된 Todo 삭제 테스트"""
+    service = TodoService(test_session)
+    deadline = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
+    
+    # 마감 시간이 있는 Todo 생성 (Schedule 자동 생성)
+    todo = service.create_todo(TodoCreate(
+        title="Schedule 있는 Todo",
+        tag_group_id=sample_tag_group.id,
+        deadline=deadline,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+    
+    todo_id = todo.id
+    schedule_id = todo.schedules[0].id
+    
+    # Todo 삭제
+    service.delete_todo(todo_id)
+    test_session.flush()
+    
+    # Todo가 삭제되었는지 확인
+    test_session.expire_all()
+    with pytest.raises(TodoNotFoundError):
+        service.get_todo(todo_id)
+    
+    # Schedule도 삭제되었는지 확인
+    from app.domain.schedule.service import ScheduleService
+    schedule_service = ScheduleService(test_session)
+    from app.domain.schedule.exceptions import ScheduleNotFoundError
+    with pytest.raises(ScheduleNotFoundError):
+        schedule_service.get_schedule(schedule_id)
+
+
+def test_delete_todo_with_children(test_session, sample_tag_group):
+    """자식 Todo가 있는 부모 Todo 삭제 테스트"""
+    service = TodoService(test_session)
+    
+    # 부모 Todo 생성
+    parent = service.create_todo(TodoCreate(
+        title="부모",
+        tag_group_id=sample_tag_group.id,
+    ))
+    
+    # 자식 Todo 생성
+    child1 = service.create_todo(TodoCreate(
+        title="자식 1",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+    ))
+    child2 = service.create_todo(TodoCreate(
+        title="자식 2",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+    ))
+    test_session.flush()
+    
+    parent_id = parent.id
+    child1_id = child1.id
+    child2_id = child2.id
+    
+    # 부모 Todo 삭제 (자식도 함께 삭제되어야 함 - CASCADE)
+    service.delete_todo(parent_id)
+    test_session.flush()
+    
+    # 부모와 자식이 모두 삭제되었는지 확인
+    test_session.expire_all()
+    with pytest.raises(TodoNotFoundError):
+        service.get_todo(parent_id)
+    with pytest.raises(TodoNotFoundError):
+        service.get_todo(child1_id)
+    with pytest.raises(TodoNotFoundError):
+        service.get_todo(child2_id)
+
+
 def test_delete_todo_not_found(test_session):
     """존재하지 않는 Todo 삭제 실패 테스트"""
     service = TodoService(test_session)
@@ -448,14 +691,6 @@ def test_delete_todo_not_found(test_session):
 
     with pytest.raises(TodoNotFoundError):
         service.delete_todo(fake_id)
-
-
-def test_delete_todo_not_a_todo(test_session, sample_schedule):
-    """일정이 Todo가 아닌 경우 삭제 실패 테스트"""
-    service = TodoService(test_session)
-
-    with pytest.raises(NotATodoError):
-        service.delete_todo(sample_schedule.id)
 
 
 # ============================================================
@@ -602,8 +837,9 @@ def test_to_read_dto(test_session, sample_todo):
 
     assert dto.id == sample_todo.id
     assert dto.title == sample_todo.title
-    assert dto.is_todo is True
+    assert dto.status == sample_todo.status
     assert isinstance(dto.tags, list)
+    assert isinstance(dto.schedules, list)
 
 
 def test_to_read_dto_with_tags(test_session, sample_todo_with_tags, sample_tag):
@@ -614,4 +850,3 @@ def test_to_read_dto_with_tags(test_session, sample_todo_with_tags, sample_tag):
     assert dto.id == sample_todo_with_tags.id
     assert len(dto.tags) == 1
     assert dto.tags[0].id == sample_tag.id
-
