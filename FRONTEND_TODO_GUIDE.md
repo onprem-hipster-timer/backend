@@ -1,503 +1,987 @@
-# Todo-일정 변환 가이드 (프론트엔드 개발자용)
+# Todo API 가이드 (프론트엔드 개발자용)
+
+> **최종 업데이트**: 2026-01-10
+
+## 목차
+
+1. [개요](#개요)
+2. [데이터 모델](#데이터-모델)
+3. [REST API](#rest-api)
+4. [GraphQL API](#graphql-api)
+5. [주요 기능](#주요-기능)
+6. [TypeScript 타입 정의](#typescript-타입-정의)
+7. [사용 예시](#사용-예시)
+
+---
 
 ## 개요
 
-이 백엔드 API는 **Todo**와 **일정(Schedule)** 간 양방향 변환을 지원합니다.
-프론트엔드에서 Todo를 일정으로 변환하거나 일정을 Todo로 변환하려면 이 가이드를 참고하세요.
+이 API는 **Todo**, **Schedule**, **Tag**를 관리하는 기능을 제공합니다.
 
-## Todo와 그룹의 관계 ⚠️ 중요 변경사항
+### 핵심 개념
 
-**Todo 생성 시 그룹은 필수입니다!**
+| 개념 | 설명 |
+|------|------|
+| **Todo** | 할 일 항목. 독립적인 엔티티로 존재합니다. |
+| **Schedule** | 캘린더 일정. Todo에 deadline이 있으면 자동으로 생성됩니다. |
+| **TagGroup** | 태그를 묶는 그룹. Todo는 반드시 하나의 그룹에 속해야 합니다. |
+| **Tag** | 세부 분류용 태그. TagGroup에 속하며, Todo/Schedule에 연결할 수 있습니다. |
 
-- **그룹 (`tag_group_id`)**: **필수** - Todo 생성 시 반드시 지정해야 함
-- **태그 (`tag_ids`)**: **선택** - 그룹 내에서 세부 분류를 위해 사용 가능
+### Todo와 Schedule의 관계
 
-### 왜 그룹이 필수인가?
-
-- 모든 Todo는 반드시 하나의 그룹에 속해야 합니다
-- 그룹별로 Todo를 체계적으로 관리할 수 있습니다
-- 태그 없이도 그룹별로 Todo를 조회하고 관리할 수 있습니다
-- 태그는 그룹 내에서 추가 분류를 위한 선택적 도구입니다
-
-### 그룹 필수로 인한 장점
-
-1. **조회 단순화**: `tag_group_id`만 확인하면 그룹별 조회 가능
-2. **데이터 일관성**: 그룹 없는 "미분류" Todo 방지
-3. **UI 설계 명확**: 그룹 선택이 필수이므로 UX 흐름이 명확
-
-```typescript
-// 그룹만 지정된 Todo (태그 없음)
-const todoWithGroupOnly: Todo = {
-  id: "123e4567-e89b-12d3-a456-426614174000",
-  title: "그룹에 속한 할 일",
-  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
-  tags: [],  // 선택: 태그 없음
-  // ...
-};
-
-// 그룹과 태그가 모두 있는 Todo
-const todoWithGroupAndTag: Todo = {
-  id: "223e4567-e89b-12d3-a456-426614174000",
-  title: "태그가 있는 할 일",
-  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
-  tags: [{ id: "tag-uuid", group_id: "group-uuid", name: "태그" }],  // 선택: 세부 분류
-  // ...
-};
-
-// 그룹별 조회
-// GET /v1/todos?group_ids=group-uuid
+```
+┌─────────────────────────────────────────────────────────┐
+│  Todo                                                   │
+│  ├── title: "회의 준비"                                   │
+│  ├── deadline: "2024-01-20T10:00:00Z"  ←─┐              │
+│  ├── tag_group_id: "업무" (필수)           │              │
+│  └── tags: ["중요", "회의"]               │              │
+│                                          │              │
+│  ↓ deadline이 있으면 자동 생성             │              │
+│                                          │              │
+│  Schedule                                │              │
+│  ├── title: "회의 준비"                   │              │
+│  ├── start_time: "2024-01-20T10:00:00Z" ─┘              │
+│  ├── end_time: "2024-01-20T11:00:00Z"                   │
+│  ├── source_todo_id: (Todo의 ID)                        │
+│  └── tags: ["중요", "회의"]  ← Todo의 태그가 복사됨        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Todo와 일정의 구분
+---
+
+## 데이터 모델
 
 ### Todo
 
-Todo는 `is_todo=true`인 일정입니다. 두 가지 유형이 있습니다:
-
-1. **마감 시간이 없는 Todo**: `start_time`이 917초(1970-01-01T00:15:17Z)로 설정됨
-2. **마감 시간이 있는 Todo**: 실제 마감 시간이 설정됨
-
-**구분 조건:**
-- `is_todo`가 `true`
-- `start_time`이 917초이거나 실제 마감 시간
-
-**예시:**
 ```typescript
 interface Todo {
-  id: string;
-  title: string;
-  description: string | null;
-  is_todo: true;  // ✅ 항상 true
-  tag_group_id: string;  // ✅ 필수: 소속 그룹 ID
-  start_time: string;  // 917초 또는 실제 마감 시간
-  end_time: string;
-  created_at: string;
-  tags: Tag[];  // 선택: 세부 분류
+  id: string;              // UUID
+  title: string;           // 제목
+  description?: string;    // 설명 (선택)
+  deadline?: string;       // 마감일시 (ISO 8601, 선택)
+  tag_group_id: string;    // 소속 그룹 ID (필수)
+  parent_id?: string;      // 부모 Todo ID (트리 구조용, 선택)
+  status: TodoStatus;      // 상태
+  created_at: string;      // 생성일시
+  tags: Tag[];             // 연결된 태그 목록
+  schedules: Schedule[];   // 연관된 Schedule 목록
 }
 
-// 마감 시간이 없는 Todo
-const todoWithoutDeadline: Todo = {
-  id: "123e4567-e89b-12d3-a456-426614174000",
-  title: "할 일",
-  description: "해야 할 일",
-  is_todo: true,
-  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
-  start_time: "1970-01-01T00:15:17Z",  // ✅ 917초
-  end_time: "1970-01-01T00:30:34Z",
-  created_at: "2024-01-01T00:00:00Z",
-  tags: []  // 선택: 태그 없음
-};
-
-// 마감 시간이 있는 Todo
-const todoWithDeadline: Todo = {
-  id: "223e4567-e89b-12d3-a456-426614174000",
-  title: "마감 있는 할 일",
-  description: "2024-01-20까지 완료",
-  is_todo: true,
-  tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
-  start_time: "2024-01-20T10:00:00Z",  // ✅ 실제 마감 시간
-  end_time: "2024-01-20T12:00:00Z",
-  created_at: "2024-01-01T00:00:00Z",
-  tags: [{ id: "tag-uuid", name: "긴급", group_id: "group-uuid" }]  // 선택: 세부 분류
-};
+type TodoStatus = 
+  | "UNSCHEDULED"  // 일정 미지정
+  | "SCHEDULED"    // 일정 지정됨
+  | "DONE"         // 완료
+  | "CANCELLED";   // 취소됨
 ```
 
-### 일정 (Schedule)
-
-일정은 `is_todo=false`인 항목입니다.
-
-**구분 조건:**
-- `is_todo`가 `false`
-- `start_time`이 실제 시간 (917초가 아님)
-
-**예시:**
-```typescript
-interface Schedule {
-  id: string;
-  title: string;
-  description: string | null;
-  is_todo: false;  // ✅ false
-  start_time: string;  // 실제 시간
-  end_time: string;
-  created_at: string;
-  tags: Tag[];
-}
-
-// 일반 일정
-const schedule: Schedule = {
-  id: "323e4567-e89b-12d3-a456-426614174000",
-  title: "회의",
-  description: "프로젝트 회의",
-  is_todo: false,  // ✅ 일정
-  start_time: "2024-01-15T10:00:00Z",
-  end_time: "2024-01-15T12:00:00Z",
-  created_at: "2024-01-01T00:00:00Z",
-  tags: []
-};
-```
-
-## TypeScript 헬퍼 함수
-
-프론트엔드에서 Todo와 일정을 구분하는 헬퍼 함수 예시:
+### Schedule
 
 ```typescript
 interface Schedule {
-  id: string;
-  title: string;
-  description: string | null;
-  is_todo: boolean;
-  tag_group_id: string | null;  // Todo인 경우 필수, 일반 일정인 경우 선택
-  start_time: string;
-  end_time: string;
+  id: string;               // UUID
+  title: string;            // 제목
+  description?: string;     // 설명 (선택)
+  start_time: string;       // 시작 시간 (ISO 8601)
+  end_time: string;         // 종료 시간 (ISO 8601)
+  recurrence_rule?: string; // 반복 규칙 (RRULE 형식, 선택)
+  recurrence_end?: string;  // 반복 종료일 (선택)
+  parent_id?: string;       // 반복 일정 원본 ID (가상 인스턴스인 경우)
+  source_todo_id?: string;  // 연결된 Todo ID (Todo에서 생성된 경우)
+  state: ScheduleState;     // 상태
+  created_at: string;       // 생성일시
+  tags: Tag[];              // 연결된 태그 목록
+}
+
+type ScheduleState = "PLANNED" | "IN_PROGRESS" | "COMPLETED";
+```
+
+### TagGroup & Tag
+
+```typescript
+interface TagGroup {
+  id: string;                        // UUID
+  name: string;                      // 그룹명
+  color: string;                     // 색상 코드 (#RRGGBB)
+  description?: string;              // 설명 (선택)
+  goal_ratios?: Record<string, number>; // 태그별 목표 비율 (선택)
+  is_todo_group: boolean;            // Todo 그룹 여부
   created_at: string;
-  tags: Tag[];
+  updated_at: string;
+  tags: Tag[];                       // 그룹에 속한 태그 목록
 }
 
-// 917초 (마감 시간 없는 Todo 식별용)
-const TODO_DATETIME = "1970-01-01T00:15:17Z";
-
-/**
- * Todo인지 확인
- */
-function isTodo(schedule: Schedule): boolean {
-  return schedule.is_todo === true;
+interface Tag {
+  id: string;           // UUID
+  name: string;         // 태그명
+  color: string;        // 색상 코드 (#RRGGBB)
+  description?: string; // 설명 (선택)
+  group_id: string;     // 소속 그룹 ID
+  created_at: string;
+  updated_at: string;
 }
+```
 
-/**
- * 일정인지 확인
- */
-function isSchedule(schedule: Schedule): boolean {
-  return schedule.is_todo === false;
+---
+
+## REST API
+
+### Base URL
+
+```
+/v1
+```
+
+### Todo API
+
+#### Todo 생성
+
+```http
+POST /v1/todos
+Content-Type: application/json
+
+{
+  "title": "회의 준비",
+  "description": "프레젠테이션 자료 준비",
+  "tag_group_id": "550e8400-e29b-41d4-a716-446655440000",
+  "tag_ids": ["660e8400-e29b-41d4-a716-446655440001"],
+  "deadline": "2024-01-20T10:00:00Z",
+  "parent_id": null,
+  "status": "UNSCHEDULED"
 }
+```
 
-/**
- * 마감 시간이 있는 Todo인지 확인
- */
-function isTodoWithDeadline(todo: Schedule): boolean {
-  return todo.is_todo === true && todo.start_time !== TODO_DATETIME;
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `title` | string | ✅ | Todo 제목 |
+| `description` | string | ❌ | 설명 |
+| `tag_group_id` | UUID | ✅ | **필수!** 소속 그룹 ID |
+| `tag_ids` | UUID[] | ❌ | 연결할 태그 ID 목록 |
+| `deadline` | datetime | ❌ | 마감일시 (있으면 Schedule 자동 생성) |
+| `parent_id` | UUID | ❌ | 부모 Todo ID (트리 구조) |
+| `status` | string | ❌ | 상태 (기본값: `UNSCHEDULED`) |
+
+**응답 (201 Created):**
+
+```json
+{
+  "id": "770e8400-e29b-41d4-a716-446655440002",
+  "title": "회의 준비",
+  "description": "프레젠테이션 자료 준비",
+  "deadline": "2024-01-20T10:00:00Z",
+  "tag_group_id": "550e8400-e29b-41d4-a716-446655440000",
+  "parent_id": null,
+  "status": "UNSCHEDULED",
+  "created_at": "2024-01-15T09:00:00Z",
+  "tags": [
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "name": "중요",
+      "color": "#FF0000",
+      "group_id": "550e8400-e29b-41d4-a716-446655440000"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "880e8400-e29b-41d4-a716-446655440003",
+      "title": "회의 준비",
+      "start_time": "2024-01-20T10:00:00Z",
+      "end_time": "2024-01-20T11:00:00Z",
+      "source_todo_id": "770e8400-e29b-41d4-a716-446655440002",
+      "state": "PLANNED",
+      "tags": [...]
+    }
+  ]
 }
+```
 
-/**
- * 마감 시간이 없는 Todo인지 확인
- */
-function isTodoWithoutDeadline(todo: Schedule): boolean {
-  return todo.is_todo === true && todo.start_time === TODO_DATETIME;
+#### Todo 목록 조회
+
+```http
+GET /v1/todos
+GET /v1/todos?group_ids=uuid1&group_ids=uuid2
+GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2
+```
+
+| 파라미터 | 타입 | 설명 |
+|---------|------|------|
+| `group_ids` | UUID[] | 해당 그룹에 속한 Todo만 조회 |
+| `tag_ids` | UUID[] | 지정된 태그를 **모두** 포함한 Todo만 조회 (AND 방식) |
+
+#### Todo 단건 조회
+
+```http
+GET /v1/todos/{todo_id}
+```
+
+#### Todo 수정
+
+```http
+PATCH /v1/todos/{todo_id}
+Content-Type: application/json
+
+{
+  "title": "수정된 제목",
+  "deadline": "2024-01-25T14:00:00Z",
+  "tag_ids": ["tag-uuid-1", "tag-uuid-2"],
+  "status": "SCHEDULED"
 }
+```
 
-// 사용 예시
-const item: Schedule = /* API 응답 */;
+> ⚠️ **deadline 변경 시 동작:**
+> - deadline 추가: 새 Schedule 생성 (태그도 복사)
+> - deadline 변경: 기존 Schedule 시간 업데이트
+> - deadline 제거 (null): 기존 Schedule 삭제
 
-if (isTodo(item)) {
-  if (isTodoWithDeadline(item)) {
-    console.log("마감 시간이 있는 Todo입니다");
-    // 일정 목록에도 표시됨
-  } else {
-    console.log("마감 시간이 없는 Todo입니다");
-    // Todo 목록에만 표시됨
+> ⚠️ **tag_ids 변경 시 동작:**
+> - Todo의 태그 업데이트
+> - 연결된 Schedule의 태그도 함께 동기화
+
+#### Todo 삭제
+
+```http
+DELETE /v1/todos/{todo_id}
+```
+
+> ⚠️ 연결된 Schedule도 함께 삭제됩니다.
+
+#### Todo 통계 조회
+
+```http
+GET /v1/todos/stats
+GET /v1/todos/stats?group_id=uuid
+```
+
+**응답:**
+
+```json
+{
+  "group_id": "550e8400-e29b-41d4-a716-446655440000",
+  "total_count": 15,
+  "by_tag": [
+    { "tag_id": "uuid1", "tag_name": "중요", "count": 5 },
+    { "tag_id": "uuid2", "tag_name": "회의", "count": 3 }
+  ]
+}
+```
+
+---
+
+### TagGroup API
+
+#### 그룹 생성
+
+```http
+POST /v1/tags/groups
+Content-Type: application/json
+
+{
+  "name": "업무",
+  "color": "#FF5733",
+  "description": "업무 관련 항목",
+  "is_todo_group": true
+}
+```
+
+#### 그룹 목록 조회 (태그 포함)
+
+```http
+GET /v1/tags/groups
+```
+
+#### 그룹 수정
+
+```http
+PATCH /v1/tags/groups/{group_id}
+```
+
+#### 그룹 삭제
+
+```http
+DELETE /v1/tags/groups/{group_id}
+```
+
+> ⚠️ CASCADE 삭제: 그룹에 속한 모든 태그도 함께 삭제됩니다.
+
+---
+
+### Tag API
+
+#### 태그 생성
+
+```http
+POST /v1/tags
+Content-Type: application/json
+
+{
+  "name": "중요",
+  "color": "#FF0000",
+  "group_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+#### 태그 목록 조회
+
+```http
+GET /v1/tags
+```
+
+#### 태그 수정
+
+```http
+PATCH /v1/tags/{tag_id}
+```
+
+#### 태그 삭제
+
+```http
+DELETE /v1/tags/{tag_id}
+```
+
+---
+
+## GraphQL API
+
+### Endpoint
+
+```
+POST /v1/graphql
+```
+
+개발 환경에서는 Apollo Sandbox UI를 통해 쿼리 테스트 가능합니다.
+
+### Calendar 쿼리
+
+캘린더 뷰에 필요한 일정 데이터를 조회합니다.
+
+```graphql
+query GetCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
+  calendar(startDate: $startDate, endDate: $endDate, tagFilter: $tagFilter) {
+    days {
+      date
+      events {
+        id
+        title
+        description
+        startAt
+        endAt
+        createdAt
+        isRecurring
+        parentId
+        instanceStart
+        tags {
+          id
+          name
+          color
+          groupId
+        }
+      }
+    }
   }
-} else {
-  console.log("일정입니다");
 }
 ```
 
-## API 사용 가이드
+**Variables:**
 
-### Todo 생성 ⚠️ 필수 변경사항
+```json
+{
+  "startDate": "2024-01-01",
+  "endDate": "2024-01-31",
+  "tagFilter": {
+    "tagIds": ["660e8400-e29b-41d4-a716-446655440001"],
+    "groupIds": null
+  }
+}
+```
 
-**Todo 생성 시 `tag_group_id`는 필수입니다!**
+### 태그 필터링 규칙
+
+| 필터 | 방식 | 설명 |
+|------|------|------|
+| `tagIds` | AND | 지정된 태그를 **모두** 포함한 일정만 반환 |
+| `groupIds` | OR | 해당 그룹의 태그 중 **하나라도** 있으면 반환 |
+
+```graphql
+# 태그 필터링 입력 타입
+input TagFilterInput {
+  tagIds: [UUID!]    # AND 방식
+  groupIds: [UUID!]  # OR 방식 (그룹 내 태그)
+}
+```
+
+### 응답 타입
+
+```graphql
+type Calendar {
+  days: [Day!]!
+}
+
+type Day {
+  date: Date!
+  events: [Event!]!
+}
+
+type Event {
+  id: UUID!
+  title: String!
+  description: String
+  startAt: DateTime!
+  endAt: DateTime!
+  createdAt: DateTime!
+  isRecurring: Boolean!
+  parentId: UUID           # 반복 일정 원본 ID
+  instanceStart: DateTime  # 가상 인스턴스 시작 시간 (수정/삭제용)
+  tags: [TagType!]!
+}
+
+type TagType {
+  id: UUID!
+  name: String!
+  color: String!
+  description: String
+  groupId: UUID!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+```
+
+---
+
+## 주요 기능
+
+### 1. Todo-Schedule 자동 연동
+
+Todo에 `deadline`을 설정하면 Schedule이 자동으로 생성됩니다.
 
 ```typescript
-// POST /v1/todos
+// deadline이 있는 Todo 생성
 const response = await fetch('/v1/todos', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    title: "새 할 일",
-    description: "설명",
-    tag_group_id: "group-uuid",  // ✅ 필수: 그룹 지정
-    tag_ids: ["tag-uuid-1", "tag-uuid-2"],  // 선택: 세부 분류 태그
-    // start_time, end_time: 선택 (없으면 917초로 설정됨)
+    title: "프로젝트 마감",
+    tag_group_id: groupId,
+    tag_ids: [urgentTagId],
+    deadline: "2024-01-20T18:00:00Z"  // deadline 설정
   })
 });
 
 const todo = await response.json();
-// { id: "...", title: "새 할 일", tag_group_id: "group-uuid", tags: [...], ... }
 
-// ❌ 에러: tag_group_id 없이 생성 시도
-const invalidResponse = await fetch('/v1/todos', {
+// ✅ todo.schedules에 자동 생성된 Schedule 포함
+console.log(todo.schedules[0]);
+// {
+//   id: "...",
+//   title: "프로젝트 마감",
+//   start_time: "2024-01-20T18:00:00Z",
+//   end_time: "2024-01-20T19:00:00Z",  // deadline + 1시간
+//   source_todo_id: todo.id,
+//   tags: [{ name: "긴급", ... }]  // Todo의 태그가 복사됨
+// }
+```
+
+### 2. 태그 동기화
+
+Todo의 태그를 수정하면 연결된 Schedule의 태그도 자동으로 동기화됩니다.
+
+```typescript
+// Todo 태그 수정
+await fetch(`/v1/todos/${todoId}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    tag_ids: [newTag1, newTag2]  // 태그 변경
+  })
+});
+
+// ✅ 연결된 Schedule의 태그도 자동으로 동기화됨
+```
+
+### 3. 트리 구조 Todo
+
+Todo는 부모-자식 관계를 통해 트리 구조로 구성할 수 있습니다.
+
+```typescript
+// 부모 Todo 생성
+const parentTodo = await createTodo({
+  title: "프로젝트",
+  tag_group_id: groupId
+});
+
+// 자식 Todo 생성
+const childTodo = await createTodo({
+  title: "1단계: 설계",
+  tag_group_id: groupId,
+  parent_id: parentTodo.id  // 부모 지정
+});
+```
+
+### 4. 캘린더 태그 필터링
+
+GraphQL Calendar 쿼리에서 태그로 일정을 필터링할 수 있습니다.
+
+```typescript
+// 특정 태그가 있는 일정만 조회
+const query = `
+  query GetFilteredCalendar($startDate: Date!, $endDate: Date!, $tagFilter: TagFilterInput) {
+    calendar(startDate: $startDate, endDate: $endDate, tagFilter: $tagFilter) {
+      days {
+        date
+        events { id title tags { name } }
+      }
+    }
+  }
+`;
+
+const variables = {
+  startDate: "2024-01-01",
+  endDate: "2024-01-31",
+  tagFilter: {
+    tagIds: [urgentTagId]  // "긴급" 태그가 있는 일정만
+  }
+};
+```
+
+---
+
+## TypeScript 타입 정의
+
+```typescript
+// ============================================================
+// Enums
+// ============================================================
+
+export type TodoStatus = "UNSCHEDULED" | "SCHEDULED" | "DONE" | "CANCELLED";
+export type ScheduleState = "PLANNED" | "IN_PROGRESS" | "COMPLETED";
+
+// ============================================================
+// Tag & TagGroup
+// ============================================================
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+  group_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TagGroup {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+  goal_ratios?: Record<string, number>;
+  is_todo_group: boolean;
+  created_at: string;
+  updated_at: string;
+  tags: Tag[];
+}
+
+export interface TagGroupCreate {
+  name: string;
+  color: string;
+  description?: string;
+  is_todo_group?: boolean;
+}
+
+export interface TagCreate {
+  name: string;
+  color: string;
+  description?: string;
+  group_id: string;
+}
+
+// ============================================================
+// Schedule
+// ============================================================
+
+export interface Schedule {
+  id: string;
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  recurrence_rule?: string;
+  recurrence_end?: string;
+  parent_id?: string;
+  source_todo_id?: string;
+  state: ScheduleState;
+  created_at: string;
+  tags: Tag[];
+}
+
+// ============================================================
+// Todo
+// ============================================================
+
+export interface Todo {
+  id: string;
+  title: string;
+  description?: string;
+  deadline?: string;
+  tag_group_id: string;
+  parent_id?: string;
+  status: TodoStatus;
+  created_at: string;
+  tags: Tag[];
+  schedules: Schedule[];
+}
+
+export interface TodoCreate {
+  title: string;
+  description?: string;
+  tag_group_id: string;   // 필수!
+  tag_ids?: string[];
+  deadline?: string;
+  parent_id?: string;
+  status?: TodoStatus;
+}
+
+export interface TodoUpdate {
+  title?: string;
+  description?: string;
+  tag_group_id?: string;
+  tag_ids?: string[];
+  deadline?: string;
+  parent_id?: string;
+  status?: TodoStatus;
+}
+
+// ============================================================
+// API Response Types
+// ============================================================
+
+export interface TodoStats {
+  group_id?: string;
+  total_count: number;
+  by_tag: TagStat[];
+}
+
+export interface TagStat {
+  tag_id: string;
+  tag_name: string;
+  count: number;
+}
+
+// ============================================================
+// GraphQL Types
+// ============================================================
+
+export interface GqlEvent {
+  id: string;
+  title: string;
+  description?: string;
+  startAt: string;
+  endAt: string;
+  createdAt: string;
+  isRecurring: boolean;
+  parentId?: string;
+  instanceStart?: string;
+  tags: GqlTag[];
+}
+
+export interface GqlTag {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+  groupId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GqlDay {
+  date: string;
+  events: GqlEvent[];
+}
+
+export interface GqlCalendar {
+  days: GqlDay[];
+}
+
+export interface TagFilterInput {
+  tagIds?: string[];
+  groupIds?: string[];
+}
+```
+
+---
+
+## 사용 예시
+
+### 전체 워크플로우 예시
+
+```typescript
+// 1. 태그 그룹 생성
+const groupResponse = await fetch('/v1/tags/groups', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    title: "할 일",
-    // tag_group_id 누락!
+    name: "업무",
+    color: "#4A90D9",
+    is_todo_group: true
   })
 });
-// 422 Validation Error 발생
-```
+const group = await groupResponse.json();
 
-### Todo 그룹별 조회
-
-`group_ids` 파라미터로 특정 그룹에 속한 Todo를 조회할 수 있습니다.
-
-```typescript
-// GET /v1/todos?group_ids=group-uuid-1&group_ids=group-uuid-2
-const response = await fetch('/v1/todos?group_ids=group-uuid-1&group_ids=group-uuid-2');
-const todos = await response.json();
-
-// 결과: group-uuid-1 또는 group-uuid-2에 속한 모든 Todo
-// 모든 Todo는 tag_group_id를 가지므로 그룹별 필터링이 명확합니다
-```
-
-### Todo -> 일정 변환
-
-Todo를 일정으로 변환하려면 `PATCH /v1/todos/{todo_id}`를 사용합니다.
-
-#### 마감 시간이 있는 Todo -> 일정 변환
-
-마감 시간이 이미 설정된 Todo는 `is_todo=false`만 전송하면 됩니다.
-
-```typescript
-// PATCH /v1/todos/{todo_id}
-const response = await fetch(`/v1/todos/${todo.id}`, {
-  method: 'PATCH',
+// 2. 태그 생성
+const tagResponse = await fetch('/v1/tags', {
+  method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    is_todo: false
+    name: "긴급",
+    color: "#FF4444",
+    group_id: group.id
   })
 });
+const tag = await tagResponse.json();
 
-const schedule = await response.json();
-// 이제 일정이 되었습니다 (is_todo=false)
-```
-
-#### 마감 시간이 없는 Todo -> 일정 변환
-
-마감 시간이 없는 Todo(917초)를 일정으로 변환하려면 **마감 시간이 필수**입니다.
-
-```typescript
-// PATCH /v1/todos/{todo_id}
-const response = await fetch(`/v1/todos/${todo.id}`, {
-  method: 'PATCH',
+// 3. Todo 생성 (deadline 포함 → Schedule 자동 생성)
+const todoResponse = await fetch('/v1/todos', {
+  method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    is_todo: false,
-    start_time: "2024-01-20T10:00:00Z",  // 필수
-    end_time: "2024-01-20T12:00:00Z"     // 필수
+    title: "프로젝트 마감",
+    description: "최종 보고서 제출",
+    tag_group_id: group.id,
+    tag_ids: [tag.id],
+    deadline: "2024-01-20T18:00:00Z"
   })
 });
+const todo = await todoResponse.json();
 
-const schedule = await response.json();
-// 이제 일정이 되었습니다 (is_todo=false)
-```
+console.log("생성된 Todo:", todo);
+console.log("자동 생성된 Schedule:", todo.schedules[0]);
 
-**에러 처리:**
-```typescript
-try {
-  const response = await fetch(`/v1/todos/${todo.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      is_todo: false
-      // start_time, end_time 없음
-    })
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    if (error.error_type === 'DeadlineRequiredForConversionError') {
-      // 마감 시간이 필요합니다
-      console.error("마감 시간을 설정해주세요");
-    }
-  }
-} catch (error) {
-  console.error("변환 실패", error);
-}
-```
-
-### 일정 -> Todo 변환
-
-일정을 Todo로 변환하려면 `PATCH /v1/schedules/{schedule_id}`를 사용합니다.
-
-```typescript
-// PATCH /v1/schedules/{schedule_id}
-const response = await fetch(`/v1/schedules/${schedule.id}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    is_todo: true
-  })
-});
-
-const todo = await response.json();
-// 이제 Todo가 되었습니다 (is_todo=true)
-// start_time/end_time은 유지되어 마감 시간이 있는 Todo가 됩니다
-```
-
-## UI 표시 가이드
-
-### Todo 목록 뷰
-
-```typescript
-// Todo 목록 표시
-todos.forEach(todo => {
-  if (isTodoWithDeadline(todo)) {
-    // 마감 시간이 있는 Todo: 마감 시간 표시
-    displayTodoWithDeadline(todo);
-  } else {
-    // 마감 시간이 없는 Todo: 마감 시간 없음 표시
-    displayTodoWithoutDeadline(todo);
-  }
-});
-```
-
-### 일정 목록 뷰
-
-```typescript
-// 일정 목록 표시 (마감 시간이 있는 Todo도 포함)
-schedules.forEach(item => {
-  if (isSchedule(item)) {
-    // 일반 일정
-    displaySchedule(item);
-  } else if (isTodoWithDeadline(item)) {
-    // 마감 시간이 있는 Todo (일정 목록에도 표시됨)
-    displayTodoAsSchedule(item);
-  }
-});
-```
-
-### 변환 버튼 UI
-
-```typescript
-// Todo -> 일정 변환 버튼
-function TodoToScheduleButton({ todo }: { todo: Schedule }) {
-  const [isConverting, setIsConverting] = useState(false);
-  
-  const handleConvert = async () => {
-    if (isTodoWithoutDeadline(todo)) {
-      // 마감 시간이 없는 Todo: 마감 시간 입력 모달 표시
-      const deadline = await showDeadlineInputModal();
-      if (!deadline) return;
-      
-      setIsConverting(true);
-      try {
-        await fetch(`/v1/todos/${todo.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            is_todo: false,
-            start_time: deadline.start_time,
-            end_time: deadline.end_time
-          })
-        });
-        // 성공: 일정 목록으로 이동
-      } catch (error) {
-        // 에러 처리
-      } finally {
-        setIsConverting(false);
-      }
-    } else {
-      // 마감 시간이 있는 Todo: 바로 변환
-      setIsConverting(true);
-      try {
-        await fetch(`/v1/todos/${todo.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            is_todo: false
-          })
-        });
-        // 성공: 일정 목록으로 이동
-      } catch (error) {
-        // 에러 처리
-      } finally {
-        setIsConverting(false);
+// 4. 캘린더에서 조회 (GraphQL)
+const calendarQuery = `
+  query {
+    calendar(startDate: "2024-01-01", endDate: "2024-01-31") {
+      days {
+        date
+        events {
+          id
+          title
+          startAt
+          tags { name color }
+        }
       }
     }
-  };
-  
-  return (
-    <button onClick={handleConvert} disabled={isConverting}>
-      {isTodoWithoutDeadline(todo) 
-        ? "마감 시간 설정하고 일정으로 변환"
-        : "일정으로 변환"}
-    </button>
-  );
+  }
+`;
+
+const calendarResponse = await fetch('/v1/graphql', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ query: calendarQuery })
+});
+const calendarData = await calendarResponse.json();
+
+// 5. 태그로 필터링된 캘린더 조회
+const filteredQuery = `
+  query GetFiltered($tagFilter: TagFilterInput) {
+    calendar(startDate: "2024-01-01", endDate: "2024-01-31", tagFilter: $tagFilter) {
+      days {
+        date
+        events { id title }
+      }
+    }
+  }
+`;
+
+const filteredResponse = await fetch('/v1/graphql', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: filteredQuery,
+    variables: {
+      tagFilter: { tagIds: [tag.id] }
+    }
+  })
+});
+```
+
+### React Hook 예시
+
+```typescript
+import { useState, useEffect } from 'react';
+
+// Todo 목록 조회 훅
+function useTodos(groupId?: string) {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const fetchTodos = async () => {
+      try {
+        const params = groupId ? `?group_ids=${groupId}` : '';
+        const response = await fetch(`/v1/todos${params}`);
+        if (!response.ok) throw new Error('Failed to fetch todos');
+        const data = await response.json();
+        setTodos(data);
+      } catch (err) {
+        setError(err as Error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTodos();
+  }, [groupId]);
+
+  return { todos, loading, error };
 }
 
-// 일정 -> Todo 변환 버튼
-function ScheduleToTodoButton({ schedule }: { schedule: Schedule }) {
-  const [isConverting, setIsConverting] = useState(false);
-  
-  const handleConvert = async () => {
-    setIsConverting(true);
+// Todo 생성 훅
+function useCreateTodo() {
+  const [loading, setLoading] = useState(false);
+
+  const createTodo = async (data: TodoCreate): Promise<Todo> => {
+    setLoading(true);
     try {
-      await fetch(`/v1/schedules/${schedule.id}`, {
-        method: 'PATCH',
+      const response = await fetch('/v1/todos', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          is_todo: true
-        })
+        body: JSON.stringify(data)
       });
-      // 성공: Todo 목록으로 이동
-    } catch (error) {
-      // 에러 처리
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to create todo');
+      }
+      
+      return await response.json();
     } finally {
-      setIsConverting(false);
+      setLoading(false);
     }
   };
-  
+
+  return { createTodo, loading };
+}
+
+// 사용 예시
+function TodoList() {
+  const { todos, loading } = useTodos();
+  const { createTodo } = useCreateTodo();
+
+  const handleCreate = async () => {
+    const newTodo = await createTodo({
+      title: "새 할 일",
+      tag_group_id: "group-uuid",
+      deadline: new Date().toISOString()
+    });
+    console.log("생성됨:", newTodo);
+  };
+
+  if (loading) return <div>로딩 중...</div>;
+
   return (
-    <button onClick={handleConvert} disabled={isConverting}>
-      Todo로 변환
-    </button>
+    <div>
+      <button onClick={handleCreate}>Todo 추가</button>
+      {todos.map(todo => (
+        <div key={todo.id}>
+          <h3>{todo.title}</h3>
+          <p>상태: {todo.status}</p>
+          <p>태그: {todo.tags.map(t => t.name).join(', ')}</p>
+          {todo.deadline && <p>마감: {todo.deadline}</p>}
+        </div>
+      ))}
+    </div>
   );
 }
 ```
+
+---
 
 ## 주의사항
 
-1. **마감 시간이 없는 Todo 변환**
-   - 마감 시간이 없는 Todo(917초)를 일정으로 변환하려면 반드시 `start_time`과 `end_time`을 함께 전송해야 합니다.
-   - 마감 시간 없이 변환을 시도하면 `400 Bad Request` 에러가 발생합니다.
+### 1. tag_group_id는 필수
 
-2. **마감 시간이 있는 Todo 변환**
-   - 마감 시간이 이미 설정된 Todo는 `is_todo=false`만 전송하면 됩니다.
-   - 기존 마감 시간이 유지됩니다.
+Todo 생성 시 반드시 `tag_group_id`를 지정해야 합니다.
 
-3. **일정 -> Todo 변환**
-   - 일정을 Todo로 변환하면 `is_todo=true`가 되지만, `start_time`/`end_time`은 유지됩니다.
-   - 따라서 마감 시간이 있는 Todo가 됩니다.
+```typescript
+// ❌ 에러: tag_group_id 누락
+await fetch('/v1/todos', {
+  method: 'POST',
+  body: JSON.stringify({ title: "할 일" })  // 422 에러 발생
+});
 
-4. **일정 목록에서 Todo 표시**
-   - 마감 시간이 있는 Todo는 자동으로 일정 목록에도 표시됩니다.
-   - `GET /v1/schedules?start_date=...&end_date=...` 조회 시 포함됩니다.
+// ✅ 올바른 사용
+await fetch('/v1/todos', {
+  method: 'POST',
+  body: JSON.stringify({
+    title: "할 일",
+    tag_group_id: groupId  // 필수!
+  })
+});
+```
 
-5. **917초 상수**
-   - 마감 시간이 없는 Todo는 `start_time`이 `1970-01-01T00:15:17Z` (917초)로 설정됩니다.
-   - 이 값을 상수로 정의하여 비교에 사용하세요.
+### 2. deadline 설정 시 Schedule 자동 생성
 
-6. **그룹과 태그의 관계**
-   - Todo는 반드시 `tag_group_id`로 그룹을 지정해야 합니다 (필수).
-   - 태그는 그룹 내에서 세부 분류를 위한 선택적 도구입니다.
-   - `group_ids`로 조회 시 해당 그룹의 모든 Todo가 반환됩니다.
+- Schedule의 `start_time`은 Todo의 `deadline`과 동일
+- Schedule의 `end_time`은 `deadline + 1시간`으로 자동 설정
+- Todo의 태그가 Schedule에 자동으로 복사됨
 
-## 요약
+### 3. 태그 동기화
 
-### 변환 API
+Todo의 태그를 수정하면 연결된 모든 Schedule의 태그도 함께 업데이트됩니다.
 
-| 변환 방향 | API | 필수 필드 | 설명 |
-|---------|-----|----------|------|
-| Todo(마감시간 있음) -> 일정 | `PATCH /v1/todos/{id}` | `is_todo: false` | 마감 시간 유지 |
-| Todo(마감시간 없음) -> 일정 | `PATCH /v1/todos/{id}` | `is_todo: false`, `start_time`, `end_time` | 마감 시간 필수 |
-| 일정 -> Todo | `PATCH /v1/schedules/{id}` | `is_todo: true` | 마감 시간 유지 (있는 Todo가 됨) |
+### 4. 삭제 시 CASCADE
 
-### 그룹 관련 API
+- Todo 삭제 → 연결된 Schedule도 함께 삭제
+- TagGroup 삭제 → 그룹 내 모든 Tag도 함께 삭제
 
-| 기능 | API | 파라미터 | 설명 |
-|-----|-----|---------|------|
-| Todo 생성 | `POST /v1/todos` | `tag_group_id` (필수), `tag_ids` (선택) | 그룹 지정 필수, 태그는 선택 |
-| 그룹별 Todo 조회 | `GET /v1/todos` | `group_ids` | 지정된 그룹의 모든 Todo 조회 |
-| Todo 그룹 변경 | `PATCH /v1/todos/{id}` | `tag_group_id` | 그룹 연결 변경 |
+### 5. 날짜/시간 형식
 
-이 가이드를 참고하여 프론트엔드에서 Todo와 일정 변환을 올바르게 처리하세요!
+모든 datetime 필드는 **ISO 8601** 형식을 사용합니다.
 
+```typescript
+// ✅ 올바른 형식
+"2024-01-20T10:00:00Z"      // UTC
+"2024-01-20T19:00:00+09:00" // 타임존 포함
+
+// GraphQL Date 필드 (날짜만)
+"2024-01-20"
+```
+
+---
+
+## API 요약
+
+### Todo API
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/v1/todos` | Todo 생성 |
+| GET | `/v1/todos` | Todo 목록 조회 |
+| GET | `/v1/todos/{id}` | Todo 단건 조회 |
+| PATCH | `/v1/todos/{id}` | Todo 수정 |
+| DELETE | `/v1/todos/{id}` | Todo 삭제 |
+| GET | `/v1/todos/stats` | Todo 통계 조회 |
+
+### Tag API
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/v1/tags/groups` | 태그 그룹 생성 |
+| GET | `/v1/tags/groups` | 태그 그룹 목록 조회 |
+| PATCH | `/v1/tags/groups/{id}` | 태그 그룹 수정 |
+| DELETE | `/v1/tags/groups/{id}` | 태그 그룹 삭제 |
+| POST | `/v1/tags` | 태그 생성 |
+| GET | `/v1/tags` | 태그 목록 조회 |
+| PATCH | `/v1/tags/{id}` | 태그 수정 |
+| DELETE | `/v1/tags/{id}` | 태그 삭제 |
+
+### GraphQL API
+
+| Query | 설명 |
+|-------|------|
+| `calendar(startDate, endDate, tagFilter)` | 캘린더 데이터 조회 |
+
+---
+
+이 가이드를 참고하여 프론트엔드에서 Todo와 관련 기능을 구현하세요!
