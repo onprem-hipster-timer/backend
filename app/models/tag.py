@@ -92,6 +92,29 @@ class TimerTag(SQLModel, table=True):
     )
 
 
+class TodoTag(SQLModel, table=True):
+    """Todo ↔ Tag 다대다 중간 테이블"""
+    __tablename__ = "todo_tag"
+    __table_args__ = (
+        UniqueConstraint('todo_id', 'tag_id', name='uq_todo_tag'),
+    )
+
+    todo_id: UUID = Field(
+        sa_column=Column(
+            ForeignKey("todo.id", ondelete="CASCADE"),
+            nullable=False,
+            primary_key=True,
+        )
+    )
+    tag_id: UUID = Field(
+        sa_column=Column(
+            ForeignKey("tag.id", ondelete="CASCADE"),
+            nullable=False,
+            primary_key=True,
+        )
+    )
+
+
 # ============================================================
 # 메인 모델
 # ============================================================

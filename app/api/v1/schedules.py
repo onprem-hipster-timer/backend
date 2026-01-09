@@ -160,15 +160,10 @@ async def update_schedule(
     - 일반 일정: schedule_id로 조회하여 업데이트
     - 가상 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송
     
-    ## 일정 -> Todo 변환
-    
-    `is_todo=true`로 설정하면 일정을 Todo로 변환할 수 있습니다.
-    변환 후에도 start_time/end_time은 유지되어 마감 시간이 있는 Todo가 됩니다.
-    
     ### 요청 예시
     ```json
     {
-        "is_todo": true
+        "title": "업데이트된 제목"
     }
     ```
     

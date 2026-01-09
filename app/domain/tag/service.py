@@ -80,21 +80,26 @@ class TagService:
         태그 그룹 삭제
         
         비즈니스 로직:
-        - Todo (is_todo=True): 삭제 (그룹 필수이므로)
-        - 일정 (is_todo=False): tag_group_id를 NULL로만 설정 (삭제 안 함)
+        - Todo: 삭제 (그룹 필수이므로)
+        - 일정: tag_group_id를 NULL로만 설정 (삭제 안 함)
         - 태그: CASCADE로 자동 삭제
         """
         tag_group = crud.get_tag_group(self.session, group_id)
         if not tag_group:
             _raise_group_not_found(group_id)
 
-        # 1. 해당 그룹의 Todo 삭제 (is_todo=True인 Schedule)
-        from app.crud import schedule as schedule_crud
-        todos = schedule_crud.get_todos_by_tag_group_id(self.session, group_id)
+        # 1. 해당 그룹의 Todo 삭제 (Todo 모델 직접 사용)
+        from app.models.todo import Todo as TodoModel
+        from app.domain.todo.service import TodoService
+        from sqlmodel import select
+        
+        todo_service = TodoService(self.session)
+        todos = todo_service.get_all_todos(group_ids=[group_id])
         for todo in todos:
-            schedule_crud.delete_schedule(self.session, todo)
+            todo_service.delete_todo(todo.id)
 
-        # 2. 일정의 tag_group_id를 NULL로 설정 (is_todo=False인 Schedule)
+        # 2. 일정의 tag_group_id를 NULL로 설정
+        from app.crud import schedule as schedule_crud
         schedule_crud.clear_tag_group_id_from_schedules(self.session, group_id)
 
         # 3. 그룹 삭제 (태그는 CASCADE로 자동 삭제)
@@ -321,3 +326,48 @@ class TagService:
             crud.add_timer_tag(self.session, timer_id, tag_id)
 
         return self.get_timer_tags(timer_id)
+
+    # ============================================================
+    # Todo-Tag 관계 관리
+    # ============================================================
+
+    def add_tag_to_todo(self, todo_id: UUID, tag_id: UUID) -> None:
+        """Todo에 태그 추가"""
+        # 태그 존재 확인
+        tag = crud.get_tag(self.session, tag_id)
+        if not tag:
+            _raise_tag_not_found(tag_id)
+
+        # 이미 연결되어 있는지 확인
+        existing = crud.get_todo_tag(self.session, todo_id, tag_id)
+        if existing:
+            return  # 이미 연결됨
+
+        crud.add_todo_tag(self.session, todo_id, tag_id)
+
+    def remove_tag_from_todo(self, todo_id: UUID, tag_id: UUID) -> None:
+        """Todo에서 태그 제거"""
+        todo_tag = crud.get_todo_tag(self.session, todo_id, tag_id)
+        if todo_tag:
+            crud.delete_todo_tag(self.session, todo_tag)
+
+    def get_todo_tags(self, todo_id: UUID) -> List[Tag]:
+        """Todo의 태그 조회"""
+        return crud.get_todo_tags(self.session, todo_id)
+
+    def set_todo_tags(self, todo_id: UUID, tag_ids: List[UUID]) -> List[Tag]:
+        """Todo의 태그 일괄 설정 (기존 태그 교체)"""
+        # 태그 존재 확인
+        for tag_id in tag_ids:
+            tag = crud.get_tag(self.session, tag_id)
+            if not tag:
+                _raise_tag_not_found(tag_id)
+
+        # 기존 태그 연결 삭제
+        crud.delete_all_todo_tags(self.session, todo_id)
+
+        # 새 태그 연결
+        for tag_id in tag_ids:
+            crud.add_todo_tag(self.session, todo_id, tag_id)
+
+        return self.get_todo_tags(todo_id)

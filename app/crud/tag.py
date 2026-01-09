@@ -11,7 +11,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TimerTag
+from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TimerTag, TodoTag
 
 
 # ============================================================
@@ -246,5 +246,57 @@ def delete_all_timer_tags(session: Session, timer_id: UUID) -> None:
     statement = select(TimerTag).where(TimerTag.timer_id == timer_id)
     timer_tags = session.exec(statement).all()
     for tt in timer_tags:
+        session.delete(tt)
+    # commit은 get_db_transactional이 처리
+
+
+# ============================================================
+# Todo-Tag 관계 CRUD
+# ============================================================
+
+def add_todo_tag(session: Session, todo_id: UUID, tag_id: UUID) -> "TodoTag":
+    """Todo에 태그 추가"""
+    from app.models.tag import TodoTag
+    todo_tag = TodoTag(todo_id=todo_id, tag_id=tag_id)
+    session.add(todo_tag)
+    session.flush()  # ID를 얻기 위해 flush
+    session.refresh(todo_tag)
+    return todo_tag
+
+
+def get_todo_tag(session: Session, todo_id: UUID, tag_id: UUID) -> Optional["TodoTag"]:
+    """Todo-태그 관계 조회"""
+    from app.models.tag import TodoTag
+    statement = select(TodoTag).where(
+        TodoTag.todo_id == todo_id,
+        TodoTag.tag_id == tag_id
+    )
+    return session.exec(statement).first()
+
+
+def get_todo_tags(session: Session, todo_id: UUID) -> List[Tag]:
+    """Todo의 모든 태그 조회"""
+    from app.models.tag import TodoTag
+    statement = (
+        select(Tag)
+        .join(TodoTag)
+        .where(TodoTag.todo_id == todo_id)
+        .order_by(Tag.name)
+    )
+    return list(session.exec(statement).all())
+
+
+def delete_todo_tag(session: Session, todo_tag: "TodoTag") -> None:
+    """Todo에서 태그 제거"""
+    session.delete(todo_tag)
+    # commit은 get_db_transactional이 처리
+
+
+def delete_all_todo_tags(session: Session, todo_id: UUID) -> None:
+    """Todo의 모든 태그 제거"""
+    from app.models.tag import TodoTag
+    statement = select(TodoTag).where(TodoTag.todo_id == todo_id)
+    todo_tags = session.exec(statement).all()
+    for tt in todo_tags:
         session.delete(tt)
     # commit은 get_db_transactional이 처리

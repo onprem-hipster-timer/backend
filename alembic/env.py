@@ -34,6 +34,8 @@ from app.models import (  # noqa: E402, F401
     Tag,
     ScheduleTag,
     ScheduleExceptionTag,
+    TodoTag,
+    Todo,
 )
 from app.models.tag import TimerTag  # noqa: E402, F401
 from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: E402, F401

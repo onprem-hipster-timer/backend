@@ -34,7 +34,8 @@ async def create_todo(
     """
     새 Todo 생성
     
-    Todo는 날짜가 없는 일정으로, start_time/end_time이 자동으로 설정됩니다.
+    Todo는 독립적인 엔티티입니다.
+    deadline이 있으면 별도의 Schedule이 자동으로 생성됩니다.
     """
     service = TodoService(session)
     todo = service.create_todo(data)
@@ -110,27 +111,12 @@ async def update_todo(
     """
     Todo 업데이트
     
-    title, description, tag_ids, start_time, end_time을 업데이트할 수 있습니다.
+    title, description, tag_ids, deadline, parent_id, status를 업데이트할 수 있습니다.
     
-    ## Todo -> 일정 변환
-    
-    `is_todo=false`로 설정하면 Todo를 일정으로 변환할 수 있습니다.
-    이 경우 **마감 시간(start_time, end_time)이 필수**입니다.
-    
-    - 기존에 마감 시간이 설정된 Todo: `is_todo=false`만 전송
-    - 마감 시간이 없는 Todo (917초): `is_todo=false`와 함께 `start_time`, `end_time` 필수
-    
-    ### 요청 예시 (마감 시간 없는 Todo를 일정으로 변환)
-    ```json
-    {
-        "is_todo": false,
-        "start_time": "2024-01-20T10:00:00Z",
-        "end_time": "2024-01-20T12:00:00Z"
-    }
-    ```
-    
-    ### 에러 응답
-    - 400 Bad Request: 마감 시간 없이 일정으로 변환 시도 (`DeadlineRequiredForConversionError`)
+    deadline 변경 시:
+    - deadline 추가: 새 Schedule 생성
+    - deadline 변경: 기존 Schedule 업데이트
+    - deadline 제거: 기존 Schedule 삭제
     """
     service = TodoService(session)
     todo = service.update_todo(todo_id, data)

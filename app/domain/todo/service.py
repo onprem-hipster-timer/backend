@@ -11,68 +11,75 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.crud import schedule as schedule_crud
 from app.domain.schedule.schema.dto import ScheduleCreate
+from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagRead
-from app.domain.todo.constants import TODO_DATETIME, TODO_DATETIME_END
-from app.domain.todo.exceptions import TodoNotFoundError, NotATodoError, DeadlineRequiredForConversionError
+from app.domain.todo.enums import TodoStatus
+from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import TodoCreate, TodoRead, TodoUpdate, TodoStats, TagStat
-from app.models.tag import Tag, ScheduleTag
+from app.models.tag import Tag, TodoTag
+from app.models.todo import Todo as TodoModel
 
 
 class TodoService:
     """
     Todo Service - 비즈니스 로직
     
-    Todo는 is_todo=True인 Schedule입니다.
-    마감 시간이 있으면 일정 목록에도 표시되고,
-    없으면 start_time=917초로 설정됩니다.
+    Todo는 독립적인 엔티티입니다.
+    deadline이 있으면 별도의 Schedule을 생성할 수 있습니다.
     """
 
     def __init__(self, session: Session):
         self.session = session
-
-    def _is_todo(self, schedule: Todo) -> bool:
-        """Schedule이 Todo인지 확인 (is_todo 필드 사용)"""
-        return schedule.is_todo
 
     def create_todo(self, data: TodoCreate) -> Todo:
         """
         Todo 생성
 
         비즈니스 로직:
-        - is_todo=True로 설정
-        - start_time/end_time이 제공되지 않으면 TODO_DATETIME (917초)으로 설정
-        - tag_group_id 필수 (그룹에 속해야 함)
-        - 태그 설정 (tag_ids가 있는 경우, 선택 사항)
+        - Todo 모델 직접 생성
+        - parent_id 지원 (부모 Todo 지정)
+        - deadline이 있으면 별도 Schedule 생성 및 source_todo_id 설정
+        - 태그는 TagService.set_todo_tags() 사용
+        - status 기본값: UNSCHEDULED
 
         :param data: Todo 생성 데이터
         :return: 생성된 Todo
         """
-        # 마감 시간이 없으면 TODO_DATETIME 사용
-        start_time = data.start_time if data.start_time else TODO_DATETIME
-        end_time = data.end_time if data.end_time else TODO_DATETIME_END
-        
-        # ScheduleCreate로 변환
-        schedule_data = ScheduleCreate(
+        # Todo 모델 생성
+        todo = TodoModel(
             title=data.title,
             description=data.description,
-            start_time=start_time,
-            end_time=end_time,
-            tag_ids=data.tag_ids,
-            tag_group_id=data.tag_group_id,  # 그룹 직접 연결
-            is_todo=True,  # Todo 플래그 설정
+            deadline=data.deadline,
+            tag_group_id=data.tag_group_id,
+            parent_id=data.parent_id,
+            status=data.status if data.status is not None else TodoStatus.UNSCHEDULED,
         )
+        self.session.add(todo)
+        self.session.flush()
+        self.session.refresh(todo)
         
-        # Schedule 생성 CRUD 직접 사용
-        todo = schedule_crud.create_schedule(self.session, schedule_data)
+        # deadline이 있으면 Schedule 생성
+        if data.deadline:
+            from datetime import timedelta
+            # deadline을 start_time으로, end_time은 deadline + 1시간으로 설정
+            schedule_data = ScheduleCreate(
+                title=data.title,
+                description=data.description,
+                start_time=data.deadline,
+                end_time=data.deadline + timedelta(hours=1),  # deadline + 1시간
+                source_todo_id=todo.id,
+                state=None,  # 기본값 PLANNED
+            )
+            schedule_service = ScheduleService(self.session)
+            schedule_service.create_schedule(schedule_data)
         
         # 태그 설정
         if data.tag_ids:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
-            tag_service.set_schedule_tags(todo.id, data.tag_ids)
+            tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
         
         return todo
@@ -84,45 +91,43 @@ class TodoService:
         :param todo_id: Todo ID
         :return: Todo
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
-        :raises NotATodoError: 일정이 Todo가 아닌 경우
         """
-        todo = schedule_crud.get_schedule(self.session, todo_id)
+        todo = self.session.get(TodoModel, todo_id)
         if not todo:
             raise TodoNotFoundError()
-        
-        if not self._is_todo(todo):
-            raise NotATodoError()
-        
         return todo
 
     def get_all_todos(
             self,
             tag_ids: Optional[List[UUID]] = None,
             group_ids: Optional[List[UUID]] = None,
+            parent_id: Optional[UUID] = None,
     ) -> List[Todo]:
         """
         모든 Todo 조회 (태그/그룹 필터링 지원)
         
         비즈니스 로직:
-        - is_todo=True인 일정만 조회
         - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
         - group_ids: 해당 그룹에 속한 Todo 반환 (tag_group_id로 직접 연결)
+        - parent_id: 부모 Todo로 필터링
         
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
         :param group_ids: 필터링할 그룹 ID 리스트
+        :param parent_id: 부모 Todo ID (선택)
         :return: Todo 리스트
         """
-        # Todo만 조회 (is_todo=True인 일정, 그룹 필수)
         statement = (
-            select(Todo)
-            .where(Todo.is_todo == True)
-            .where(Todo.tag_group_id.isnot(None))  # 그룹이 있는 Todo만
-            .order_by(Todo.created_at.desc())
+            select(TodoModel)
+            .order_by(TodoModel.created_at.desc())
         )
         
         # 그룹 필터링
         if group_ids:
-            statement = statement.where(Todo.tag_group_id.in_(group_ids))
+            statement = statement.where(TodoModel.tag_group_id.in_(group_ids))
+        
+        # 부모 필터링
+        if parent_id is not None:
+            statement = statement.where(TodoModel.parent_id == parent_id)
         
         todos = list(self.session.exec(statement).all())
         
@@ -150,8 +155,8 @@ class TodoService:
         # Todo별 태그 조회 (N+1 방지)
         todo_ids = [t.id for t in todos]
         statement = (
-            select(ScheduleTag.schedule_id, ScheduleTag.tag_id)
-            .where(ScheduleTag.schedule_id.in_(todo_ids))
+            select(TodoTag.todo_id, TodoTag.tag_id)
+            .where(TodoTag.todo_id.in_(todo_ids))
         )
         todo_tag_rows = self.session.exec(statement).all()
         
@@ -177,41 +182,67 @@ class TodoService:
         Todo 업데이트
         
         비즈니스 로직:
-        - Todo를 일정으로 변환하려면 is_todo=false와 함께 마감 시간이 필요
-        - 마감 시간이 없는 Todo(917초)는 변환 시 start_time/end_time 필수
+        - Todo 모델 직접 업데이트
+        - deadline 변경 시 Schedule 생성/업데이트/삭제 처리
+        - status 업데이트 지원
+        - parent_id 업데이트 지원 (트리 구조 변경)
+        - 태그는 TagService.set_todo_tags() 사용
         
         :param todo_id: Todo ID
         :param data: 업데이트 데이터
         :return: 업데이트된 Todo
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
-        :raises NotATodoError: 일정이 Todo가 아닌 경우
-        :raises DeadlineRequiredForConversionError: Todo를 일정으로 변환할 때 마감 시간이 없는 경우
         """
         todo = self.get_todo(todo_id)
         
         # 업데이트 데이터 준비
         update_dict = data.model_dump(exclude_unset=True)
         
-        # Todo -> 일정 변환 검증
-        is_converting_to_schedule = update_dict.get('is_todo') is False
-        if is_converting_to_schedule:
-            # 현재 Todo의 start_time이 917초인지 확인
-            has_no_deadline = todo.start_time == TODO_DATETIME
+        # deadline 변경 처리
+        deadline_updated = 'deadline' in update_dict
+        old_deadline = todo.deadline
+        new_deadline = update_dict.get('deadline')
+        
+        if deadline_updated:
+            # 기존 Schedule 조회
+            from app.crud.schedule import get_schedules_by_source_todo_id
+            existing_schedules = get_schedules_by_source_todo_id(self.session, todo_id)
             
-            # 새로 전달된 start_time/end_time 확인
-            new_start_time = update_dict.get('start_time')
-            new_end_time = update_dict.get('end_time')
-            
-            # 마감 시간이 없는 Todo를 일정으로 변환하려면 새 마감 시간이 필수
-            if has_no_deadline and (new_start_time is None or new_end_time is None):
-                raise DeadlineRequiredForConversionError()
+            if old_deadline and not new_deadline:
+                # deadline 제거: 기존 Schedule 삭제
+                schedule_service = ScheduleService(self.session)
+                for schedule in existing_schedules:
+                    schedule_service.delete_schedule(schedule.id)
+            elif not old_deadline and new_deadline:
+                # deadline 추가: 새 Schedule 생성
+                schedule_data = ScheduleCreate(
+                    title=todo.title,
+                    description=todo.description,
+                    start_time=new_deadline,
+                    end_time=new_deadline,
+                    source_todo_id=todo.id,
+                    state=None,  # 기본값 PLANNED
+                )
+                schedule_service = ScheduleService(self.session)
+                schedule_service.create_schedule(schedule_data)
+            elif old_deadline and new_deadline:
+                # deadline 변경: 기존 Schedule 업데이트
+                if existing_schedules:
+                    from datetime import timedelta
+                    schedule_service = ScheduleService(self.session)
+                    from app.domain.schedule.schema.dto import ScheduleUpdate
+                    schedule_update = ScheduleUpdate(
+                        start_time=new_deadline,
+                        end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
+                    )
+                    schedule_service.update_schedule(existing_schedules[0].id, schedule_update)
         
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_dict
         if tag_ids_updated:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
-            tag_service.set_schedule_tags(todo.id, update_dict['tag_ids'] or [])
+            tag_service.set_todo_tags(todo.id, update_dict['tag_ids'] or [])
             del update_dict['tag_ids']
         
         # 나머지 필드 업데이트
@@ -227,12 +258,37 @@ class TodoService:
         """
         Todo 삭제
         
+        비즈니스 로직:
+        - 외부 캘린더 sync 고려: 서비스 로직에서 명시적으로 연관된 Schedule 삭제
+        - source_todo_id로 연관된 모든 Schedule 조회
+        - 각 Schedule에 대해 ScheduleService.delete_schedule() 명시적 호출
+        - 그 후 Todo 삭제
+        - 자식 Todo 처리 (함께 삭제 - cascade)
+        
         :param todo_id: Todo ID
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
-        :raises NotATodoError: 일정이 Todo가 아닌 경우
         """
         todo = self.get_todo(todo_id)
-        schedule_crud.delete_schedule(self.session, todo)
+        
+        # 연관된 Schedule 명시적 삭제 (외부 캘린더 sync 고려)
+        from app.crud.schedule import get_schedules_by_source_todo_id
+        schedules = get_schedules_by_source_todo_id(self.session, todo_id)
+        
+        schedule_service = ScheduleService(self.session)
+        for schedule in schedules:
+            schedule_service.delete_schedule(schedule.id)
+        
+        # 자식 Todo도 함께 삭제 (cascade)
+        # DB 레벨 cascade로 처리되지만, 명시적으로 확인
+        children = self.session.exec(
+            select(TodoModel).where(TodoModel.parent_id == todo_id)
+        ).all()
+        for child in children:
+            self.delete_todo(child.id)  # 재귀적 삭제
+        
+        # Todo 삭제
+        self.session.delete(todo)
+        # commit은 get_db_transactional이 처리
 
     def get_todo_tags(self, todo_id: UUID) -> List[Tag]:
         """
@@ -241,13 +297,9 @@ class TodoService:
         :param todo_id: Todo ID
         :return: 태그 리스트
         """
-        statement = (
-            select(Tag)
-            .join(ScheduleTag)
-            .where(ScheduleTag.schedule_id == todo_id)
-            .order_by(Tag.name)
-        )
-        return list(self.session.exec(statement).all())
+        from app.domain.tag.service import TagService
+        tag_service = TagService(self.session)
+        return tag_service.get_todo_tags(todo_id)
 
     def get_todo_stats(self, group_id: Optional[UUID] = None) -> TodoStats:
         """
@@ -270,9 +322,9 @@ class TodoService:
         
         # 태그별 카운트 집계
         statement = (
-            select(ScheduleTag.tag_id, Tag.name)
+            select(TodoTag.tag_id, Tag.name)
             .join(Tag)
-            .where(ScheduleTag.schedule_id.in_(todo_ids))
+            .where(TodoTag.todo_id.in_(todo_ids))
         )
         
         # 그룹 필터링
@@ -308,4 +360,22 @@ class TodoService:
         """
         tags = self.get_todo_tags(todo.id)
         tag_reads = [TagRead.model_validate(tag) for tag in tags]
-        return TodoRead.from_schedule(todo, tags=tag_reads)
+        
+        # 연관된 Schedule 조회
+        from app.crud.schedule import get_schedules_by_source_todo_id
+        from app.domain.schedule.schema.dto import ScheduleRead
+        schedules = get_schedules_by_source_todo_id(self.session, todo.id)
+        schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
+        
+        return TodoRead(
+            id=todo.id,
+            title=todo.title,
+            description=todo.description,
+            deadline=todo.deadline,
+            tag_group_id=todo.tag_group_id,
+            parent_id=todo.parent_id,
+            status=todo.status,
+            created_at=todo.created_at,
+            tags=tag_reads,
+            schedules=schedule_reads,
+        )

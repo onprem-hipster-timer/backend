@@ -15,6 +15,7 @@ from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
+from app.domain.schedule.enums import ScheduleState
 from app.utils.validators import validate_time_order
 
 if TYPE_CHECKING:
@@ -30,8 +31,9 @@ class ScheduleCreate(CustomModel):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결
-    is_todo: bool = False  # Todo 여부
+    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
+    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
+    state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -57,8 +59,9 @@ class ScheduleRead(CustomModel):
     recurrence_rule: Optional[str] = None
     recurrence_end: Optional[datetime] = None
     parent_id: Optional[UUID] = None  # 원본 일정 ID (가상 인스턴스인 경우)
-    is_todo: bool = False  # Todo 여부
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결
+    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
+    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
+    state: ScheduleState  # 상태
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
 
@@ -102,8 +105,9 @@ class ScheduleUpdate(CustomModel):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결
-    is_todo: Optional[bool] = None  # Todo 여부
+    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
+    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
+    state: Optional[ScheduleState] = None  # 상태
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

@@ -13,7 +13,9 @@ from uuid import UUID
 from pydantic import ConfigDict
 
 from app.core.base_model import CustomModel
+from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
+from app.domain.todo.enums import TodoStatus
 
 
 class TodoCreate(CustomModel):
@@ -22,9 +24,9 @@ class TodoCreate(CustomModel):
     description: Optional[str] = None
     tag_group_id: UUID  # Todo가 속할 그룹 (필수)
     tag_ids: Optional[List[UUID]] = None  # 태그는 선택
-    # 마감 시간 (선택) - 없으면 917초로 설정됨
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    deadline: Optional[datetime] = None  # 마감기간 (선택)
+    parent_id: Optional[UUID] = None  # 부모 Todo ID (트리 구조)
+    status: Optional[TodoStatus] = TodoStatus.UNSCHEDULED  # 상태 (기본값: UNSCHEDULED)
 
 
 class TodoRead(CustomModel):
@@ -34,52 +36,24 @@ class TodoRead(CustomModel):
     id: UUID
     title: str
     description: Optional[str] = None
-    is_todo: bool = True  # 항상 True
+    deadline: Optional[datetime] = None  # 마감기간
     tag_group_id: UUID  # 소속 그룹 ID (필수)
-    start_time: datetime  # 마감 시간이 있으면 실제 시간, 없으면 917초
-    end_time: datetime
+    parent_id: Optional[UUID] = None  # 부모 Todo ID
+    status: TodoStatus  # 상태
     created_at: datetime
     tags: List[TagRead] = []
-
-    @classmethod
-    def from_schedule(cls, schedule, tags: Optional[List[TagRead]] = None) -> "TodoRead":
-        """
-        Schedule 모델에서 TodoRead 생성
-        
-        :param schedule: Schedule 모델 인스턴스
-        :param tags: 태그 목록 (선택)
-        :return: TodoRead 인스턴스
-        :raises ValueError: tag_group_id가 None인 경우 (Todo는 그룹 필수)
-        """
-        if schedule.tag_group_id is None:
-            raise ValueError("Todo must have a tag_group_id")
-        return cls(
-            id=schedule.id,
-            title=schedule.title,
-            description=schedule.description,
-            is_todo=schedule.is_todo,
-            tag_group_id=schedule.tag_group_id,
-            start_time=schedule.start_time,
-            end_time=schedule.end_time,
-            created_at=schedule.created_at,
-            tags=tags or [],
-        )
+    schedules: List[ScheduleRead] = []  # 연관된 Schedule 목록
 
 
 class TodoUpdate(CustomModel):
-    """Todo 업데이트 DTO
-
-    Todo를 일정으로 변환하려면 is_todo=false와 함께
-    start_time/end_time을 반드시 지정해야 합니다.
-    """
+    """Todo 업데이트 DTO"""
     title: Optional[str] = None
     description: Optional[str] = None
     tag_group_id: Optional[UUID] = None  # 소속 그룹 변경
     tag_ids: Optional[List[UUID]] = None  # 태그는 선택
-    # 마감 시간 변경 가능
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    is_todo: Optional[bool] = None  # Todo <-> 일정 변환용
+    deadline: Optional[datetime] = None  # 마감기간 변경
+    parent_id: Optional[UUID] = None  # 부모 Todo 변경
+    status: Optional[TodoStatus] = None  # 상태 변경
 
 
 class TagStat(CustomModel):

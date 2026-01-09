@@ -2,11 +2,11 @@
 Todo Domain Model
 
 아키텍처 원칙:
-- Todo는 Schedule 테이블을 공유
-- Domain 레이어에서만 분리하여 관심사 분리
+- Todo는 독립적인 모델
+- Domain 레이어에서 ORM 모델을 직접 사용
 """
-from app.models.schedule import Schedule as ScheduleModel
+from app.models.todo import Todo as TodoModel
 
-# Todo는 Schedule 모델을 재사용
-Todo = ScheduleModel
+# Domain 모델은 ORM 모델과 동일하게 사용
+Todo = TodoModel
 

@@ -2,17 +2,19 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
 # ScheduleTag, ScheduleExceptionTag는 순환 참조 없이 import 가능
 # (tag.py에서 Schedule을 import하지 않으므로)
 from app.models.tag import ScheduleTag, ScheduleExceptionTag
+from app.domain.schedule.enums import ScheduleState
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
     from app.models.tag import Tag, TagGroup
+    from app.models.todo import Todo
 
 
 class Schedule(UUIDBase, TimestampMixin, table=True):
@@ -26,18 +28,35 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     parent_id: Optional[UUID] = None  # 원본 일정 ID (예외 인스턴스용)
 
-    # Todo 플래그
-    is_todo: bool = Field(default=False)  # Todo 여부 (True면 Todo 목록에 표시)
-
-    # Todo 그룹 직접 연결 (Todo 생성 시 필수)
+    # Todo 그룹 직접 연결 (레거시, 선택사항)
     tag_group_id: Optional[UUID] = Field(
         default=None,
         sa_column=Column(ForeignKey("tag_group.id", ondelete="SET NULL"), nullable=True)
+    )
+    
+    # Todo에서 생성된 Schedule 추적 (논리적 참조)
+    source_todo_id: Optional[UUID] = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("todo.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,  # 성능 최적화: Todo 삭제 시 연관 Schedule 조회용
+        )
+    )
+    
+    # Schedule 상태 enum
+    state: ScheduleState = Field(
+        default=ScheduleState.PLANNED,
+        sa_column=Column(
+            SQLEnum(ScheduleState, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=False,
+        )
     )
 
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
     tag_group: Optional["TagGroup"] = Relationship()
+    source_todo: Optional["Todo"] = Relationship(back_populates="schedules")
 
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(

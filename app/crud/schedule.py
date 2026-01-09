@@ -200,24 +200,6 @@ def get_schedule_exception_by_date(
     return result
 
 
-def get_todo_schedules(session: Session) -> list[Schedule]:
-    """
-    Todo 일정만 조회 (start_time=917초인 일정)
-    
-    :param session: DB 세션
-    :return: Todo 일정 리스트
-    """
-    from app.domain.todo.constants import TODO_DATETIME
-    
-    statement = (
-        select(Schedule)
-        .where(Schedule.start_time == TODO_DATETIME)
-        .order_by(Schedule.created_at.desc())
-    )
-    results = session.exec(statement)
-    return results.all()
-
-
 def create_schedule_exception(
         session: Session,
         parent_id,
@@ -256,26 +238,9 @@ def create_schedule_exception(
     return exception
 
 
-def get_todos_by_tag_group_id(session: Session, group_id: UUID) -> list[Schedule]:
-    """
-    그룹에 속한 Todo 조회 (is_todo=True)
-    
-    :param session: DB 세션
-    :param group_id: 태그 그룹 ID
-    :return: 해당 그룹에 속한 Todo 리스트
-    """
-    statement = (
-        select(Schedule)
-        .where(Schedule.tag_group_id == group_id)
-        .where(Schedule.is_todo == True)
-    )
-    results = session.exec(statement)
-    return list(results.all())
-
-
 def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Schedule]:
     """
-    그룹에 속한 일정 조회 (is_todo=False)
+    그룹에 속한 일정 조회 (Todo가 아닌 Schedule만)
     
     :param session: DB 세션
     :param group_id: 태그 그룹 ID
@@ -284,7 +249,7 @@ def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Sche
     statement = (
         select(Schedule)
         .where(Schedule.tag_group_id == group_id)
-        .where(Schedule.is_todo == False)
+        .where(Schedule.source_todo_id.is_(None))  # Todo에서 생성된 Schedule 제외
     )
     results = session.exec(statement)
     return list(results.all())
@@ -292,7 +257,7 @@ def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Sche
 
 def clear_tag_group_id_from_schedules(session: Session, group_id: UUID) -> None:
     """
-    일정의 tag_group_id를 NULL로 설정 (is_todo=False만)
+    일정의 tag_group_id를 NULL로 설정 (Todo가 아닌 Schedule만)
     
     :param session: DB 세션
     :param group_id: 태그 그룹 ID
@@ -301,3 +266,20 @@ def clear_tag_group_id_from_schedules(session: Session, group_id: UUID) -> None:
     for schedule in schedules:
         schedule.tag_group_id = None
     # commit은 get_db_transactional이 처리
+
+
+def get_schedules_by_source_todo_id(session: Session, todo_id: UUID) -> list[Schedule]:
+    """
+    Todo에서 생성된 Schedule 조회
+    
+    :param session: DB 세션
+    :param todo_id: Todo ID
+    :return: 해당 Todo에서 생성된 Schedule 리스트
+    """
+    statement = (
+        select(Schedule)
+        .where(Schedule.source_todo_id == todo_id)
+        .order_by(Schedule.start_time)
+    )
+    results = session.exec(statement)
+    return list(results.all())
