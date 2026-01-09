@@ -76,11 +76,28 @@ class TagService:
         return crud.update_tag_group(self.session, tag_group)
 
     def delete_tag_group(self, group_id: UUID) -> None:
-        """태그 그룹 삭제 (CASCADE로 태그도 삭제)"""
+        """
+        태그 그룹 삭제
+        
+        비즈니스 로직:
+        - Todo (is_todo=True): 삭제 (그룹 필수이므로)
+        - 일정 (is_todo=False): tag_group_id를 NULL로만 설정 (삭제 안 함)
+        - 태그: CASCADE로 자동 삭제
+        """
         tag_group = crud.get_tag_group(self.session, group_id)
         if not tag_group:
             _raise_group_not_found(group_id)
 
+        # 1. 해당 그룹의 Todo 삭제 (is_todo=True인 Schedule)
+        from app.crud import schedule as schedule_crud
+        todos = schedule_crud.get_todos_by_tag_group_id(self.session, group_id)
+        for todo in todos:
+            schedule_crud.delete_schedule(self.session, todo)
+
+        # 2. 일정의 tag_group_id를 NULL로 설정 (is_todo=False인 Schedule)
+        schedule_crud.clear_tag_group_id_from_schedules(self.session, group_id)
+
+        # 3. 그룹 삭제 (태그는 CASCADE로 자동 삭제)
         crud.delete_tag_group(self.session, tag_group)
 
     # ============================================================

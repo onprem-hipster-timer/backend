@@ -158,6 +158,60 @@ def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_ta
         service.get_tag(tag_id)
 
 
+def test_delete_tag_group_cascade_todos(test_session, sample_tag_group):
+    """태그 그룹 삭제 시 Todo는 삭제되고 일정은 보존됨"""
+    from datetime import datetime, UTC
+    from app.domain.todo.service import TodoService
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.schema.dto import ScheduleCreate
+    from app.crud import schedule as schedule_crud
+
+    tag_service = TagService(test_session)
+    todo_service = TodoService(test_session)
+    schedule_service = ScheduleService(test_session)
+    group_id = sample_tag_group.id
+
+    # 1. Todo 생성 (그룹에 속함)
+    todo_data = TodoCreate(
+        title="삭제될 Todo",
+        description="그룹 삭제 시 삭제되어야 함",
+        tag_group_id=group_id,
+    )
+    todo = todo_service.create_todo(todo_data)
+    todo_id = todo.id
+    test_session.flush()
+
+    # 2. 일정 생성 (그룹에 속함, is_todo=False)
+    schedule_data = ScheduleCreate(
+        title="보존될 일정",
+        description="그룹 삭제 시 보존되어야 함",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        tag_group_id=group_id,
+        is_todo=False,
+    )
+    schedule = schedule_service.create_schedule(schedule_data)
+    schedule_id = schedule.id
+    test_session.flush()
+
+    # 3. 그룹 삭제
+    tag_service.delete_tag_group(group_id)
+    test_session.flush()
+    test_session.expire_all()
+
+    # 4. Todo는 삭제되었는지 확인
+    from app.domain.todo.exceptions import TodoNotFoundError
+    with pytest.raises(TodoNotFoundError):
+        todo_service.get_todo(todo_id)
+
+    # 5. 일정은 보존되고 tag_group_id만 NULL인지 확인
+    saved_schedule = schedule_crud.get_schedule(test_session, schedule_id)
+    assert saved_schedule is not None
+    assert saved_schedule.title == "보존될 일정"
+    assert saved_schedule.tag_group_id is None  # NULL로 설정됨
+
+
 # ============================================================
 # Tag CRUD Tests
 # ============================================================

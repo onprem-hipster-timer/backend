@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from sqlmodel import Session, select
 
@@ -253,3 +254,50 @@ def create_schedule_exception(
     session.flush()
     session.refresh(exception)
     return exception
+
+
+def get_todos_by_tag_group_id(session: Session, group_id: UUID) -> list[Schedule]:
+    """
+    그룹에 속한 Todo 조회 (is_todo=True)
+    
+    :param session: DB 세션
+    :param group_id: 태그 그룹 ID
+    :return: 해당 그룹에 속한 Todo 리스트
+    """
+    statement = (
+        select(Schedule)
+        .where(Schedule.tag_group_id == group_id)
+        .where(Schedule.is_todo == True)
+    )
+    results = session.exec(statement)
+    return list(results.all())
+
+
+def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Schedule]:
+    """
+    그룹에 속한 일정 조회 (is_todo=False)
+    
+    :param session: DB 세션
+    :param group_id: 태그 그룹 ID
+    :return: 해당 그룹에 속한 일정 리스트
+    """
+    statement = (
+        select(Schedule)
+        .where(Schedule.tag_group_id == group_id)
+        .where(Schedule.is_todo == False)
+    )
+    results = session.exec(statement)
+    return list(results.all())
+
+
+def clear_tag_group_id_from_schedules(session: Session, group_id: UUID) -> None:
+    """
+    일정의 tag_group_id를 NULL로 설정 (is_todo=False만)
+    
+    :param session: DB 세션
+    :param group_id: 태그 그룹 ID
+    """
+    schedules = get_schedules_by_tag_group_id(session, group_id)
+    for schedule in schedules:
+        schedule.tag_group_id = None
+    # commit은 get_db_transactional이 처리

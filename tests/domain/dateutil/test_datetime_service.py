@@ -222,9 +222,7 @@ class TestGetDatetimeRange:
 
         # 둘 다 같은 결과를 반환해야 함
         assert result_ensure == result_to
-        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)
-
-        # KST timezone이 있는 경우
+        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)        # KST timezone이 있는 경우
         kst = timezone(timedelta(hours=9))
         kst_dt = datetime(2024, 1, 1, 19, 0, 0, tzinfo=kst)
         result_ensure = ensure_utc_naive(kst_dt)

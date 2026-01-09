@@ -195,14 +195,14 @@ def test_get_all_todos_empty(test_session):
     assert len(todos) >= 0
 
 
-def test_get_all_todos_multiple(test_session):
+def test_get_all_todos_multiple(test_session, sample_tag_group):
     """여러 Todo 목록 조회 테스트"""
     service = TodoService(test_session)
 
     # 여러 Todo 생성
-    todo1 = service.create_todo(TodoCreate(title="Todo 1"))
-    todo2 = service.create_todo(TodoCreate(title="Todo 2"))
-    todo3 = service.create_todo(TodoCreate(title="Todo 3"))
+    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id))
+    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_group_id=sample_tag_group.id))
+    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id))
     test_session.flush()
 
     todos = service.get_all_todos()
@@ -231,10 +231,10 @@ def test_get_all_todos_filtered_by_tag_ids(test_session, sample_tag_group):
     ))
 
     # Todo 생성
-    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_ids=[tag1.id]))
-    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_ids=[tag2.id]))
-    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_ids=[tag1.id, tag2.id]))
-    todo4 = service.create_todo(TodoCreate(title="Todo 4"))  # 태그 없음
+    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_group_id=sample_tag_group.id, tag_ids=[tag2.id]))
+    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id, tag2.id]))
+    todo4 = service.create_todo(TodoCreate(title="Todo 4", tag_group_id=sample_tag_group.id))  # 태그 없음
     test_session.flush()
 
     # tag1만 가진 Todo 조회
@@ -279,18 +279,18 @@ def test_get_all_todos_filtered_by_group_ids(test_session, sample_tag_group):
     ))
 
     # Todo 생성
-    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_ids=[tag1.id]))
-    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_ids=[tag2.id]))
-    todo3 = service.create_todo(TodoCreate(title="Todo 3"))  # 태그 없음
+    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_group_id=group2.id, tag_ids=[tag2.id]))
+    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id))  # 태그 없음
     test_session.flush()
 
-    # sample_tag_group의 태그를 가진 Todo 조회
+    # sample_tag_group에 속한 Todo 조회 (tag_group_id로 직접 연결)
     todos = service.get_all_todos(group_ids=[sample_tag_group.id])
     todo_ids = [t.id for t in todos]
     
-    assert todo1.id in todo_ids
-    assert todo2.id not in todo_ids
-    assert todo3.id not in todo_ids
+    assert todo1.id in todo_ids  # sample_tag_group에 속함
+    assert todo3.id in todo_ids  # sample_tag_group에 속함 (태그 없어도 포함)
+    assert todo2.id not in todo_ids  # group2에 속함
 
 
 def test_get_all_todos_filtered_by_tag_and_group_ids(test_session, sample_tag_group):
@@ -311,9 +311,9 @@ def test_get_all_todos_filtered_by_tag_and_group_ids(test_session, sample_tag_gr
     ))
 
     # Todo 생성
-    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_ids=[tag1.id]))
-    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_ids=[tag2.id]))
-    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_ids=[tag1.id, tag2.id]))
+    todo1 = service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    todo2 = service.create_todo(TodoCreate(title="Todo 2", tag_group_id=sample_tag_group.id, tag_ids=[tag2.id]))
+    todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id, tag2.id]))
     test_session.flush()
 
     # 그룹 필터링 후 태그 필터링
@@ -490,6 +490,7 @@ def test_get_todo_tags_multiple(test_session, sample_tag_group):
     # Todo 생성
     todo = service.create_todo(TodoCreate(
         title="태그 있는 Todo",
+        tag_group_id=sample_tag_group.id,
         tag_ids=[tag1.id, tag2.id],
     ))
     test_session.flush()
@@ -534,10 +535,10 @@ def test_get_todo_stats_with_todos(test_session, sample_tag_group):
     ))
 
     # Todo 생성
-    service.create_todo(TodoCreate(title="Todo 1", tag_ids=[tag1.id]))
-    service.create_todo(TodoCreate(title="Todo 2", tag_ids=[tag1.id]))
-    service.create_todo(TodoCreate(title="Todo 3", tag_ids=[tag2.id]))
-    service.create_todo(TodoCreate(title="Todo 4"))  # 태그 없음
+    service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    service.create_todo(TodoCreate(title="Todo 2", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id, tag_ids=[tag2.id]))
+    service.create_todo(TodoCreate(title="Todo 4", tag_group_id=sample_tag_group.id))  # 태그 없음
     test_session.flush()
 
     # 통계 조회
@@ -576,8 +577,8 @@ def test_get_todo_stats_filtered_by_group(test_session, sample_tag_group):
     ))
 
     # Todo 생성
-    service.create_todo(TodoCreate(title="Todo 1", tag_ids=[tag1.id]))
-    service.create_todo(TodoCreate(title="Todo 2", tag_ids=[tag2.id]))
+    service.create_todo(TodoCreate(title="Todo 1", tag_group_id=sample_tag_group.id, tag_ids=[tag1.id]))
+    service.create_todo(TodoCreate(title="Todo 2", tag_group_id=group2.id, tag_ids=[tag2.id]))
     test_session.flush()
 
     # sample_tag_group의 통계만 조회
