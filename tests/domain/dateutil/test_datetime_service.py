@@ -230,9 +230,7 @@ class TestGetDatetimeRange:
 
         # 둘 다 같은 결과를 반환해야 함
         assert result_ensure == result_to
-        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)
-
-    def test_ensure_utc_naive_with_microseconds(self):
+        assert result_ensure == datetime(2024, 1, 1, 10, 0, 0)    def test_ensure_utc_naive_with_microseconds(self):
         """마이크로초가 포함된 datetime 처리"""
         dt = datetime(2024, 1, 1, 10, 0, 0, 123456, tzinfo=timezone.utc)
         result = ensure_utc_naive(dt)

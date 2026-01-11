@@ -9,17 +9,32 @@ FastAPI Best Practices:
 from typing import List, Optional
 from uuid import UUID
 
+from sqlalchemy import case
 from sqlmodel import Session, select
 
 from app.domain.schedule.schema.dto import ScheduleCreate
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
-from app.domain.todo.exceptions import TodoNotFoundError
+from app.domain.todo.exceptions import (
+    TodoNotFoundError,
+    TodoInvalidParentError,
+    TodoSelfReferenceError,
+    TodoParentGroupMismatchError,
+    TodoCycleError,
+)
 from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import TodoCreate, TodoRead, TodoUpdate, TodoStats, TagStat
 from app.models.tag import Tag, TodoTag
 from app.models.todo import Todo as TodoModel
+
+# 정렬 우선순위용 상태 순서
+STATUS_ORDER: dict[TodoStatus, int] = {
+    TodoStatus.UNSCHEDULED: 0,
+    TodoStatus.SCHEDULED: 1,
+    TodoStatus.DONE: 2,
+    TodoStatus.CANCELLED: 3,
+}
 
 
 class TodoService:
@@ -32,6 +47,81 @@ class TodoService:
 
     def __init__(self, session: Session):
         self.session = session
+
+    def _validate_parent_id(
+            self,
+            parent_id: Optional[UUID],
+            child_tag_group_id: UUID,
+            child_id: Optional[UUID] = None,
+    ) -> None:
+        """
+        parent_id 유효성 검증
+        
+        검증 규칙:
+        - parent_id가 있으면 해당 Todo가 존재해야 함
+        - 자기 자신을 부모로 설정 불가
+        - 부모와 자식의 tag_group_id가 일치해야 함
+        - 순환 참조 생성 불가 (child_id가 parent_id의 조상인 경우)
+        
+        :param parent_id: 검증할 부모 Todo ID
+        :param child_tag_group_id: 자식 Todo의 tag_group_id
+        :param child_id: 자식 Todo ID (update 시 자기참조/순환 검증용)
+        :raises TodoSelfReferenceError: 자기 자신을 부모로 설정 시
+        :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
+        :raises TodoParentGroupMismatchError: 그룹이 일치하지 않을 때
+        :raises TodoCycleError: 순환 참조가 생성될 때
+        """
+        if parent_id is None:
+            return
+        
+        # 자기 자신을 부모로 설정 불가
+        if child_id is not None and parent_id == child_id:
+            raise TodoSelfReferenceError()
+        
+        # 부모 Todo 존재 확인
+        parent = self.session.get(TodoModel, parent_id)
+        if not parent:
+            raise TodoInvalidParentError()
+        
+        # 그룹 일관성 확인
+        if parent.tag_group_id != child_tag_group_id:
+            raise TodoParentGroupMismatchError()
+        
+        # 순환 참조 검사 (update 시에만 의미 있음)
+        # child_id를 parent_id의 조상으로 설정하면 cycle 발생
+        if child_id is not None:
+            self._check_cycle(parent_id, child_id)
+    
+    def _check_cycle(self, parent_id: UUID, child_id: UUID) -> None:
+        """
+        순환 참조 검사
+        
+        parent_id에서 조상 체인을 따라 올라가며 child_id에 도달하면 cycle.
+        무한 루프 방지를 위해 visited set 사용.
+        
+        :param parent_id: 새로 설정할 부모 ID
+        :param child_id: 현재 Todo ID (이 Todo가 parent_id의 조상이면 cycle)
+        :raises TodoCycleError: cycle이 감지되면
+        """
+        visited: set[UUID] = set()
+        current_id: Optional[UUID] = parent_id
+        
+        while current_id is not None:
+            # child_id에 도달하면 cycle
+            if current_id == child_id:
+                raise TodoCycleError()
+            
+            # 이미 방문한 노드면 기존 데이터에 cycle 있음 - 더 이상 진행 불가
+            if current_id in visited:
+                break
+            
+            visited.add(current_id)
+            
+            # 부모로 이동
+            current = self.session.get(TodoModel, current_id)
+            if current is None:
+                break
+            current_id = current.parent_id
 
     def create_todo(self, data: TodoCreate) -> Todo:
         """
@@ -46,7 +136,12 @@ class TodoService:
 
         :param data: Todo 생성 데이터
         :return: 생성된 Todo
+        :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
+        :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
         """
+        # parent_id 검증 (존재/그룹 일치)
+        self._validate_parent_id(data.parent_id, data.tag_group_id)
+        
         # Todo 모델 생성
         todo = TodoModel(
             title=data.title,
@@ -111,15 +206,34 @@ class TodoService:
         - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
         - group_ids: 해당 그룹에 속한 Todo 반환 (tag_group_id로 직접 연결)
         - parent_id: 부모 Todo로 필터링
+        - 정렬: STATUS_ORDER → deadline(오름차순, null은 뒤) → created_at(내림차순)
         
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
         :param group_ids: 필터링할 그룹 ID 리스트
         :param parent_id: 부모 Todo ID (선택)
         :return: Todo 리스트
         """
+        # 상태 우선순위 정렬을 위한 CASE 표현식
+        status_order_expr = case(
+            {status.value: order for status, order in STATUS_ORDER.items()},
+            value=TodoModel.status,
+            else_=999,
+        )
+        
+        # deadline null last 처리: null이면 1, 아니면 0
+        deadline_null_expr = case(
+            (TodoModel.deadline.is_(None), 1),
+            else_=0,
+        )
+        
         statement = (
             select(TodoModel)
-            .order_by(TodoModel.created_at.desc())
+            .order_by(
+                status_order_expr,           # 1. STATUS_ORDER 오름차순
+                deadline_null_expr,          # 2-1. deadline null은 뒤로
+                TodoModel.deadline.asc(),    # 2-2. deadline 오름차순
+                TodoModel.created_at.desc(), # 3. created_at 내림차순
+            )
         )
         
         # 그룹 필터링
@@ -134,9 +248,70 @@ class TodoService:
         
         # 태그 필터링 (태그가 지정된 경우)
         if tag_ids:
-            todos = self._filter_todos_by_tags(todos, tag_ids)
+            filtered = self._filter_todos_by_tags(todos, tag_ids)
+            # 필터링된 Todo들의 조상도 함께 포함 (orphan 방지)
+            todos = self._include_ancestors(todos, filtered)
         
         return todos
+    
+    def _get_ancestor_ids(self, todo_id: UUID, visited: set[UUID]) -> List[UUID]:
+        """
+        주어진 Todo의 모든 조상 ID를 반환 (cycle 안전)
+        
+        :param todo_id: 조상을 찾을 Todo ID
+        :param visited: 이미 방문한 ID들 (무한 루프 방지)
+        :return: 조상 ID 리스트 (루트에서 가까운 순)
+        """
+        ancestors: List[UUID] = []
+        current_id: Optional[UUID] = todo_id
+        
+        while current_id is not None:
+            if current_id in visited:
+                break
+            visited.add(current_id)
+            
+            current = self.session.get(TodoModel, current_id)
+            if current is None or current.parent_id is None:
+                break
+            
+            ancestors.append(current.parent_id)
+            current_id = current.parent_id
+        
+        return ancestors
+    
+    def _include_ancestors(
+            self,
+            all_todos: List[Todo],
+            filtered_todos: List[Todo],
+    ) -> List[Todo]:
+        """
+        필터링된 Todo 리스트에 조상 노드들을 포함시킴
+        
+        :param all_todos: 전체 Todo 리스트 (정렬된 상태)
+        :param filtered_todos: 필터로 매칭된 Todo 리스트
+        :return: 조상이 포함된 Todo 리스트 (정렬 유지)
+        """
+        # 필터된 Todo ID 집합
+        filtered_ids = {t.id for t in filtered_todos}
+        
+        # 조상 ID 수집
+        ancestor_ids: set[UUID] = set()
+        visited: set[UUID] = set()
+        
+        for todo in filtered_todos:
+            ancestors = self._get_ancestor_ids(todo.id, visited.copy())
+            ancestor_ids.update(ancestors)
+        
+        # 이미 필터에 포함된 것은 제외
+        ancestor_ids -= filtered_ids
+        
+        # 조상이 없으면 필터된 결과 그대로 반환
+        if not ancestor_ids:
+            return filtered_todos
+        
+        # 전체 리스트에서 조상과 필터된 항목을 정렬 순서 유지하며 반환
+        result_ids = filtered_ids | ancestor_ids
+        return [t for t in all_todos if t.id in result_ids]
 
     def _filter_todos_by_tags(
             self,
@@ -193,11 +368,21 @@ class TodoService:
         :param data: 업데이트 데이터
         :return: 업데이트된 Todo
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
+        :raises TodoSelfReferenceError: 자기 자신을 부모로 설정 시
+        :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
+        :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
         """
         todo = self.get_todo(todo_id)
         
         # 업데이트 데이터 준비
         update_dict = data.model_dump(exclude_unset=True)
+        
+        # parent_id 변경 시 검증
+        if 'parent_id' in update_dict:
+            new_parent_id = update_dict['parent_id']
+            # tag_group_id도 변경될 수 있으므로 새 값 우선 사용
+            effective_tag_group_id = update_dict.get('tag_group_id', todo.tag_group_id)
+            self._validate_parent_id(new_parent_id, effective_tag_group_id, todo_id)
         
         # deadline 변경 처리
         deadline_updated = 'deadline' in update_dict

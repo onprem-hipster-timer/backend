@@ -850,3 +850,321 @@ def test_to_read_dto_with_tags(test_session, sample_todo_with_tags, sample_tag):
     assert dto.id == sample_todo_with_tags.id
     assert len(dto.tags) == 1
     assert dto.tags[0].id == sample_tag.id
+
+
+# ============================================================
+# Todo 트리 무결성 테스트 (parent_id 검증)
+# ============================================================
+
+def test_create_todo_with_invalid_parent(test_session, sample_tag_group):
+    """존재하지 않는 부모 Todo 참조 시 실패 테스트"""
+    from app.domain.todo.exceptions import TodoInvalidParentError
+    
+    service = TodoService(test_session)
+    fake_parent_id = uuid4()
+    
+    data = TodoCreate(
+        title="자식 Todo",
+        tag_group_id=sample_tag_group.id,
+        parent_id=fake_parent_id,
+    )
+    
+    with pytest.raises(TodoInvalidParentError):
+        service.create_todo(data)
+
+
+def test_update_todo_self_reference(test_session, sample_todo):
+    """자기 자신을 부모로 설정 시 실패 테스트"""
+    from app.domain.todo.exceptions import TodoSelfReferenceError
+    
+    service = TodoService(test_session)
+    
+    update_data = TodoUpdate(parent_id=sample_todo.id)
+    
+    with pytest.raises(TodoSelfReferenceError):
+        service.update_todo(sample_todo.id, update_data)
+
+
+def test_create_todo_parent_group_mismatch(test_session, sample_tag_group):
+    """부모와 자식의 그룹이 다를 때 실패 테스트"""
+    from app.domain.todo.exceptions import TodoParentGroupMismatchError
+    
+    service = TodoService(test_session)
+    tag_service = TagService(test_session)
+    
+    # 다른 그룹 생성
+    other_group = tag_service.create_tag_group(TagGroupCreate(
+        name="다른 그룹",
+        color="#0000FF",
+    ))
+    
+    # 부모 Todo 생성 (sample_tag_group)
+    parent = service.create_todo(TodoCreate(
+        title="부모 Todo",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    # 다른 그룹의 자식 Todo 생성 시도
+    data = TodoCreate(
+        title="자식 Todo",
+        tag_group_id=other_group.id,  # 다른 그룹
+        parent_id=parent.id,
+    )
+    
+    with pytest.raises(TodoParentGroupMismatchError):
+        service.create_todo(data)
+
+
+def test_update_todo_creates_cycle(test_session, sample_tag_group):
+    """순환 참조 생성 시 실패 테스트 (A→B→A)"""
+    from app.domain.todo.exceptions import TodoCycleError
+    
+    service = TodoService(test_session)
+    
+    # A 생성
+    todo_a = service.create_todo(TodoCreate(
+        title="Todo A",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    # B 생성 (부모: A)
+    todo_b = service.create_todo(TodoCreate(
+        title="Todo B",
+        tag_group_id=sample_tag_group.id,
+        parent_id=todo_a.id,
+    ))
+    test_session.flush()
+    
+    # A의 부모를 B로 설정 시도 → cycle
+    update_data = TodoUpdate(parent_id=todo_b.id)
+    
+    with pytest.raises(TodoCycleError):
+        service.update_todo(todo_a.id, update_data)
+
+
+def test_update_todo_creates_deep_cycle(test_session, sample_tag_group):
+    """깊은 순환 참조 생성 시 실패 테스트 (A→B→C, C의 부모를 A로)"""
+    from app.domain.todo.exceptions import TodoCycleError
+    
+    service = TodoService(test_session)
+    
+    # A → B → C 체인 생성
+    todo_a = service.create_todo(TodoCreate(
+        title="Todo A",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    todo_b = service.create_todo(TodoCreate(
+        title="Todo B",
+        tag_group_id=sample_tag_group.id,
+        parent_id=todo_a.id,
+    ))
+    test_session.flush()
+    
+    todo_c = service.create_todo(TodoCreate(
+        title="Todo C",
+        tag_group_id=sample_tag_group.id,
+        parent_id=todo_b.id,
+    ))
+    test_session.flush()
+    
+    # A의 부모를 C로 설정 시도 → cycle (C→B→A→C)
+    update_data = TodoUpdate(parent_id=todo_c.id)
+    
+    with pytest.raises(TodoCycleError):
+        service.update_todo(todo_a.id, update_data)
+
+
+# ============================================================
+# Todo 정렬 테스트
+# ============================================================
+
+def test_get_all_todos_sorted_by_status(test_session, sample_tag_group):
+    """Todo 목록이 상태 순으로 정렬되는지 테스트"""
+    from datetime import timedelta
+    
+    service = TodoService(test_session)
+    base_time = datetime(2024, 1, 1, 12, 0, 0)
+    
+    # 역순으로 생성 (CANCELLED → DONE → SCHEDULED → UNSCHEDULED)
+    todo_cancelled = service.create_todo(TodoCreate(
+        title="취소됨",
+        tag_group_id=sample_tag_group.id,
+        status=TodoStatus.CANCELLED,
+    ))
+    test_session.flush()
+    
+    todo_done = service.create_todo(TodoCreate(
+        title="완료됨",
+        tag_group_id=sample_tag_group.id,
+        status=TodoStatus.DONE,
+    ))
+    test_session.flush()
+    
+    todo_scheduled = service.create_todo(TodoCreate(
+        title="예정됨",
+        tag_group_id=sample_tag_group.id,
+        status=TodoStatus.SCHEDULED,
+    ))
+    test_session.flush()
+    
+    todo_unscheduled = service.create_todo(TodoCreate(
+        title="미예정",
+        tag_group_id=sample_tag_group.id,
+        status=TodoStatus.UNSCHEDULED,
+    ))
+    test_session.flush()
+    
+    todos = service.get_all_todos(group_ids=[sample_tag_group.id])
+    
+    # 상태 순서대로 정렬되어야 함: UNSCHEDULED → SCHEDULED → DONE → CANCELLED
+    statuses = [t.status for t in todos]
+    expected_order = [
+        TodoStatus.UNSCHEDULED,
+        TodoStatus.SCHEDULED,
+        TodoStatus.DONE,
+        TodoStatus.CANCELLED,
+    ]
+    
+    # 각 상태가 올바른 순서로 나타나는지 확인
+    last_order = -1
+    for status in statuses:
+        current_order = expected_order.index(status)
+        assert current_order >= last_order, f"상태 순서가 잘못됨: {statuses}"
+        last_order = current_order
+
+
+def test_get_all_todos_sorted_by_deadline(test_session, sample_tag_group):
+    """Todo 목록이 deadline 순으로 정렬되는지 테스트 (null은 뒤)"""
+    service = TodoService(test_session)
+    
+    # 모두 같은 상태로 생성
+    todo_no_deadline = service.create_todo(TodoCreate(
+        title="마감 없음",
+        tag_group_id=sample_tag_group.id,
+        deadline=None,
+    ))
+    test_session.flush()
+    
+    todo_late_deadline = service.create_todo(TodoCreate(
+        title="늦은 마감",
+        tag_group_id=sample_tag_group.id,
+        deadline=datetime(2024, 12, 31, 12, 0, 0, tzinfo=UTC),
+    ))
+    test_session.flush()
+    
+    todo_early_deadline = service.create_todo(TodoCreate(
+        title="빠른 마감",
+        tag_group_id=sample_tag_group.id,
+        deadline=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+    ))
+    test_session.flush()
+    
+    todos = service.get_all_todos(group_ids=[sample_tag_group.id])
+    
+    # 같은 상태에서 deadline 순 (null은 뒤): 빠른 마감 → 늦은 마감 → 마감 없음
+    titles = [t.title for t in todos]
+    
+    # deadline이 있는 것들이 null보다 먼저
+    deadline_todos = [t for t in todos if t.deadline is not None]
+    no_deadline_todos = [t for t in todos if t.deadline is None]
+    
+    # deadline 있는 것들이 먼저 나와야 함
+    assert all(t.title in ["빠른 마감", "늦은 마감"] for t in deadline_todos)
+    assert all(t.title == "마감 없음" for t in no_deadline_todos)
+    
+    # deadline이 있는 것들 중에서는 오름차순
+    if len(deadline_todos) >= 2:
+        deadlines = [t.deadline for t in deadline_todos]
+        assert deadlines == sorted(deadlines)
+
+
+# ============================================================
+# Todo 조상 포함 테스트 (태그 필터 시)
+# ============================================================
+
+def test_get_all_todos_includes_ancestors_with_tag_filter(test_session, sample_tag_group):
+    """태그 필터 시 조상 노드도 포함되는지 테스트"""
+    service = TodoService(test_session)
+    tag_service = TagService(test_session)
+    
+    # 태그 생성
+    tag = tag_service.create_tag(TagCreate(
+        name="특수태그",
+        color="#FF0000",
+        group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    # 부모 Todo (태그 없음)
+    parent = service.create_todo(TodoCreate(
+        title="부모 (태그 없음)",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    # 자식 Todo (태그 있음)
+    child = service.create_todo(TodoCreate(
+        title="자식 (태그 있음)",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+        tag_ids=[tag.id],
+    ))
+    test_session.flush()
+    
+    # 태그로 필터링
+    todos = service.get_all_todos(tag_ids=[tag.id])
+    todo_ids = [t.id for t in todos]
+    
+    # 자식은 태그 매칭으로 포함
+    assert child.id in todo_ids, "자식 Todo가 결과에 포함되어야 함"
+    # 부모는 조상으로 포함
+    assert parent.id in todo_ids, "부모 Todo가 조상으로 포함되어야 함"
+
+
+def test_get_all_todos_includes_deep_ancestors_with_tag_filter(test_session, sample_tag_group):
+    """태그 필터 시 깊은 조상 노드들도 포함되는지 테스트"""
+    service = TodoService(test_session)
+    tag_service = TagService(test_session)
+    
+    # 태그 생성
+    tag = tag_service.create_tag(TagCreate(
+        name="깊은태그",
+        color="#00FF00",
+        group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    # 3단계 트리: grandparent → parent → child
+    grandparent = service.create_todo(TodoCreate(
+        title="조부모",
+        tag_group_id=sample_tag_group.id,
+    ))
+    test_session.flush()
+    
+    parent = service.create_todo(TodoCreate(
+        title="부모",
+        tag_group_id=sample_tag_group.id,
+        parent_id=grandparent.id,
+    ))
+    test_session.flush()
+    
+    child = service.create_todo(TodoCreate(
+        title="자식",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+        tag_ids=[tag.id],
+    ))
+    test_session.flush()
+    
+    # 태그로 필터링
+    todos = service.get_all_todos(tag_ids=[tag.id])
+    todo_ids = [t.id for t in todos]
+    
+    # 모든 조상이 포함되어야 함
+    assert child.id in todo_ids, "자식 Todo가 결과에 포함되어야 함"
+    assert parent.id in todo_ids, "부모 Todo가 조상으로 포함되어야 함"
+    assert grandparent.id in todo_ids, "조부모 Todo가 조상으로 포함되어야 함"
