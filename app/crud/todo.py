@@ -103,6 +103,23 @@ def get_children_by_parent_id(session: Session, parent_id: UUID) -> List[Todo]:
     return list(session.exec(statement).all())
 
 
+def detach_children(session: Session, parent_id: UUID) -> int:
+    """
+    부모의 자식 Todo들을 루트로 승격 (parent_id를 NULL로 설정)
+    
+    부모 삭제 전에 호출하여 자식 Todo가 삭제되지 않고 루트로 이동하도록 함.
+    
+    :param session: DB 세션
+    :param parent_id: 부모 Todo ID
+    :return: 업데이트된 자식 수
+    """
+    children = get_children_by_parent_id(session, parent_id)
+    for child in children:
+        child.parent_id = None
+    session.flush()
+    return len(children)
+
+
 def create_todo(session: Session, todo: Todo) -> Todo:
     """
     Todo 생성 (모델 객체를 받아 저장)

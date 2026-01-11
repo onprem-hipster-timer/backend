@@ -428,8 +428,9 @@ class TodoService:
         - 외부 캘린더 sync 고려: 서비스 로직에서 명시적으로 연관된 Schedule 삭제
         - source_todo_id로 연관된 모든 Schedule 조회
         - 각 Schedule에 대해 ScheduleService.delete_schedule() 명시적 호출
+        - 자식 Todo는 삭제하지 않고 루트로 승격 (parent_id = NULL)
+        - 자식의 Schedule은 유지됨
         - 그 후 Todo 삭제
-        - 자식 Todo 처리 (함께 삭제 - cascade)
         
         :param todo_id: Todo ID
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
@@ -437,17 +438,16 @@ class TodoService:
         todo = self.get_todo(todo_id)
 
         # 연관된 Schedule 명시적 삭제 (외부 캘린더 sync 고려)
+        # 이 Todo 자체에 연결된 Schedule만 삭제, 자식 Schedule은 유지
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id)
 
         schedule_service = ScheduleService(self.session)
         for schedule in schedules:
             schedule_service.delete_schedule(schedule.id)
 
-        # 자식 Todo도 함께 삭제 (cascade)
-        # DB 레벨 cascade로 처리되지만, 명시적으로 확인
-        children = crud.get_children_by_parent_id(self.session, todo_id)
-        for child in children:
-            self.delete_todo(child.id)  # 재귀적 삭제
+        # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)
+        # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
+        crud.detach_children(self.session, todo_id)
 
         # Todo 삭제
         crud.delete_todo(self.session, todo)

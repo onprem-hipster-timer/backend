@@ -38,10 +38,11 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     )
 
     # Todo self-reference (트리 구조)
+    # 부모 삭제 시 자식은 삭제되지 않고 parent_id가 NULL로 설정됨 (루트로 승격)
     parent_id: Optional[UUID] = Field(
         default=None,
         sa_column=Column(
-            ForeignKey("todo.id", ondelete="CASCADE"),
+            ForeignKey("todo.id", ondelete="SET NULL"),
             nullable=True,
             index=True,
         )
@@ -63,9 +64,9 @@ class Todo(UUIDBase, TimestampMixin, table=True):
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "Todo.id"}
     )
+    # 부모 삭제 시 자식이 함께 삭제되지 않도록 cascade 제거
     children: List["Todo"] = Relationship(
         back_populates="parent",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     schedules: List["Schedule"] = Relationship(
         back_populates="source_todo"

@@ -269,7 +269,10 @@ Content-Type: application/json
 DELETE /v1/todos/{todo_id}
 ```
 
-> ⚠️ 연결된 Schedule도 함께 삭제됩니다.
+> ⚠️ **삭제 동작:**
+> - 삭제된 Todo에 연결된 Schedule은 함께 삭제됩니다.
+> - **자식 Todo는 삭제되지 않고 루트로 승격됩니다** (parent_id가 NULL로 변경)
+> - 자식 Todo에 연결된 Schedule은 그대로 유지됩니다.
 
 #### Todo 통계 조회
 
@@ -956,10 +959,13 @@ await fetch('/v1/todos', {
 
 Todo의 태그를 수정하면 연결된 모든 Schedule의 태그도 함께 업데이트됩니다.
 
-### 4. 삭제 시 CASCADE
+### 4. 삭제 시 동작
 
-- Todo 삭제 → 연결된 Schedule도 함께 삭제
-- TagGroup 삭제 → 그룹 내 모든 Tag도 함께 삭제
+- **Todo 삭제**:
+  - 해당 Todo에 연결된 Schedule은 함께 삭제
+  - 자식 Todo는 삭제되지 않고 루트로 승격 (parent_id → NULL)
+  - 자식 Todo에 연결된 Schedule은 유지됨
+- **TagGroup 삭제** → 그룹 내 모든 Tag도 함께 삭제 (CASCADE)
 
 ### 5. 날짜/시간 형식
 

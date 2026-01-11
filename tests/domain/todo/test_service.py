@@ -646,7 +646,7 @@ def test_delete_todo_with_schedule(test_session, sample_tag_group):
 
 
 def test_delete_todo_with_children(test_session, sample_tag_group):
-    """자식 Todo가 있는 부모 Todo 삭제 테스트"""
+    """자식 Todo가 있는 부모 Todo 삭제 테스트 - 자식은 루트로 승격"""
     service = TodoService(test_session)
 
     # 부모 Todo 생성
@@ -672,18 +672,75 @@ def test_delete_todo_with_children(test_session, sample_tag_group):
     child1_id = child1.id
     child2_id = child2.id
 
-    # 부모 Todo 삭제 (자식도 함께 삭제되어야 함 - CASCADE)
+    # 부모 Todo 삭제 (자식은 삭제되지 않고 루트로 승격됨)
     service.delete_todo(parent_id)
     test_session.flush()
 
-    # 부모와 자식이 모두 삭제되었는지 확인
+    # 부모만 삭제되었는지 확인
     test_session.expire_all()
     with pytest.raises(TodoNotFoundError):
         service.get_todo(parent_id)
+
+    # 자식들은 삭제되지 않고 루트로 승격됨 (parent_id = None)
+    child1_after = service.get_todo(child1_id)
+    child2_after = service.get_todo(child2_id)
+    assert child1_after.parent_id is None
+    assert child2_after.parent_id is None
+    assert child1_after.title == "자식 1"
+    assert child2_after.title == "자식 2"
+
+
+def test_delete_todo_with_children_keeps_child_schedules(test_session, sample_tag_group):
+    """부모 Todo 삭제 시 자식 Todo의 Schedule은 유지되어야 함"""
+    from datetime import timedelta
+    from app.domain.schedule.service import ScheduleService
+    
+    service = TodoService(test_session)
+
+    # 부모 Todo 생성
+    parent = service.create_todo(TodoCreate(
+        title="부모",
+        tag_group_id=sample_tag_group.id,
+    ))
+
+    # deadline이 있는 자식 Todo 생성 (Schedule 자동 생성됨)
+    now = datetime.now()
+    child = service.create_todo(TodoCreate(
+        title="자식 with Schedule",
+        tag_group_id=sample_tag_group.id,
+        parent_id=parent.id,
+        deadline=now + timedelta(days=7),
+    ))
+    test_session.flush()
+
+    parent_id = parent.id
+    child_id = child.id
+
+    # 자식의 Schedule ID 저장
+    from app.crud import schedule as schedule_crud
+    child_schedules = schedule_crud.get_schedules_by_source_todo_id(test_session, child_id)
+    assert len(child_schedules) == 1
+    child_schedule_id = child_schedules[0].id
+
+    # 부모 Todo 삭제
+    service.delete_todo(parent_id)
+    test_session.flush()
+
+    # 부모만 삭제되었는지 확인
+    test_session.expire_all()
     with pytest.raises(TodoNotFoundError):
-        service.get_todo(child1_id)
-    with pytest.raises(TodoNotFoundError):
-        service.get_todo(child2_id)
+        service.get_todo(parent_id)
+
+    # 자식 Todo는 루트로 승격되어 유지됨
+    child_after = service.get_todo(child_id)
+    assert child_after.parent_id is None
+    assert child_after.title == "자식 with Schedule"
+
+    # 자식 Todo의 Schedule도 유지됨
+    schedule_service = ScheduleService(test_session)
+    child_schedule = schedule_service.get_schedule(child_schedule_id)
+    assert child_schedule.source_todo_id == child_id
+    assert child_schedule.title == "자식 with Schedule"
 
 
 def test_delete_todo_not_found(test_session):
