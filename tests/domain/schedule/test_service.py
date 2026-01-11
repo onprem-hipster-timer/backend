@@ -72,9 +72,9 @@ def test_create_schedule_invalid_time(test_session):
 def test_get_schedules(test_session, sample_schedule):
     """날짜 범위 기반 일정 조회 테스트"""
     from datetime import UTC
-    
+
     service = ScheduleService(test_session)
-    
+
     # 날짜 범위로 일정 조회 (sample_schedule이 포함되는 범위)
     start_date = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
     end_date = datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)

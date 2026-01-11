@@ -126,7 +126,7 @@ class TagGroup(UUIDBase, TimestampMixin, table=True):
     name: str = Field(index=True)  # 그룹 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
-    
+
     # Todo 관련 필드
     goal_ratios: Optional[Dict[str, float]] = Field(
         default=None,

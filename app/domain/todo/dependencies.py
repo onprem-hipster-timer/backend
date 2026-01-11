@@ -28,6 +28,5 @@ def valid_todo_id(
     todo = session.get(Todo, todo_id)
     if not todo:
         raise TodoNotFoundError()
-    
-    return todo
 
+    return todo

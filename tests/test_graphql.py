@@ -850,7 +850,7 @@ def test_graphql_calendar_query_with_todo(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 1. deadline이 없는 Todo 생성 (캘린더에 포함되지 않아야 함)
     todo_no_deadline_response = e2e_client.post(
         "/v1/todos",
@@ -875,7 +875,7 @@ def test_graphql_calendar_query_with_todo(e2e_client):
     )
     assert todo_with_deadline_response.status_code == 201
     todo_with_deadline_id = todo_with_deadline_response.json()["id"]
-    
+
     # deadline이 있는 Todo는 Schedule이 생성되므로, Schedule ID를 가져와야 함
     # Todo의 schedules에서 첫 번째 Schedule ID를 가져옴
     todo_data = todo_with_deadline_response.json()
@@ -934,14 +934,14 @@ def test_graphql_calendar_query_with_todo(e2e_client):
         events.extend(day["events"])
 
     event_ids = [e["id"] for e in events]
-    
+
     # deadline이 없는 Todo는 캘린더에 포함되지 않아야 함
     assert todo_no_deadline_id not in event_ids, "deadline이 없는 Todo는 캘린더에 포함되지 않아야 합니다"
-    
+
     # deadline이 있는 Todo는 Schedule로 변환되어 캘린더에 포함되어야 함
     assert schedule_id_from_todo is not None, "deadline이 있는 Todo는 Schedule이 생성되어야 합니다"
     assert schedule_id_from_todo in event_ids, "deadline이 있는 Todo의 Schedule이 캘린더에 포함되어야 합니다"
-    
+
     # 일반 일정도 포함되어야 함
     assert schedule_id in event_ids, "일반 일정이 캘린더에 포함되어야 합니다"
 
@@ -955,7 +955,7 @@ def test_graphql_calendar_query_with_todo_and_deadline(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 1. deadline이 있는 Todo 생성
     todo_response = e2e_client.post(
         "/v1/todos",
@@ -968,7 +968,7 @@ def test_graphql_calendar_query_with_todo_and_deadline(e2e_client):
     assert todo_response.status_code == 201
     todo_data = todo_response.json()
     todo_id = todo_data["id"]
-    
+
     # deadline이 있는 Todo는 Schedule이 생성되므로, Schedule ID를 가져와야 함
     schedule_id_from_todo = todo_data["schedules"][0]["id"] if todo_data.get("schedules") else None
     assert schedule_id_from_todo is not None, "deadline이 있는 Todo는 Schedule이 생성되어야 합니다"
@@ -1052,7 +1052,7 @@ def test_graphql_calendar_query_todo_with_tags(e2e_client):
     assert todo_response.status_code == 201
     todo_data = todo_response.json()
     todo_id = todo_data["id"]
-    
+
     # deadline이 있는 Todo는 Schedule이 생성되므로, Schedule ID를 가져와야 함
     schedule_id_from_todo = todo_data["schedules"][0]["id"] if todo_data.get("schedules") else None
     assert schedule_id_from_todo is not None, "deadline이 있는 Todo는 Schedule이 생성되어야 합니다"
@@ -1111,7 +1111,7 @@ def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 1. deadline이 있는 Todo 생성 (2024-01-20)
     todo_response = e2e_client.post(
         "/v1/todos",
@@ -1124,7 +1124,7 @@ def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
     assert todo_response.status_code == 201
     todo_data = todo_response.json()
     todo_id = todo_data["id"]
-    
+
     # deadline이 있는 Todo는 Schedule이 생성되므로, Schedule ID를 가져와야 함
     schedule_id_from_todo = todo_data["schedules"][0]["id"] if todo_data.get("schedules") else None
     assert schedule_id_from_todo is not None, "deadline이 있는 Todo는 Schedule이 생성되어야 합니다"

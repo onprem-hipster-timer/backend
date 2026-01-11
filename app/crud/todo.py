@@ -51,7 +51,7 @@ def get_todos_sorted(
         (Todo.deadline.is_(None), 1),
         else_=0,
     )
-    
+
     statement = (
         select(Todo)
         .order_by(
@@ -61,12 +61,12 @@ def get_todos_sorted(
             Todo.created_at.desc(),
         )
     )
-    
+
     if group_ids:
         statement = statement.where(Todo.tag_group_id.in_(group_ids))
     if parent_id is not None:
         statement = statement.where(Todo.parent_id == parent_id)
-    
+
     return list(session.exec(statement).all())
 
 
@@ -81,17 +81,17 @@ def get_todo_tag_map(
     """
     if not todo_ids:
         return {}
-    
+
     statement = (
         select(TodoTag.todo_id, TodoTag.tag_id)
         .where(TodoTag.todo_id.in_(todo_ids))
     )
     rows = session.exec(statement).all()
-    
+
     result: dict[UUID, set[UUID]] = {}
     for todo_id, tag_id in rows:
         result.setdefault(todo_id, set()).add(tag_id)
-    
+
     return result
 
 

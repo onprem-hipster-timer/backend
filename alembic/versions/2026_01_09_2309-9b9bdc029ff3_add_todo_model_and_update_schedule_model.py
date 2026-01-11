@@ -7,11 +7,10 @@ Create Date: 2026-01-09 23:09:50.106657+09:00
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import inspect
 import sqlmodel
-
+from alembic import op
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = '9b9bdc029ff3'
@@ -25,23 +24,24 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
     tables = inspector.get_table_names()
-    
+
     # todo 테이블이 없을 때만 생성
     if 'todo' not in tables:
         op.create_table('todo',
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), nullable=False),
-        sa.Column('id', sa.Uuid(), nullable=False),
-        sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column('deadline', sa.DateTime(), nullable=True),
-        sa.Column('tag_group_id', sa.Uuid(), nullable=False),
-        sa.Column('parent_id', sa.Uuid(), nullable=True),
-        sa.Column('status', sa.Enum('UNSCHEDULED', 'SCHEDULED', 'DONE', 'CANCELLED', name='todostatus', native_enum=False), nullable=False),
-        sa.ForeignKeyConstraint(['parent_id'], ['todo.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['tag_group_id'], ['tag_group.id'], ondelete='RESTRICT'),
-        sa.PrimaryKeyConstraint('id')
-        )
+                        sa.Column('created_at', sa.DateTime(), nullable=False),
+                        sa.Column('updated_at', sa.DateTime(), nullable=False),
+                        sa.Column('id', sa.Uuid(), nullable=False),
+                        sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+                        sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+                        sa.Column('deadline', sa.DateTime(), nullable=True),
+                        sa.Column('tag_group_id', sa.Uuid(), nullable=False),
+                        sa.Column('parent_id', sa.Uuid(), nullable=True),
+                        sa.Column('status', sa.Enum('UNSCHEDULED', 'SCHEDULED', 'DONE', 'CANCELLED', name='todostatus',
+                                                    native_enum=False), nullable=False),
+                        sa.ForeignKeyConstraint(['parent_id'], ['todo.id'], ondelete='CASCADE'),
+                        sa.ForeignKeyConstraint(['tag_group_id'], ['tag_group.id'], ondelete='RESTRICT'),
+                        sa.PrimaryKeyConstraint('id')
+                        )
         with op.batch_alter_table('todo', schema=None) as batch_op:
             batch_op.create_index(batch_op.f('ix_todo_id'), ['id'], unique=False)
             batch_op.create_index(batch_op.f('ix_todo_parent_id'), ['parent_id'], unique=False)
@@ -50,14 +50,14 @@ def upgrade() -> None:
     # todo_tag 테이블이 없을 때만 생성
     if 'todo_tag' not in tables:
         op.create_table('todo_tag',
-        sa.Column('todo_id', sa.Uuid(), nullable=False),
-        sa.Column('tag_id', sa.Uuid(), nullable=False),
-        sa.ForeignKeyConstraint(['tag_id'], ['tag.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['todo_id'], ['todo.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('todo_id', 'tag_id'),
-        sa.UniqueConstraint('todo_id', 'tag_id', name='uq_todo_tag')
-        )
-    
+                        sa.Column('todo_id', sa.Uuid(), nullable=False),
+                        sa.Column('tag_id', sa.Uuid(), nullable=False),
+                        sa.ForeignKeyConstraint(['tag_id'], ['tag.id'], ondelete='CASCADE'),
+                        sa.ForeignKeyConstraint(['todo_id'], ['todo.id'], ondelete='CASCADE'),
+                        sa.PrimaryKeyConstraint('todo_id', 'tag_id'),
+                        sa.UniqueConstraint('todo_id', 'tag_id', name='uq_todo_tag')
+                        )
+
     # schedule 테이블 수정
     with op.batch_alter_table('schedule', schema=None) as batch_op:
         # 컬럼이 없을 때만 추가
@@ -65,18 +65,21 @@ def upgrade() -> None:
         if 'source_todo_id' not in schedule_columns:
             batch_op.add_column(sa.Column('source_todo_id', sa.Uuid(), nullable=True))
         if 'state' not in schedule_columns:
-            batch_op.add_column(sa.Column('state', sa.Enum('PLANNED', 'CONFIRMED', 'CANCELLED', name='schedulestate', native_enum=False), nullable=False, server_default='PLANNED'))
-        
+            batch_op.add_column(sa.Column('state', sa.Enum('PLANNED', 'CONFIRMED', 'CANCELLED', name='schedulestate',
+                                                           native_enum=False), nullable=False,
+                                          server_default='PLANNED'))
+
         # 인덱스가 없을 때만 생성
         schedule_indexes = [idx['name'] for idx in inspector.get_indexes('schedule')]
         if 'ix_schedule_source_todo_id' not in schedule_indexes:
             batch_op.create_index(batch_op.f('ix_schedule_source_todo_id'), ['source_todo_id'], unique=False)
-        
+
         # 외래 키 제약 조건이 없을 때만 생성
         schedule_fks = [fk['name'] for fk in inspector.get_foreign_keys('schedule')]
         if 'fk_schedule_source_todo_id' not in schedule_fks:
-            batch_op.create_foreign_key('fk_schedule_source_todo_id', 'todo', ['source_todo_id'], ['id'], ondelete='SET NULL')
-        
+            batch_op.create_foreign_key('fk_schedule_source_todo_id', 'todo', ['source_todo_id'], ['id'],
+                                        ondelete='SET NULL')
+
         # is_todo 컬럼이 있으면 삭제
         if 'is_todo' in schedule_columns:
             batch_op.drop_column('is_todo')
@@ -88,20 +91,20 @@ def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     bind = op.get_bind()
     inspector = inspect(bind)
-    
+
     with op.batch_alter_table('schedule', schema=None) as batch_op:
         schedule_columns = [col['name'] for col in inspector.get_columns('schedule')]
         if 'is_todo' not in schedule_columns:
             batch_op.add_column(sa.Column('is_todo', sa.BOOLEAN(), server_default=sa.text("'0'"), nullable=False))
-        
+
         schedule_fks = [fk['name'] for fk in inspector.get_foreign_keys('schedule')]
         if 'fk_schedule_source_todo_id' in schedule_fks:
             batch_op.drop_constraint('fk_schedule_source_todo_id', type_='foreignkey')
-        
+
         schedule_indexes = [idx['name'] for idx in inspector.get_indexes('schedule')]
         if 'ix_schedule_source_todo_id' in schedule_indexes:
             batch_op.drop_index(batch_op.f('ix_schedule_source_todo_id'))
-        
+
         if 'state' in schedule_columns:
             batch_op.drop_column('state')
         if 'source_todo_id' in schedule_columns:
@@ -110,7 +113,7 @@ def downgrade() -> None:
     tables = inspector.get_table_names()
     if 'todo_tag' in tables:
         op.drop_table('todo_tag')
-    
+
     if 'todo' in tables:
         with op.batch_alter_table('todo', schema=None) as batch_op:
             todo_indexes = [idx['name'] for idx in inspector.get_indexes('todo')]

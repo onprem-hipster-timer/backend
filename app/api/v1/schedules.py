@@ -100,7 +100,7 @@ async def read_schedules(
     - async 라우트 사용
     """
     service = ScheduleService(session)
-    
+
     # 날짜 범위 기반 조회 (태그 필터링 포함)
     schedules = service.get_schedules_by_date_range(
         start_date=start_date,

@@ -75,7 +75,7 @@ async def read_todos(
     """
     service = TodoService(session)
     result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
-    
+
     return [
         service.to_read_dto(
             todo,
@@ -147,4 +147,3 @@ async def delete_todo(
     service = TodoService(session)
     service.delete_todo(todo_id)
     return {"ok": True}
-

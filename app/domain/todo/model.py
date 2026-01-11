@@ -9,4 +9,3 @@ from app.models.todo import Todo as TodoModel
 
 # Domain 모델은 ORM 모델과 동일하게 사용
 Todo = TodoModel
-

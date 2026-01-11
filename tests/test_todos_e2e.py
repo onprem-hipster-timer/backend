@@ -17,7 +17,7 @@ def test_create_todo_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     response = e2e_client.post(
         "/v1/todos",
         json={
@@ -46,7 +46,7 @@ def test_create_todo_with_deadline_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     response = e2e_client.post(
         "/v1/todos",
         json={
@@ -112,7 +112,7 @@ def test_create_todo_with_parent_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 부모 Todo 생성
     parent_response = e2e_client.post(
         "/v1/todos",
@@ -122,7 +122,7 @@ def test_create_todo_with_parent_e2e(e2e_client):
         },
     )
     parent_id = parent_response.json()["id"]
-    
+
     # 자식 Todo 생성
     child_response = e2e_client.post(
         "/v1/todos",
@@ -132,7 +132,7 @@ def test_create_todo_with_parent_e2e(e2e_client):
             "parent_id": parent_id,
         },
     )
-    
+
     assert child_response.status_code == 201
     data = child_response.json()
     assert data["title"] == "자식 Todo"
@@ -148,7 +148,7 @@ def test_get_todo_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -190,7 +190,7 @@ def test_get_todos_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 여러 Todo 생성
     e2e_client.post("/v1/todos", json={"title": "Todo 1", "tag_group_id": group_id})
     e2e_client.post("/v1/todos", json={"title": "Todo 2", "tag_group_id": group_id})
@@ -317,7 +317,7 @@ def test_update_todo_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -353,7 +353,7 @@ def test_update_todo_partial_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -386,7 +386,7 @@ def test_update_todo_deadline_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -419,7 +419,7 @@ def test_update_todo_status_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -449,7 +449,7 @@ def test_update_todo_tags_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -552,7 +552,7 @@ def test_delete_todo_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -582,7 +582,7 @@ def test_delete_todo_with_schedule_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 마감 시간이 있는 Todo 생성 (Schedule 자동 생성)
     create_response = e2e_client.post(
         "/v1/todos",
@@ -707,7 +707,7 @@ def test_todo_workflow_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 1. Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -815,7 +815,7 @@ def test_create_todo_with_invalid_parent_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 존재하지 않는 parent_id로 생성 시도
     fake_parent_id = str(uuid4())
     response = e2e_client.post(
@@ -826,7 +826,7 @@ def test_create_todo_with_invalid_parent_e2e(e2e_client):
             "parent_id": fake_parent_id,
         },
     )
-    
+
     assert response.status_code == 400
     assert "parent" in response.json()["message"].lower()
 
@@ -840,20 +840,20 @@ def test_update_todo_self_reference_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
         json={"title": "자기참조 테스트", "tag_group_id": group_id},
     )
     todo_id = create_response.json()["id"]
-    
+
     # 자기 자신을 부모로 설정 시도
     response = e2e_client.patch(
         f"/v1/todos/{todo_id}",
         json={"parent_id": todo_id},
     )
-    
+
     assert response.status_code == 400
     assert "own parent" in response.json()["message"].lower()
 
@@ -867,27 +867,27 @@ def test_update_todo_creates_cycle_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # A 생성
     a_response = e2e_client.post(
         "/v1/todos",
         json={"title": "Todo A", "tag_group_id": group_id},
     )
     todo_a_id = a_response.json()["id"]
-    
+
     # B 생성 (부모: A)
     b_response = e2e_client.post(
         "/v1/todos",
         json={"title": "Todo B", "tag_group_id": group_id, "parent_id": todo_a_id},
     )
     todo_b_id = b_response.json()["id"]
-    
+
     # A의 부모를 B로 설정 시도 → cycle
     response = e2e_client.patch(
         f"/v1/todos/{todo_a_id}",
         json={"parent_id": todo_b_id},
     )
-    
+
     assert response.status_code == 400
     assert "cycle" in response.json()["message"].lower()
 
@@ -901,20 +901,20 @@ def test_create_todo_parent_group_mismatch_e2e(e2e_client):
         json={"name": "그룹1", "color": "#FF5733"}
     )
     group1_id = group1_response.json()["id"]
-    
+
     group2_response = e2e_client.post(
         "/v1/tags/groups",
         json={"name": "그룹2", "color": "#0000FF"}
     )
     group2_id = group2_response.json()["id"]
-    
+
     # 부모 Todo (그룹1)
     parent_response = e2e_client.post(
         "/v1/todos",
         json={"title": "부모 Todo", "tag_group_id": group1_id},
     )
     parent_id = parent_response.json()["id"]
-    
+
     # 다른 그룹의 자식 Todo 생성 시도
     response = e2e_client.post(
         "/v1/todos",
@@ -924,7 +924,7 @@ def test_create_todo_parent_group_mismatch_e2e(e2e_client):
             "parent_id": parent_id,
         },
     )
-    
+
     assert response.status_code == 400
     assert "group" in response.json()["message"].lower()
 
@@ -942,21 +942,21 @@ def test_get_todos_includes_ancestors_with_tag_filter_e2e(e2e_client):
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
-    
+
     # 태그 생성
     tag_response = e2e_client.post(
         "/v1/tags",
         json={"name": "조상포함테스트", "color": "#FF0000", "group_id": group_id}
     )
     tag_id = tag_response.json()["id"]
-    
+
     # 부모 Todo (태그 없음)
     parent_response = e2e_client.post(
         "/v1/todos",
         json={"title": "부모 (태그 없음)", "tag_group_id": group_id},
     )
     parent_id = parent_response.json()["id"]
-    
+
     # 자식 Todo (태그 있음)
     child_response = e2e_client.post(
         "/v1/todos",
@@ -968,18 +968,18 @@ def test_get_todos_includes_ancestors_with_tag_filter_e2e(e2e_client):
         },
     )
     child_id = child_response.json()["id"]
-    
+
     # 태그로 필터링
     response = e2e_client.get("/v1/todos", params={"tag_ids": [tag_id]})
     assert response.status_code == 200
-    
+
     todos = response.json()
     todo_by_id = {t["id"]: t for t in todos}
-    
+
     # 자식은 태그 매칭으로 포함 (include_reason = MATCH)
     assert child_id in todo_by_id, "자식 Todo가 결과에 포함되어야 함"
     assert todo_by_id[child_id]["include_reason"] == "MATCH", "자식 Todo는 MATCH여야 함"
-    
+
     # 부모는 조상으로 포함 (include_reason = ANCESTOR)
     assert parent_id in todo_by_id, "부모 Todo가 조상으로 포함되어야 함"
     assert todo_by_id[parent_id]["include_reason"] == "ANCESTOR", "부모 Todo는 ANCESTOR여야 함"
@@ -994,26 +994,26 @@ def test_get_todos_include_reason_all_match_without_filter_e2e(e2e_client):
         json={"name": "전체조회테스트", "color": "#00FF00"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     todo1_response = e2e_client.post(
         "/v1/todos",
         json={"title": "Todo 1", "tag_group_id": group_id},
     )
     todo1_id = todo1_response.json()["id"]
-    
+
     todo2_response = e2e_client.post(
         "/v1/todos",
         json={"title": "Todo 2", "tag_group_id": group_id, "parent_id": todo1_id},
     )
     todo2_id = todo2_response.json()["id"]
-    
+
     # 필터 없이 조회 (group_ids로 필터링해서 다른 테스트 데이터 제외)
     response = e2e_client.get("/v1/todos", params={"group_ids": [group_id]})
     assert response.status_code == 200
-    
+
     todos = response.json()
-    
+
     # 모든 Todo의 include_reason이 MATCH여야 함
     for todo in todos:
         assert todo["include_reason"] == "MATCH", f"Todo {todo['id']}의 include_reason이 MATCH여야 함"
@@ -1028,7 +1028,7 @@ def test_get_single_todo_include_reason_is_match_e2e(e2e_client):
         json={"name": "단일조회테스트", "color": "#0000FF"}
     )
     group_id = group_response.json()["id"]
-    
+
     # Todo 생성
     create_response = e2e_client.post(
         "/v1/todos",
@@ -1036,10 +1036,10 @@ def test_get_single_todo_include_reason_is_match_e2e(e2e_client):
     )
     assert create_response.status_code == 201
     todo_id = create_response.json()["id"]
-    
+
     # 단일 Todo 조회
     response = e2e_client.get(f"/v1/todos/{todo_id}")
     assert response.status_code == 200
-    
+
     todo = response.json()
     assert todo["include_reason"] == "MATCH", "단일 조회 시 include_reason은 MATCH여야 함"

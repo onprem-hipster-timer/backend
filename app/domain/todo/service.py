@@ -81,25 +81,25 @@ class TodoService:
         """
         if parent_id is None:
             return
-        
+
         # 자기 자신을 부모로 설정 불가
         if child_id is not None and parent_id == child_id:
             raise TodoSelfReferenceError()
-        
+
         # 부모 Todo 존재 확인
         parent = crud.get_todo(self.session, parent_id)
         if not parent:
             raise TodoInvalidParentError()
-        
+
         # 그룹 일관성 확인
         if parent.tag_group_id != child_tag_group_id:
             raise TodoParentGroupMismatchError()
-        
+
         # 순환 참조 검사 (update 시에만 의미 있음)
         # child_id를 parent_id의 조상으로 설정하면 cycle 발생
         if child_id is not None:
             self._check_cycle(parent_id, child_id)
-    
+
     def _check_cycle(self, parent_id: UUID, child_id: UUID) -> None:
         """
         순환 참조 검사
@@ -113,18 +113,18 @@ class TodoService:
         """
         visited: set[UUID] = set()
         current_id: Optional[UUID] = parent_id
-        
+
         while current_id is not None:
             # child_id에 도달하면 cycle
             if current_id == child_id:
                 raise TodoCycleError()
-            
+
             # 이미 방문한 노드면 기존 데이터에 cycle 있음 - 더 이상 진행 불가
             if current_id in visited:
                 break
-            
+
             visited.add(current_id)
-            
+
             # 부모로 이동
             current = crud.get_todo(self.session, current_id)
             if current is None:
@@ -149,7 +149,7 @@ class TodoService:
         """
         # parent_id 검증 (존재/그룹 일치)
         self._validate_parent_id(data.parent_id, data.tag_group_id)
-        
+
         # Todo 모델 생성
         todo = TodoModel(
             title=data.title,
@@ -160,14 +160,14 @@ class TodoService:
             status=data.status if data.status is not None else TodoStatus.UNSCHEDULED,
         )
         todo = crud.create_todo(self.session, todo)
-        
+
         # 태그 설정 (Schedule 생성 전에 먼저 설정하여 Schedule에도 태그 복사 가능)
         if data.tag_ids:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session)
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
-        
+
         # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
             from datetime import timedelta
@@ -183,7 +183,7 @@ class TodoService:
             )
             schedule_service = ScheduleService(self.session)
             schedule_service.create_schedule(schedule_data)
-        
+
         return todo
 
     def get_todo(self, todo_id: UUID) -> Todo:
@@ -222,30 +222,30 @@ class TodoService:
         """
         # 1. DB 조회 (정렬 적용)
         all_todos = crud.get_todos_sorted(self.session, group_ids, parent_id)
-        
+
         # 2. 태그 필터가 없으면 전부 MATCH
         if not tag_ids:
             reason_map = {t.id: TodoIncludeReason.MATCH for t in all_todos}
             return TodoListResult(todos=all_todos, include_reason_by_id=reason_map)
-        
+
         # 3. 태그 필터 적용 → matched_ids
         matched_ids = self._apply_tag_filter(all_todos, tag_ids)
-        
+
         # 4. parent_by_id 맵 구성 (session.get 최소화)
         parent_by_id = {t.id: t.parent_id for t in all_todos}
-        
+
         # 5. 조상 ID 수집 → ancestor_ids
         ancestor_ids = self._collect_ancestor_ids(parent_by_id, matched_ids)
-        
+
         # 6. include_reason 맵 생성
         reason_map = self._build_include_reason_map(matched_ids, ancestor_ids)
-        
+
         # 7. 정렬 순서 유지하며 visible todos 선택
         visible_ids = matched_ids | ancestor_ids
         visible_todos = [t for t in all_todos if t.id in visible_ids]
-        
+
         return TodoListResult(todos=visible_todos, include_reason_by_id=reason_map)
-    
+
     def _apply_tag_filter(
             self,
             todos: List[Todo],
@@ -256,16 +256,16 @@ class TodoService:
         """
         if not todos or not tag_ids:
             return {t.id for t in todos}
-        
+
         todo_ids = [t.id for t in todos]
         todo_tag_map = crud.get_todo_tag_map(self.session, todo_ids)
-        
+
         tag_ids_set = set(tag_ids)
         return {
             t.id for t in todos
             if tag_ids_set.issubset(todo_tag_map.get(t.id, set()))
         }
-    
+
     def _collect_ancestor_ids(
             self,
             parent_by_id: dict[UUID, Optional[UUID]],
@@ -279,18 +279,18 @@ class TodoService:
         """
         ancestor_ids: set[UUID] = set()
         visited: set[UUID] = set()
-        
+
         for todo_id in matched_ids:
             current_id: Optional[UUID] = parent_by_id.get(todo_id)
-            
+
             while current_id is not None:
                 if current_id in visited:
                     break  # cycle 감지 또는 이미 처리됨
                 visited.add(current_id)
-                
+
                 if current_id not in matched_ids:
                     ancestor_ids.add(current_id)
-                
+
                 # 맵에 있으면 맵에서, 없으면 DB 조회
                 if current_id in parent_by_id:
                     current_id = parent_by_id[current_id]
@@ -301,9 +301,9 @@ class TodoService:
                         break
                     parent_by_id[current_id] = todo.parent_id  # 캐싱
                     current_id = todo.parent_id
-        
+
         return ancestor_ids
-    
+
     @staticmethod
     def _build_include_reason_map(
             matched_ids: set[UUID],
@@ -339,26 +339,26 @@ class TodoService:
         :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
         """
         todo = self.get_todo(todo_id)
-        
+
         # 업데이트 데이터 준비
         update_dict = data.model_dump(exclude_unset=True)
-        
+
         # parent_id 변경 시 검증
         if 'parent_id' in update_dict:
             new_parent_id = update_dict['parent_id']
             # tag_group_id도 변경될 수 있으므로 새 값 우선 사용
             effective_tag_group_id = update_dict.get('tag_group_id', todo.tag_group_id)
             self._validate_parent_id(new_parent_id, effective_tag_group_id, todo_id)
-        
+
         # deadline 변경 처리
         deadline_updated = 'deadline' in update_dict
         old_deadline = todo.deadline
         new_deadline = update_dict.get('deadline')
-        
+
         if deadline_updated:
             # 기존 Schedule 조회
             existing_schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id)
-            
+
             if old_deadline and not new_deadline:
                 # deadline 제거: 기존 Schedule 삭제
                 schedule_service = ScheduleService(self.session)
@@ -395,7 +395,7 @@ class TodoService:
                         tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 동기화
                     )
                     schedule_service.update_schedule(existing_schedules[0].id, schedule_update)
-        
+
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_dict
         if tag_ids_updated:
@@ -410,14 +410,14 @@ class TodoService:
                     schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
                     schedule_service.update_schedule(schedule.id, schedule_update)
             del update_dict['tag_ids']
-        
+
         # 나머지 필드 업데이트
         for key, value in update_dict.items():
             setattr(todo, key, value)
-        
+
         self.session.flush()
         self.session.refresh(todo)
-        
+
         return todo
 
     def delete_todo(self, todo_id: UUID) -> None:
@@ -435,20 +435,20 @@ class TodoService:
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
         """
         todo = self.get_todo(todo_id)
-        
+
         # 연관된 Schedule 명시적 삭제 (외부 캘린더 sync 고려)
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id)
-        
+
         schedule_service = ScheduleService(self.session)
         for schedule in schedules:
             schedule_service.delete_schedule(schedule.id)
-        
+
         # 자식 Todo도 함께 삭제 (cascade)
         # DB 레벨 cascade로 처리되지만, 명시적으로 확인
         children = crud.get_children_by_parent_id(self.session, todo_id)
         for child in children:
             self.delete_todo(child.id)  # 재귀적 삭제
-        
+
         # Todo 삭제
         crud.delete_todo(self.session, todo)
 
@@ -473,7 +473,7 @@ class TodoService:
         # Todo 조회
         result = self.get_all_todos(group_ids=[group_id] if group_id else None)
         todos = result.todos
-        
+
         # Todo별 태그 조회
         todo_ids = [t.id for t in todos]
         if not todo_ids:
@@ -482,32 +482,32 @@ class TodoService:
                 total_count=0,
                 by_tag=[],
             )
-        
+
         # 태그별 카운트 집계
         statement = (
             select(TodoTag.tag_id, Tag.name)
             .join(Tag)
             .where(TodoTag.todo_id.in_(todo_ids))
         )
-        
+
         # 그룹 필터링
         if group_id:
             statement = statement.where(Tag.group_id == group_id)
-        
+
         tag_rows = self.session.exec(statement).all()
-        
+
         # 태그별 카운트
         tag_counts: dict[UUID, dict] = {}
         for tag_id, tag_name in tag_rows:
             if tag_id not in tag_counts:
                 tag_counts[tag_id] = {"name": tag_name, "count": 0}
             tag_counts[tag_id]["count"] += 1
-        
+
         by_tag = [
             TagStat(tag_id=tag_id, tag_name=info["name"], count=info["count"])
             for tag_id, info in tag_counts.items()
         ]
-        
+
         return TodoStats(
             group_id=group_id,
             total_count=len(todos),
@@ -527,14 +527,14 @@ class TodoService:
         :return: TodoRead DTO
         """
         from app.domain.schedule.schema.dto import ScheduleRead
-        
+
         tags = self.get_todo_tags(todo.id)
         tag_reads = [TagRead.model_validate(tag) for tag in tags]
-        
+
         # 연관된 Schedule 조회
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo.id)
         schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
-        
+
         return TodoRead(
             id=todo.id,
             title=todo.title,

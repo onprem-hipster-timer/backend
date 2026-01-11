@@ -5,11 +5,11 @@ from uuid import UUID
 from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
 from sqlmodel import Field, Relationship
 
+from app.domain.schedule.enums import ScheduleState
 from app.models.base import UUIDBase, TimestampMixin
 # ScheduleTag, ScheduleExceptionTag는 순환 참조 없이 import 가능
 # (tag.py에서 Schedule을 import하지 않으므로)
 from app.models.tag import ScheduleTag, ScheduleExceptionTag
-from app.domain.schedule.enums import ScheduleState
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
@@ -33,7 +33,7 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
         default=None,
         sa_column=Column(ForeignKey("tag_group.id", ondelete="SET NULL"), nullable=True)
     )
-    
+
     # Todo에서 생성된 Schedule 추적 (논리적 참조)
     source_todo_id: Optional[UUID] = Field(
         default=None,
@@ -43,7 +43,7 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
             index=True,  # 성능 최적화: Todo 삭제 시 연관 Schedule 조회용
         )
     )
-    
+
     # Schedule 상태 enum
     state: ScheduleState = Field(
         default=ScheduleState.PLANNED,

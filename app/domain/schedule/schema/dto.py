@@ -9,13 +9,13 @@ Schedule Domain DTO (Data Transfer Objects)
 from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
-from app.domain.tag.schema.dto import TagRead
 
 from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.enums import ScheduleState
+from app.domain.tag.schema.dto import TagRead
 from app.utils.validators import validate_time_order
 
 if TYPE_CHECKING:

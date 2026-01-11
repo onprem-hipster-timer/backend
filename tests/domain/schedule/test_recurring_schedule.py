@@ -557,15 +557,15 @@ def test_weekly_multiple_weekdays(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 1월에는 화요일 5개, 수요일 5개 = 총 10개
     assert len(recurring_instances) == 10
-    
+
     # 각 인스턴스가 화요일 또는 수요일인지 확인
     for instance in recurring_instances:
         weekday = instance.start_time.weekday()
         assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
-    
+
     # 날짜 순서 확인
     dates = [s.start_time.date() for s in recurring_instances]
     assert dates == sorted(dates), "날짜가 순서대로 정렬되어야 함"
@@ -591,10 +591,10 @@ def test_weekly_multiple_weekdays_three_days(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 1월에는 월요일 5개, 수요일 5개, 금요일 4개 = 총 14개
     assert len(recurring_instances) == 14
-    
+
     # 각 인스턴스가 월/수/금인지 확인
     for instance in recurring_instances:
         weekday = instance.start_time.weekday()
@@ -620,14 +620,14 @@ def test_weekly_with_count(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # COUNT=5이므로 정확히 5개만 생성되어야 함
     assert len(recurring_instances) == 5
-    
+
     # 각 인스턴스가 월요일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.weekday() == 0  # 월요일
-    
+
     # 예상 날짜: 1/1, 1/8, 1/15, 1/22, 1/29
     expected_dates = [
         datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC).date(),
@@ -659,10 +659,10 @@ def test_daily_with_count(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # COUNT=7이므로 정확히 7개만 생성되어야 함
     assert len(recurring_instances) == 7
-    
+
     # 예상 날짜: 1/1 ~ 1/7
     expected_dates = [
         datetime(2024, 1, i, 10, 0, 0, tzinfo=UTC).date()
@@ -691,10 +691,10 @@ def test_weekly_count_with_multiple_days(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # COUNT=10이므로 정확히 10개만 생성되어야 함 (5주 * 2일)
     assert len(recurring_instances) == 10
-    
+
     # 각 인스턴스가 화요일 또는 수요일인지 확인
     for instance in recurring_instances:
         weekday = instance.start_time.weekday()
@@ -721,14 +721,14 @@ def test_weekly_with_interval(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 격주이므로 1월에는 1/1, 1/15, 1/29 = 3개, 2월에는 2/12, 2/26 = 2개, 총 5개
     assert len(recurring_instances) == 5
-    
+
     # 각 인스턴스가 월요일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.weekday() == 0  # 월요일
-    
+
     # 예상 날짜 확인
     expected_dates = [
         datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC).date(),
@@ -761,10 +761,10 @@ def test_monthly_by_monthday(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 6개월이므로 6개 생성되어야 함
     assert len(recurring_instances) == 6
-    
+
     # 각 인스턴스가 15일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.day == 15
@@ -790,10 +790,10 @@ def test_monthly_by_weekday_first(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 6개월이므로 6개 생성되어야 함
     assert len(recurring_instances) == 6
-    
+
     # 각 인스턴스가 첫 번째 월요일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.weekday() == 0  # 월요일
@@ -821,10 +821,10 @@ def test_monthly_by_weekday_last(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 6개월이므로 6개 생성되어야 함
     assert len(recurring_instances) == 6
-    
+
     # 각 인스턴스가 마지막 금요일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.weekday() == 4  # 금요일
@@ -852,14 +852,14 @@ def test_monthly_with_interval(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 3개월마다이므로 1월, 4월, 7월, 10월 = 4개
     assert len(recurring_instances) == 4
-    
+
     # 각 인스턴스가 15일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.day == 15
-    
+
     # 예상 월 확인
     expected_months = [1, 4, 7, 10]
     actual_months = [s.start_time.month for s in recurring_instances]
@@ -886,15 +886,15 @@ def test_yearly_by_month_and_day(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 3년이므로 3개 생성되어야 함
     assert len(recurring_instances) == 3
-    
+
     # 각 인스턴스가 1월 1일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.month == 1
         assert instance.start_time.day == 1
-    
+
     # 예상 연도 확인
     expected_years = [2024, 2025, 2026]
     actual_years = [s.start_time.year for s in recurring_instances]
@@ -921,10 +921,10 @@ def test_yearly_by_month_and_weekday(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 3년이므로 3개 생성되어야 함
     assert len(recurring_instances) == 3
-    
+
     # 각 인스턴스가 12월 25일인지 확인
     for instance in recurring_instances:
         assert instance.start_time.month == 12
@@ -950,16 +950,16 @@ def test_start_date_not_in_byday(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # 시작 날짜가 월요일이지만, 첫 번째 인스턴스는 다음 화요일(1/2)부터 시작되어야 함
     # 1월에는 화요일 5개, 수요일 5개 = 총 10개
     assert len(recurring_instances) == 10
-    
+
     # 첫 번째 인스턴스가 화요일인지 확인
     first_instance = min(recurring_instances, key=lambda s: s.start_time)
     assert first_instance.start_time.weekday() == 1  # 화요일
     assert first_instance.start_time.date() == datetime(2024, 1, 2).date()
-    
+
     # 모든 인스턴스가 화요일 또는 수요일인지 확인
     for instance in recurring_instances:
         weekday = instance.start_time.weekday()
@@ -987,10 +987,10 @@ def test_count_vs_recurrence_end(test_session):
     schedules = service.get_schedules_by_date_range(start_date, end_date)
 
     recurring_instances = [s for s in schedules if s.parent_id == parent_schedule.id]
-    
+
     # COUNT=5가 우선되어야 하므로 정확히 5개만 생성되어야 함
     assert len(recurring_instances) == 5
-    
+
     # 모든 인스턴스가 1월에 있어야 함 (COUNT=5이므로)
     for instance in recurring_instances:
         assert instance.start_time.month == 1

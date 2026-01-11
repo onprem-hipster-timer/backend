@@ -89,10 +89,8 @@ class TagService:
             _raise_group_not_found(group_id)
 
         # 1. 해당 그룹의 Todo 삭제 (Todo 모델 직접 사용)
-        from app.models.todo import Todo as TodoModel
         from app.domain.todo.service import TodoService
-        from sqlmodel import select
-        
+
         todo_service = TodoService(self.session)
         result = todo_service.get_all_todos(group_ids=[group_id])
         for todo in result.todos:

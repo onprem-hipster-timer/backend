@@ -86,7 +86,7 @@ def test_get_all_schedules_e2e(e2e_client):
     data = response.json()
     assert isinstance(data, list)
     assert len(data) >= 3
-    
+
     # 생성한 일정들이 모두 포함되어 있는지 확인
     returned_ids = [s["id"] for s in data]
     for schedule_id in schedule_ids:
@@ -920,18 +920,18 @@ def test_get_recurring_schedules_e2e(e2e_client):
     )
     assert response.status_code == 200
     schedules = response.json()
-    
+
     # 반복 일정이 가상 인스턴스로 확장되어야 함
     recurring_instances = [
-        s for s in schedules 
+        s for s in schedules
         if s.get("parent_id") == parent_schedule_id
     ]
     assert len(recurring_instances) == 5  # 1월의 5개 월요일
-    
+
     # 각 인스턴스가 고유 ID를 가져야 함
     instance_ids = {s["id"] for s in recurring_instances}
     assert len(instance_ids) == 5  # 모두 다른 ID
-    
+
     # 각 인스턴스의 시작 시간이 월요일이어야 함
     for instance in recurring_instances:
         from datetime import datetime
@@ -968,13 +968,13 @@ def test_get_recurring_schedules_with_date_range_filter_e2e(e2e_client):
     )
     assert response.status_code == 200
     schedules = response.json()
-    
+
     recurring_instances = [
-        s for s in schedules 
+        s for s in schedules
         if s.get("parent_id") == parent_schedule_id
     ]
     assert len(recurring_instances) == 3  # 5일, 6일, 7일
-    
+
     # 각 인스턴스의 날짜 확인
     from datetime import datetime
     dates = {
@@ -1028,14 +1028,13 @@ def test_get_recurring_schedules_mixed_with_regular_e2e(e2e_client):
     )
     assert response.status_code == 200
     schedules = response.json()
-    
+
     # 일반 일정 1개 + 반복 일정 인스턴스 1개
     regular_schedules = [s for s in schedules if s["id"] == regular_schedule_id]
     recurring_instances = [
-        s for s in schedules 
+        s for s in schedules
         if s.get("parent_id") == parent_schedule_id
     ]
-    
+
     assert len(regular_schedules) == 1
     assert len(recurring_instances) == 1
-

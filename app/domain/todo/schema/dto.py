@@ -21,7 +21,7 @@ from app.domain.todo.enums import TodoStatus
 
 class TodoIncludeReason(str, Enum):
     """Todo가 응답에 포함된 사유"""
-    MATCH = "MATCH"        # 필터 조건에 직접 매칭됨
+    MATCH = "MATCH"  # 필터 조건에 직접 매칭됨
     ANCESTOR = "ANCESTOR"  # 매칭된 Todo의 조상이라 포함됨
 
 
@@ -76,4 +76,3 @@ class TodoStats(CustomModel):
     group_id: Optional[UUID] = None
     total_count: int
     by_tag: List[TagStat]
-

@@ -40,8 +40,6 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
     return dt.replace(tzinfo=None)
 
 
-
-
 def ensure_utc_naive(dt: datetime | None) -> datetime | None:
     """
     datetime이 UTC naive인지 보장하고 변환

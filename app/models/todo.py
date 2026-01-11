@@ -11,9 +11,9 @@ from uuid import UUID
 from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
 from sqlmodel import Field, Relationship
 
+from app.domain.todo.enums import TodoStatus
 from app.models.base import UUIDBase, TimestampMixin
 from app.models.tag import TodoTag
-from app.domain.todo.enums import TodoStatus
 
 if TYPE_CHECKING:
     from app.models.schedule import Schedule
@@ -27,7 +27,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     title: str
     description: Optional[str] = None
     deadline: Optional[datetime] = None  # 마감기간
-    
+
     # TagGroup 참조 (필수)
     tag_group_id: UUID = Field(
         sa_column=Column(
@@ -36,7 +36,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
             index=True,
         )
     )
-    
+
     # Todo self-reference (트리 구조)
     parent_id: Optional[UUID] = Field(
         default=None,
@@ -46,7 +46,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
             index=True,
         )
     )
-    
+
     # Status enum
     status: TodoStatus = Field(
         default=TodoStatus.UNSCHEDULED,
@@ -56,7 +56,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
             default=TodoStatus.UNSCHEDULED.value,
         )
     )
-    
+
     # Relationships
     tag_group: "TagGroup" = Relationship()
     parent: Optional["Todo"] = Relationship(
