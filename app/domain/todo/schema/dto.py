@@ -7,6 +7,7 @@ Todo Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from datetime import datetime
+from enum import Enum
 from typing import Optional, List
 from uuid import UUID
 
@@ -16,6 +17,12 @@ from app.core.base_model import CustomModel
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
+
+
+class TodoIncludeReason(str, Enum):
+    """Todo가 응답에 포함된 사유"""
+    MATCH = "MATCH"        # 필터 조건에 직접 매칭됨
+    ANCESTOR = "ANCESTOR"  # 매칭된 Todo의 조상이라 포함됨
 
 
 class TodoCreate(CustomModel):
@@ -43,6 +50,7 @@ class TodoRead(CustomModel):
     created_at: datetime
     tags: List[TagRead] = []
     schedules: List[ScheduleRead] = []  # 연관된 Schedule 목록
+    include_reason: TodoIncludeReason = TodoIncludeReason.MATCH  # 포함 사유 (필터 매칭/조상)
 
 
 class TodoUpdate(CustomModel):

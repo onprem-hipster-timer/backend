@@ -94,8 +94,8 @@ class TagService:
         from sqlmodel import select
         
         todo_service = TodoService(self.session)
-        todos = todo_service.get_all_todos(group_ids=[group_id])
-        for todo in todos:
+        result = todo_service.get_all_todos(group_ids=[group_id])
+        for todo in result.todos:
             todo_service.delete_todo(todo.id)
 
         # 2. 일정의 tag_group_id를 NULL로 설정

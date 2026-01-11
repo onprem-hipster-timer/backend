@@ -935,7 +935,7 @@ def test_create_todo_parent_group_mismatch_e2e(e2e_client):
 
 @pytest.mark.e2e
 def test_get_todos_includes_ancestors_with_tag_filter_e2e(e2e_client):
-    """태그 필터 시 조상 노드도 포함되는지 E2E 테스트"""
+    """태그 필터 시 조상 노드도 포함되고 include_reason이 올바르게 설정되는지 E2E 테스트"""
     # 그룹 생성
     group_response = e2e_client.post(
         "/v1/tags/groups",
@@ -974,9 +974,72 @@ def test_get_todos_includes_ancestors_with_tag_filter_e2e(e2e_client):
     assert response.status_code == 200
     
     todos = response.json()
-    todo_ids = [t["id"] for t in todos]
+    todo_by_id = {t["id"]: t for t in todos}
     
-    # 자식은 태그 매칭으로 포함
-    assert child_id in todo_ids, "자식 Todo가 결과에 포함되어야 함"
-    # 부모는 조상으로 포함
-    assert parent_id in todo_ids, "부모 Todo가 조상으로 포함되어야 함"
+    # 자식은 태그 매칭으로 포함 (include_reason = MATCH)
+    assert child_id in todo_by_id, "자식 Todo가 결과에 포함되어야 함"
+    assert todo_by_id[child_id]["include_reason"] == "MATCH", "자식 Todo는 MATCH여야 함"
+    
+    # 부모는 조상으로 포함 (include_reason = ANCESTOR)
+    assert parent_id in todo_by_id, "부모 Todo가 조상으로 포함되어야 함"
+    assert todo_by_id[parent_id]["include_reason"] == "ANCESTOR", "부모 Todo는 ANCESTOR여야 함"
+
+
+@pytest.mark.e2e
+def test_get_todos_include_reason_all_match_without_filter_e2e(e2e_client):
+    """필터 없이 조회 시 모든 Todo의 include_reason이 MATCH인지 E2E 테스트"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "전체조회테스트", "color": "#00FF00"}
+    )
+    group_id = group_response.json()["id"]
+    
+    # Todo 생성
+    todo1_response = e2e_client.post(
+        "/v1/todos",
+        json={"title": "Todo 1", "tag_group_id": group_id},
+    )
+    todo1_id = todo1_response.json()["id"]
+    
+    todo2_response = e2e_client.post(
+        "/v1/todos",
+        json={"title": "Todo 2", "tag_group_id": group_id, "parent_id": todo1_id},
+    )
+    todo2_id = todo2_response.json()["id"]
+    
+    # 필터 없이 조회 (group_ids로 필터링해서 다른 테스트 데이터 제외)
+    response = e2e_client.get("/v1/todos", params={"group_ids": [group_id]})
+    assert response.status_code == 200
+    
+    todos = response.json()
+    
+    # 모든 Todo의 include_reason이 MATCH여야 함
+    for todo in todos:
+        assert todo["include_reason"] == "MATCH", f"Todo {todo['id']}의 include_reason이 MATCH여야 함"
+
+
+@pytest.mark.e2e
+def test_get_single_todo_include_reason_is_match_e2e(e2e_client):
+    """단일 Todo 조회 시 include_reason이 MATCH인지 E2E 테스트"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "단일조회테스트", "color": "#0000FF"}
+    )
+    group_id = group_response.json()["id"]
+    
+    # Todo 생성
+    create_response = e2e_client.post(
+        "/v1/todos",
+        json={"title": "단일 조회 테스트", "tag_group_id": group_id},
+    )
+    assert create_response.status_code == 201
+    todo_id = create_response.json()["id"]
+    
+    # 단일 Todo 조회
+    response = e2e_client.get(f"/v1/todos/{todo_id}")
+    assert response.status_code == 200
+    
+    todo = response.json()
+    assert todo["include_reason"] == "MATCH", "단일 조회 시 include_reason은 MATCH여야 함"

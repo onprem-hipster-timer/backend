@@ -226,11 +226,11 @@ def test_get_todo_not_found(test_session):
 def test_get_all_todos_empty(test_session):
     """Todo 목록 조회 (빈 목록) 테스트"""
     service = TodoService(test_session)
-    todos = service.get_all_todos()
+    result = service.get_all_todos()
 
-    assert isinstance(todos, list)
+    assert isinstance(result.todos, list)
     # 다른 테스트에서 생성된 Todo가 있을 수 있으므로 >= 0
-    assert len(todos) >= 0
+    assert len(result.todos) >= 0
 
 
 def test_get_all_todos_multiple(test_session, sample_tag_group):
@@ -243,8 +243,8 @@ def test_get_all_todos_multiple(test_session, sample_tag_group):
     todo3 = service.create_todo(TodoCreate(title="Todo 3", tag_group_id=sample_tag_group.id))
     test_session.flush()
 
-    todos = service.get_all_todos()
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos()
+    todo_ids = [t.id for t in result.todos]
     
     assert todo1.id in todo_ids
     assert todo2.id in todo_ids
@@ -276,8 +276,8 @@ def test_get_all_todos_filtered_by_tag_ids(test_session, sample_tag_group):
     test_session.flush()
 
     # tag1만 가진 Todo 조회
-    todos = service.get_all_todos(tag_ids=[tag1.id])
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos(tag_ids=[tag1.id])
+    todo_ids = [t.id for t in result.todos]
     
     assert todo1.id in todo_ids
     assert todo3.id in todo_ids  # tag1과 tag2 둘 다 가진 Todo도 포함
@@ -285,8 +285,8 @@ def test_get_all_todos_filtered_by_tag_ids(test_session, sample_tag_group):
     assert todo4.id not in todo_ids
 
     # tag1과 tag2 둘 다 가진 Todo 조회 (AND 방식)
-    todos = service.get_all_todos(tag_ids=[tag1.id, tag2.id])
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos(tag_ids=[tag1.id, tag2.id])
+    todo_ids = [t.id for t in result.todos]
     
     assert todo3.id in todo_ids
     assert todo1.id not in todo_ids
@@ -323,8 +323,8 @@ def test_get_all_todos_filtered_by_group_ids(test_session, sample_tag_group):
     test_session.flush()
 
     # sample_tag_group에 속한 Todo 조회
-    todos = service.get_all_todos(group_ids=[sample_tag_group.id])
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos(group_ids=[sample_tag_group.id])
+    todo_ids = [t.id for t in result.todos]
     
     assert todo1.id in todo_ids  # sample_tag_group에 속함
     assert todo3.id in todo_ids  # sample_tag_group에 속함 (태그 없어도 포함)
@@ -355,11 +355,11 @@ def test_get_all_todos_filtered_by_tag_and_group_ids(test_session, sample_tag_gr
     test_session.flush()
 
     # 그룹 필터링 후 태그 필터링
-    todos = service.get_all_todos(
+    result = service.get_all_todos(
         tag_ids=[tag1.id],
         group_ids=[sample_tag_group.id],
     )
-    todo_ids = [t.id for t in todos]
+    todo_ids = [t.id for t in result.todos]
     
     assert todo1.id in todo_ids
     assert todo3.id in todo_ids  # tag1과 tag2 둘 다 가진 Todo도 포함
@@ -1018,10 +1018,10 @@ def test_get_all_todos_sorted_by_status(test_session, sample_tag_group):
     ))
     test_session.flush()
     
-    todos = service.get_all_todos(group_ids=[sample_tag_group.id])
+    result = service.get_all_todos(group_ids=[sample_tag_group.id])
     
     # 상태 순서대로 정렬되어야 함: UNSCHEDULED → SCHEDULED → DONE → CANCELLED
-    statuses = [t.status for t in todos]
+    statuses = [t.status for t in result.todos]
     expected_order = [
         TodoStatus.UNSCHEDULED,
         TodoStatus.SCHEDULED,
@@ -1063,14 +1063,14 @@ def test_get_all_todos_sorted_by_deadline(test_session, sample_tag_group):
     ))
     test_session.flush()
     
-    todos = service.get_all_todos(group_ids=[sample_tag_group.id])
+    result = service.get_all_todos(group_ids=[sample_tag_group.id])
     
     # 같은 상태에서 deadline 순 (null은 뒤): 빠른 마감 → 늦은 마감 → 마감 없음
-    titles = [t.title for t in todos]
+    titles = [t.title for t in result.todos]
     
     # deadline이 있는 것들이 null보다 먼저
-    deadline_todos = [t for t in todos if t.deadline is not None]
-    no_deadline_todos = [t for t in todos if t.deadline is None]
+    deadline_todos = [t for t in result.todos if t.deadline is not None]
+    no_deadline_todos = [t for t in result.todos if t.deadline is None]
     
     # deadline 있는 것들이 먼저 나와야 함
     assert all(t.title in ["빠른 마감", "늦은 마감"] for t in deadline_todos)
@@ -1116,13 +1116,17 @@ def test_get_all_todos_includes_ancestors_with_tag_filter(test_session, sample_t
     test_session.flush()
     
     # 태그로 필터링
-    todos = service.get_all_todos(tag_ids=[tag.id])
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos(tag_ids=[tag.id])
+    todo_ids = [t.id for t in result.todos]
     
     # 자식은 태그 매칭으로 포함
     assert child.id in todo_ids, "자식 Todo가 결과에 포함되어야 함"
     # 부모는 조상으로 포함
     assert parent.id in todo_ids, "부모 Todo가 조상으로 포함되어야 함"
+    
+    # include_reason 확인
+    assert result.include_reason_by_id[child.id] == TodoIncludeReason.MATCH
+    assert result.include_reason_by_id[parent.id] == TodoIncludeReason.ANCESTOR
 
 
 def test_get_all_todos_includes_deep_ancestors_with_tag_filter(test_session, sample_tag_group):
@@ -1161,10 +1165,15 @@ def test_get_all_todos_includes_deep_ancestors_with_tag_filter(test_session, sam
     test_session.flush()
     
     # 태그로 필터링
-    todos = service.get_all_todos(tag_ids=[tag.id])
-    todo_ids = [t.id for t in todos]
+    result = service.get_all_todos(tag_ids=[tag.id])
+    todo_ids = [t.id for t in result.todos]
     
     # 모든 조상이 포함되어야 함
     assert child.id in todo_ids, "자식 Todo가 결과에 포함되어야 함"
     assert parent.id in todo_ids, "부모 Todo가 조상으로 포함되어야 함"
     assert grandparent.id in todo_ids, "조부모 Todo가 조상으로 포함되어야 함"
+    
+    # include_reason 확인
+    assert result.include_reason_by_id[child.id] == TodoIncludeReason.MATCH
+    assert result.include_reason_by_id[parent.id] == TodoIncludeReason.ANCESTOR
+    assert result.include_reason_by_id[grandparent.id] == TodoIncludeReason.ANCESTOR

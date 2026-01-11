@@ -20,6 +20,7 @@ from app.domain.todo.schema.dto import (
     TodoRead,
     TodoUpdate,
     TodoStats,
+    TodoIncludeReason,
 )
 from app.domain.todo.service import TodoService
 
@@ -64,12 +65,24 @@ async def read_todos(
     
     태그 필터링:
     - tag_ids: AND 방식 (모든 지정 태그를 포함한 Todo만 반환)
+    - 태그 필터 시 조상 노드도 포함 (orphan 방지)
+    
+    응답의 include_reason 필드:
+    - MATCH: 필터 조건에 직접 매칭된 Todo
+    - ANCESTOR: 매칭된 Todo의 조상이라 포함된 Todo
     
     둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
     """
     service = TodoService(session)
-    todos = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
-    return [service.to_read_dto(todo) for todo in todos]
+    result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
+    
+    return [
+        service.to_read_dto(
+            todo,
+            include_reason=result.include_reason_by_id.get(todo.id, TodoIncludeReason.MATCH),
+        )
+        for todo in result.todos
+    ]
 
 
 @router.get("/stats", response_model=TodoStats)

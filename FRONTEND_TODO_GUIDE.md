@@ -1,6 +1,6 @@
 # Todo API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-10
+> **최종 업데이트**: 2026-01-11
 
 ## 목차
 
@@ -66,6 +66,7 @@ interface Todo {
   created_at: string;      // 생성일시
   tags: Tag[];             // 연결된 태그 목록
   schedules: Schedule[];   // 연관된 Schedule 목록
+  include_reason: TodoIncludeReason; // 목록에 포함된 이유 (항상 포함)
 }
 
 type TodoStatus = 
@@ -73,6 +74,10 @@ type TodoStatus =
   | "SCHEDULED"    // 일정 지정됨
   | "DONE"         // 완료
   | "CANCELLED";   // 취소됨
+
+type TodoIncludeReason =
+  | "MATCH"     // 필터 조건에 직접 매칭된 Todo (또는 필터 미사용 시)
+  | "ANCESTOR"; // 필터에 매칭된 Todo의 조상이라서 포함된 Todo
 ```
 
 ### Schedule
@@ -173,6 +178,7 @@ Content-Type: application/json
   "parent_id": null,
   "status": "UNSCHEDULED",
   "created_at": "2024-01-15T09:00:00Z",
+  "include_reason": "MATCH",
   "tags": [
     {
       "id": "660e8400-e29b-41d4-a716-446655440001",
@@ -205,8 +211,28 @@ GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2
 
 | 파라미터 | 타입 | 설명 |
 |---------|------|------|
-| `group_ids` | UUID[] | 해당 그룹에 속한 Todo만 조회 |
+| `group_ids` | UUID[] | `tag_group_id`가 해당 그룹인 Todo만 조회 |
 | `tag_ids` | UUID[] | 지정된 태그를 **모두** 포함한 Todo만 조회 (AND 방식) |
+
+> ✅ **필터링 시 트리(orphan) 처리**
+> - `tag_ids`로 필터링하면, **매칭된 Todo + 그 Todo의 모든 조상(ancestor)** 을 함께 반환합니다.
+> - 이때 각 Todo에는 `include_reason`이 항상 포함됩니다.
+>   - 매칭된 Todo: `include_reason = "MATCH"`
+>   - 조상 Todo: `include_reason = "ANCESTOR"`
+> - `tag_ids`를 사용하지 않으면, 반환되는 모든 Todo는 `include_reason = "MATCH"` 입니다.
+
+> ✅ **정렬 규칙 (백엔드 기본 정렬)**
+> - status 순서: `UNSCHEDULED` → `SCHEDULED` → `DONE` → `CANCELLED`
+> - 같은 status 내에서는:
+>   - deadline이 있는 항목이 먼저 (null은 뒤)
+>   - deadline 오름차순
+>   - created_at 내림차순
+
+> ✅ **트리 무결성 (백엔드 보장)**
+> - `parent_id`는 존재하는 Todo여야 합니다. (없으면 400)
+> - 자기 자신을 부모로 설정할 수 없습니다. (400)
+> - 부모/자식 Todo의 `tag_group_id`는 반드시 같아야 합니다. (400)
+> - 순환 참조(cycle)를 만들 수 없습니다. (400)
 
 #### Todo 단건 조회
 
