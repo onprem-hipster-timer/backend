@@ -39,15 +39,31 @@ async def lifespan(app: FastAPI):
         # 1. 로깅 설정
         setup_logging()
 
-        # 2. 동기 DB 초기화 (기존 코드 호환성)
+        # 2. OIDC authentication status check
+        if not settings.OIDC_ENABLED:
+            logger.warning("")
+            logger.warning("########################################################")
+            logger.warning("#                                                      #")
+            logger.warning("#   ⚠️  WARNING: OIDC authentication is DISABLED!      #")
+            logger.warning("#                                                      #")
+            logger.warning("#   All requests will use a mock test user:            #")
+            logger.warning("#   - sub: test-user-id                                #")
+            logger.warning("#   - email: test@example.com                          #")
+            logger.warning("#                                                      #")
+            logger.warning("#   Set OIDC_ENABLED=true for production!              #")
+            logger.warning("#                                                      #")
+            logger.warning("########################################################")
+            logger.warning("")
+
+        # 3. 동기 DB 초기화 (기존 코드 호환성)
         init_db_sync()
         logger.info("✅ Database tables initialized (sync)")
 
-        # 3. 비동기 DB 초기화 (새로운 holiday 테이블)
+        # 4. 비동기 DB 초기화 (새로운 holiday 테이블)
         await init_db_async()
         logger.info("✅ Database tables initialized (async)")
 
-        # 4. 공휴일 배경 태스크 시작
+        # 5. 공휴일 배경 태스크 시작
         _asyncio_task = asyncio.create_task(holiday_task.run())
         logger.info("✅ Holiday background task scheduled")
 
