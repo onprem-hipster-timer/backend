@@ -17,6 +17,7 @@
 [API Reference](#api-reference) •
 [Architecture](#architecture) •
 [Testing](#testing) •
+[Configuration](#configuration) •
 [For Developers](#for-developers)
 
 **🌐 [한국어](README.ko.md)**
@@ -452,6 +453,8 @@ pytest --cov=app --cov-report=html
 
 Configure via `.env` file or environment variables.
 
+#### Core Settings
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | DB connection string | `sqlite:///./schedule.db` |
@@ -460,6 +463,50 @@ Configure via `.env` file or environment variables.
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | Allow GraphQL introspection | `True` |
+
+#### Authentication (OIDC)
+
+> 📖 **Detailed Guide**: [FRONTEND_AUTH_GUIDE.md](FRONTEND_AUTH_GUIDE.md)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OIDC_ENABLED` | Enable OIDC authentication | `True` |
+| `OIDC_ISSUER_URL` | OIDC Provider issuer URL | - |
+| `OIDC_AUDIENCE` | Client ID for token validation | - |
+| `OIDC_DISCOVERY_URL` | Custom discovery endpoint | Auto-generated |
+| `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
+
+**Quick Setup:**
+
+```bash
+# Development (disable auth)
+OIDC_ENABLED=false
+
+# Production
+OIDC_ENABLED=true
+OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_AUDIENCE=my-frontend-app
+```
+
+#### Rate Limiting
+
+> 📖 **Detailed Guide**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RATE_LIMIT_ENABLED` | Enable rate limiting | `True` |
+| `RATE_LIMIT_DEFAULT_WINDOW` | Default window size (seconds) | `60` |
+| `RATE_LIMIT_DEFAULT_REQUESTS` | Default max requests per window | `60` |
+
+**Quick Setup:**
+
+```bash
+# Development (disable rate limit)
+RATE_LIMIT_ENABLED=false
+
+# Production (default settings)
+RATE_LIMIT_ENABLED=true
+```
 
 ### Database Migration
 

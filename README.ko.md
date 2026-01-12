@@ -17,6 +17,7 @@
 [API Reference](#api-reference) •
 [Architecture](#architecture) •
 [Testing](#testing) •
+[Configuration](#configuration) •
 [For Developers](#for-developers)
 
 **🌐 [English](README.md)**
@@ -447,6 +448,8 @@ pytest --cov=app --cov-report=html
 
 `.env` 파일 또는 환경 변수로 설정합니다.
 
+#### 기본 설정
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | DB 연결 문자열 | `sqlite:///./schedule.db` |
@@ -455,6 +458,50 @@ pytest --cov=app --cov-report=html
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | GraphQL Introspection 허용 | `True` |
+
+#### 인증 (OIDC)
+
+> 📖 **상세 가이드**: [FRONTEND_AUTH_GUIDE.md](FRONTEND_AUTH_GUIDE.md)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OIDC_ENABLED` | OIDC 인증 활성화 | `True` |
+| `OIDC_ISSUER_URL` | OIDC Provider의 Issuer URL | - |
+| `OIDC_AUDIENCE` | 토큰 검증용 Client ID | - |
+| `OIDC_DISCOVERY_URL` | 커스텀 Discovery 엔드포인트 | 자동 생성 |
+| `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL (초) | `3600` |
+
+**빠른 설정:**
+
+```bash
+# 개발 환경 (인증 비활성화)
+OIDC_ENABLED=false
+
+# 프로덕션 환경
+OIDC_ENABLED=true
+OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_AUDIENCE=my-frontend-app
+```
+
+#### Rate Limit (요청 제한)
+
+> 📖 **상세 가이드**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RATE_LIMIT_ENABLED` | Rate Limit 활성화 | `True` |
+| `RATE_LIMIT_DEFAULT_WINDOW` | 기본 윈도우 크기 (초) | `60` |
+| `RATE_LIMIT_DEFAULT_REQUESTS` | 윈도우당 최대 요청 수 | `60` |
+
+**빠른 설정:**
+
+```bash
+# 개발 환경 (Rate Limit 비활성화)
+RATE_LIMIT_ENABLED=false
+
+# 프로덕션 환경 (기본 설정)
+RATE_LIMIT_ENABLED=true
+```
 
 ### Database Migration
 
