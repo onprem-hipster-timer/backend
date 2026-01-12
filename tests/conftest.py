@@ -1,3 +1,8 @@
+import os
+
+# 테스트 환경에서 OIDC 인증 비활성화 - 다른 모듈 임포트 전에 설정 필요!
+os.environ["OIDC_ENABLED"] = "false"
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
@@ -5,7 +10,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine, Session
 
+from app.core.auth import CurrentUser
 from app.models.schedule import Schedule
+
+
+@pytest.fixture
+def test_user() -> CurrentUser:
+    """테스트용 사용자 (OIDC 비활성화 시 반환되는 mock 사용자와 동일)"""
+    return CurrentUser(
+        sub="test-user-id",
+        email="test@example.com",
+        name="Test User",
+    )
 
 
 @pytest.fixture
@@ -102,7 +118,7 @@ async def test_async_session(test_async_engine):
 
 
 @pytest.fixture
-def sample_schedule(test_session):
+def sample_schedule(test_session, test_user):
     """
     테스트 데이터
     
@@ -113,6 +129,7 @@ def sample_schedule(test_session):
     """
     from datetime import datetime, UTC
     from app.domain.schedule.schema.dto import ScheduleCreate
+    from app.domain.schedule.service import ScheduleService
 
     schedule_data = ScheduleCreate(
         title="테스트 일정",
@@ -121,8 +138,9 @@ def sample_schedule(test_session):
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
 
-    schedule = Schedule.model_validate(schedule_data)
-    test_session.add(schedule)
+    # ScheduleService를 통해 owner_id와 함께 일정 생성
+    service = ScheduleService(test_session, test_user)
+    schedule = service.create_schedule(schedule_data)
     # Bug Fix: commit() 대신 flush() 사용 (트랜잭션 격리 유지)
     test_session.flush()  # ID를 얻기 위해 flush
     test_session.refresh(schedule)
@@ -130,7 +148,7 @@ def sample_schedule(test_session):
 
 
 @pytest.fixture
-def sample_timer(test_session, sample_schedule):
+def sample_timer(test_session, sample_schedule, test_user):
     """
     테스트용 타이머 데이터
     
@@ -146,7 +164,7 @@ def sample_timer(test_session, sample_schedule):
         allocated_duration=1800,  # 30분
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
     test_session.flush()
     test_session.refresh(timer)

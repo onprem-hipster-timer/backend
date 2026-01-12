@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     HOLIDAY_API_BASE_URL: str = "http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
 
+    # OIDC 인증 설정
+    OIDC_ENABLED: bool = True  # False로 설정하면 인증 비활성화 (개발/테스트용)
+    OIDC_ISSUER_URL: str = ""  # 예: https://accounts.google.com, https://your-keycloak/realms/your-realm
+    OIDC_AUDIENCE: str = ""  # Client ID (Access Token의 aud 클레임과 매칭)
+    OIDC_DISCOVERY_URL: str | None = None  # 기본: OIDC_ISSUER_URL/.well-known/openid-configuration
+    OIDC_JWKS_CACHE_TTL_SECONDS: int = 3600  # JWKS 캐시 TTL (기본 1시간)
+
     model_config = ConfigDict(
         env_file=".env",
         case_sensitive=True,

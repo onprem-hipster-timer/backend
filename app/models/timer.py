@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 class TimerSession(UUIDBase, TimestampMixin, table=True):
     """타이머 세션 모델"""
+    # 소유자 (OIDC sub claim)
+    owner_id: str = Field(index=True)
+    
     schedule_id: UUID = Field(
         sa_column=Column(
             ForeignKey("schedule.id", ondelete="CASCADE"),

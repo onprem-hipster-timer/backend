@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import Depends
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser, get_current_user
 from app.crud import schedule as crud
 from app.db.session import get_db
 from app.domain.schedule.exceptions import ScheduleNotFoundError
@@ -21,6 +22,7 @@ from app.models.schedule import ScheduleException
 async def valid_schedule_id(
         schedule_id: UUID,
         session: Session = Depends(get_db),
+        current_user: CurrentUser = Depends(get_current_user),
 ) -> Schedule:
     """
     Schedule ID 검증 및 Schedule 반환
@@ -33,10 +35,11 @@ async def valid_schedule_id(
 
     :param schedule_id: Schedule ID
     :param session: DB 세션
+    :param current_user: 현재 인증된 사용자
     :return: Schedule 객체
     :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
     """
-    schedule = crud.get_schedule(session, schedule_id)
+    schedule = crud.get_schedule(session, schedule_id, current_user.sub)
     if not schedule:
         raise ScheduleNotFoundError()
     return schedule

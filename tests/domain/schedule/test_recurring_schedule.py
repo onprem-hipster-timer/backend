@@ -21,7 +21,7 @@ from app.models.schedule import ScheduleException
 
 # ==================== 반복 일정 생성 테스트 ====================
 
-def test_create_recurring_schedule_weekly(test_session):
+def test_create_recurring_schedule_weekly(test_session, test_user):
     """주간 반복 일정 생성 테스트"""
     schedule_data = ScheduleCreate(
         title="주간 회의",
@@ -31,7 +31,7 @@ def test_create_recurring_schedule_weekly(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     schedule = service.create_schedule(schedule_data)
 
     assert schedule.title == "주간 회의"
@@ -40,7 +40,7 @@ def test_create_recurring_schedule_weekly(test_session):
     assert schedule.parent_id is None
 
 
-def test_create_recurring_schedule_with_end_date(test_session):
+def test_create_recurring_schedule_with_end_date(test_session, test_user):
     """종료일이 있는 반복 일정 생성 테스트"""
     schedule_data = ScheduleCreate(
         title="한 달 회의",
@@ -50,14 +50,14 @@ def test_create_recurring_schedule_with_end_date(test_session):
         recurrence_end=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     schedule = service.create_schedule(schedule_data)
 
     assert schedule.recurrence_rule == "FREQ=WEEKLY;BYDAY=MO"
     assert schedule.recurrence_end == datetime(2024, 1, 31, 23, 59, 59)
 
 
-def test_create_recurring_schedule_invalid_rrule(test_session):
+def test_create_recurring_schedule_invalid_rrule(test_session, test_user):
     """잘못된 RRULE로 반복 일정 생성 실패 테스트"""
     schedule_data = ScheduleCreate(
         title="잘못된 반복 일정",
@@ -66,12 +66,12 @@ def test_create_recurring_schedule_invalid_rrule(test_session):
         recurrence_rule="INVALID_RRULE",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     with pytest.raises(InvalidRecurrenceRuleError):
         service.create_schedule(schedule_data)
 
 
-def test_create_recurring_schedule_invalid_end_date(test_session):
+def test_create_recurring_schedule_invalid_end_date(test_session, test_user):
     """종료일이 시작일 이전인 반복 일정 생성 실패 테스트"""
     schedule_data = ScheduleCreate(
         title="잘못된 종료일",
@@ -81,14 +81,14 @@ def test_create_recurring_schedule_invalid_end_date(test_session):
         recurrence_end=datetime(2023, 12, 31, 23, 59, 59, tzinfo=UTC),  # 시작일 이전
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     with pytest.raises(InvalidRecurrenceEndError):
         service.create_schedule(schedule_data)
 
 
 # ==================== 반복 일정 조회 테스트 ====================
 
-def test_get_recurring_schedules_expands_instances(test_session):
+def test_get_recurring_schedules_expands_instances(test_session, test_user):
     """반복 일정 조회 시 가상 인스턴스 확장 테스트"""
     # 주간 반복 일정 생성 (매주 월요일)
     schedule_data = ScheduleCreate(
@@ -99,7 +99,7 @@ def test_get_recurring_schedules_expands_instances(test_session):
         recurrence_end=datetime(2024, 1, 29, 23, 59, 59, tzinfo=UTC),  # 4주간
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월 전체 조회 (5개의 월요일이 있어야 함)
@@ -123,7 +123,7 @@ def test_get_recurring_schedules_expands_instances(test_session):
         assert instance.recurrence_rule is None  # 가상 인스턴스는 반복 규칙 없음
 
 
-def test_get_recurring_schedules_filters_by_date_range(test_session):
+def test_get_recurring_schedules_filters_by_date_range(test_session, test_user):
     """반복 일정 조회 시 날짜 범위 필터링 테스트"""
     schedule_data = ScheduleCreate(
         title="일일 회의",
@@ -133,7 +133,7 @@ def test_get_recurring_schedules_filters_by_date_range(test_session):
         recurrence_end=datetime(2024, 1, 10, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월 5일부터 7일까지만 조회
@@ -150,7 +150,7 @@ def test_get_recurring_schedules_filters_by_date_range(test_session):
     assert dates == {datetime(2024, 1, 5).date(), datetime(2024, 1, 6).date(), datetime(2024, 1, 7).date()}
 
 
-def test_get_recurring_schedules_mixed_with_regular(test_session):
+def test_get_recurring_schedules_mixed_with_regular(test_session, test_user):
     """반복 일정과 일반 일정이 함께 조회되는지 테스트"""
     # 일반 일정
     regular_data = ScheduleCreate(
@@ -168,7 +168,7 @@ def test_get_recurring_schedules_mixed_with_regular(test_session):
         recurrence_end=datetime(2024, 1, 10, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     regular_schedule = service.create_schedule(regular_data)
     recurring_schedule = service.create_schedule(recurring_data)
 
@@ -188,7 +188,7 @@ def test_get_recurring_schedules_mixed_with_regular(test_session):
 
 # ==================== 반복 일정 인스턴스 수정 테스트 ====================
 
-def test_update_recurring_instance(test_session):
+def test_update_recurring_instance(test_session, test_user):
     """반복 일정의 특정 인스턴스 수정 테스트"""
     # 주간 반복 일정 생성
     schedule_data = ScheduleCreate(
@@ -198,7 +198,7 @@ def test_update_recurring_instance(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 첫 번째 인스턴스(2024-01-01) 수정
@@ -225,7 +225,8 @@ def test_update_recurring_instance(test_session):
     exception = crud.get_schedule_exception_by_date(
         test_session,
         parent_schedule.id,
-        datetime(2024, 1, 1, 10, 0, 0)
+        datetime(2024, 1, 1, 10, 0, 0),
+        test_user.sub,
     )
     assert exception is not None
     assert exception.title == "수정된 회의"
@@ -245,9 +246,9 @@ def test_update_recurring_instance(test_session):
     assert modified_instance.title == "수정된 회의"
 
 
-def test_update_recurring_instance_not_recurring(test_session, sample_schedule):
+def test_update_recurring_instance_not_recurring(test_session, sample_schedule, test_user):
     """반복 일정이 아닌 일정에 대해 인스턴스 수정 시도 실패 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     update_data = ScheduleUpdate(title="수정")
 
     with pytest.raises(RecurringScheduleError):
@@ -258,9 +259,9 @@ def test_update_recurring_instance_not_recurring(test_session, sample_schedule):
         )
 
 
-def test_update_recurring_instance_parent_not_found(test_session):
+def test_update_recurring_instance_parent_not_found(test_session, test_user):
     """존재하지 않는 부모 일정에 대해 인스턴스 수정 시도 실패 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     update_data = ScheduleUpdate(title="수정")
     non_existent_id = uuid4()
 
@@ -274,7 +275,7 @@ def test_update_recurring_instance_parent_not_found(test_session):
 
 # ==================== 반복 일정 인스턴스 삭제 테스트 ====================
 
-def test_delete_recurring_instance(test_session):
+def test_delete_recurring_instance(test_session, test_user):
     """반복 일정의 특정 인스턴스 삭제 테스트"""
     # 주간 반복 일정 생성
     schedule_data = ScheduleCreate(
@@ -285,7 +286,7 @@ def test_delete_recurring_instance(test_session):
         recurrence_end=datetime(2024, 1, 29, 23, 59, 59, tzinfo=UTC),  # 4주간
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 첫 번째 인스턴스(2024-01-01) 삭제
@@ -297,7 +298,8 @@ def test_delete_recurring_instance(test_session):
     exception = crud.get_schedule_exception_by_date(
         test_session,
         parent_schedule.id,
-        datetime(2024, 1, 1, 10, 0, 0)
+        datetime(2024, 1, 1, 10, 0, 0),
+        test_user.sub,
     )
     assert exception is not None
     assert exception.is_deleted is True
@@ -318,9 +320,9 @@ def test_delete_recurring_instance(test_session):
     assert deleted_instance is None
 
 
-def test_delete_recurring_instance_not_recurring(test_session, sample_schedule):
+def test_delete_recurring_instance_not_recurring(test_session, sample_schedule, test_user):
     """반복 일정이 아닌 일정에 대해 인스턴스 삭제 시도 실패 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
 
     with pytest.raises(RecurringScheduleError):
         service.delete_recurring_instance(
@@ -331,7 +333,7 @@ def test_delete_recurring_instance_not_recurring(test_session, sample_schedule):
 
 # ==================== CASCADE DELETE 테스트 ====================
 
-def test_delete_recurring_schedule_cascade_delete(test_engine):
+def test_delete_recurring_schedule_cascade_delete(test_engine, test_user):
     """반복 일정 삭제 시 관련 예외 인스턴스 CASCADE DELETE 테스트"""
     from sqlmodel import Session
     from app.domain.schedule.service import ScheduleService
@@ -350,7 +352,7 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
     exception_id = None
 
     with Session(test_engine) as session:
-        service = ScheduleService(session)
+        service = ScheduleService(session, test_user)
         parent_schedule = service.create_schedule(schedule_data)
         session.commit()
         parent_schedule_id = parent_schedule.id  # 세션이 열려 있을 때 ID 저장
@@ -360,6 +362,7 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
             session,
             parent_id=parent_schedule.id,
             exception_date=datetime(2024, 1, 1, 10, 0, 0),
+            owner_id=test_user.sub,
             is_deleted=False,
             title="수정된 회의",
         )
@@ -368,7 +371,7 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
 
     # 부모 일정 삭제
     with Session(test_engine) as delete_session:
-        delete_service = ScheduleService(delete_session)
+        delete_service = ScheduleService(delete_session, test_user)
         delete_service.delete_schedule(parent_schedule_id)  # 저장된 ID 사용
         delete_session.commit()
 
@@ -380,7 +383,7 @@ def test_delete_recurring_schedule_cascade_delete(test_engine):
         assert result is None  # CASCADE DELETE로 삭제됨
 
 
-def test_delete_all_instances_deletes_parent_schedule(test_engine):
+def test_delete_all_instances_deletes_parent_schedule(test_engine, test_user):
     """모든 인스턴스 삭제 시 부모 일정도 자동 삭제되는지 테스트"""
     from sqlmodel import Session
     from app.domain.schedule.service import ScheduleService
@@ -399,7 +402,7 @@ def test_delete_all_instances_deletes_parent_schedule(test_engine):
     parent_schedule_id = None
 
     with Session(test_engine) as session:
-        service = ScheduleService(session)
+        service = ScheduleService(session, test_user)
         parent_schedule = service.create_schedule(schedule_data)
         session.commit()
         parent_schedule_id = parent_schedule.id
@@ -416,7 +419,7 @@ def test_delete_all_instances_deletes_parent_schedule(test_engine):
     # 처음 4개 인스턴스 삭제 (부모 일정은 아직 남아있어야 함)
     for i, instance_date in enumerate(instance_dates[:-1]):
         with Session(test_engine) as delete_session:
-            delete_service = ScheduleService(delete_session)
+            delete_service = ScheduleService(delete_session, test_user)
             delete_service.delete_recurring_instance(parent_schedule_id, instance_date)
             delete_session.commit()
 
@@ -427,7 +430,7 @@ def test_delete_all_instances_deletes_parent_schedule(test_engine):
 
     # 마지막 인스턴스 삭제 (부모 일정도 자동 삭제되어야 함)
     with Session(test_engine) as delete_session:
-        delete_service = ScheduleService(delete_session)
+        delete_service = ScheduleService(delete_session, test_user)
         delete_service.delete_recurring_instance(parent_schedule_id, instance_dates[-1])
         delete_session.commit()
 
@@ -439,7 +442,7 @@ def test_delete_all_instances_deletes_parent_schedule(test_engine):
 
 # ==================== 예외 인스턴스 복합 시나리오 테스트 ====================
 
-def test_recurring_schedule_with_multiple_exceptions(test_session):
+def test_recurring_schedule_with_multiple_exceptions(test_session, test_user):
     """여러 예외 인스턴스가 있는 반복 일정 조회 테스트"""
     # 주간 반복 일정 생성
     schedule_data = ScheduleCreate(
@@ -450,7 +453,7 @@ def test_recurring_schedule_with_multiple_exceptions(test_session):
         recurrence_end=datetime(2024, 1, 29, 23, 59, 59, tzinfo=UTC),  # 4주간
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 첫 번째 인스턴스 수정
@@ -499,7 +502,7 @@ def test_recurring_schedule_with_multiple_exceptions(test_session):
     assert instance_by_date[datetime(2024, 1, 22).date()].title == "주간 회의"
 
 
-def test_update_deleted_instance_restores_it(test_session):
+def test_update_deleted_instance_restores_it(test_session, test_user):
     """삭제된 인스턴스를 수정하면 복원되는지 테스트"""
     # 주간 반복 일정 생성
     schedule_data = ScheduleCreate(
@@ -509,7 +512,7 @@ def test_update_deleted_instance_restores_it(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 인스턴스 삭제
@@ -538,7 +541,7 @@ def test_update_deleted_instance_restores_it(test_session):
 
 # ==================== RRULE 패턴 테스트 ====================
 
-def test_weekly_multiple_weekdays(test_session):
+def test_weekly_multiple_weekdays(test_session, test_user):
     """여러 요일을 사용하는 주간 반복 테스트"""
     # 매주 화요일과 수요일 반복
     schedule_data = ScheduleCreate(
@@ -548,7 +551,7 @@ def test_weekly_multiple_weekdays(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월 전체 조회
@@ -571,7 +574,7 @@ def test_weekly_multiple_weekdays(test_session):
     assert dates == sorted(dates), "날짜가 순서대로 정렬되어야 함"
 
 
-def test_weekly_multiple_weekdays_three_days(test_session):
+def test_weekly_multiple_weekdays_three_days(test_session, test_user):
     """3개 요일을 사용하는 주간 반복 테스트"""
     # 매주 월/수/금 반복
     schedule_data = ScheduleCreate(
@@ -582,7 +585,7 @@ def test_weekly_multiple_weekdays_three_days(test_session):
         recurrence_end=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월 전체 조회
@@ -601,7 +604,7 @@ def test_weekly_multiple_weekdays_three_days(test_session):
         assert weekday in [0, 2, 4], f"인스턴스는 월요일(0), 수요일(2), 또는 금요일(4)이어야 함, 실제: {weekday}"
 
 
-def test_weekly_with_count(test_session):
+def test_weekly_with_count(test_session, test_user):
     """COUNT를 사용하는 주간 반복 테스트"""
     # 매주 월요일, 5회만 반복
     schedule_data = ScheduleCreate(
@@ -611,7 +614,7 @@ def test_weekly_with_count(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO;COUNT=5",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 충분한 범위로 조회
@@ -640,7 +643,7 @@ def test_weekly_with_count(test_session):
     assert set(actual_dates) == set(expected_dates)
 
 
-def test_daily_with_count(test_session):
+def test_daily_with_count(test_session, test_user):
     """COUNT를 사용하는 일일 반복 테스트"""
     # 매일, 7일간만 반복
     schedule_data = ScheduleCreate(
@@ -650,7 +653,7 @@ def test_daily_with_count(test_session):
         recurrence_rule="FREQ=DAILY;COUNT=7",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 충분한 범위로 조회
@@ -672,7 +675,7 @@ def test_daily_with_count(test_session):
     assert set(actual_dates) == set(expected_dates)
 
 
-def test_weekly_count_with_multiple_days(test_session):
+def test_weekly_count_with_multiple_days(test_session, test_user):
     """COUNT와 여러 요일을 함께 사용하는 테스트"""
     # 매주 화요일과 수요일, 총 10회 반복 (5주간)
     schedule_data = ScheduleCreate(
@@ -682,7 +685,7 @@ def test_weekly_count_with_multiple_days(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE;COUNT=10",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 충분한 범위로 조회
@@ -701,7 +704,7 @@ def test_weekly_count_with_multiple_days(test_session):
         assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
 
 
-def test_weekly_with_interval(test_session):
+def test_weekly_with_interval(test_session, test_user):
     """INTERVAL을 사용하는 주간 반복 테스트 (격주)"""
     # 격주 월요일 반복
     schedule_data = ScheduleCreate(
@@ -712,7 +715,7 @@ def test_weekly_with_interval(test_session):
         recurrence_end=datetime(2024, 2, 29, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월~2월 조회
@@ -741,7 +744,7 @@ def test_weekly_with_interval(test_session):
     assert set(actual_dates) == set(expected_dates)
 
 
-def test_monthly_by_monthday(test_session):
+def test_monthly_by_monthday(test_session, test_user):
     """월간 반복 테스트 (일자 기준)"""
     # 매월 15일 반복
     schedule_data = ScheduleCreate(
@@ -752,7 +755,7 @@ def test_monthly_by_monthday(test_session):
         recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월~6월 조회
@@ -770,7 +773,7 @@ def test_monthly_by_monthday(test_session):
         assert instance.start_time.day == 15
 
 
-def test_monthly_by_weekday_first(test_session):
+def test_monthly_by_weekday_first(test_session, test_user):
     """월간 반복 테스트 (첫 번째 요일)"""
     # 매월 첫 번째 월요일 반복
     schedule_data = ScheduleCreate(
@@ -781,7 +784,7 @@ def test_monthly_by_weekday_first(test_session):
         recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월~6월 조회
@@ -801,7 +804,7 @@ def test_monthly_by_weekday_first(test_session):
         assert 1 <= instance.start_time.day <= 7
 
 
-def test_monthly_by_weekday_last(test_session):
+def test_monthly_by_weekday_last(test_session, test_user):
     """월간 반복 테스트 (마지막 요일)"""
     # 매월 마지막 금요일 반복
     schedule_data = ScheduleCreate(
@@ -812,7 +815,7 @@ def test_monthly_by_weekday_last(test_session):
         recurrence_end=datetime(2024, 6, 30, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월~6월 조회
@@ -832,7 +835,7 @@ def test_monthly_by_weekday_last(test_session):
         assert instance.start_time.day >= 23
 
 
-def test_monthly_with_interval(test_session):
+def test_monthly_with_interval(test_session, test_user):
     """INTERVAL을 사용하는 월간 반복 테스트 (격월)"""
     # 3개월마다 반복
     schedule_data = ScheduleCreate(
@@ -843,7 +846,7 @@ def test_monthly_with_interval(test_session):
         recurrence_end=datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월~12월 조회
@@ -866,7 +869,7 @@ def test_monthly_with_interval(test_session):
     assert set(actual_months) == set(expected_months)
 
 
-def test_yearly_by_month_and_day(test_session):
+def test_yearly_by_month_and_day(test_session, test_user):
     """연간 반복 테스트 (월과 일자)"""
     # 매년 1월 1일 반복
     schedule_data = ScheduleCreate(
@@ -877,7 +880,7 @@ def test_yearly_by_month_and_day(test_session):
         recurrence_end=datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 2024~2026년 조회
@@ -901,7 +904,7 @@ def test_yearly_by_month_and_day(test_session):
     assert set(actual_years) == set(expected_years)
 
 
-def test_yearly_by_month_and_weekday(test_session):
+def test_yearly_by_month_and_weekday(test_session, test_user):
     """연간 반복 테스트 (월과 요일)"""
     # 매년 12월 25일 반복 (크리스마스)
     schedule_data = ScheduleCreate(
@@ -912,7 +915,7 @@ def test_yearly_by_month_and_weekday(test_session):
         recurrence_end=datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC),
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 2024~2026년 조회
@@ -931,7 +934,7 @@ def test_yearly_by_month_and_weekday(test_session):
         assert instance.start_time.day == 25
 
 
-def test_start_date_not_in_byday(test_session):
+def test_start_date_not_in_byday(test_session, test_user):
     """시작 날짜가 BYDAY에 포함되지 않는 경우 테스트"""
     # 매주 화요일과 수요일 반복이지만, 시작 날짜는 월요일
     schedule_data = ScheduleCreate(
@@ -941,7 +944,7 @@ def test_start_date_not_in_byday(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=TU,WE",  # 화요일과 수요일만
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 1월 전체 조회
@@ -966,7 +969,7 @@ def test_start_date_not_in_byday(test_session):
         assert weekday in [1, 2], f"인스턴스는 화요일(1) 또는 수요일(2)이어야 함, 실제: {weekday}"
 
 
-def test_count_vs_recurrence_end(test_session):
+def test_count_vs_recurrence_end(test_session, test_user):
     """COUNT와 recurrence_end 동시 사용 시 우선순위 테스트"""
     # COUNT=5와 recurrence_end가 모두 있는 경우
     # COUNT가 우선되어야 함
@@ -978,7 +981,7 @@ def test_count_vs_recurrence_end(test_session):
         recurrence_end=datetime(2024, 3, 31, 23, 59, 59, tzinfo=UTC),  # COUNT보다 더 늦은 날짜
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     parent_schedule = service.create_schedule(schedule_data)
 
     # 충분한 범위로 조회
@@ -996,7 +999,7 @@ def test_count_vs_recurrence_end(test_session):
         assert instance.start_time.month == 1
 
 
-def test_invalid_rrule_count_zero(test_session):
+def test_invalid_rrule_count_zero(test_session, test_user):
     """COUNT=0인 잘못된 RRULE 패턴 테스트"""
     schedule_data = ScheduleCreate(
         title="잘못된 반복 일정",
@@ -1005,12 +1008,12 @@ def test_invalid_rrule_count_zero(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=MO;COUNT=0",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     with pytest.raises(InvalidRecurrenceRuleError):
         service.create_schedule(schedule_data)
 
 
-def test_invalid_rrule_invalid_weekday(test_session):
+def test_invalid_rrule_invalid_weekday(test_session, test_user):
     """잘못된 요일 코드를 사용하는 RRULE 패턴 테스트"""
     schedule_data = ScheduleCreate(
         title="잘못된 반복 일정",
@@ -1019,12 +1022,12 @@ def test_invalid_rrule_invalid_weekday(test_session):
         recurrence_rule="FREQ=WEEKLY;BYDAY=XX",  # 잘못된 요일 코드
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     with pytest.raises(InvalidRecurrenceRuleError):
         service.create_schedule(schedule_data)
 
 
-def test_invalid_rrule_invalid_freq(test_session):
+def test_invalid_rrule_invalid_freq(test_session, test_user):
     """잘못된 FREQ 값을 사용하는 RRULE 패턴 테스트"""
     schedule_data = ScheduleCreate(
         title="잘못된 반복 일정",
@@ -1033,6 +1036,6 @@ def test_invalid_rrule_invalid_freq(test_session):
         recurrence_rule="FREQ=INVALID;BYDAY=MO",
     )
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     with pytest.raises(InvalidRecurrenceRuleError):
         service.create_schedule(schedule_data)

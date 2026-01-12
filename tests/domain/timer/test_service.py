@@ -17,7 +17,7 @@ from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.timer.service import TimerService
 
 
-def test_create_timer_success(test_session, sample_schedule):
+def test_create_timer_success(test_session, sample_schedule, test_user):
     """타이머 생성 성공 테스트"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
@@ -26,7 +26,7 @@ def test_create_timer_success(test_session, sample_schedule):
         allocated_duration=1800,  # 30분
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
 
     assert timer.title == "회의 준비"
@@ -39,14 +39,14 @@ def test_create_timer_success(test_session, sample_schedule):
     assert isinstance(timer.id, UUID)
 
 
-def test_create_timer_without_title_description(test_session, sample_schedule):
+def test_create_timer_without_title_description(test_session, sample_schedule, test_user):
     """제목과 설명 없이 타이머 생성 테스트"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         allocated_duration=3600,  # 1시간
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
 
     assert timer.title is None
@@ -54,7 +54,7 @@ def test_create_timer_without_title_description(test_session, sample_schedule):
     assert timer.status == TimerStatus.RUNNING.value
 
 
-def test_create_timer_invalid_schedule_id(test_session):
+def test_create_timer_invalid_schedule_id(test_session, test_user):
     """존재하지 않는 일정 ID로 타이머 생성 실패 테스트"""
     from uuid import uuid4
 
@@ -63,7 +63,7 @@ def test_create_timer_invalid_schedule_id(test_session):
         allocated_duration=1800,
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     with pytest.raises(ScheduleNotFoundError):
         service.create_timer(timer_data)
 
@@ -80,9 +80,9 @@ def test_create_timer_invalid_allocated_duration(test_session, sample_schedule):
         )
 
 
-def test_get_timer_success(test_session, sample_timer):
+def test_get_timer_success(test_session, sample_timer, test_user):
     """타이머 조회 성공 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     retrieved_timer = service.get_timer(sample_timer.id)
 
     assert retrieved_timer.id == sample_timer.id
@@ -90,23 +90,23 @@ def test_get_timer_success(test_session, sample_timer):
     assert retrieved_timer.status == TimerStatus.RUNNING.value
 
 
-def test_get_timer_not_found(test_session):
+def test_get_timer_not_found(test_session, test_user):
     """존재하지 않는 타이머 조회 실패 테스트"""
     from uuid import uuid4
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     with pytest.raises(TimerNotFoundError):
         service.get_timer(uuid4())
 
 
-def test_get_timer_running_elapsed_time_calculation(test_session, sample_schedule):
+def test_get_timer_running_elapsed_time_calculation(test_session, sample_schedule, test_user):
     """RUNNING 상태 타이머의 경과 시간 실시간 계산 테스트"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         allocated_duration=1800,
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
     initial_elapsed = timer.elapsed_time
 
@@ -116,9 +116,9 @@ def test_get_timer_running_elapsed_time_calculation(test_session, sample_schedul
     assert retrieved.status == TimerStatus.RUNNING.value
 
 
-def test_pause_timer_success(test_session, sample_timer):
+def test_pause_timer_success(test_session, sample_timer, test_user):
     """타이머 일시정지 성공 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # RUNNING 상태에서 일시정지
     paused_timer = service.pause_timer(sample_timer.id)
@@ -128,14 +128,14 @@ def test_pause_timer_success(test_session, sample_timer):
     assert paused_timer.elapsed_time >= 0  # 경과 시간이 저장되어야 함
 
 
-def test_pause_timer_not_running(test_session, sample_schedule):
+def test_pause_timer_not_running(test_session, sample_schedule, test_user):
     """RUNNING 상태가 아닌 타이머 일시정지 실패 테스트"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         allocated_duration=1800,
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
 
     # PAUSED 상태로 변경
@@ -147,9 +147,9 @@ def test_pause_timer_not_running(test_session, sample_schedule):
         service.pause_timer(timer.id)
 
 
-def test_resume_timer_success(test_session, sample_timer):
+def test_resume_timer_success(test_session, sample_timer, test_user):
     """타이머 재개 성공 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # 일시정지
     paused_timer = service.pause_timer(sample_timer.id)
@@ -164,18 +164,18 @@ def test_resume_timer_success(test_session, sample_timer):
     assert resumed_timer.elapsed_time == elapsed_before_resume  # 경과 시간은 유지
 
 
-def test_resume_timer_not_paused(test_session, sample_timer):
+def test_resume_timer_not_paused(test_session, sample_timer, test_user):
     """PAUSED 상태가 아닌 타이머 재개 실패 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # RUNNING 상태에서 resume 시도
     with pytest.raises(InvalidTimerStatusError):
         service.resume_timer(sample_timer.id)
 
 
-def test_stop_timer_from_running(test_session, sample_timer):
+def test_stop_timer_from_running(test_session, sample_timer, test_user):
     """RUNNING 상태 타이머 종료 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     stopped_timer = service.stop_timer(sample_timer.id)
 
@@ -184,9 +184,9 @@ def test_stop_timer_from_running(test_session, sample_timer):
     assert stopped_timer.elapsed_time >= 0
 
 
-def test_stop_timer_from_paused(test_session, sample_timer):
+def test_stop_timer_from_paused(test_session, sample_timer, test_user):
     """PAUSED 상태 타이머 종료 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # 일시정지
     paused_timer = service.pause_timer(sample_timer.id)
@@ -200,14 +200,14 @@ def test_stop_timer_from_paused(test_session, sample_timer):
     assert stopped_timer.elapsed_time == elapsed_when_paused  # 일시정지 시점의 경과 시간 유지
 
 
-def test_stop_timer_invalid_status(test_session, sample_schedule):
+def test_stop_timer_invalid_status(test_session, sample_schedule, test_user):
     """종료할 수 없는 상태의 타이머 종료 실패 테스트"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         allocated_duration=1800,
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
 
     # 종료
@@ -219,9 +219,9 @@ def test_stop_timer_invalid_status(test_session, sample_schedule):
         service.stop_timer(timer.id)
 
 
-def test_cancel_timer_success(test_session, sample_timer):
+def test_cancel_timer_success(test_session, sample_timer, test_user):
     """타이머 취소 성공 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     cancelled_timer = service.cancel_timer(sample_timer.id)
 
@@ -229,9 +229,9 @@ def test_cancel_timer_success(test_session, sample_timer):
     assert cancelled_timer.ended_at is not None
 
 
-def test_update_timer_metadata(test_session, sample_timer):
+def test_update_timer_metadata(test_session, sample_timer, test_user):
     """타이머 메타데이터 업데이트 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     update_data = TimerUpdate(
         title="업데이트된 제목",
@@ -246,9 +246,9 @@ def test_update_timer_metadata(test_session, sample_timer):
     assert updated_timer.allocated_duration == sample_timer.allocated_duration
 
 
-def test_update_timer_partial(test_session, sample_timer):
+def test_update_timer_partial(test_session, sample_timer, test_user):
     """타이머 부분 업데이트 테스트 (일부 필드만)"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     original_title = sample_timer.title
 
     update_data = TimerUpdate(
@@ -261,9 +261,9 @@ def test_update_timer_partial(test_session, sample_timer):
     assert updated_timer.description == "설명만 업데이트"
 
 
-def test_delete_timer_success(test_session, sample_timer):
+def test_delete_timer_success(test_session, sample_timer, test_user):
     """타이머 삭제 성공 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer_id = sample_timer.id
 
     service.delete_timer(timer_id)
@@ -275,9 +275,9 @@ def test_delete_timer_success(test_session, sample_timer):
         service.get_timer(timer_id)
 
 
-def test_get_timers_by_schedule(test_session, sample_schedule):
+def test_get_timers_by_schedule(test_session, sample_schedule, test_user):
     """일정의 모든 타이머 조회 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # 여러 타이머 생성
     timer1_data = TimerCreate(
@@ -303,9 +303,9 @@ def test_get_timers_by_schedule(test_session, sample_schedule):
     assert len(timers) >= 2
 
 
-def test_get_active_timer(test_session, sample_schedule):
+def test_get_active_timer(test_session, sample_schedule, test_user):
     """활성 타이머 조회 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # 타이머 생성 (RUNNING 상태)
     timer_data = TimerCreate(
@@ -322,9 +322,9 @@ def test_get_active_timer(test_session, sample_schedule):
     assert retrieved_active.status in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]
 
 
-def test_get_active_timer_none(test_session, sample_schedule):
+def test_get_active_timer_none(test_session, sample_schedule, test_user):
     """활성 타이머가 없을 때 None 반환 테스트"""
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
 
     # 타이머 생성 후 종료
     timer_data = TimerCreate(

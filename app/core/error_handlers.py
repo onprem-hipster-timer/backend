@@ -53,6 +53,12 @@ class DomainException(Exception):
         super().__init__(self.detail)
 
 
+class AuthenticationRequiredError(DomainException):
+    """인증이 필요한 요청에 인증 정보가 없는 경우"""
+    status_code: int = 401
+    detail: str = "인증이 필요합니다. Authorization 헤더에 Bearer 토큰을 제공해주세요."
+
+
 # ============================================================================
 # 공통 에러 처리 함수
 # ============================================================================

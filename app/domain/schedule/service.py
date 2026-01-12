@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from sqlmodel import Session, select
 
+from app.core.auth import CurrentUser
 from app.crud import schedule as crud
 from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
 from app.domain.schedule.exceptions import (
@@ -36,10 +37,13 @@ class ScheduleService:
     - Repository 패턴 제거, CRUD 함수 직접 사용
     - Session을 받아서 CRUD 함수 호출
     - 모든 datetime을 UTC naive로 변환하여 저장 (모든 DB 구조에서 일관성 보장)
+    - CurrentUser를 받아서 사용자별 데이터 격리
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, current_user: CurrentUser):
         self.session = session
+        self.current_user = current_user
+        self.owner_id = current_user.sub
 
     def create_schedule(self, data: ScheduleCreate) -> Schedule:
         """
@@ -65,12 +69,12 @@ class ScheduleService:
             if data.recurrence_end and data.recurrence_end < data.start_time:
                 raise InvalidRecurrenceEndError()
 
-        schedule = crud.create_schedule(self.session, data)
+        schedule = crud.create_schedule(self.session, data, self.owner_id)
 
         # 태그 설정
         if data.tag_ids:
             from app.domain.tag.service import TagService
-            tag_service = TagService(self.session)
+            tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, data.tag_ids)
             # 태그 설정 후 relationship 갱신
             self.session.refresh(schedule)
@@ -85,7 +89,7 @@ class ScheduleService:
         :return: 일정
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
-        schedule = crud.get_schedule(self.session, schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
         if not schedule:
             raise ScheduleNotFoundError()
         return schedule
@@ -96,7 +100,7 @@ class ScheduleService:
         
         :return: 일정 리스트
         """
-        return crud.get_schedules(self.session)
+        return crud.get_schedules(self.session, self.owner_id)
 
     def get_all_schedules_with_tag_filter(
             self,
@@ -115,7 +119,7 @@ class ScheduleService:
         :param group_ids: 필터링할 그룹 ID 리스트
         :return: 필터링된 일정 리스트
         """
-        all_schedules = crud.get_schedules(self.session)
+        all_schedules = crud.get_schedules(self.session, self.owner_id)
 
         # 태그 필터링 적용
         if tag_ids or group_ids:
@@ -152,7 +156,7 @@ class ScheduleService:
 
         # 1. 일반 일정 조회 (반복 일정 제외)
         regular_schedules = crud.get_schedules_by_date_range(
-            self.session, start_date_utc, end_date_utc
+            self.session, start_date_utc, end_date_utc, self.owner_id
         )
         # 반복 일정이 아닌 것만 필터링
         regular_schedules = [
@@ -162,12 +166,12 @@ class ScheduleService:
 
         # 2. 반복 일정 조회 (원본만)
         recurring_schedules = crud.get_recurring_schedules(
-            self.session, start_date_utc, end_date_utc
+            self.session, start_date_utc, end_date_utc, self.owner_id
         )
 
         # 3. 예외 인스턴스 조회 및 인덱싱
         exceptions = crud.get_schedule_exceptions(
-            self.session, start_date_utc, end_date_utc
+            self.session, start_date_utc, end_date_utc, self.owner_id
         )
 
         # 예외를 한 번만 순회하여 dict와 parent별 그룹화 동시 생성
@@ -326,7 +330,7 @@ class ScheduleService:
         :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
         :raises InvalidRecurrenceEndError: 반복 종료일이 시작일 이전인 경우
         """
-        schedule = crud.get_schedule(self.session, schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
         if not schedule:
             raise ScheduleNotFoundError()
 
@@ -357,7 +361,7 @@ class ScheduleService:
         tag_ids_updated = 'tag_ids' in update_dict
         if tag_ids_updated:
             from app.domain.tag.service import TagService
-            tag_service = TagService(self.session)
+            tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
             del update_dict['tag_ids']  # CRUD에 전달하지 않음
 
@@ -383,7 +387,7 @@ class ScheduleService:
         :param schedule_id: 일정 ID
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
-        schedule = crud.get_schedule(self.session, schedule_id)
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
         if not schedule:
             raise ScheduleNotFoundError()
 
@@ -408,7 +412,7 @@ class ScheduleService:
         :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
         """
         # 원본 일정 조회
-        parent_schedule = crud.get_schedule(self.session, parent_id)
+        parent_schedule = crud.get_schedule(self.session, parent_id, self.owner_id)
         if not parent_schedule:
             raise ScheduleNotFoundError()
 
@@ -420,7 +424,7 @@ class ScheduleService:
 
         # 기존 예외 인스턴스 조회
         existing_exception = crud.get_schedule_exception_by_date(
-            self.session, parent_id, instance_start_utc
+            self.session, parent_id, instance_start_utc, self.owner_id
         )
 
         # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨)
@@ -450,7 +454,7 @@ class ScheduleService:
             # 태그 업데이트 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:
                 from app.domain.tag.service import TagService
-                tag_service = TagService(self.session)
+                tag_service = TagService(self.session, self.current_user)
                 tag_service.set_schedule_exception_tags(existing_exception.id, tag_ids)
 
             # 가상 인스턴스 반환
@@ -469,6 +473,7 @@ class ScheduleService:
                 self.session,
                 parent_id=parent_id,
                 exception_date=instance_start_utc,
+                owner_id=self.owner_id,
                 is_deleted=False,
                 title=update_dict.get('title'),
                 description=update_dict.get('description'),
@@ -479,7 +484,7 @@ class ScheduleService:
             # 태그 설정 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:
                 from app.domain.tag.service import TagService
-                tag_service = TagService(self.session)
+                tag_service = TagService(self.session, self.current_user)
                 tag_service.set_schedule_exception_tags(exception.id, tag_ids)
 
             # 가상 인스턴스 반환
@@ -511,7 +516,7 @@ class ScheduleService:
         :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
         """
         # 원본 일정 조회
-        parent_schedule = crud.get_schedule(self.session, parent_id)
+        parent_schedule = crud.get_schedule(self.session, parent_id, self.owner_id)
         if not parent_schedule:
             raise ScheduleNotFoundError()
 
@@ -523,7 +528,7 @@ class ScheduleService:
 
         # 기존 예외 인스턴스 조회
         existing_exception = crud.get_schedule_exception_by_date(
-            self.session, parent_id, instance_start_utc
+            self.session, parent_id, instance_start_utc, self.owner_id
         )
 
         if existing_exception:
@@ -536,6 +541,7 @@ class ScheduleService:
                 self.session,
                 parent_id=parent_id,
                 exception_date=instance_start_utc,
+                owner_id=self.owner_id,
                 is_deleted=True,
             )
 
@@ -577,6 +583,7 @@ class ScheduleService:
             self.session,
             schedule.start_time,
             schedule.recurrence_end,
+            self.owner_id,
         )
         parent_exceptions = [
             exc for exc in all_exceptions

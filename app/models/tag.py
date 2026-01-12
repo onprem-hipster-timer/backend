@@ -123,6 +123,9 @@ class TagGroup(UUIDBase, TimestampMixin, table=True):
     """태그 그룹"""
     __tablename__ = "tag_group"
 
+    # 소유자 (OIDC sub claim)
+    owner_id: str = Field(index=True)
+    
     name: str = Field(index=True)  # 그룹 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
@@ -149,6 +152,9 @@ class Tag(UUIDBase, TimestampMixin, table=True):
         UniqueConstraint('group_id', 'name', name='uq_tag_group_name'),
     )
 
+    # 소유자 (OIDC sub claim)
+    owner_id: str = Field(index=True)
+    
     name: str = Field(index=True)  # 태그 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
