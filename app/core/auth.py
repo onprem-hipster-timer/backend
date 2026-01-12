@@ -11,9 +11,10 @@ import httpx
 from authlib.jose import JsonWebKey, jwt
 from authlib.jose.errors import JoseError
 from cachetools import TTLCache
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.core.config import settings
 
@@ -171,17 +172,22 @@ oidc_client = OIDCClient()
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> CurrentUser:
     """
     FastAPI Dependency: 현재 인증된 사용자 반환
     
-    - Authorization: Bearer <token> 헤더에서 토큰 추출
-    - OIDC Provider를 통해 JWT 검증
+    - AuthMiddleware에서 이미 검증된 경우 request.state에서 가져옴 (중복 검증 방지)
+    - 그렇지 않으면 Authorization: Bearer <token> 헤더에서 토큰 추출 후 검증
     - CurrentUser 객체 반환
     
     OIDC_ENABLED=false인 경우 테스트용 mock 사용자 반환
     """
+    # AuthMiddleware에서 이미 검증된 경우 재사용
+    if hasattr(request.state, 'current_user') and request.state.current_user:
+        return request.state.current_user
+    
     # 인증 비활성화 시 테스트용 사용자 반환
     if not settings.OIDC_ENABLED:
         return CurrentUser(
@@ -218,6 +224,7 @@ async def get_current_user(
 
 
 async def get_optional_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> CurrentUser | None:
     """
@@ -225,6 +232,10 @@ async def get_optional_current_user(
     
     토큰이 없으면 None 반환, 토큰이 있으면 검증 후 CurrentUser 반환
     """
+    # AuthMiddleware에서 이미 검증된 경우 재사용
+    if hasattr(request.state, 'current_user') and request.state.current_user:
+        return request.state.current_user
+    
     if not settings.OIDC_ENABLED:
         return CurrentUser(
             sub="test-user-id",
@@ -236,6 +247,59 @@ async def get_optional_current_user(
         return None
     
     try:
-        return await get_current_user(credentials)
+        return await get_current_user(request, credentials)
     except HTTPException:
         return None
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """
+    인증 미들웨어 - request.state.current_user 설정
+    
+    토큰 검증 결과를 request.state에 저장하여 
+    다른 미들웨어(RateLimitMiddleware 등)나 Depends에서 중복 검증 없이 사용 가능
+    
+    처리 흐름:
+    1. Authorization 헤더에서 Bearer 토큰 추출
+    2. OIDC Provider를 통해 JWT 검증
+    3. 검증 성공 시 request.state.current_user에 CurrentUser 저장
+    4. 검증 실패/토큰 없음 시 request.state.current_user = None
+    """
+    
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        # 기본값 설정 (미인증 상태)
+        request.state.current_user = None
+        
+        # OIDC 비활성화 시 테스트 사용자
+        if not settings.OIDC_ENABLED:
+            request.state.current_user = CurrentUser(
+                sub="test-user-id",
+                email="test@example.com",
+                name="Test User",
+            )
+            return await call_next(request)
+        
+        # Authorization 헤더 확인
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                claims = await oidc_client.verify_token(token)
+                sub = claims.get("sub")
+                if sub:
+                    request.state.current_user = CurrentUser(
+                        sub=sub,
+                        email=claims.get("email"),
+                        name=claims.get("name"),
+                        raw_claims=claims,
+                    )
+            except Exception:
+                # 토큰 검증 실패 - 미인증 상태로 진행
+                # 실제 인증 에러는 엔드포인트의 get_current_user에서 처리
+                pass
+        
+        return await call_next(request)

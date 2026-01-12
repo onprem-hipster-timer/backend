@@ -11,7 +11,9 @@ from app.core.error_handlers import register_exception_handlers
 from app.core.logging import setup_logging
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
+from app.core.auth import AuthMiddleware
 from app.middleware.request_logger import RequestLoggerMiddleware
+from app.ratelimit.middleware import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,13 @@ async def lifespan(app: FastAPI):
         # 1. 로깅 설정
         setup_logging()
 
-        # 2. OIDC authentication status check
+        # 2. Rate Limit status check
+        if settings.RATE_LIMIT_ENABLED:
+            logger.info("✅ Rate limiting is ENABLED")
+        else:
+            logger.warning("⚠️  Rate limiting is DISABLED")
+
+        # 3. OIDC authentication status check
         if not settings.OIDC_ENABLED:
             logger.warning("")
             logger.warning("########################################################")
@@ -55,15 +63,15 @@ async def lifespan(app: FastAPI):
             logger.warning("########################################################")
             logger.warning("")
 
-        # 3. 동기 DB 초기화 (기존 코드 호환성)
+        # 4. 동기 DB 초기화 (기존 코드 호환성)
         init_db_sync()
         logger.info("✅ Database tables initialized (sync)")
 
-        # 4. 비동기 DB 초기화 (새로운 holiday 테이블)
+        # 5. 비동기 DB 초기화 (새로운 holiday 테이블)
         await init_db_async()
         logger.info("✅ Database tables initialized (async)")
 
-        # 5. 공휴일 배경 태스크 시작
+        # 6. 공휴일 배경 태스크 시작
         _asyncio_task = asyncio.create_task(holiday_task.run())
         logger.info("✅ Holiday background task scheduled")
 
@@ -114,8 +122,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware 등록
+# Middleware 등록 (순서 중요: 아래에서 위로 실행됨 - 마지막 등록이 가장 먼저 실행)
+# 1. Request Logger
 app.add_middleware(RequestLoggerMiddleware)
+
+# 2. Rate Limit - 인증된 사용자 정보(request.state.current_user)를 활용
+if settings.RATE_LIMIT_ENABLED:
+    app.add_middleware(RateLimitMiddleware)
+
+# 3. Auth - 가장 먼저 실행되어 request.state.current_user 설정
+#    RateLimitMiddleware와 엔드포인트에서 중복 토큰 검증 없이 재사용
+app.add_middleware(AuthMiddleware)
 
 # API Router 등록 (REST + GraphQL 모두 포함)
 app.include_router(api_router)

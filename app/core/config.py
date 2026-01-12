@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     OIDC_DISCOVERY_URL: str | None = None  # 기본: OIDC_ISSUER_URL/.well-known/openid-configuration
     OIDC_JWKS_CACHE_TTL_SECONDS: int = 3600  # JWKS 캐시 TTL (기본 1시간)
 
+    # Rate Limit 설정
+    RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
+    RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
+    RATE_LIMIT_DEFAULT_REQUESTS: int = 60  # 기본 최대 요청 수
+
     model_config = ConfigDict(
         env_file=".env",
         case_sensitive=True,

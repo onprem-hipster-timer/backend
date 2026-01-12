@@ -1,7 +1,8 @@
 import os
 
-# 테스트 환경에서 OIDC 인증 비활성화 - 다른 모듈 임포트 전에 설정 필요!
+# 테스트 환경 기본 설정 - 다른 모듈 임포트 전에 설정 필요!
 os.environ["OIDC_ENABLED"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리밋 테스트에서만 활성화
 
 import pytest
 import pytest_asyncio
@@ -181,10 +182,27 @@ def e2e_client():
     Bug Fix: StaticPool 사용
     - SQLite 메모리 DB는 커넥션마다 별도 인스턴스를 가짐
     - StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB 인스턴스를 공유하도록 함
+    
+    Bug Fix: settings 재로드 + 스토리지 초기화
+    - 레이트 리밋 테스트 후 settings가 변경될 수 있으므로 재로드하여 비활성화 보장
+    - 레이트 리밋 스토리지도 초기화하여 이전 테스트의 카운트가 영향을 주지 않도록 함
     """
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db.session import _session_manager
+    
+    # 환경변수를 명시적으로 설정하고 settings 재로드
+    # (레이트 리밋 테스트에서 환경변수가 변경될 수 있음)
+    os.environ["RATE_LIMIT_ENABLED"] = "false"
+    os.environ["OIDC_ENABLED"] = "false"
+    
+    from app.core.config import Settings
+    import app.core.config as config_module
+    config_module.settings = Settings()
+    
+    # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
+    from app.ratelimit.storage.memory import reset_storage
+    reset_storage()
 
     # 테스트용 메모리 데이터베이스 엔진 생성
     # StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB를 공유
