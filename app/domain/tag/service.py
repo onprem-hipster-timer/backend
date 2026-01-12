@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser
 from app.crud import tag as crud
 from app.domain.tag.exceptions import (
     TagGroupNotFoundError,
@@ -38,10 +39,16 @@ def _raise_duplicate_tag_name(group_id: UUID, tag_name: str) -> None:
 
 
 class TagService:
-    """태그 도메인 서비스"""
+    """
+    태그 도메인 서비스
+    
+    CurrentUser를 받아서 사용자별 데이터 격리
+    """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, current_user: CurrentUser):
         self.session = session
+        self.current_user = current_user
+        self.owner_id = current_user.sub
 
     # ============================================================
     # TagGroup CRUD
@@ -49,23 +56,25 @@ class TagService:
 
     def create_tag_group(self, data: TagGroupCreate) -> TagGroup:
         """태그 그룹 생성"""
-        tag_group = TagGroup.model_validate(data)
+        data_dict = data.model_dump()
+        data_dict['owner_id'] = self.owner_id
+        tag_group = TagGroup.model_validate(data_dict)
         return crud.create_tag_group(self.session, tag_group)
 
     def get_tag_group(self, group_id: UUID) -> TagGroup:
         """태그 그룹 조회"""
-        tag_group = crud.get_tag_group(self.session, group_id)
+        tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(group_id)
         return tag_group
 
     def get_all_tag_groups(self) -> List[TagGroup]:
         """모든 태그 그룹 조회"""
-        return crud.get_all_tag_groups(self.session)
+        return crud.get_all_tag_groups(self.session, self.owner_id)
 
     def update_tag_group(self, group_id: UUID, data: TagGroupUpdate) -> TagGroup:
         """태그 그룹 업데이트"""
-        tag_group = crud.get_tag_group(self.session, group_id)
+        tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(group_id)
 
@@ -84,21 +93,21 @@ class TagService:
         - 일정: tag_group_id를 NULL로만 설정 (삭제 안 함)
         - 태그: CASCADE로 자동 삭제
         """
-        tag_group = crud.get_tag_group(self.session, group_id)
+        tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(group_id)
 
         # 1. 해당 그룹의 Todo 삭제 (Todo 모델 직접 사용)
         from app.domain.todo.service import TodoService
 
-        todo_service = TodoService(self.session)
+        todo_service = TodoService(self.session, self.current_user)
         result = todo_service.get_all_todos(group_ids=[group_id])
         for todo in result.todos:
             todo_service.delete_todo(todo.id)
 
         # 2. 일정의 tag_group_id를 NULL로 설정
         from app.crud import schedule as schedule_crud
-        schedule_crud.clear_tag_group_id_from_schedules(self.session, group_id)
+        schedule_crud.clear_tag_group_id_from_schedules(self.session, group_id, self.owner_id)
 
         # 3. 그룹 삭제 (태그는 CASCADE로 자동 삭제)
         crud.delete_tag_group(self.session, tag_group)
@@ -110,21 +119,23 @@ class TagService:
     def create_tag(self, data: TagCreate) -> Tag:
         """태그 생성"""
         # 그룹 존재 확인
-        tag_group = crud.get_tag_group(self.session, data.group_id)
+        tag_group = crud.get_tag_group(self.session, data.group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(data.group_id)
 
         # 그룹 내 태그 이름 중복 확인
-        existing = crud.get_tag_by_name_in_group(self.session, data.group_id, data.name)
+        existing = crud.get_tag_by_name_in_group(self.session, data.group_id, data.name, self.owner_id)
         if existing:
             _raise_duplicate_tag_name(data.group_id, data.name)
 
-        tag = Tag.model_validate(data)
+        data_dict = data.model_dump()
+        data_dict['owner_id'] = self.owner_id
+        tag = Tag.model_validate(data_dict)
         return crud.create_tag(self.session, tag)
 
     def get_tag(self, tag_id: UUID) -> Tag:
         """태그 조회"""
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
         return tag
@@ -132,25 +143,25 @@ class TagService:
     def get_tags_by_group(self, group_id: UUID) -> List[Tag]:
         """그룹별 태그 조회"""
         # 그룹 존재 확인
-        tag_group = crud.get_tag_group(self.session, group_id)
+        tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(group_id)
 
-        return crud.get_tags_by_group(self.session, group_id)
+        return crud.get_tags_by_group(self.session, group_id, self.owner_id)
 
     def get_all_tags(self) -> List[Tag]:
         """모든 태그 조회"""
-        return crud.get_all_tags(self.session)
+        return crud.get_all_tags(self.session, self.owner_id)
 
     def update_tag(self, tag_id: UUID, data: TagUpdate) -> Tag:
         """태그 업데이트"""
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
         # 이름 변경 시 중복 확인
         if data.name is not None and data.name != tag.name:
-            existing = crud.get_tag_by_name_in_group(self.session, tag.group_id, data.name)
+            existing = crud.get_tag_by_name_in_group(self.session, tag.group_id, data.name, self.owner_id)
             if existing:
                 _raise_duplicate_tag_name(tag.group_id, data.name)
 
@@ -166,7 +177,7 @@ class TagService:
         
         모든 태그가 삭제되었으면 그룹도 자동 삭제됩니다.
         """
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
@@ -176,7 +187,7 @@ class TagService:
         # 모든 태그가 삭제되었는지 확인 (반복 일정 패턴과 동일)
         if self._are_all_tags_deleted(group_id):
             # 모든 태그가 삭제되었으면 그룹도 삭제
-            group = crud.get_tag_group(self.session, group_id)
+            group = crud.get_tag_group(self.session, group_id, self.owner_id)
             if group:
                 crud.delete_tag_group(self.session, group)
 
@@ -189,7 +200,7 @@ class TagService:
         :param group_id: 태그 그룹 ID
         :return: 모든 태그가 삭제되었으면 True
         """
-        remaining_tags = crud.get_tags_by_group(self.session, group_id)
+        remaining_tags = crud.get_tags_by_group(self.session, group_id, self.owner_id)
         return len(remaining_tags) == 0
 
     # ============================================================
@@ -199,7 +210,7 @@ class TagService:
     def add_tag_to_schedule(self, schedule_id: UUID, tag_id: UUID) -> None:
         """일정에 태그 추가"""
         # 태그 존재 확인
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
@@ -224,7 +235,7 @@ class TagService:
         """일정의 태그 일괄 설정 (기존 태그 교체)"""
         # 태그 존재 확인
         for tag_id in tag_ids:
-            tag = crud.get_tag(self.session, tag_id)
+            tag = crud.get_tag(self.session, tag_id, self.owner_id)
             if not tag:
                 _raise_tag_not_found(tag_id)
 
@@ -243,7 +254,7 @@ class TagService:
 
     def add_tag_to_schedule_exception(self, exception_id: UUID, tag_id: UUID) -> None:
         """예외 일정에 태그 추가"""
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
@@ -267,7 +278,7 @@ class TagService:
         """예외 일정의 태그 일괄 설정"""
         # 태그 존재 확인
         for tag_id in tag_ids:
-            tag = crud.get_tag(self.session, tag_id)
+            tag = crud.get_tag(self.session, tag_id, self.owner_id)
             if not tag:
                 _raise_tag_not_found(tag_id)
 
@@ -287,7 +298,7 @@ class TagService:
     def add_tag_to_timer(self, timer_id: UUID, tag_id: UUID) -> None:
         """타이머에 태그 추가"""
         # 태그 존재 확인
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
@@ -312,7 +323,7 @@ class TagService:
         """타이머의 태그 일괄 설정 (기존 태그 교체)"""
         # 태그 존재 확인
         for tag_id in tag_ids:
-            tag = crud.get_tag(self.session, tag_id)
+            tag = crud.get_tag(self.session, tag_id, self.owner_id)
             if not tag:
                 _raise_tag_not_found(tag_id)
 
@@ -332,7 +343,7 @@ class TagService:
     def add_tag_to_todo(self, todo_id: UUID, tag_id: UUID) -> None:
         """Todo에 태그 추가"""
         # 태그 존재 확인
-        tag = crud.get_tag(self.session, tag_id)
+        tag = crud.get_tag(self.session, tag_id, self.owner_id)
         if not tag:
             _raise_tag_not_found(tag_id)
 
@@ -357,7 +368,7 @@ class TagService:
         """Todo의 태그 일괄 설정 (기존 태그 교체)"""
         # 태그 존재 확인
         for tag_id in tag_ids:
-            tag = crud.get_tag(self.session, tag_id)
+            tag = crud.get_tag(self.session, tag_id, self.owner_id)
             if not tag:
                 _raise_tag_not_found(tag_id)
 

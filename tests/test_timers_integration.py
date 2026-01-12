@@ -15,10 +15,10 @@ from app.domain.timer.service import TimerService
 
 
 @pytest.mark.integration
-def test_create_and_get_timer_integration(test_session):
+def test_create_and_get_timer_integration(test_session, test_user):
     """DB를 포함한 타이머 생성 및 조회 통합 테스트"""
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="통합 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -27,7 +27,7 @@ def test_create_and_get_timer_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="통합 테스트 타이머",
@@ -45,10 +45,10 @@ def test_create_and_get_timer_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_workflow_integration(test_session):
+def test_timer_workflow_integration(test_session, test_user):
     """타이머 전체 워크플로우 통합 테스트"""
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="워크플로우 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -57,7 +57,7 @@ def test_timer_workflow_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="워크플로우 타이머",
@@ -86,10 +86,10 @@ def test_timer_workflow_integration(test_session):
 
 
 @pytest.mark.integration
-def test_multiple_timers_per_schedule_integration(test_session):
+def test_multiple_timers_per_schedule_integration(test_session, test_user):
     """일정당 여러 타이머 생성 통합 테스트"""
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="다중 타이머 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -98,7 +98,7 @@ def test_multiple_timers_per_schedule_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 여러 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_ids = []
 
     for i in range(3):
@@ -120,10 +120,10 @@ def test_multiple_timers_per_schedule_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_schedule_relationship_integration(test_session):
+def test_timer_schedule_relationship_integration(test_session, test_user):
     """타이머-일정 관계 통합 테스트"""
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="관계 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -132,7 +132,7 @@ def test_timer_schedule_relationship_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         allocated_duration=1800,
@@ -149,12 +149,12 @@ def test_timer_schedule_relationship_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_include_schedule_false_integration(test_session):
+def test_timer_include_schedule_false_integration(test_session, test_user):
     """타이머 조회 시 include_schedule=False일 때 schedule이 None인지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="include_schedule False 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -163,7 +163,7 @@ def test_timer_include_schedule_false_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="include_schedule False 테스트 타이머",
@@ -184,13 +184,13 @@ def test_timer_include_schedule_false_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_include_schedule_true_integration(test_session):
+def test_timer_include_schedule_true_integration(test_session, test_user):
     """타이머 조회 시 include_schedule=True일 때 schedule이 포함되는지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.schedule.schema.dto import ScheduleRead
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="include_schedule True 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -199,7 +199,7 @@ def test_timer_include_schedule_true_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 타이머 생성
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="include_schedule True 테스트 타이머",
@@ -226,13 +226,13 @@ def test_timer_include_schedule_true_integration(test_session):
 
 
 @pytest.mark.integration
-def test_create_timer_with_tags_integration(test_session):
+def test_create_timer_with_tags_integration(test_session, test_user):
     """타이머 생성 시 태그 함께 설정 통합 테스트"""
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
     from app.domain.tag.service import TagService
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="태그 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -241,7 +241,7 @@ def test_create_timer_with_tags_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -249,7 +249,7 @@ def test_create_timer_with_tags_integration(test_session):
     tag = tag_service.create_tag(tag_data)
 
     # 3. 타이머 생성 시 태그 설정
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="태그 테스트 타이머",
@@ -266,14 +266,14 @@ def test_create_timer_with_tags_integration(test_session):
 
 
 @pytest.mark.integration
-def test_update_timer_tags_integration(test_session):
+def test_update_timer_tags_integration(test_session, test_user):
     """타이머 수정 시 태그 업데이트 통합 테스트"""
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
     from app.domain.tag.service import TagService
     from app.domain.timer.schema.dto import TimerUpdate
 
     # 1. 일정 및 타이머 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="태그 업데이트 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -281,7 +281,7 @@ def test_update_timer_tags_integration(test_session):
     )
     schedule = schedule_service.create_schedule(schedule_data)
 
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="태그 업데이트 테스트 타이머",
@@ -290,7 +290,7 @@ def test_update_timer_tags_integration(test_session):
     timer = timer_service.create_timer(timer_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -313,14 +313,14 @@ def test_update_timer_tags_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_tags_workflow_integration(test_session):
+def test_timer_tags_workflow_integration(test_session, test_user):
     """타이머 태그 전체 워크플로우 통합 테스트"""
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
     from app.domain.tag.service import TagService
     from app.domain.timer.schema.dto import TimerUpdate, TimerRead
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="태그 워크플로우 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -329,7 +329,7 @@ def test_timer_tags_workflow_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -340,7 +340,7 @@ def test_timer_tags_workflow_integration(test_session):
     tag2 = tag_service.create_tag(tag2_data)
 
     # 3. 타이머 생성 시 태그 설정
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="태그 워크플로우 타이머",
@@ -380,7 +380,7 @@ def test_timer_tags_workflow_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_tag_include_mode_none_integration(test_session):
+def test_timer_tag_include_mode_none_integration(test_session, test_user):
     """타이머 조회 시 tag_include_mode=NONE일 때 tags가 빈 배열인지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
@@ -388,7 +388,7 @@ def test_timer_tag_include_mode_none_integration(test_session):
     from app.core.constants import TagIncludeMode
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="tag_include_mode NONE 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -397,7 +397,7 @@ def test_timer_tag_include_mode_none_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -405,7 +405,7 @@ def test_timer_tag_include_mode_none_integration(test_session):
     tag = tag_service.create_tag(tag_data)
 
     # 3. 타이머 생성 시 태그 설정
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="tag_include_mode NONE 테스트 타이머",
@@ -426,7 +426,7 @@ def test_timer_tag_include_mode_none_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_tag_include_mode_timer_only_integration(test_session):
+def test_timer_tag_include_mode_timer_only_integration(test_session, test_user):
     """타이머 조회 시 tag_include_mode=TIMER_ONLY일 때 tags가 포함되는지 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate, TagRead
@@ -434,7 +434,7 @@ def test_timer_tag_include_mode_timer_only_integration(test_session):
     from app.core.constants import TagIncludeMode
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="tag_include_mode TIMER_ONLY 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -443,7 +443,7 @@ def test_timer_tag_include_mode_timer_only_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -451,7 +451,7 @@ def test_timer_tag_include_mode_timer_only_integration(test_session):
     tag = tag_service.create_tag(tag_data)
 
     # 3. 타이머 생성 시 태그 설정
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="tag_include_mode TIMER_ONLY 테스트 타이머",
@@ -479,7 +479,7 @@ def test_timer_tag_include_mode_timer_only_integration(test_session):
 
 
 @pytest.mark.integration
-def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
+def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session, test_user):
     """타이머 조회 시 tag_include_mode=INHERIT_FROM_SCHEDULE일 때 스케줄 태그 상속 통합 테스트"""
     from app.domain.timer.schema.dto import TimerRead
     from app.domain.tag.schema.dto import TagGroupCreate, TagCreate, TagRead
@@ -488,7 +488,7 @@ def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
     from app.core.constants import TagIncludeMode
 
     # 1. 일정 생성
-    schedule_service = ScheduleService(test_session)
+    schedule_service = ScheduleService(test_session, test_user)
     schedule_data = ScheduleCreate(
         title="스케줄 태그 상속 테스트 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
@@ -497,7 +497,7 @@ def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
     schedule = schedule_service.create_schedule(schedule_data)
 
     # 2. 그룹 및 태그 생성
-    tag_service = TagService(test_session)
+    tag_service = TagService(test_session, test_user)
     group_data = TagGroupCreate(name="업무", color="#FF5733")
     group = tag_service.create_tag_group(group_data)
 
@@ -512,7 +512,7 @@ def test_timer_tag_include_mode_inherit_from_schedule_integration(test_session):
     schedule_service.update_schedule(schedule.id, schedule_update)
 
     # 4. 타이머 생성 시 태그 설정
-    timer_service = TimerService(test_session)
+    timer_service = TimerService(test_session, test_user)
     timer_data = TimerCreate(
         schedule_id=schedule.id,
         title="스케줄 태그 상속 테스트 타이머",

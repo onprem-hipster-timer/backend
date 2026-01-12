@@ -7,9 +7,9 @@ from app.domain.schedule.service import ScheduleService
 
 
 @pytest.mark.integration
-def test_create_and_get_schedule_integration(test_session):
+def test_create_and_get_schedule_integration(test_session, test_user):
     """DB를 포함한 일정 생성 및 조회 통합 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
 
     # 1. 일정 생성
     schedule_data = ScheduleCreate(
@@ -31,9 +31,9 @@ def test_create_and_get_schedule_integration(test_session):
 
 
 @pytest.mark.integration
-def test_update_schedule_integration(test_session, sample_schedule):
+def test_update_schedule_integration(test_session, sample_schedule, test_user):
     """DB를 포함한 일정 업데이트 통합 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
     schedule_id = sample_schedule.id
 
     # 1. 일정 업데이트
@@ -52,7 +52,7 @@ def test_update_schedule_integration(test_session, sample_schedule):
 
 
 @pytest.mark.integration
-def test_delete_schedule_integration(test_engine, sample_schedule):
+def test_delete_schedule_integration(test_engine, sample_schedule, test_user):
     """DB를 포함한 일정 삭제 통합 테스트"""
     from sqlmodel import Session
     from app.domain.schedule.exceptions import ScheduleNotFoundError
@@ -61,21 +61,21 @@ def test_delete_schedule_integration(test_engine, sample_schedule):
 
     # 1. 삭제용 세션으로 일정 삭제
     with Session(test_engine) as delete_session:
-        delete_service = ScheduleService(delete_session)
+        delete_service = ScheduleService(delete_session, test_user)
         delete_service.delete_schedule(schedule_id)
         delete_session.commit()  # 실제 DB에 반영
 
     # 2. 조회용 다른 세션으로 실제 DB에서 확인 (identity map 없이)
     with Session(test_engine) as check_session:
-        check_service = ScheduleService(check_session)
+        check_service = ScheduleService(check_session, test_user)
         with pytest.raises(ScheduleNotFoundError):
             check_service.get_schedule(schedule_id)
 
 
 @pytest.mark.integration
-def test_get_all_schedules_integration(test_session):
+def test_get_all_schedules_integration(test_session, test_user):
     """DB를 포함한 날짜 범위 기반 일정 조회 통합 테스트"""
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
 
     # 1. 여러 일정 생성
     schedules_data = [
@@ -105,11 +105,11 @@ def test_get_all_schedules_integration(test_session):
 
 
 @pytest.mark.integration
-def test_schedule_workflow_integration(test_session):
+def test_schedule_workflow_integration(test_session, test_user):
     """일정 전체 워크플로우 통합 테스트"""
     from app.domain.schedule.exceptions import ScheduleNotFoundError
 
-    service = ScheduleService(test_session)
+    service = ScheduleService(test_session, test_user)
 
     # 1. 일정 생성
     schedule_data = ScheduleCreate(

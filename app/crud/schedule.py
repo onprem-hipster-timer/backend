@@ -8,15 +8,21 @@ from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.models.schedule import Schedule, ScheduleException
 
 
-def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
+def create_schedule(session: Session, data: ScheduleCreate, owner_id: str) -> Schedule:
     """
     새 Schedule을 DB에 생성합니다.
     
     FastAPI Best Practices:
     - commit은 get_db_transactional이 처리
     - CRUD는 데이터 접근만 담당
+    
+    :param session: DB 세션
+    :param data: 일정 생성 데이터
+    :param owner_id: 소유자 ID (OIDC sub claim)
     """
-    schedule = Schedule.model_validate(data)
+    schedule_data = data.model_dump()
+    schedule_data['owner_id'] = owner_id
+    schedule = Schedule.model_validate(schedule_data)
     session.add(schedule)
     # commit은 get_db_transactional이 처리
     session.flush()  # ID를 얻기 위해 flush
@@ -24,11 +30,11 @@ def create_schedule(session: Session, data: ScheduleCreate) -> Schedule:
     return schedule
 
 
-def get_schedules(session: Session) -> list[Schedule]:
+def get_schedules(session: Session, owner_id: str) -> list[Schedule]:
     """
-    모든 Schedule 객체를 조회합니다.
+    소유자의 모든 Schedule 객체를 조회합니다.
     """
-    statement = select(Schedule)
+    statement = select(Schedule).where(Schedule.owner_id == owner_id)
     results = session.exec(statement)
     return results.all()
 
@@ -37,6 +43,7 @@ def get_schedules_by_date_range(
         session: Session,
         start_date: datetime,
         end_date: datetime,
+        owner_id: str,
 ) -> list[Schedule]:
     """
     날짜 범위로 Schedule 객체를 조회합니다.
@@ -44,12 +51,14 @@ def get_schedules_by_date_range(
     :param session: DB 세션
     :param start_date: 시작 날짜 (이 날짜 이후에 시작하는 일정 포함)
     :param end_date: 종료 날짜 (이 날짜 이전에 종료하는 일정 포함)
+    :param owner_id: 소유자 ID
     :return: 해당 날짜 범위와 겹치는 모든 일정
     """
     # 일정이 주어진 날짜 범위와 겹치는 경우를 조회
     # 일정의 start_time <= end_date AND 일정의 end_time >= start_date
     statement = (
         select(Schedule)
+        .where(Schedule.owner_id == owner_id)
         .where(Schedule.start_time <= end_date)
         .where(Schedule.end_time >= start_date)
         .order_by(Schedule.start_time)
@@ -58,11 +67,16 @@ def get_schedules_by_date_range(
     return results.all()
 
 
-def get_schedule(session: Session, schedule_id) -> Schedule | None:
+def get_schedule(session: Session, schedule_id: UUID, owner_id: str) -> Schedule | None:
     """
-    ID로 Schedule 조회 (없으면 None 반환)
+    ID로 Schedule 조회 (owner_id 검증 포함, 없으면 None 반환)
     """
-    return session.get(Schedule, schedule_id)
+    statement = (
+        select(Schedule)
+        .where(Schedule.id == schedule_id)
+        .where(Schedule.owner_id == owner_id)
+    )
+    return session.exec(statement).first()
 
 
 def update_schedule(
@@ -102,6 +116,7 @@ def get_recurring_schedules(
         session: Session,
         start_date: datetime,
         end_date: datetime,
+        owner_id: str,
 ) -> list[Schedule]:
     """
     반복 일정을 조회합니다 (원본만, 가상 인스턴스 제외).
@@ -111,12 +126,14 @@ def get_recurring_schedules(
     :param session: DB 세션
     :param start_date: 조회 시작 날짜
     :param end_date: 조회 종료 날짜
+    :param owner_id: 소유자 ID
     :return: 반복 일정 리스트 (recurrence_rule이 있는 일정)
     """
     # 반복 일정은 원본의 start_time이 조회 범위 이전이거나 겹치면 포함
     # recurrence_end가 없거나 조회 범위와 겹치면 포함
     statement = (
         select(Schedule)
+        .where(Schedule.owner_id == owner_id)
         .where(Schedule.recurrence_rule.isnot(None))
         .where(
             # 원본 일정의 시작 시간이 조회 종료일 이전이고
@@ -135,22 +152,30 @@ def get_recurring_schedules(
 
 def get_schedule_exception(
         session: Session,
-        exception_id,
+        exception_id: UUID,
+        owner_id: str,
 ) -> ScheduleException | None:
     """
     ID로 예외 인스턴스를 조회합니다.
     
     :param session: DB 세션
     :param exception_id: 예외 인스턴스 ID
+    :param owner_id: 소유자 ID
     :return: 예외 인스턴스 또는 None
     """
-    return session.get(ScheduleException, exception_id)
+    statement = (
+        select(ScheduleException)
+        .where(ScheduleException.id == exception_id)
+        .where(ScheduleException.owner_id == owner_id)
+    )
+    return session.exec(statement).first()
 
 
 def get_schedule_exceptions(
         session: Session,
         start_date: datetime,
         end_date: datetime,
+        owner_id: str,
 ) -> list[ScheduleException]:
     """
     날짜 범위 내의 예외 인스턴스를 조회합니다.
@@ -158,10 +183,12 @@ def get_schedule_exceptions(
     :param session: DB 세션
     :param start_date: 조회 시작 날짜
     :param end_date: 조회 종료 날짜
+    :param owner_id: 소유자 ID
     :return: 예외 인스턴스 리스트
     """
     statement = (
         select(ScheduleException)
+        .where(ScheduleException.owner_id == owner_id)
         .where(ScheduleException.exception_date >= start_date)
         .where(ScheduleException.exception_date <= end_date)
     )
@@ -171,8 +198,9 @@ def get_schedule_exceptions(
 
 def get_schedule_exception_by_date(
         session: Session,
-        parent_id,
+        parent_id: UUID,
         exception_date: datetime,
+        owner_id: str,
 ) -> ScheduleException | None:
     """
     특정 인스턴스의 예외를 조회합니다.
@@ -184,6 +212,7 @@ def get_schedule_exception_by_date(
     :param session: DB 세션
     :param parent_id: 원본 일정 ID
     :param exception_date: 예외 날짜/시간
+    :param owner_id: 소유자 ID
     :return: 예외 인스턴스 또는 None
     """
     # 시간까지 비교하기 위해 범위로 조회
@@ -192,6 +221,7 @@ def get_schedule_exception_by_date(
 
     statement = (
         select(ScheduleException)
+        .where(ScheduleException.owner_id == owner_id)
         .where(ScheduleException.parent_id == parent_id)
         .where(ScheduleException.exception_date >= start_range)
         .where(ScheduleException.exception_date <= end_range)
@@ -202,8 +232,9 @@ def get_schedule_exception_by_date(
 
 def create_schedule_exception(
         session: Session,
-        parent_id,
+        parent_id: UUID,
         exception_date: datetime,
+        owner_id: str,
         is_deleted: bool = False,
         title: str | None = None,
         description: str | None = None,
@@ -216,6 +247,7 @@ def create_schedule_exception(
     :param session: DB 세션
     :param parent_id: 원본 일정 ID
     :param exception_date: 예외 날짜
+    :param owner_id: 소유자 ID
     :param is_deleted: 삭제된 인스턴스인지
     :param title: 수정된 제목 (수정 시)
     :param description: 수정된 설명 (수정 시)
@@ -224,6 +256,7 @@ def create_schedule_exception(
     :return: 생성된 예외 인스턴스
     """
     exception = ScheduleException(
+        owner_id=owner_id,
         parent_id=parent_id,
         exception_date=exception_date,
         is_deleted=is_deleted,
@@ -238,16 +271,18 @@ def create_schedule_exception(
     return exception
 
 
-def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Schedule]:
+def get_schedules_by_tag_group_id(session: Session, group_id: UUID, owner_id: str) -> list[Schedule]:
     """
     그룹에 속한 일정 조회 (Todo가 아닌 Schedule만)
     
     :param session: DB 세션
     :param group_id: 태그 그룹 ID
+    :param owner_id: 소유자 ID
     :return: 해당 그룹에 속한 일정 리스트
     """
     statement = (
         select(Schedule)
+        .where(Schedule.owner_id == owner_id)
         .where(Schedule.tag_group_id == group_id)
         .where(Schedule.source_todo_id.is_(None))  # Todo에서 생성된 Schedule 제외
     )
@@ -255,29 +290,32 @@ def get_schedules_by_tag_group_id(session: Session, group_id: UUID) -> list[Sche
     return list(results.all())
 
 
-def clear_tag_group_id_from_schedules(session: Session, group_id: UUID) -> None:
+def clear_tag_group_id_from_schedules(session: Session, group_id: UUID, owner_id: str) -> None:
     """
     일정의 tag_group_id를 NULL로 설정 (Todo가 아닌 Schedule만)
     
     :param session: DB 세션
     :param group_id: 태그 그룹 ID
+    :param owner_id: 소유자 ID
     """
-    schedules = get_schedules_by_tag_group_id(session, group_id)
+    schedules = get_schedules_by_tag_group_id(session, group_id, owner_id)
     for schedule in schedules:
         schedule.tag_group_id = None
     # commit은 get_db_transactional이 처리
 
 
-def get_schedules_by_source_todo_id(session: Session, todo_id: UUID) -> list[Schedule]:
+def get_schedules_by_source_todo_id(session: Session, todo_id: UUID, owner_id: str) -> list[Schedule]:
     """
     Todo에서 생성된 Schedule 조회
     
     :param session: DB 세션
     :param todo_id: Todo ID
+    :param owner_id: 소유자 ID
     :return: 해당 Todo에서 생성된 Schedule 리스트
     """
     statement = (
         select(Schedule)
+        .where(Schedule.owner_id == owner_id)
         .where(Schedule.source_todo_id == todo_id)
         .order_by(Schedule.start_time)
     )

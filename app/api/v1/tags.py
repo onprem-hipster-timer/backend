@@ -10,12 +10,13 @@ Note: Schedule-Tag 관계는 Schedule 생성/수정 시 tag_ids 필드로 처리
 """
 from typing import List
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
-from app.domain.tag.dependencies import valid_tag_group_id, valid_tag_id
-from app.domain.tag.model import Tag, TagGroup
 from app.domain.tag.schema.dto import (
     TagGroupCreate,
     TagGroupRead,
@@ -38,50 +39,55 @@ router = APIRouter(prefix="/tags", tags=["Tags"])
 async def create_tag_group(
         data: TagGroupCreate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 그룹 생성"""
-    service = TagService(session)
+    service = TagService(session, current_user)
     return service.create_tag_group(data)
 
 
 @router.get("/groups", response_model=List[TagGroupReadWithTags])
 async def read_tag_groups(
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """모든 태그 그룹 조회 (태그 포함)"""
-    service = TagService(session)
+    service = TagService(session, current_user)
     return service.get_all_tag_groups()
 
 
 @router.get("/groups/{group_id}", response_model=TagGroupReadWithTags)
 async def read_tag_group(
-        tag_group: TagGroup = Depends(valid_tag_group_id),
+        group_id: UUID,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 그룹 조회 (태그 포함)"""
-    # ORM 모델의 relationship이 자동으로 태그를 포함
-    return tag_group
+    service = TagService(session, current_user)
+    return service.get_tag_group(group_id)
 
 
 @router.patch("/groups/{group_id}", response_model=TagGroupRead)
 async def update_tag_group(
-        tag_group: TagGroup = Depends(valid_tag_group_id),
-        data: TagGroupUpdate = ...,
+        group_id: UUID,
+        data: TagGroupUpdate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 그룹 업데이트"""
-    service = TagService(session)
-    return service.update_tag_group(tag_group.id, data)
+    service = TagService(session, current_user)
+    return service.update_tag_group(group_id, data)
 
 
 @router.delete("/groups/{group_id}", status_code=status.HTTP_200_OK)
 async def delete_tag_group(
-        tag_group: TagGroup = Depends(valid_tag_group_id),
+        group_id: UUID,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 그룹 삭제 (CASCADE로 태그도 삭제)"""
-    service = TagService(session)
-    service.delete_tag_group(tag_group.id)
+    service = TagService(session, current_user)
+    service.delete_tag_group(group_id)
     return {"ok": True}
 
 
@@ -93,46 +99,53 @@ async def delete_tag_group(
 async def create_tag(
         data: TagCreate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 생성"""
-    service = TagService(session)
+    service = TagService(session, current_user)
     return service.create_tag(data)
 
 
 @router.get("", response_model=List[TagRead])
 async def read_tags(
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """모든 태그 조회"""
-    service = TagService(session)
+    service = TagService(session, current_user)
     return service.get_all_tags()
 
 
 @router.get("/{tag_id}", response_model=TagRead)
 async def read_tag(
-        tag: Tag = Depends(valid_tag_id),
+        tag_id: UUID,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 조회"""
-    return TagRead.model_validate(tag)
+    service = TagService(session, current_user)
+    return service.get_tag(tag_id)
 
 
 @router.patch("/{tag_id}", response_model=TagRead)
 async def update_tag(
-        tag: Tag = Depends(valid_tag_id),
-        data: TagUpdate = ...,
+        tag_id: UUID,
+        data: TagUpdate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 업데이트"""
-    service = TagService(session)
-    return service.update_tag(tag.id, data)
+    service = TagService(session, current_user)
+    return service.update_tag(tag_id, data)
 
 
 @router.delete("/{tag_id}", status_code=status.HTTP_200_OK)
 async def delete_tag(
-        tag: Tag = Depends(valid_tag_id),
+        tag_id: UUID,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """태그 삭제"""
-    service = TagService(session)
-    service.delete_tag(tag.id)
+    service = TagService(session, current_user)
+    service.delete_tag(tag_id)
     return {"ok": True}

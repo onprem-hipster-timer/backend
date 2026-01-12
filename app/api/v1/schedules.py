@@ -13,9 +13,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.dependencies import valid_schedule_id
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
@@ -38,6 +38,7 @@ async def create_schedule(
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     새 일정 생성
@@ -47,7 +48,7 @@ async def create_schedule(
     - 트랜잭션 자동 관리 (context manager)
     - Exception Handler가 예외 처리
     """
-    service = ScheduleService(session)
+    service = ScheduleService(session, current_user)
     schedule = service.create_schedule(data)
 
     # Schedule 모델을 ScheduleRead로 변환
@@ -82,6 +83,7 @@ async def read_schedules(
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     날짜 범위 기반 일정 조회 (반복 일정 포함, 태그 필터링 지원)
@@ -99,7 +101,7 @@ async def read_schedules(
     FastAPI Best Practices:
     - async 라우트 사용
     """
-    service = ScheduleService(session)
+    service = ScheduleService(session, current_user)
 
     # 날짜 범위 기반 조회 (태그 필터링 포함)
     schedules = service.get_schedules_by_date_range(
@@ -118,21 +120,24 @@ async def read_schedules(
 
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
-        schedule: Schedule = Depends(valid_schedule_id),
+        schedule_id: UUID,
         tz: Optional[str] = Query(
             None,
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     ID로 일정 조회
     
     FastAPI Best Practices:
-    - Dependency로 검증 (valid_schedule_id)
-    - 중복 검증 코드 제거
-    - 여러 엔드포인트에서 재사용 가능
+    - 인증된 사용자만 자신의 일정 조회 가능
     """
+    service = ScheduleService(session, current_user)
+    schedule = service.get_schedule(schedule_id)
+    
     # Schedule 모델을 ScheduleRead로 변환
     schedule_read = ScheduleRead.model_validate(schedule)
 
@@ -152,6 +157,7 @@ async def update_schedule(
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정 업데이트 (반복 일정 인스턴스 포함)
@@ -171,7 +177,7 @@ async def update_schedule(
     - Service는 session을 받아서 CRUD 직접 사용
     - 가상 인스턴스인 경우 instance_start 쿼리 파라미터로 처리
     """
-    service = ScheduleService(session)
+    service = ScheduleService(session, current_user)
     if instance_start:
         schedule = service.update_recurring_instance(schedule_id, instance_start, data)
     else:
@@ -190,6 +196,7 @@ async def delete_schedule(
         schedule_id: UUID,
         instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정 삭제 (반복 일정 인스턴스 포함)
@@ -202,7 +209,7 @@ async def delete_schedule(
     - Service는 session을 받아서 CRUD 직접 사용
     - 가상 인스턴스인 경우 instance_start 쿼리 파라미터로 처리
     """
-    service = ScheduleService(session)
+    service = ScheduleService(session, current_user)
     if instance_start:
         service.delete_recurring_instance(schedule_id, instance_start)
     else:
@@ -213,7 +220,7 @@ async def delete_schedule(
 
 @router.get("/{schedule_id}/timers", response_model=list[TimerRead])
 async def get_schedule_timers(
-        schedule: Schedule = Depends(valid_schedule_id),
+        schedule_id: UUID,
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
@@ -224,6 +231,7 @@ async def get_schedule_timers(
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정의 모든 타이머 조회
@@ -231,7 +239,10 @@ async def get_schedule_timers(
     from app.domain.schedule.schema.dto import ScheduleRead
     from app.domain.timer.schema.dto import TimerRead
 
-    timer_service = TimerService(session)
+    schedule_service = ScheduleService(session, current_user)
+    schedule = schedule_service.get_schedule(schedule_id)
+    
+    timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_schedule(schedule.id)
 
     # Schedule 정보 처리
@@ -252,7 +263,7 @@ async def get_schedule_timers(
 
 @router.get("/{schedule_id}/timers/active", response_model=TimerRead)
 async def get_active_timer(
-        schedule: Schedule = Depends(valid_schedule_id),
+        schedule_id: UUID,
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
@@ -263,6 +274,7 @@ async def get_active_timer(
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
@@ -273,7 +285,10 @@ async def get_active_timer(
     from app.domain.schedule.schema.dto import ScheduleRead
     from app.domain.timer.schema.dto import TimerRead
 
-    timer_service = TimerService(session)
+    schedule_service = ScheduleService(session, current_user)
+    schedule = schedule_service.get_schedule(schedule_id)
+    
+    timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer(schedule.id)
     if not timer:
         raise TimerNotFoundError()

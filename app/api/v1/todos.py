@@ -12,9 +12,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
-from app.domain.todo.dependencies import valid_todo_id
-from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import (
     TodoCreate,
     TodoRead,
@@ -31,6 +30,7 @@ router = APIRouter(prefix="/todos", tags=["Todos"])
 async def create_todo(
         data: TodoCreate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     새 Todo 생성
@@ -38,7 +38,7 @@ async def create_todo(
     Todo는 독립적인 엔티티입니다.
     deadline이 있으면 별도의 Schedule이 자동으로 생성됩니다.
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
     todo = service.create_todo(data)
     return service.to_read_dto(todo)
 
@@ -54,6 +54,7 @@ async def read_todos(
             description="태그 그룹 ID 리스트 (해당 그룹에 속한 Todo 반환 - 직접 연결 또는 태그 기반)"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 목록 조회 (태그/그룹 필터링 지원)
@@ -73,7 +74,7 @@ async def read_todos(
     
     둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
     result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
 
     return [
@@ -92,6 +93,7 @@ async def get_todo_stats(
             description="필터링할 태그 그룹 ID"
         ),
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 통계 조회
@@ -99,19 +101,21 @@ async def get_todo_stats(
     그룹별 태그 통계를 반환합니다.
     group_id가 지정되면 해당 그룹의 태그만 집계합니다.
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
     return service.get_todo_stats(group_id=group_id)
 
 
 @router.get("/{todo_id}", response_model=TodoRead)
 async def read_todo(
-        todo: Todo = Depends(valid_todo_id),
+        todo_id: UUID,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     ID로 Todo 조회
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
+    todo = service.get_todo(todo_id)
     return service.to_read_dto(todo)
 
 
@@ -120,6 +124,7 @@ async def update_todo(
         todo_id: UUID,
         data: TodoUpdate,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 업데이트
@@ -131,7 +136,7 @@ async def update_todo(
     - deadline 변경: 기존 Schedule 업데이트
     - deadline 제거: 기존 Schedule 삭제
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
     todo = service.update_todo(todo_id, data)
     return service.to_read_dto(todo)
 
@@ -140,10 +145,11 @@ async def update_todo(
 async def delete_todo(
         todo_id: UUID,
         session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 삭제
     """
-    service = TodoService(session)
+    service = TodoService(session, current_user)
     service.delete_todo(todo_id)
     return {"ok": True}

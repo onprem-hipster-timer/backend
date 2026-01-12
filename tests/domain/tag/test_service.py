@@ -20,9 +20,9 @@ from app.domain.tag.service import TagService
 
 
 @pytest.fixture
-def sample_tag_group(test_session):
+def sample_tag_group(test_session, test_user):
     """테스트용 태그 그룹 (ORM 모델 반환)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagGroupCreate(
         name="업무",
         color="#FF5733",
@@ -33,9 +33,9 @@ def sample_tag_group(test_session):
 
 
 @pytest.fixture
-def sample_tag(test_session, sample_tag_group):
+def sample_tag(test_session, sample_tag_group, test_user):
     """테스트용 태그 (ORM 모델 반환)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagCreate(
         name="중요",
         color="#FF0000",
@@ -50,9 +50,9 @@ def sample_tag(test_session, sample_tag_group):
 # TagGroup CRUD Tests
 # ============================================================
 
-def test_create_tag_group_success(test_session):
+def test_create_tag_group_success(test_session, test_user):
     """태그 그룹 생성 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagGroupCreate(
         name="업무",
         color="#FF5733",
@@ -66,9 +66,9 @@ def test_create_tag_group_success(test_session):
     assert tag_group.id is not None
 
 
-def test_create_tag_group_color_validation(test_session):
+def test_create_tag_group_color_validation(test_session, test_user):
     """태그 그룹 색상 검증"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 잘못된 색상 형식
     with pytest.raises(ValueError, match="색상은 HEX 형식이어야 합니다"):
@@ -79,27 +79,27 @@ def test_create_tag_group_color_validation(test_session):
         service.create_tag_group(data)
 
 
-def test_get_tag_group_success(test_session, sample_tag_group):
+def test_get_tag_group_success(test_session, sample_tag_group, test_user):
     """태그 그룹 조회 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     tag_group = service.get_tag_group(sample_tag_group.id)
 
     assert tag_group.id == sample_tag_group.id
     assert tag_group.name == "업무"
 
 
-def test_get_tag_group_not_found(test_session):
+def test_get_tag_group_not_found(test_session, test_user):
     """태그 그룹 조회 실패 (없음)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     fake_id = uuid4()
 
     with pytest.raises(TagGroupNotFoundError):
         service.get_tag_group(fake_id)
 
 
-def test_get_all_tag_groups(test_session, sample_tag_group):
+def test_get_all_tag_groups(test_session, sample_tag_group, test_user):
     """모든 태그 그룹 조회"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 두 번째 그룹 생성
     data2 = TagGroupCreate(name="개인", color="#00FF00")
@@ -112,9 +112,9 @@ def test_get_all_tag_groups(test_session, sample_tag_group):
     assert "개인" in names
 
 
-def test_update_tag_group_success(test_session, sample_tag_group):
+def test_update_tag_group_success(test_session, sample_tag_group, test_user):
     """태그 그룹 업데이트 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagGroupUpdate(name="업무2", color="#00FF00")
 
     updated = service.update_tag_group(sample_tag_group.id, data)
@@ -124,9 +124,9 @@ def test_update_tag_group_success(test_session, sample_tag_group):
     assert updated.id == sample_tag_group.id
 
 
-def test_delete_tag_group_success(test_session, sample_tag_group):
+def test_delete_tag_group_success(test_session, sample_tag_group, test_user):
     """태그 그룹 삭제 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     group_id = sample_tag_group.id
 
     service.delete_tag_group(group_id)
@@ -138,9 +138,9 @@ def test_delete_tag_group_success(test_session, sample_tag_group):
         service.get_tag_group(group_id)
 
 
-def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_tag):
+def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_tag, test_user):
     """태그 그룹 삭제 시 태그도 CASCADE 삭제"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     group_id = sample_tag_group.id
     tag_id = sample_tag.id
 
@@ -158,7 +158,7 @@ def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_ta
         service.get_tag(tag_id)
 
 
-def test_delete_tag_group_cascade_todos(test_session, sample_tag_group):
+def test_delete_tag_group_cascade_todos(test_session, sample_tag_group, test_user):
     """태그 그룹 삭제 시 Todo는 삭제되고 일정은 보존됨"""
     from datetime import datetime, UTC
     from app.domain.todo.service import TodoService
@@ -167,9 +167,9 @@ def test_delete_tag_group_cascade_todos(test_session, sample_tag_group):
     from app.domain.schedule.schema.dto import ScheduleCreate
     from app.crud import schedule as schedule_crud
 
-    tag_service = TagService(test_session)
-    todo_service = TodoService(test_session)
-    schedule_service = ScheduleService(test_session)
+    tag_service = TagService(test_session, test_user)
+    todo_service = TodoService(test_session, test_user)
+    schedule_service = ScheduleService(test_session, test_user)
     group_id = sample_tag_group.id
 
     # 1. Todo 생성 (그룹에 속함)
@@ -206,7 +206,7 @@ def test_delete_tag_group_cascade_todos(test_session, sample_tag_group):
         todo_service.get_todo(todo_id)
 
     # 5. 일정은 보존되고 tag_group_id만 NULL인지 확인
-    saved_schedule = schedule_crud.get_schedule(test_session, schedule_id)
+    saved_schedule = schedule_crud.get_schedule(test_session, schedule_id, test_user.sub)
     assert saved_schedule is not None
     assert saved_schedule.title == "보존될 일정"
     assert saved_schedule.tag_group_id is None  # NULL로 설정됨
@@ -216,9 +216,9 @@ def test_delete_tag_group_cascade_todos(test_session, sample_tag_group):
 # Tag CRUD Tests
 # ============================================================
 
-def test_create_tag_success(test_session, sample_tag_group):
+def test_create_tag_success(test_session, sample_tag_group, test_user):
     """태그 생성 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagCreate(
         name="중요",
         color="#FF0000",
@@ -233,9 +233,9 @@ def test_create_tag_success(test_session, sample_tag_group):
     assert tag.id is not None
 
 
-def test_create_tag_duplicate_name_in_group(test_session, sample_tag_group):
+def test_create_tag_duplicate_name_in_group(test_session, sample_tag_group, test_user):
     """그룹 내 태그 이름 중복 테스트"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagCreate(
         name="중요",
         color="#FF0000",
@@ -248,9 +248,9 @@ def test_create_tag_duplicate_name_in_group(test_session, sample_tag_group):
         service.create_tag(data)
 
 
-def test_create_tag_different_group_same_name(test_session):
+def test_create_tag_different_group_same_name(test_session, test_user):
     """다른 그룹에는 같은 이름의 태그 생성 가능"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 그룹 1 생성
     group1 = service.create_tag_group(TagGroupCreate(name="업무", color="#FF0000"))
@@ -266,27 +266,27 @@ def test_create_tag_different_group_same_name(test_session):
     assert tag1.group_id != tag2.group_id
 
 
-def test_get_tag_success(test_session, sample_tag):
+def test_get_tag_success(test_session, sample_tag, test_user):
     """태그 조회 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     tag = service.get_tag(sample_tag.id)
 
     assert tag.id == sample_tag.id
     assert tag.name == "중요"
 
 
-def test_get_tag_not_found(test_session):
+def test_get_tag_not_found(test_session, test_user):
     """태그 조회 실패 (없음)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     fake_id = uuid4()
 
     with pytest.raises(TagNotFoundError):
         service.get_tag(fake_id)
 
 
-def test_get_tags_by_group(test_session, sample_tag_group):
+def test_get_tags_by_group(test_session, sample_tag_group, test_user):
     """그룹별 태그 조회"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 태그 여러 개 생성
     tag1 = service.create_tag(TagCreate(name="태그1", color="#FF0000", group_id=sample_tag_group.id))
@@ -299,9 +299,9 @@ def test_get_tags_by_group(test_session, sample_tag_group):
     assert "태그2" in names
 
 
-def test_update_tag_success(test_session, sample_tag):
+def test_update_tag_success(test_session, sample_tag, test_user):
     """태그 업데이트 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     data = TagUpdate(name="매우 중요", color="#FF0000")
 
     updated = service.update_tag(sample_tag.id, data)
@@ -310,9 +310,9 @@ def test_update_tag_success(test_session, sample_tag):
     assert updated.id == sample_tag.id
 
 
-def test_update_tag_duplicate_name(test_session, sample_tag_group):
+def test_update_tag_duplicate_name(test_session, sample_tag_group, test_user):
     """태그 이름 변경 시 중복 검증"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     tag1 = service.create_tag(TagCreate(name="태그1", color="#FF0000", group_id=sample_tag_group.id))
     tag2 = service.create_tag(TagCreate(name="태그2", color="#00FF00", group_id=sample_tag_group.id))
@@ -322,9 +322,9 @@ def test_update_tag_duplicate_name(test_session, sample_tag_group):
         service.update_tag(tag2.id, TagUpdate(name="태그1"))
 
 
-def test_delete_tag_success(test_session, sample_tag):
+def test_delete_tag_success(test_session, sample_tag, test_user):
     """태그 삭제 성공"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
     tag_id = sample_tag.id
 
     service.delete_tag(tag_id)
@@ -340,9 +340,9 @@ def test_delete_tag_success(test_session, sample_tag):
 # Schedule-Tag Relationship Tests
 # ============================================================
 
-def test_add_tag_to_schedule(test_session, sample_schedule, sample_tag):
+def test_add_tag_to_schedule(test_session, sample_schedule, sample_tag, test_user):
     """일정에 태그 추가"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     service.add_tag_to_schedule(sample_schedule.id, sample_tag.id)
 
@@ -351,9 +351,9 @@ def test_add_tag_to_schedule(test_session, sample_schedule, sample_tag):
     assert tags[0].id == sample_tag.id
 
 
-def test_add_tag_to_schedule_duplicate(test_session, sample_schedule, sample_tag):
+def test_add_tag_to_schedule_duplicate(test_session, sample_schedule, sample_tag, test_user):
     """일정에 같은 태그 중복 추가 (무시)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     service.add_tag_to_schedule(sample_schedule.id, sample_tag.id)
     service.add_tag_to_schedule(sample_schedule.id, sample_tag.id)  # 중복 추가
@@ -362,9 +362,9 @@ def test_add_tag_to_schedule_duplicate(test_session, sample_schedule, sample_tag
     assert len(tags) == 1  # 중복되지 않음
 
 
-def test_remove_tag_from_schedule(test_session, sample_schedule, sample_tag):
+def test_remove_tag_from_schedule(test_session, sample_schedule, sample_tag, test_user):
     """일정에서 태그 제거"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     service.add_tag_to_schedule(sample_schedule.id, sample_tag.id)
     service.remove_tag_from_schedule(sample_schedule.id, sample_tag.id)
@@ -373,9 +373,9 @@ def test_remove_tag_from_schedule(test_session, sample_schedule, sample_tag):
     assert len(tags) == 0
 
 
-def test_set_schedule_tags(test_session, sample_schedule, sample_tag_group):
+def test_set_schedule_tags(test_session, sample_schedule, sample_tag_group, test_user):
     """일정의 태그 일괄 설정"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 태그 여러 개 생성
     tag1 = service.create_tag(TagCreate(name="태그1", color="#FF0000", group_id=sample_tag_group.id))
@@ -395,9 +395,9 @@ def test_set_schedule_tags(test_session, sample_schedule, sample_tag_group):
     assert tag1.id not in tag_ids  # 기존 태그는 제거됨
 
 
-def test_get_schedule_tags_empty(test_session, sample_schedule):
+def test_get_schedule_tags_empty(test_session, sample_schedule, test_user):
     """일정의 태그 조회 (태그 없음)"""
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     tags = service.get_schedule_tags(sample_schedule.id)
     assert len(tags) == 0
@@ -407,18 +407,19 @@ def test_get_schedule_tags_empty(test_session, sample_schedule):
 # ScheduleException-Tag Relationship Tests
 # ============================================================
 
-def test_add_tag_to_schedule_exception(test_session, sample_schedule, sample_tag):
+def test_add_tag_to_schedule_exception(test_session, sample_schedule, sample_tag, test_user):
     """예외 일정에 태그 추가"""
     from app.crud import schedule as schedule_crud
     from datetime import datetime, UTC
 
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 예외 일정 생성
     exception = schedule_crud.create_schedule_exception(
         test_session,
         parent_id=sample_schedule.id,
         exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        owner_id=test_user.sub,
         is_deleted=False,
     )
     test_session.flush()
@@ -430,18 +431,19 @@ def test_add_tag_to_schedule_exception(test_session, sample_schedule, sample_tag
     assert tags[0].id == sample_tag.id
 
 
-def test_set_schedule_exception_tags(test_session, sample_schedule, sample_tag_group):
+def test_set_schedule_exception_tags(test_session, sample_schedule, sample_tag_group, test_user):
     """예외 일정의 태그 일괄 설정"""
     from app.crud import schedule as schedule_crud
     from datetime import datetime, UTC
 
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 예외 일정 생성
     exception = schedule_crud.create_schedule_exception(
         test_session,
         parent_id=sample_schedule.id,
         exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        owner_id=test_user.sub,
         is_deleted=False,
     )
     test_session.flush()
@@ -459,18 +461,19 @@ def test_set_schedule_exception_tags(test_session, sample_schedule, sample_tag_g
     assert tag2.id in tag_ids
 
 
-def test_remove_tag_from_schedule_exception(test_session, sample_schedule, sample_tag):
+def test_remove_tag_from_schedule_exception(test_session, sample_schedule, sample_tag, test_user):
     """예외 일정에서 태그 제거"""
     from app.crud import schedule as schedule_crud
     from datetime import datetime, UTC
 
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 예외 일정 생성
     exception = schedule_crud.create_schedule_exception(
         test_session,
         parent_id=sample_schedule.id,
         exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        owner_id=test_user.sub,
         is_deleted=False,
     )
     test_session.flush()
@@ -486,18 +489,19 @@ def test_remove_tag_from_schedule_exception(test_session, sample_schedule, sampl
     assert len(tags) == 0
 
 
-def test_get_schedule_exception_tags_empty(test_session, sample_schedule):
+def test_get_schedule_exception_tags_empty(test_session, sample_schedule, test_user):
     """예외 일정의 태그 조회 (태그 없음)"""
     from app.crud import schedule as schedule_crud
     from datetime import datetime, UTC
 
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 예외 일정 생성
     exception = schedule_crud.create_schedule_exception(
         test_session,
         parent_id=sample_schedule.id,
         exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        owner_id=test_user.sub,
         is_deleted=False,
     )
     test_session.flush()
@@ -507,18 +511,19 @@ def test_get_schedule_exception_tags_empty(test_session, sample_schedule):
     assert len(tags) == 0
 
 
-def test_add_tag_to_schedule_exception_duplicate(test_session, sample_schedule, sample_tag):
+def test_add_tag_to_schedule_exception_duplicate(test_session, sample_schedule, sample_tag, test_user):
     """예외 일정에 같은 태그 중복 추가 (무시)"""
     from app.crud import schedule as schedule_crud
     from datetime import datetime, UTC
 
-    service = TagService(test_session)
+    service = TagService(test_session, test_user)
 
     # 예외 일정 생성
     exception = schedule_crud.create_schedule_exception(
         test_session,
         parent_id=sample_schedule.id,
         exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+        owner_id=test_user.sub,
         is_deleted=False,
     )
     test_session.flush()
@@ -539,7 +544,7 @@ def test_add_tag_to_schedule_exception_duplicate(test_session, sample_schedule, 
 # CASCADE 삭제 테스트
 # ============================================================
 
-def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag):
+def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag, test_user):
     """일정 삭제 시 태그 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.domain.schedule.service import ScheduleService
@@ -550,37 +555,37 @@ def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag):
 
     # 태그 추가
     with Session(test_engine) as add_session:
-        tag_service = TagService(add_session)
+        tag_service = TagService(add_session, test_user)
         tag_service.add_tag_to_schedule(schedule_id, tag_id)
         add_session.commit()
 
     # 태그 관계 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         tags = tag_service.get_schedule_tags(schedule_id)
         assert len(tags) == 1
         assert tags[0].id == tag_id
 
     # 일정 삭제
     with Session(test_engine) as delete_session:
-        schedule_service = ScheduleService(delete_session)
+        schedule_service = ScheduleService(delete_session, test_user)
         schedule_service.delete_schedule(schedule_id)
         delete_session.commit()
 
     # 일정이 삭제되었는지 확인
     with Session(test_engine) as check_session:
-        schedule_service = ScheduleService(check_session)
+        schedule_service = ScheduleService(check_session, test_user)
         with pytest.raises(ScheduleNotFoundError):
             schedule_service.get_schedule(schedule_id)
 
     # 태그 관계도 CASCADE로 삭제되었는지 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         tags = tag_service.get_schedule_tags(schedule_id)
         assert len(tags) == 0  # 일정이 삭제되어 태그 관계도 삭제됨
 
 
-def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sample_tag):
+def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sample_tag, test_user):
     """예외 일정 삭제 시 태그 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.crud import schedule as schedule_crud
@@ -593,6 +598,7 @@ def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sa
             create_session,
             parent_id=sample_schedule.id,
             exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+            owner_id=test_user.sub,
             is_deleted=False,
         )
         create_session.commit()
@@ -600,33 +606,33 @@ def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sa
 
     # 태그 추가
     with Session(test_engine) as add_session:
-        tag_service = TagService(add_session)
+        tag_service = TagService(add_session, test_user)
         tag_service.add_tag_to_schedule_exception(exception_id, sample_tag.id)
         add_session.commit()
 
     # 태그 관계 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(tags) == 1
         assert tags[0].id == sample_tag.id
 
     # 예외 일정 삭제 (부모 일정 삭제로 인한 CASCADE)
     with Session(test_engine) as delete_session:
-        schedule_service = ScheduleService(delete_session)
+        schedule_service = ScheduleService(delete_session, test_user)
         schedule_service.delete_schedule(sample_schedule.id)
         delete_session.commit()
 
     # 예외 일정이 삭제되었는지 확인 (부모 일정 삭제로 CASCADE)
     with Session(test_engine) as check_session:
-        exception_check = schedule_crud.get_schedule_exception(check_session, exception_id)
+        exception_check = schedule_crud.get_schedule_exception(check_session, exception_id, test_user.sub)
         assert exception_check is None
 
     # 태그 관계도 CASCADE로 삭제되었는지 확인
     # (예외 일정이 삭제되어 태그 관계도 삭제됨)
 
 
-def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sample_tag_group):
+def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sample_tag_group, test_user):
     """태그 삭제 시 일정/예외 일정과의 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.crud import schedule as schedule_crud
@@ -634,7 +640,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
 
     # 태그 생성
     with Session(test_engine) as create_session:
-        tag_service = TagService(create_session)
+        tag_service = TagService(create_session, test_user)
         tag = tag_service.create_tag(TagCreate(
             name="삭제 테스트 태그",
             color="#FF0000",
@@ -645,7 +651,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
 
     # 일정에 태그 추가
     with Session(test_engine) as add_session:
-        tag_service = TagService(add_session)
+        tag_service = TagService(add_session, test_user)
         tag_service.add_tag_to_schedule(sample_schedule.id, tag_id)
         add_session.commit()
 
@@ -655,19 +661,20 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
             create_session,
             parent_id=sample_schedule.id,
             exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
+            owner_id=test_user.sub,
             is_deleted=False,
         )
         create_session.commit()
         exception_id = exception.id
 
     with Session(test_engine) as add_session:
-        tag_service = TagService(add_session)
+        tag_service = TagService(add_session, test_user)
         tag_service.add_tag_to_schedule_exception(exception_id, tag_id)
         add_session.commit()
 
     # 태그 관계 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
         exception_tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(schedule_tags) == 1
@@ -675,13 +682,13 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
 
     # 태그 삭제
     with Session(test_engine) as delete_session:
-        tag_service = TagService(delete_session)
+        tag_service = TagService(delete_session, test_user)
         tag_service.delete_tag(tag_id)
         delete_session.commit()
 
     # 태그 관계가 CASCADE로 삭제되었는지 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
         exception_tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(schedule_tags) == 0  # 태그 삭제로 관계 삭제
@@ -692,7 +699,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
 # 빈 그룹 자동 삭제 테스트 (반복 일정 패턴과 동일)
 # ============================================================
 
-def test_delete_all_tags_deletes_group(test_engine, sample_tag_group):
+def test_delete_all_tags_deletes_group(test_engine, sample_tag_group, test_user):
     """모든 태그 삭제 시 그룹도 자동 삭제 (반복 일정 패턴과 동일)"""
     from sqlmodel import Session
 
@@ -700,7 +707,7 @@ def test_delete_all_tags_deletes_group(test_engine, sample_tag_group):
 
     # 태그 여러 개 생성
     with Session(test_engine) as create_session:
-        tag_service = TagService(create_session)
+        tag_service = TagService(create_session, test_user)
         tag1 = tag_service.create_tag(TagCreate(
             name="태그1",
             color="#FF0000",
@@ -717,13 +724,13 @@ def test_delete_all_tags_deletes_group(test_engine, sample_tag_group):
 
     # 첫 번째 태그 삭제 (그룹은 아직 남아있어야 함)
     with Session(test_engine) as delete_session:
-        tag_service = TagService(delete_session)
+        tag_service = TagService(delete_session, test_user)
         tag_service.delete_tag(tag1_id)
         delete_session.commit()
 
     # 그룹이 아직 존재하는지 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         group = tag_service.get_tag_group(group_id)
         assert group is not None
         remaining_tags = tag_service.get_tags_by_group(group_id)
@@ -731,18 +738,18 @@ def test_delete_all_tags_deletes_group(test_engine, sample_tag_group):
 
     # 마지막 태그 삭제 (그룹도 자동 삭제되어야 함)
     with Session(test_engine) as delete_session:
-        tag_service = TagService(delete_session)
+        tag_service = TagService(delete_session, test_user)
         tag_service.delete_tag(tag2_id)
         delete_session.commit()
 
     # 그룹이 자동으로 삭제되었는지 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         with pytest.raises(TagGroupNotFoundError):
             tag_service.get_tag_group(group_id)
 
 
-def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_group):
+def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_group, test_user):
     """태그 삭제 시 다른 태그가 남아있으면 그룹 유지"""
     from sqlmodel import Session
 
@@ -750,7 +757,7 @@ def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_grou
 
     # 태그 여러 개 생성
     with Session(test_engine) as create_session:
-        tag_service = TagService(create_session)
+        tag_service = TagService(create_session, test_user)
         tag1 = tag_service.create_tag(TagCreate(
             name="태그1",
             color="#FF0000",
@@ -766,13 +773,13 @@ def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_grou
 
     # 하나의 태그만 삭제
     with Session(test_engine) as delete_session:
-        tag_service = TagService(delete_session)
+        tag_service = TagService(delete_session, test_user)
         tag_service.delete_tag(tag1_id)
         delete_session.commit()
 
     # 그룹이 여전히 존재하는지 확인
     with Session(test_engine) as check_session:
-        tag_service = TagService(check_session)
+        tag_service = TagService(check_session, test_user)
         group = tag_service.get_tag_group(group_id)
         assert group is not None
         remaining_tags = tag_service.get_tags_by_group(group_id)

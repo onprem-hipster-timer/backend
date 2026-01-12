@@ -1,3 +1,9 @@
+import os
+
+# 테스트 환경 기본 설정 - 다른 모듈 임포트 전에 설정 필요!
+os.environ["OIDC_ENABLED"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리밋 테스트에서만 활성화
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
@@ -5,7 +11,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine, Session
 
+from app.core.auth import CurrentUser
 from app.models.schedule import Schedule
+
+
+@pytest.fixture
+def test_user() -> CurrentUser:
+    """테스트용 사용자 (OIDC 비활성화 시 반환되는 mock 사용자와 동일)"""
+    return CurrentUser(
+        sub="test-user-id",
+        email="test@example.com",
+        name="Test User",
+    )
 
 
 @pytest.fixture
@@ -102,7 +119,7 @@ async def test_async_session(test_async_engine):
 
 
 @pytest.fixture
-def sample_schedule(test_session):
+def sample_schedule(test_session, test_user):
     """
     테스트 데이터
     
@@ -113,6 +130,7 @@ def sample_schedule(test_session):
     """
     from datetime import datetime, UTC
     from app.domain.schedule.schema.dto import ScheduleCreate
+    from app.domain.schedule.service import ScheduleService
 
     schedule_data = ScheduleCreate(
         title="테스트 일정",
@@ -121,8 +139,9 @@ def sample_schedule(test_session):
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
     )
 
-    schedule = Schedule.model_validate(schedule_data)
-    test_session.add(schedule)
+    # ScheduleService를 통해 owner_id와 함께 일정 생성
+    service = ScheduleService(test_session, test_user)
+    schedule = service.create_schedule(schedule_data)
     # Bug Fix: commit() 대신 flush() 사용 (트랜잭션 격리 유지)
     test_session.flush()  # ID를 얻기 위해 flush
     test_session.refresh(schedule)
@@ -130,7 +149,7 @@ def sample_schedule(test_session):
 
 
 @pytest.fixture
-def sample_timer(test_session, sample_schedule):
+def sample_timer(test_session, sample_schedule, test_user):
     """
     테스트용 타이머 데이터
     
@@ -146,7 +165,7 @@ def sample_timer(test_session, sample_schedule):
         allocated_duration=1800,  # 30분
     )
 
-    service = TimerService(test_session)
+    service = TimerService(test_session, test_user)
     timer = service.create_timer(timer_data)
     test_session.flush()
     test_session.refresh(timer)
@@ -163,10 +182,27 @@ def e2e_client():
     Bug Fix: StaticPool 사용
     - SQLite 메모리 DB는 커넥션마다 별도 인스턴스를 가짐
     - StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB 인스턴스를 공유하도록 함
+    
+    Bug Fix: settings 재로드 + 스토리지 초기화
+    - 레이트 리밋 테스트 후 settings가 변경될 수 있으므로 재로드하여 비활성화 보장
+    - 레이트 리밋 스토리지도 초기화하여 이전 테스트의 카운트가 영향을 주지 않도록 함
     """
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db.session import _session_manager
+    
+    # 환경변수를 명시적으로 설정하고 settings 재로드
+    # (레이트 리밋 테스트에서 환경변수가 변경될 수 있음)
+    os.environ["RATE_LIMIT_ENABLED"] = "false"
+    os.environ["OIDC_ENABLED"] = "false"
+    
+    from app.core.config import Settings
+    import app.core.config as config_module
+    config_module.settings = Settings()
+    
+    # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
+    from app.ratelimit.storage.memory import reset_storage
+    reset_storage()
 
     # 테스트용 메모리 데이터베이스 엔진 생성
     # StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB를 공유

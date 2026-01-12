@@ -19,21 +19,34 @@ from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, Tim
 # ============================================================
 
 def create_tag_group(session: Session, tag_group: TagGroup) -> TagGroup:
-    """태그 그룹 생성"""
+    """
+    태그 그룹 생성
+    
+    Note: tag_group 객체는 이미 owner_id가 설정되어 있어야 합니다.
+    """
     session.add(tag_group)
     session.flush()  # ID를 얻기 위해 flush
     session.refresh(tag_group)
     return tag_group
 
 
-def get_tag_group(session: Session, group_id: UUID) -> Optional[TagGroup]:
-    """태그 그룹 조회"""
-    return session.get(TagGroup, group_id)
+def get_tag_group(session: Session, group_id: UUID, owner_id: str) -> Optional[TagGroup]:
+    """태그 그룹 조회 (owner_id 검증 포함)"""
+    statement = (
+        select(TagGroup)
+        .where(TagGroup.id == group_id)
+        .where(TagGroup.owner_id == owner_id)
+    )
+    return session.exec(statement).first()
 
 
-def get_all_tag_groups(session: Session) -> List[TagGroup]:
-    """모든 태그 그룹 조회"""
-    statement = select(TagGroup).order_by(TagGroup.name)
+def get_all_tag_groups(session: Session, owner_id: str) -> List[TagGroup]:
+    """소유자의 모든 태그 그룹 조회"""
+    statement = (
+        select(TagGroup)
+        .where(TagGroup.owner_id == owner_id)
+        .order_by(TagGroup.name)
+    )
     return list(session.exec(statement).all())
 
 
@@ -56,33 +69,56 @@ def delete_tag_group(session: Session, tag_group: TagGroup) -> None:
 # ============================================================
 
 def create_tag(session: Session, tag: Tag) -> Tag:
-    """태그 생성"""
+    """
+    태그 생성
+    
+    Note: tag 객체는 이미 owner_id가 설정되어 있어야 합니다.
+    """
     session.add(tag)
     session.flush()  # ID를 얻기 위해 flush
     session.refresh(tag)
     return tag
 
 
-def get_tag(session: Session, tag_id: UUID) -> Optional[Tag]:
-    """태그 조회"""
-    return session.get(Tag, tag_id)
+def get_tag(session: Session, tag_id: UUID, owner_id: str) -> Optional[Tag]:
+    """태그 조회 (owner_id 검증 포함)"""
+    statement = (
+        select(Tag)
+        .where(Tag.id == tag_id)
+        .where(Tag.owner_id == owner_id)
+    )
+    return session.exec(statement).first()
 
 
-def get_tags_by_group(session: Session, group_id: UUID) -> List[Tag]:
+def get_tags_by_group(session: Session, group_id: UUID, owner_id: str) -> List[Tag]:
     """그룹별 태그 조회"""
-    statement = select(Tag).where(Tag.group_id == group_id).order_by(Tag.name)
+    statement = (
+        select(Tag)
+        .where(Tag.owner_id == owner_id)
+        .where(Tag.group_id == group_id)
+        .order_by(Tag.name)
+    )
     return list(session.exec(statement).all())
 
 
-def get_all_tags(session: Session) -> List[Tag]:
-    """모든 태그 조회"""
-    statement = select(Tag).order_by(Tag.name)
+def get_all_tags(session: Session, owner_id: str) -> List[Tag]:
+    """소유자의 모든 태그 조회"""
+    statement = (
+        select(Tag)
+        .where(Tag.owner_id == owner_id)
+        .order_by(Tag.name)
+    )
     return list(session.exec(statement).all())
 
 
-def get_tag_by_name_in_group(session: Session, group_id: UUID, name: str) -> Optional[Tag]:
+def get_tag_by_name_in_group(session: Session, group_id: UUID, name: str, owner_id: str) -> Optional[Tag]:
     """그룹 내 이름으로 태그 조회"""
-    statement = select(Tag).where(Tag.group_id == group_id, Tag.name == name)
+    statement = (
+        select(Tag)
+        .where(Tag.owner_id == owner_id)
+        .where(Tag.group_id == group_id)
+        .where(Tag.name == name)
+    )
     return session.exec(statement).first()
 
 

@@ -5,13 +5,15 @@ GraphQL Router
 - GraphQL은 API aggregation layer
 - FastAPI에 GraphQL 라우터 등록
 - 최신 Strawberry 패턴 적용 (2025 기준)
+- OIDC 인증 통합
 """
 from typing import Any, Coroutine
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlmodel import Session
 from strawberry.fastapi import GraphQLRouter
 
+from app.core.auth import CurrentUser, oidc_client
 from app.core.config import settings
 from app.db.session import get_db
 from app.domain.schedule.schema.query import schema
@@ -19,12 +21,17 @@ from app.domain.schedule.schema.query import schema
 
 async def get_context(request: Request) -> dict:
     """
-    GraphQL 컨텍스트 생성
+    GraphQL 컨텍스트 생성 (인증 포함)
     
     Bug Fix: Generator 패턴을 사용하여 세션 생명주기 안전하게 관리
     - get_db()의 Generator를 사용하여 세션 생성 (읽기 전용, commit 불필요)
     - GraphQL resolver에서 try-finally를 통해 cleanup 보장
     - 요청 종료 시 자동으로 세션 정리됨
+    
+    인증:
+    - Authorization 헤더에서 Bearer 토큰 추출
+    - OIDC Provider를 통해 JWT 검증
+    - CurrentUser 객체를 컨텍스트에 추가
     
     주의: Strawberry는 context를 자동으로 cleanup하지 않으므로
     GraphQL resolver에서 try-finally를 통해 cleanup을 보장해야 합니다.
@@ -34,11 +41,40 @@ async def get_context(request: Request) -> dict:
     session_gen = get_db()
     session: Session = next(session_gen)
 
+    # 인증 처리
+    current_user: CurrentUser | None = None
+    
+    if not settings.OIDC_ENABLED:
+        # 인증 비활성화 시 테스트용 사용자 반환
+        current_user = CurrentUser(
+            sub="test-user-id",
+            email="test@example.com",
+            name="Test User",
+        )
+    else:
+        # Authorization 헤더에서 토큰 추출
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # "Bearer " 제거
+            try:
+                claims = await oidc_client.verify_token(token)
+                sub = claims.get("sub")
+                if sub:
+                    current_user = CurrentUser(
+                        sub=sub,
+                        email=claims.get("email"),
+                        name=claims.get("name"),
+                        raw_claims=claims,
+                    )
+            except HTTPException:
+                # 토큰 검증 실패 시 current_user는 None
+                pass
+
     return {
         "request": request,
         "session": session,
+        "current_user": current_user,
         "_session_gen": session_gen,  # 정리를 위한 Generator 참조
-        # 향후 auth, user 등 추가 가능
     }
 
 

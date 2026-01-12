@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
+from app.core.auth import CurrentUser
 from app.core.constants import TimerStatus
 from app.crud import timer as crud, schedule as schedule_crud
 from app.domain.dateutil.service import ensure_utc_naive
@@ -33,10 +34,13 @@ class TimerService:
     - Repository 패턴 제거, CRUD 함수 직접 사용
     - Session을 받아서 CRUD 함수 호출
     - 모든 datetime을 UTC naive로 변환하여 저장
+    - CurrentUser를 받아서 사용자별 데이터 격리
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, current_user: CurrentUser):
         self.session = session
+        self.current_user = current_user
+        self.owner_id = current_user.sub
 
     def create_timer(self, data: TimerCreate) -> TimerSession:
         """
@@ -52,7 +56,7 @@ class TimerService:
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
         # Schedule 존재 확인
-        schedule = schedule_crud.get_schedule(self.session, data.schedule_id)
+        schedule = schedule_crud.get_schedule(self.session, data.schedule_id, self.owner_id)
         if not schedule:
             raise ScheduleNotFoundError()
 
@@ -67,11 +71,11 @@ class TimerService:
             "status": TimerStatus.RUNNING.value,
             "started_at": now,
         }
-        timer = crud.create_timer(self.session, timer_data)
+        timer = crud.create_timer(self.session, timer_data, self.owner_id)
 
         # 태그 설정
         if data.tag_ids:
-            tag_service = TagService(self.session)
+            tag_service = TagService(self.session, self.current_user)
             tag_service.set_timer_tags(timer.id, data.tag_ids)
             # 태그 설정 후 relationship 갱신
             self.session.refresh(timer)
@@ -89,7 +93,7 @@ class TimerService:
         :return: 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -108,7 +112,7 @@ class TimerService:
         :param schedule_id: 일정 ID
         :return: 타이머 리스트
         """
-        timers = crud.get_timers_by_schedule(self.session, schedule_id)
+        timers = crud.get_timers_by_schedule(self.session, schedule_id, self.owner_id)
 
         # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
@@ -126,7 +130,7 @@ class TimerService:
         :param schedule_id: 일정 ID
         :return: 활성 타이머 또는 None
         """
-        timer = crud.get_active_timer(self.session, schedule_id)
+        timer = crud.get_active_timer(self.session, schedule_id, self.owner_id)
 
         if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
             # 경과 시간 실시간 계산
@@ -151,7 +155,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -189,7 +193,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -223,7 +227,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -258,7 +262,7 @@ class TimerService:
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -279,7 +283,7 @@ class TimerService:
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
@@ -288,7 +292,7 @@ class TimerService:
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_data
         if tag_ids_updated:
-            tag_service = TagService(self.session)
+            tag_service = TagService(self.session, self.current_user)
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
             del update_data['tag_ids']  # CRUD에 전달하지 않음
 
@@ -312,7 +316,7 @@ class TimerService:
         :param timer_id: 타이머 ID
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         """
-        timer = crud.get_timer(self.session, timer_id)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 

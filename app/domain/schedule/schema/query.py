@@ -4,6 +4,7 @@ Schedule Domain GraphQL Query
 아키텍처 원칙:
 - Domain이 자신의 GraphQL Query를 정의
 - Resolver는 thin하게, 실제 작업은 Domain Service에 위임
+- OIDC 인증 통합
 """
 from datetime import date, datetime, timedelta
 from typing import List, TypedDict, Optional
@@ -12,6 +13,8 @@ import strawberry
 from sqlmodel import Session
 from strawberry.types import Info
 
+from app.core.auth import CurrentUser
+from app.core.error_handlers import AuthenticationRequiredError
 from app.domain.schedule.schema.types import Event, Day, Calendar
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.types import TagFilterInput
@@ -25,6 +28,7 @@ class GraphQLContext(TypedDict):
     """
     request: object  # FastAPI Request
     session: Session  # DB 세션
+    current_user: Optional[CurrentUser]  # 현재 인증된 사용자
 
 
 # GraphQLContext는 dict로 대체 (최신 패턴)
@@ -76,7 +80,12 @@ class ScheduleQuery:
         """
         context: GraphQLContext = info.context
         session: Session = context["session"]
+        current_user: CurrentUser | None = context.get("current_user")
         session_gen = context.get("_session_gen")  # Generator 참조
+
+        # 인증 확인
+        if not current_user:
+            raise AuthenticationRequiredError()
 
         try:
             # 날짜 범위를 datetime으로 변환 (하루의 시작과 끝)
@@ -89,7 +98,7 @@ class ScheduleQuery:
 
             # ✅ Domain Service 사용 (N+1 문제 방지)
             # FastAPI Best Practices: Service는 session을 받아서 CRUD 직접 사용
-            service = ScheduleService(session)
+            service = ScheduleService(session, current_user)
             schedules = service.get_schedules_by_date_range(
                 start_datetime,
                 end_datetime,
