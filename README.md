@@ -623,11 +623,34 @@ TOTAL                                                8904    682    92%
 
 Configure via `.env` file or environment variables.
 
+#### Environment Mode
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENVIRONMENT` | Runtime environment (`development`, `staging`, `production`) | `development` |
+
+> ⚠️ **Production Mode**: When `ENVIRONMENT=production`, the following settings are automatically disabled:
+> - `DEBUG` → `False`
+> - `DOCS_ENABLED` → `False`
+> - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
+> - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
+
+**Quick Setup:**
+
+```bash
+# Development (default)
+ENVIRONMENT=development
+
+# Production
+ENVIRONMENT=production
+```
+
 #### Core Settings
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEBUG` | Enable debug mode | `False` |
+| `DEBUG` | Enable debug mode | `True` |
+| `DOCS_ENABLED` | Enable Swagger/ReDoc documentation | `True` |
 | `LOG_LEVEL` | Log level | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |

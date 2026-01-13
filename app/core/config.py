@@ -1,14 +1,19 @@
-from pydantic import ConfigDict
+from typing import Literal, Self
+
+from pydantic import ConfigDict, model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """애플리케이션 설정"""
 
+    # 환경 설정
+    ENVIRONMENT: Literal["development", "staging", "production"] = "development"
+
     # 애플리케이션
     APP_NAME: str = "onperm-hipster-timer-backend"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = False
+    DEBUG: bool = True
 
     # 데이터베이스
     DATABASE_URL: str = "sqlite:///./schedule.db"
@@ -20,6 +25,9 @@ class Settings(BaseSettings):
 
     # 로깅
     LOG_LEVEL: str = "INFO"
+
+    # API 문서
+    DOCS_ENABLED: bool = True  # Swagger/ReDoc 문서 활성화 (개발 환경에서만 True)
 
     # GraphQL
     GRAPHQL_ENABLE_PLAYGROUND: bool = True  # 개발 환경에서만 True
@@ -45,6 +53,17 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=True,
     )
+
+    @model_validator(mode="after")
+    def apply_production_defaults(self) -> Self:
+        """프로덕션 환경에서는 보안 관련 설정을 자동으로 비활성화"""
+        if self.ENVIRONMENT == "production":
+            # 프로덕션에서는 디버그 및 문서 관련 기능 비활성화
+            object.__setattr__(self, "DEBUG", False)
+            object.__setattr__(self, "DOCS_ENABLED", False)
+            object.__setattr__(self, "GRAPHQL_ENABLE_PLAYGROUND", False)
+            object.__setattr__(self, "GRAPHQL_ENABLE_INTROSPECTION", False)
+        return self
 
 
 settings = Settings()

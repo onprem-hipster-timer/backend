@@ -618,11 +618,34 @@ TOTAL                                                8904    682    92%
 
 `.env` 파일 또는 환경 변수로 설정합니다.
 
+#### 환경 모드
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENVIRONMENT` | 실행 환경 (`development`, `staging`, `production`) | `development` |
+
+> ⚠️ **프로덕션 모드**: `ENVIRONMENT=production` 설정 시 아래 설정이 자동으로 비활성화됩니다:
+> - `DEBUG` → `False`
+> - `DOCS_ENABLED` → `False`
+> - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
+> - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
+
+**빠른 설정:**
+
+```bash
+# 개발 환경 (기본)
+ENVIRONMENT=development
+
+# 프로덕션 환경
+ENVIRONMENT=production
+```
+
 #### 기본 설정
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEBUG` | 디버그 모드 활성화 | `False` |
+| `DEBUG` | 디버그 모드 활성화 | `True` |
+| `DOCS_ENABLED` | Swagger/ReDoc 문서 활성화 | `True` |
 | `LOG_LEVEL` | 로그 레벨 | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |
