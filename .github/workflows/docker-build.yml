@@ -9,12 +9,11 @@ on:
       - 'Dockerfile'
       - '.github/workflows/docker-build.yml'
   schedule:
-    - cron: '0 0 * * 1'  # 매주 월요일 00:00 UTC
+    - cron: '0 0 * * 1'
   workflow_dispatch:
 
-# 동일 브랜치에서 중복 실행 방지 (최신 실행만 유지)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
@@ -22,15 +21,15 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write    # 릴리스 생성용
-      packages: write    # 패키지 푸시용
-      id-token: write    # OIDC 토큰 (provenance)
-      attestations: write # attestations 생성용
-      
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,11 +39,8 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          DATE=$(date +'%Y.%m.%d')
-          COUNT=$(git rev-list --count HEAD)
-          VERSION="v${DATE}.${COUNT}"
+          VERSION="v$(git describe --tags --dirty --always)"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Generated version: ${VERSION}"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -59,16 +55,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata for Docker
+      - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest
+            ${{ github.event_name == 'push' && 'type=raw,value=latest' || '' }}
+            ${{ github.event_name == 'schedule' && 'type=raw,value=weekly' || '' }}
 
-      - name: Build and push Docker image
+      - name: Build and push image
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -79,43 +76,24 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
+          provenance: false
+          sbom: false
 
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Create Release
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          
-          # 이미 릴리스가 존재하면 스킵
-          if gh release view "${VERSION}" &>/dev/null; then
-            echo "Release ${VERSION} already exists, skipping..."
+          if gh release view "$VERSION" &>/dev/null; then
             exit 0
           fi
-          
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            TITLE="패치 릴리스 ${VERSION}"
-          else
-            TITLE="주간 릴리스 ${VERSION}"
-          fi
-          
-          gh release create "${VERSION}" \
+          gh release create "$VERSION" \
             --generate-notes \
-            --title "${TITLE}" \
-            --notes "## Docker 이미지
-
-          \`\`\`bash
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}
-          \`\`\`
-
-          - 레지스트리: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`
-          - 태그: \`${VERSION}\`, \`latest\`
-          - 플랫폼: \`linux/amd64\`, \`linux/arm64\`"
+            --title "Release $VERSION" \
+            --notes "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
