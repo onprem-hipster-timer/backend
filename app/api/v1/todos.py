@@ -14,6 +14,9 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
+from app.domain.dateutil.service import parse_timezone
+from app.domain.timer.schema.dto import TimerRead
+from app.domain.timer.service import TimerService
 from app.domain.todo.schema.dto import (
     TodoCreate,
     TodoRead,
@@ -153,3 +156,93 @@ async def delete_todo(
     service = TodoService(session, current_user)
     service.delete_todo(todo_id)
     return {"ok": True}
+
+
+@router.get("/{todo_id}/timers", response_model=list[TimerRead])
+async def get_todo_timers(
+        todo_id: UUID,
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Todo의 모든 타이머 조회
+    
+    Schedule의 /schedules/{schedule_id}/timers 엔드포인트와 동일한 패턴입니다.
+    """
+    todo_service = TodoService(session, current_user)
+    todo = todo_service.get_todo(todo_id)
+
+    timer_service = TimerService(session, current_user)
+    timers = timer_service.get_timers_by_todo(todo.id)
+
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo:
+        todo_read = todo_service.to_read_dto(todo)
+
+    tz_obj = parse_timezone(tz) if tz else None
+    return [
+        TimerRead.from_model(
+            timer,
+            include_todo=include_todo,
+            todo=todo_read,
+        ).to_timezone(tz_obj, validate=False)
+        for timer in timers
+    ]
+
+
+@router.get("/{todo_id}/timers/active", response_model=TimerRead)
+async def get_todo_active_timer(
+        todo_id: UUID,
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Todo의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    
+    활성 타이머가 없으면 404를 반환합니다.
+    Schedule의 /schedules/{schedule_id}/timers/active 엔드포인트와 동일한 패턴입니다.
+    """
+    from app.domain.timer.exceptions import TimerNotFoundError
+
+    todo_service = TodoService(session, current_user)
+    todo = todo_service.get_todo(todo_id)
+
+    timer_service = TimerService(session, current_user)
+    timer = timer_service.get_active_timer_by_todo(todo.id)
+    if not timer:
+        raise TimerNotFoundError()
+
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo:
+        todo_read = todo_service.to_read_dto(todo)
+
+    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
+    timer_read = TimerRead.from_model(
+        timer,
+        include_todo=include_todo,
+        todo=todo_read,
+    )
+
+    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)

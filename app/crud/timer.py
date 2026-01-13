@@ -92,6 +92,60 @@ def get_active_timer(
     return session.exec(statement).first()
 
 
+def get_timers_by_todo(
+        session: Session,
+        todo_id: UUID,
+        owner_id: str,
+) -> list[TimerSession]:
+    """
+    Todo의 모든 타이머 조회
+    
+    :param session: DB 세션
+    :param todo_id: Todo ID
+    :param owner_id: 소유자 ID
+    :return: 타이머 리스트
+    """
+    statement = (
+        select(TimerSession)
+        .where(TimerSession.owner_id == owner_id)
+        .where(TimerSession.todo_id == todo_id)
+        .order_by(TimerSession.created_at.desc())
+    )
+
+    results = session.exec(statement)
+    return results.all()
+
+
+def get_active_timer_by_todo(
+        session: Session,
+        todo_id: UUID,
+        owner_id: str,
+) -> TimerSession | None:
+    """
+    Todo의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    
+    :param session: DB 세션
+    :param todo_id: Todo ID
+    :param owner_id: 소유자 ID
+    :return: 활성 타이머 또는 None
+    """
+    statement = (
+        select(TimerSession)
+        .where(TimerSession.owner_id == owner_id)
+        .where(TimerSession.todo_id == todo_id)
+        .where(
+            TimerSession.status.in_([
+                TimerStatus.RUNNING.value,
+                TimerStatus.PAUSED.value,
+            ])
+        )
+        .order_by(TimerSession.created_at.desc())
+        .limit(1)
+    )
+
+    return session.exec(statement).first()
+
+
 def delete_timer(session: Session, timer: TimerSession) -> None:
     """
     TimerSession 객체를 삭제합니다.

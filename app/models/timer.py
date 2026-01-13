@@ -11,6 +11,7 @@ from app.models.tag import TimerTag
 if TYPE_CHECKING:
     from app.models.schedule import Schedule
     from app.models.tag import Tag
+    from app.models.todo import Todo
 
 
 class TimerSession(UUIDBase, TimestampMixin, table=True):
@@ -18,11 +19,23 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
 
-    schedule_id: UUID = Field(
+    # Schedule 연결 (Optional - 독립 타이머 또는 Todo 전용 타이머 가능)
+    schedule_id: Optional[UUID] = Field(
+        default=None,
         sa_column=Column(
-            ForeignKey("schedule.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,  # Column 내부에 index 설정
+            ForeignKey("schedule.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
+
+    # Todo 연결 (Optional - Schedule 또는 독립 타이머 가능)
+    todo_id: Optional[UUID] = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("todo.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
         ),
     )
 
@@ -40,8 +53,9 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
     paused_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
 
-    # Relationship
-    schedule: "Schedule" = Relationship(back_populates="timers")
+    # Relationships
+    schedule: Optional["Schedule"] = Relationship(back_populates="timers")
+    todo: Optional["Todo"] = Relationship(back_populates="timers")
 
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(

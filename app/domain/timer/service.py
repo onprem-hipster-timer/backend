@@ -14,7 +14,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.core.constants import TimerStatus
-from app.crud import timer as crud, schedule as schedule_crud
+from app.crud import timer as crud, schedule as schedule_crud, todo as todo_crud
 from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.tag.service import TagService
@@ -24,6 +24,7 @@ from app.domain.timer.exceptions import (
 )
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
+from app.domain.todo.exceptions import TodoNotFoundError
 
 
 class TimerService:
@@ -47,23 +48,34 @@ class TimerService:
         타이머 생성 및 시작
         
         비즈니스 로직:
-        - Schedule 존재 확인
+        - schedule_id가 있으면 Schedule 존재 확인
+        - todo_id가 있으면 Todo 존재 확인
+        - 둘 다 없어도 독립 타이머로 생성 가능
         - status를 RUNNING으로 설정
         - started_at을 현재 시간으로 설정
         
         :param data: 타이머 생성 데이터
         :return: 생성된 타이머
-        :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        :raises ScheduleNotFoundError: schedule_id가 있지만 일정을 찾을 수 없는 경우
+        :raises TodoNotFoundError: todo_id가 있지만 Todo를 찾을 수 없는 경우
         """
-        # Schedule 존재 확인
-        schedule = schedule_crud.get_schedule(self.session, data.schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
+        # Schedule 존재 확인 (schedule_id가 있는 경우에만)
+        if data.schedule_id:
+            schedule = schedule_crud.get_schedule(self.session, data.schedule_id, self.owner_id)
+            if not schedule:
+                raise ScheduleNotFoundError()
+
+        # Todo 존재 확인 (todo_id가 있는 경우에만)
+        if data.todo_id:
+            todo = todo_crud.get_todo(self.session, data.todo_id, self.owner_id)
+            if not todo:
+                raise TodoNotFoundError()
 
         # 타이머 생성 (status = RUNNING, started_at = 현재 시간)
         now = ensure_utc_naive(datetime.now(UTC))
         timer_data = {
             "schedule_id": data.schedule_id,
+            "todo_id": data.todo_id,
             "title": data.title,
             "description": data.description,
             "allocated_duration": data.allocated_duration,
@@ -131,6 +143,41 @@ class TimerService:
         :return: 활성 타이머 또는 None
         """
         timer = crud.get_active_timer(self.session, schedule_id, self.owner_id)
+
+        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            # 경과 시간 실시간 계산
+            now = ensure_utc_naive(datetime.now(UTC))
+            elapsed_since_start = int((now - timer.started_at).total_seconds())
+            timer.elapsed_time = max(0, elapsed_since_start)
+
+        return timer
+
+    def get_timers_by_todo(self, todo_id: UUID) -> list[TimerSession]:
+        """
+        Todo의 모든 타이머 조회
+        
+        :param todo_id: Todo ID
+        :return: 타이머 리스트
+        """
+        timers = crud.get_timers_by_todo(self.session, todo_id, self.owner_id)
+
+        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
+        now = ensure_utc_naive(datetime.now(UTC))
+        for timer in timers:
+            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+                elapsed_since_start = int((now - timer.started_at).total_seconds())
+                timer.elapsed_time = max(0, elapsed_since_start)
+
+        return timers
+
+    def get_active_timer_by_todo(self, todo_id: UUID) -> TimerSession | None:
+        """
+        Todo의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+        
+        :param todo_id: Todo ID
+        :return: 활성 타이머 또는 None
+        """
+        timer = crud.get_active_timer_by_todo(self.session, todo_id, self.owner_id)
 
         if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
             # 경과 시간 실시간 계산

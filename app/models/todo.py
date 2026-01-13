@@ -18,6 +18,7 @@ from app.models.tag import TodoTag
 if TYPE_CHECKING:
     from app.models.schedule import Schedule
     from app.models.tag import Tag, TagGroup
+    from app.models.timer import TimerSession
 
 
 class Todo(UUIDBase, TimestampMixin, table=True):
@@ -73,6 +74,9 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     )
     schedules: List["Schedule"] = Relationship(
         back_populates="source_todo"
+    )
+    timers: List["TimerSession"] = Relationship(
+        back_populates="todo"
     )
     tags: List["Tag"] = Relationship(
         link_model=TodoTag,

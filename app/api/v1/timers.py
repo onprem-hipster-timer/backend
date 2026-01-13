@@ -34,7 +34,8 @@ def get_timer_tags(
         session: Session,
         current_user: CurrentUser,
         timer_id: UUID,
-        schedule_id: UUID,
+        schedule_id: Optional[UUID],
+        todo_id: Optional[UUID],
         tag_include_mode: TagIncludeMode,
 ) -> list[TagRead]:
     """
@@ -43,7 +44,8 @@ def get_timer_tags(
     :param session: DB 세션
     :param current_user: 현재 사용자
     :param timer_id: 타이머 ID
-    :param schedule_id: 스케줄 ID
+    :param schedule_id: 스케줄 ID (Optional)
+    :param todo_id: Todo ID (Optional)
     :param tag_include_mode: 태그 포함 모드
     :return: TagRead 리스트
     """
@@ -59,15 +61,22 @@ def get_timer_tags(
     elif tag_include_mode == TagIncludeMode.INHERIT_FROM_SCHEDULE:
         # 타이머 태그 조회
         timer_tags = tag_service.get_timer_tags(timer_id)
-
-        # 스케줄 태그 조회
-        schedule_service = ScheduleService(session, current_user)
-        schedule_tags = schedule_service.get_schedule_tags(schedule_id)
-
-        # 타이머 태그 + 스케줄 태그 합치기 (중복 제거 - ID 기준)
         all_tags = {tag.id: tag for tag in timer_tags}
-        for tag in schedule_tags:
-            all_tags[tag.id] = tag
+
+        # 스케줄 태그 조회 (schedule_id가 있는 경우)
+        if schedule_id:
+            schedule_service = ScheduleService(session, current_user)
+            schedule_tags = schedule_service.get_schedule_tags(schedule_id)
+            for tag in schedule_tags:
+                all_tags[tag.id] = tag
+
+        # Todo 태그 조회 (todo_id가 있고 schedule_id가 없는 경우)
+        if todo_id and not schedule_id:
+            from app.domain.todo.service import TodoService
+            todo_service = TodoService(session, current_user)
+            todo_tags = todo_service.get_todo_tags(todo_id)
+            for tag in todo_tags:
+                all_tags[tag.id] = tag
 
         return [TagRead.model_validate(tag) for tag in all_tags.values()]
 
@@ -81,9 +90,13 @@ async def create_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -96,30 +109,42 @@ async def create_timer(
     """
     새 타이머 생성 및 시작
     
-    FastAPI Best Practices:
-    - async 라우트 사용
-    - 트랜잭션 자동 관리 (context manager)
-    - Exception Handler가 예외 처리
+    schedule_id, todo_id 모두 Optional:
+    - 둘 다 없으면: 독립 타이머
+    - schedule_id만: Schedule에 연결된 타이머
+    - todo_id만: Todo에 연결된 타이머
+    - 둘 다 있으면: Schedule과 Todo 모두에 연결된 타이머
     """
     service = TimerService(session, current_user)
     timer = service.create_timer(data)
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )
@@ -136,9 +161,13 @@ async def get_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -156,20 +185,31 @@ async def get_timer(
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )
@@ -187,9 +227,13 @@ async def update_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -207,20 +251,31 @@ async def update_timer(
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )
@@ -237,9 +292,13 @@ async def pause_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -257,20 +316,31 @@ async def pause_timer(
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )
@@ -287,9 +357,13 @@ async def resume_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -307,20 +381,31 @@ async def resume_timer(
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )
@@ -337,9 +422,13 @@ async def stop_timer(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
         ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
         tag_include_mode: TagIncludeMode = Query(
             TagIncludeMode.NONE,
-            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄 태그 상속)"
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -357,20 +446,31 @@ async def stop_timer(
 
     # Schedule 정보 처리
     schedule_read = None
-    if include_schedule:
+    if include_schedule and timer.schedule_id:
         schedule_service = ScheduleService(session, current_user)
         schedule = schedule_service.get_schedule(timer.schedule_id)
         if schedule:
             schedule_read = ScheduleRead.model_validate(schedule)
 
+    # Todo 정보 처리
+    todo_read = None
+    if include_todo and timer.todo_id:
+        from app.domain.todo.service import TodoService
+        todo_service = TodoService(session, current_user)
+        todo = todo_service.get_todo(timer.todo_id)
+        if todo:
+            todo_read = todo_service.to_read_dto(todo)
+
     # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, tag_include_mode)
+    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(
         timer,
         include_schedule=include_schedule,
         schedule=schedule_read,
+        include_todo=include_todo,
+        todo=todo_read,
         tag_include_mode=tag_include_mode,
         tags=tags_read,
     )

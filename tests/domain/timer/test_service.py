@@ -15,6 +15,7 @@ from app.domain.timer.exceptions import (
 )
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.timer.service import TimerService
+from app.domain.todo.exceptions import TodoNotFoundError
 
 
 def test_create_timer_success(test_session, sample_schedule, test_user):
@@ -337,4 +338,144 @@ def test_get_active_timer_none(test_session, sample_schedule, test_user):
 
     # 활성 타이머 조회 (None 반환)
     active_timer = service.get_active_timer(sample_schedule.id)
+    assert active_timer is None
+
+
+# ============================================================
+# Todo-Timer 연동 테스트
+# ============================================================
+
+def test_create_timer_with_todo_success(test_session, sample_todo, test_user):
+    """Todo에 연결된 타이머 생성 성공 테스트"""
+    timer_data = TimerCreate(
+        todo_id=sample_todo.id,
+        title="Todo 작업",
+        description="Todo 관련 작업",
+        allocated_duration=1800,  # 30분
+    )
+
+    service = TimerService(test_session, test_user)
+    timer = service.create_timer(timer_data)
+
+    assert timer.title == "Todo 작업"
+    assert timer.description == "Todo 관련 작업"
+    assert timer.allocated_duration == 1800
+    assert timer.elapsed_time == 0
+    assert timer.status == TimerStatus.RUNNING.value
+    assert timer.started_at is not None
+    assert timer.todo_id == sample_todo.id
+    assert timer.schedule_id is None  # Schedule 연결 없음
+    assert isinstance(timer.id, UUID)
+
+
+def test_create_timer_with_both_schedule_and_todo(test_session, sample_schedule, sample_todo, test_user):
+    """Schedule과 Todo 모두에 연결된 타이머 생성 성공 테스트"""
+    timer_data = TimerCreate(
+        schedule_id=sample_schedule.id,
+        todo_id=sample_todo.id,
+        title="복합 타이머",
+        allocated_duration=3600,  # 1시간
+    )
+
+    service = TimerService(test_session, test_user)
+    timer = service.create_timer(timer_data)
+
+    assert timer.schedule_id == sample_schedule.id
+    assert timer.todo_id == sample_todo.id
+    assert timer.status == TimerStatus.RUNNING.value
+
+
+def test_create_independent_timer(test_session, test_user):
+    """독립 타이머 생성 성공 테스트 (Schedule, Todo 모두 없음)"""
+    timer_data = TimerCreate(
+        title="독립 타이머",
+        description="연결 없는 독립 타이머",
+        allocated_duration=600,  # 10분
+    )
+
+    service = TimerService(test_session, test_user)
+    timer = service.create_timer(timer_data)
+
+    assert timer.title == "독립 타이머"
+    assert timer.schedule_id is None
+    assert timer.todo_id is None
+    assert timer.status == TimerStatus.RUNNING.value
+
+
+def test_create_timer_invalid_todo_id(test_session, test_user):
+    """존재하지 않는 Todo ID로 타이머 생성 실패 테스트"""
+    from uuid import uuid4
+
+    timer_data = TimerCreate(
+        todo_id=uuid4(),
+        allocated_duration=1800,
+    )
+
+    service = TimerService(test_session, test_user)
+    with pytest.raises(TodoNotFoundError):
+        service.create_timer(timer_data)
+
+
+def test_get_timers_by_todo(test_session, sample_todo, test_user):
+    """Todo의 모든 타이머 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 여러 타이머 생성
+    timer1_data = TimerCreate(
+        todo_id=sample_todo.id,
+        title="타이머 1",
+        allocated_duration=1800,
+    )
+    timer2_data = TimerCreate(
+        todo_id=sample_todo.id,
+        title="타이머 2",
+        allocated_duration=3600,
+    )
+
+    timer1 = service.create_timer(timer1_data)
+    timer2 = service.create_timer(timer2_data)
+
+    # Todo의 모든 타이머 조회
+    timers = service.get_timers_by_todo(sample_todo.id)
+
+    timer_ids = [t.id for t in timers]
+    assert timer1.id in timer_ids
+    assert timer2.id in timer_ids
+    assert len(timers) >= 2
+
+
+def test_get_active_timer_by_todo(test_session, sample_todo, test_user):
+    """Todo의 활성 타이머 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 타이머 생성 (RUNNING 상태)
+    timer_data = TimerCreate(
+        todo_id=sample_todo.id,
+        allocated_duration=1800,
+    )
+    active_timer = service.create_timer(timer_data)
+
+    # 활성 타이머 조회
+    retrieved_active = service.get_active_timer_by_todo(sample_todo.id)
+
+    assert retrieved_active is not None
+    assert retrieved_active.id == active_timer.id
+    assert retrieved_active.status in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]
+
+
+def test_get_active_timer_by_todo_none(test_session, sample_todo, test_user):
+    """Todo의 활성 타이머가 없을 때 None 반환 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 타이머 생성 후 종료
+    timer_data = TimerCreate(
+        todo_id=sample_todo.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+    service.stop_timer(timer.id)
+    test_session.flush()
+
+    # 활성 타이머 조회 (None 반환)
+    active_timer = service.get_active_timer_by_todo(sample_todo.id)
     assert active_timer is None

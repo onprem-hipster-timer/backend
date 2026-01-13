@@ -172,6 +172,51 @@ def sample_timer(test_session, sample_schedule, test_user):
 
 
 @pytest.fixture
+def sample_tag_group(test_session, test_user):
+    """
+    테스트용 태그 그룹 데이터
+    """
+    from app.domain.tag.schema.dto import TagGroupCreate
+    from app.domain.tag.service import TagService
+
+    group_data = TagGroupCreate(
+        name="테스트 그룹",
+        color="#FF5733",
+        description="테스트 태그 그룹",
+        is_todo_group=True,
+    )
+
+    service = TagService(test_session, test_user)
+    group = service.create_tag_group(group_data)
+    test_session.flush()
+    test_session.refresh(group)
+    return group
+
+
+@pytest.fixture
+def sample_todo(test_session, sample_tag_group, test_user):
+    """
+    테스트용 Todo 데이터
+    
+    sample_tag_group에 의존하여 태그 그룹이 먼저 생성되어야 함
+    """
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.todo.service import TodoService
+
+    todo_data = TodoCreate(
+        title="테스트 Todo",
+        description="테스트 설명",
+        tag_group_id=sample_tag_group.id,
+    )
+
+    service = TodoService(test_session, test_user)
+    todo = service.create_todo(todo_data)
+    test_session.flush()
+    test_session.refresh(todo)
+    return todo
+
+
+@pytest.fixture
 def e2e_client():
     """
     E2E 테스트용 FastAPI 클라이언트

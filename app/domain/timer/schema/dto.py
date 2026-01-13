@@ -19,12 +19,20 @@ from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
 
 if TYPE_CHECKING:
-    pass  # TagRead는 이미 import됨
+    from app.domain.todo.schema.dto import TodoRead
 
 
 class TimerCreate(CustomModel):
-    """타이머 생성 DTO"""
-    schedule_id: UUID
+    """타이머 생성 DTO
+    
+    schedule_id와 todo_id 모두 Optional:
+    - 둘 다 없으면: 독립 타이머
+    - schedule_id만: Schedule에 연결된 타이머
+    - todo_id만: Todo에 연결된 타이머
+    - 둘 다 있으면: Schedule과 Todo 모두에 연결된 타이머
+    """
+    schedule_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Todo 전용 타이머 가능)
+    todo_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Schedule 전용 타이머 가능)
     title: Optional[str] = None
     description: Optional[str] = None
     allocated_duration: int  # 할당 시간 (초 단위)
@@ -44,7 +52,8 @@ class TimerRead(CustomModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    schedule_id: UUID
+    schedule_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Todo 전용 타이머 가능)
+    todo_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Schedule 전용 타이머 가능)
     title: Optional[str] = None
     description: Optional[str] = None
     allocated_duration: int
@@ -58,6 +67,9 @@ class TimerRead(CustomModel):
 
     # 일정 정보 포함 (선택적)
     schedule: Optional[ScheduleRead] = None
+
+    # Todo 정보 포함 (선택적)
+    todo: Optional["TodoRead"] = None
 
     # 태그 목록
     tags: List["TagRead"] = []
@@ -75,29 +87,37 @@ class TimerRead(CustomModel):
             *,
             include_schedule: bool = False,
             schedule: Optional[ScheduleRead] = None,
+            include_todo: bool = False,
+            todo: Optional["TodoRead"] = None,
             tag_include_mode: TagIncludeMode = TagIncludeMode.NONE,
             tags: Optional[List["TagRead"]] = None,
     ) -> "TimerRead":
         """
         TimerSession 모델에서 TimerRead DTO를 안전하게 생성
         
-        관계 필드(schedule, tags)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
+        관계 필드(schedule, todo, tags)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
         include_schedule=True일 때만 schedule 정보를 포함
+        include_todo=True일 때만 todo 정보를 포함
         tag_include_mode에 따라 tags 정보를 포함
         
         :param timer: TimerSession 모델 인스턴스
         :param include_schedule: Schedule 정보 포함 여부
         :param schedule: ScheduleRead 인스턴스 (include_schedule=True일 때만 사용)
+        :param include_todo: Todo 정보 포함 여부
+        :param todo: TodoRead 인스턴스 (include_todo=True일 때만 사용)
         :param tag_include_mode: 태그 포함 모드 (NONE, TIMER_ONLY, INHERIT_FROM_SCHEDULE)
         :param tags: TagRead 리스트 (tag_include_mode가 NONE이 아닐 때 사용)
         :return: TimerRead DTO 인스턴스
         """
-        # schedule, tags 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
-        timer_data = timer.model_dump(exclude={"schedule", "tags"})
+        # schedule, todo, tags 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
+        timer_data = timer.model_dump(exclude={"schedule", "todo", "tags"})
         timer_read = cls.model_validate(timer_data)
 
         # schedule 필드 명시적으로 설정
         timer_read.schedule = schedule if include_schedule else None
+
+        # todo 필드 명시적으로 설정
+        timer_read.todo = todo if include_todo else None
 
         # tags 필드 명시적으로 설정
         if tag_include_mode == TagIncludeMode.NONE:
@@ -143,6 +163,9 @@ class TimerRead(CustomModel):
                 schedule_read = ScheduleRead.model_construct(**schedule_value)
                 update_data["schedule"] = schedule_read.to_timezone(tz, validate=False)
 
+        # todo 필드는 그대로 유지 (TodoRead에는 to_timezone이 없음)
+        # 필요 시 TodoRead.to_timezone 추가 가능
+
         # model_construct 사용 (변환된 aware datetime이 validator를 통과하지 못하므로)
         data = self.model_dump()
         data.update(update_data)
@@ -156,5 +179,7 @@ class TimerUpdate(CustomModel):
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
 
-# Forward reference 해결 (TagRead 임포트)
+# Forward reference 해결
+# TodoRead를 런타임에 import하여 forward reference 해결
+from app.domain.todo.schema.dto import TodoRead  # noqa: E402
 TimerRead.model_rebuild()
