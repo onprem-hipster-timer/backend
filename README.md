@@ -720,6 +720,32 @@ RATE_LIMIT_ENABLED=false
 RATE_LIMIT_ENABLED=true
 ```
 
+#### CORS (Cross-Origin Resource Sharing)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CORS_ALLOWED_ORIGINS` | Allowed origins (comma-separated) | `*` |
+| `CORS_ALLOW_CREDENTIALS` | Allow credentials (cookies, etc.) | `False` |
+| `CORS_ALLOW_METHODS` | Allowed HTTP methods (comma-separated) | `*` |
+| `CORS_ALLOW_HEADERS` | Allowed headers (comma-separated) | `*` |
+
+> ⚠️ **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
+> To allow credentials, you must specify explicit origins.
+
+**Quick Setup:**
+
+```bash
+# Development (allow all origins)
+CORS_ALLOWED_ORIGINS=*
+CORS_ALLOW_CREDENTIALS=false
+
+# Production (specific domains only)
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
+CORS_ALLOW_HEADERS=Authorization,Content-Type
+```
+
 ### Database Migration
 
 ```bash

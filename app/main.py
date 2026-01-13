@@ -111,15 +111,15 @@ app = FastAPI(
 # Exception Handler 등록
 register_exception_handlers(app)
 
-# CORS 설정 (GraphQL 클라이언트를 위해)
-# Bug Fix: allow_origins=["*"]와 allow_credentials=True는 호환되지 않음
-# 개발 환경에서는 credentials를 False로 설정하거나 특정 origin을 지정해야 함
+# CORS 설정 (환경변수로 주입 가능)
+# 주의: allow_origins=["*"]와 allow_credentials=True는 호환되지 않음
+# origin을 특정 도메인으로 설정해야 credentials를 True로 사용 가능
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
-    allow_credentials=False,  # Bug Fix: "*" origin과 함께 사용 불가
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.cors_methods,
+    allow_headers=settings.cors_headers,
 )
 
 # Middleware 등록 (순서 중요: 아래에서 위로 실행됨 - 마지막 등록이 가장 먼저 실행)

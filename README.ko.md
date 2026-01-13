@@ -715,6 +715,32 @@ RATE_LIMIT_ENABLED=false
 RATE_LIMIT_ENABLED=true
 ```
 
+#### CORS (Cross-Origin Resource Sharing)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CORS_ALLOWED_ORIGINS` | 허용할 origin (콤마로 구분) | `*` |
+| `CORS_ALLOW_CREDENTIALS` | 자격 증명(쿠키 등) 허용 여부 | `False` |
+| `CORS_ALLOW_METHODS` | 허용할 HTTP 메서드 (콤마로 구분) | `*` |
+| `CORS_ALLOW_HEADERS` | 허용할 헤더 (콤마로 구분) | `*` |
+
+> ⚠️ **주의**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 함께 사용할 수 없습니다.
+> credentials를 허용하려면 반드시 특정 origin을 지정해야 합니다.
+
+**빠른 설정:**
+
+```bash
+# 개발 환경 (모든 origin 허용)
+CORS_ALLOWED_ORIGINS=*
+CORS_ALLOW_CREDENTIALS=false
+
+# 프로덕션 환경 (특정 도메인만 허용)
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
+CORS_ALLOW_HEADERS=Authorization,Content-Type
+```
+
 ### Database Migration
 
 ```bash

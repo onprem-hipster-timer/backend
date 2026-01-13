@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60  # 기본 최대 요청 수
 
+    # CORS 설정
+    CORS_ALLOWED_ORIGINS: str = "*"  # 허용할 origin (콤마로 구분, 예: "http://localhost:3000,https://example.com")
+    CORS_ALLOW_CREDENTIALS: bool = False  # 자격 증명(쿠키 등) 허용 여부 (origin이 "*"일 때는 False여야 함)
+    CORS_ALLOW_METHODS: str = "*"  # 허용할 HTTP 메서드 (콤마로 구분, 예: "GET,POST,PUT,DELETE")
+    CORS_ALLOW_HEADERS: str = "*"  # 허용할 헤더 (콤마로 구분)
+
     model_config = ConfigDict(
         env_file=".env",
         case_sensitive=True,
@@ -64,6 +70,27 @@ class Settings(BaseSettings):
             object.__setattr__(self, "GRAPHQL_ENABLE_PLAYGROUND", False)
             object.__setattr__(self, "GRAPHQL_ENABLE_INTROSPECTION", False)
         return self
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """CORS_ALLOWED_ORIGINS를 리스트로 반환"""
+        if self.CORS_ALLOWED_ORIGINS == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def cors_methods(self) -> list[str]:
+        """CORS_ALLOW_METHODS를 리스트로 반환"""
+        if self.CORS_ALLOW_METHODS == "*":
+            return ["*"]
+        return [method.strip() for method in self.CORS_ALLOW_METHODS.split(",") if method.strip()]
+
+    @property
+    def cors_headers(self) -> list[str]:
+        """CORS_ALLOW_HEADERS를 리스트로 반환"""
+        if self.CORS_ALLOW_HEADERS == "*":
+            return ["*"]
+        return [header.strip() for header in self.CORS_ALLOW_HEADERS.split(",") if header.strip()]
 
 
 settings = Settings()
