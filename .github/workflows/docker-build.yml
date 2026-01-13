@@ -84,7 +84,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,6 +98,7 @@ jobs:
           if gh release view "$VERSION" &>/dev/null; then
             exit 0
           fi
+
           gh release create "$VERSION" \
             --generate-notes \
             --title "Release $VERSION" \
