@@ -544,14 +544,35 @@ def test_add_tag_to_schedule_exception_duplicate(test_session, sample_schedule, 
 # CASCADE 삭제 테스트
 # ============================================================
 
-def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag, test_user):
+def test_schedule_delete_cascade_tags(test_engine, test_user):
     """일정 삭제 시 태그 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.schema.dto import ScheduleCreate
     from app.domain.schedule.exceptions import ScheduleNotFoundError
+    from datetime import datetime, UTC
 
-    schedule_id = sample_schedule.id
-    tag_id = sample_tag.id
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        # 태그 그룹 및 태그 생성
+        tag_service = TagService(setup_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(
+            name="CASCADE 테스트 그룹", color="#FF5733"
+        ))
+        tag = tag_service.create_tag(TagCreate(
+            name="CASCADE 테스트 태그", color="#FF0000", group_id=group.id
+        ))
+
+        # 일정 생성
+        schedule_service = ScheduleService(setup_session, test_user)
+        schedule = schedule_service.create_schedule(ScheduleCreate(
+            title="CASCADE 테스트 일정",
+            start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ))
+        setup_session.commit()
+        schedule_id = schedule.id
+        tag_id = tag.id
 
     # 태그 추가
     with Session(test_engine) as add_session:
@@ -585,18 +606,41 @@ def test_schedule_delete_cascade_tags(test_engine, sample_schedule, sample_tag, 
         assert len(tags) == 0  # 일정이 삭제되어 태그 관계도 삭제됨
 
 
-def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sample_tag, test_user):
+def test_schedule_exception_delete_cascade_tags(test_engine, test_user):
     """예외 일정 삭제 시 태그 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.crud import schedule as schedule_crud
     from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.schema.dto import ScheduleCreate
     from datetime import datetime, UTC
+
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        # 태그 그룹 및 태그 생성
+        tag_service = TagService(setup_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(
+            name="예외일정 CASCADE 테스트 그룹", color="#FF5733"
+        ))
+        tag = tag_service.create_tag(TagCreate(
+            name="예외일정 CASCADE 테스트 태그", color="#FF0000", group_id=group.id
+        ))
+
+        # 부모 일정 생성
+        schedule_service = ScheduleService(setup_session, test_user)
+        schedule = schedule_service.create_schedule(ScheduleCreate(
+            title="예외일정 CASCADE 테스트 일정",
+            start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ))
+        setup_session.commit()
+        schedule_id = schedule.id
+        tag_id = tag.id
 
     # 예외 일정 생성
     with Session(test_engine) as create_session:
         exception = schedule_crud.create_schedule_exception(
             create_session,
-            parent_id=sample_schedule.id,
+            parent_id=schedule_id,
             exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
             owner_id=test_user.sub,
             is_deleted=False,
@@ -607,7 +651,7 @@ def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sa
     # 태그 추가
     with Session(test_engine) as add_session:
         tag_service = TagService(add_session, test_user)
-        tag_service.add_tag_to_schedule_exception(exception_id, sample_tag.id)
+        tag_service.add_tag_to_schedule_exception(exception_id, tag_id)
         add_session.commit()
 
     # 태그 관계 확인
@@ -615,12 +659,12 @@ def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sa
         tag_service = TagService(check_session, test_user)
         tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(tags) == 1
-        assert tags[0].id == sample_tag.id
+        assert tags[0].id == tag_id
 
     # 예외 일정 삭제 (부모 일정 삭제로 인한 CASCADE)
     with Session(test_engine) as delete_session:
         schedule_service = ScheduleService(delete_session, test_user)
-        schedule_service.delete_schedule(sample_schedule.id)
+        schedule_service.delete_schedule(schedule_id)
         delete_session.commit()
 
     # 예외 일정이 삭제되었는지 확인 (부모 일정 삭제로 CASCADE)
@@ -632,11 +676,32 @@ def test_schedule_exception_delete_cascade_tags(test_engine, sample_schedule, sa
     # (예외 일정이 삭제되어 태그 관계도 삭제됨)
 
 
-def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sample_tag_group, test_user):
+def test_tag_delete_cascade_schedule_relations(test_engine, test_user):
     """태그 삭제 시 일정/예외 일정과의 관계 CASCADE 삭제"""
     from sqlmodel import Session
     from app.crud import schedule as schedule_crud
+    from app.domain.schedule.service import ScheduleService
+    from app.domain.schedule.schema.dto import ScheduleCreate
     from datetime import datetime, UTC
+
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        # 태그 그룹 생성
+        tag_service = TagService(setup_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(
+            name="태그삭제 CASCADE 테스트 그룹", color="#FF5733"
+        ))
+
+        # 일정 생성
+        schedule_service = ScheduleService(setup_session, test_user)
+        schedule = schedule_service.create_schedule(ScheduleCreate(
+            title="태그삭제 CASCADE 테스트 일정",
+            start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ))
+        setup_session.commit()
+        group_id = group.id
+        schedule_id = schedule.id
 
     # 태그 생성
     with Session(test_engine) as create_session:
@@ -644,7 +709,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
         tag = tag_service.create_tag(TagCreate(
             name="삭제 테스트 태그",
             color="#FF0000",
-            group_id=sample_tag_group.id,
+            group_id=group_id,
         ))
         create_session.commit()
         tag_id = tag.id
@@ -652,14 +717,14 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
     # 일정에 태그 추가
     with Session(test_engine) as add_session:
         tag_service = TagService(add_session, test_user)
-        tag_service.add_tag_to_schedule(sample_schedule.id, tag_id)
+        tag_service.add_tag_to_schedule(schedule_id, tag_id)
         add_session.commit()
 
     # 예외 일정 생성 및 태그 추가
     with Session(test_engine) as create_session:
         exception = schedule_crud.create_schedule_exception(
             create_session,
-            parent_id=sample_schedule.id,
+            parent_id=schedule_id,
             exception_date=datetime(2024, 1, 2, 10, 0, 0, tzinfo=UTC),
             owner_id=test_user.sub,
             is_deleted=False,
@@ -675,7 +740,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
     # 태그 관계 확인
     with Session(test_engine) as check_session:
         tag_service = TagService(check_session, test_user)
-        schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
+        schedule_tags = tag_service.get_schedule_tags(schedule_id)
         exception_tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(schedule_tags) == 1
         assert len(exception_tags) == 1
@@ -689,7 +754,7 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
     # 태그 관계가 CASCADE로 삭제되었는지 확인
     with Session(test_engine) as check_session:
         tag_service = TagService(check_session, test_user)
-        schedule_tags = tag_service.get_schedule_tags(sample_schedule.id)
+        schedule_tags = tag_service.get_schedule_tags(schedule_id)
         exception_tags = tag_service.get_schedule_exception_tags(exception_id)
         assert len(schedule_tags) == 0  # 태그 삭제로 관계 삭제
         assert len(exception_tags) == 0  # 태그 삭제로 관계 삭제
@@ -699,11 +764,18 @@ def test_tag_delete_cascade_schedule_relations(test_engine, sample_schedule, sam
 # 빈 그룹 자동 삭제 테스트 (반복 일정 패턴과 동일)
 # ============================================================
 
-def test_delete_all_tags_deletes_group(test_engine, sample_tag_group, test_user):
+def test_delete_all_tags_deletes_group(test_engine, test_user):
     """모든 태그 삭제 시 그룹도 자동 삭제 (반복 일정 패턴과 동일)"""
     from sqlmodel import Session
 
-    group_id = sample_tag_group.id
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        tag_service = TagService(setup_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(
+            name="자동삭제 테스트 그룹", color="#FF5733"
+        ))
+        setup_session.commit()
+        group_id = group.id
 
     # 태그 여러 개 생성
     with Session(test_engine) as create_session:
@@ -749,11 +821,18 @@ def test_delete_all_tags_deletes_group(test_engine, sample_tag_group, test_user)
             tag_service.get_tag_group(group_id)
 
 
-def test_delete_tag_keeps_group_with_remaining_tags(test_engine, sample_tag_group, test_user):
+def test_delete_tag_keeps_group_with_remaining_tags(test_engine, test_user):
     """태그 삭제 시 다른 태그가 남아있으면 그룹 유지"""
     from sqlmodel import Session
 
-    group_id = sample_tag_group.id
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        tag_service = TagService(setup_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(
+            name="그룹유지 테스트 그룹", color="#FF5733"
+        ))
+        setup_session.commit()
+        group_id = group.id
 
     # 태그 여러 개 생성
     with Session(test_engine) as create_session:

@@ -1,7 +1,12 @@
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 from sqlmodel import SQLModel, Field
+
+
+def utc_now_naive() -> datetime:
+    """UTC 현재 시간을 timezone-naive로 반환 (PostgreSQL TIMESTAMP WITHOUT TIME ZONE 호환)"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class UUIDBase(SQLModel):
@@ -14,9 +19,9 @@ class UUIDBase(SQLModel):
 
 class TimestampMixin(SQLModel):
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC)
+        default_factory=utc_now_naive
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
+        default_factory=utc_now_naive,
+        sa_column_kwargs={"onupdate": utc_now_naive},
     )

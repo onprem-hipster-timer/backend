@@ -52,12 +52,21 @@ def test_update_schedule_integration(test_session, sample_schedule, test_user):
 
 
 @pytest.mark.integration
-def test_delete_schedule_integration(test_engine, sample_schedule, test_user):
+def test_delete_schedule_integration(test_engine, test_user):
     """DB를 포함한 일정 삭제 통합 테스트"""
     from sqlmodel import Session
     from app.domain.schedule.exceptions import ScheduleNotFoundError
 
-    schedule_id = sample_schedule.id
+    # 테스트 데이터 직접 생성 (commit 필수 - 별도 세션에서 사용하기 위해)
+    with Session(test_engine) as setup_session:
+        setup_service = ScheduleService(setup_session, test_user)
+        schedule = setup_service.create_schedule(ScheduleCreate(
+            title="통합 삭제 테스트 일정",
+            start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+            end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ))
+        setup_session.commit()
+        schedule_id = schedule.id
 
     # 1. 삭제용 세션으로 일정 삭제
     with Session(test_engine) as delete_session:
