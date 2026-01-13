@@ -12,7 +12,6 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine, Session
 
 from app.core.auth import CurrentUser
-from app.models.schedule import Schedule
 
 
 @pytest.fixture
@@ -190,16 +189,16 @@ def e2e_client():
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db.session import _session_manager
-    
+
     # 환경변수를 명시적으로 설정하고 settings 재로드
     # (레이트 리밋 테스트에서 환경변수가 변경될 수 있음)
     os.environ["RATE_LIMIT_ENABLED"] = "false"
     os.environ["OIDC_ENABLED"] = "false"
-    
+
     from app.core.config import Settings
     import app.core.config as config_module
     config_module.settings = Settings()
-    
+
     # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
     from app.ratelimit.storage.memory import reset_storage
     reset_storage()

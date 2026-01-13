@@ -22,6 +22,11 @@ if TYPE_CHECKING:
     from app.domain.tag.schema.dto import TagRead
 
 
+class CreateTodoOptions(CustomModel):
+    """Schedule 생성 시 함께 생성할 Todo 옵션"""
+    tag_group_id: UUID  # Todo가 속할 그룹 (필수)
+
+
 class ScheduleCreate(CustomModel):
     """일정 생성 DTO"""
     title: str
@@ -34,6 +39,7 @@ class ScheduleCreate(CustomModel):
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
+    create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

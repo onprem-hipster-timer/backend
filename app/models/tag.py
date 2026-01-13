@@ -125,7 +125,7 @@ class TagGroup(UUIDBase, TimestampMixin, table=True):
 
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     name: str = Field(index=True)  # 그룹 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)
@@ -154,7 +154,7 @@ class Tag(UUIDBase, TimestampMixin, table=True):
 
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     name: str = Field(index=True)  # 태그 이름 (필수)
     color: str  # 색상 (필수, 예: "#FF5733")
     description: Optional[str] = None  # 설명 (선택)

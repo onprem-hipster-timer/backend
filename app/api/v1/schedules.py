@@ -16,7 +16,6 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
     ScheduleRead,
@@ -137,7 +136,7 @@ async def read_schedule(
     """
     service = ScheduleService(session, current_user)
     schedule = service.get_schedule(schedule_id)
-    
+
     # Schedule 모델을 ScheduleRead로 변환
     schedule_read = ScheduleRead.model_validate(schedule)
 
@@ -241,7 +240,7 @@ async def get_schedule_timers(
 
     schedule_service = ScheduleService(session, current_user)
     schedule = schedule_service.get_schedule(schedule_id)
-    
+
     timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_schedule(schedule.id)
 
@@ -287,7 +286,7 @@ async def get_active_timer(
 
     schedule_service = ScheduleService(session, current_user)
     schedule = schedule_service.get_schedule(schedule_id)
-    
+
     timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer(schedule.id)
     if not timer:
@@ -308,3 +307,40 @@ async def get_active_timer(
     # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
+
+
+@router.post("/{schedule_id}/todo", status_code=status.HTTP_201_CREATED)
+async def create_todo_from_schedule(
+        schedule_id: UUID,
+        tag_group_id: UUID = Query(
+            ...,
+            description="Todo가 속할 TagGroup ID (필수)"
+        ),
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    기존 Schedule에서 연관된 Todo 생성
+    
+    Schedule의 정보를 기반으로 새로운 Todo를 생성합니다:
+    - Todo의 title, description은 Schedule에서 복사
+    - Todo의 deadline은 Schedule의 start_time으로 설정
+    - Schedule의 태그가 Todo에도 복사됨
+    - 생성된 Todo와 Schedule이 source_todo_id로 연결됨
+    
+    제약사항:
+    - 이미 Todo와 연결된 Schedule에서는 호출 불가 (400 에러)
+    - tag_group_id는 필수 파라미터
+    
+    :param schedule_id: Schedule ID
+    :param tag_group_id: Todo가 속할 TagGroup ID
+    :return: 생성된 Todo
+    """
+    from app.domain.todo.service import TodoService
+
+    schedule_service = ScheduleService(session, current_user)
+    todo = schedule_service.create_todo_from_schedule(schedule_id, tag_group_id)
+
+    # TodoService를 사용하여 TodoRead DTO로 변환
+    todo_service = TodoService(session, current_user)
+    return todo_service.to_read_dto(todo)

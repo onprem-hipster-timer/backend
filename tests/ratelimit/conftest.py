@@ -29,50 +29,50 @@ def rate_limit_client():
     # 1. 레이트 리밋 활성화
     original_rate_limit = os.environ.get("RATE_LIMIT_ENABLED", "false")
     os.environ["RATE_LIMIT_ENABLED"] = "true"
-    
+
     # settings 재로드
     from app.core.config import Settings
     import app.core.config as config_module
     config_module.settings = Settings()
-    
+
     # 저장소 초기화
     reset_storage()
-    
+
     # 2. 별도의 테스트 DB 생성
     from app.db.session import _session_manager
-    
+
     test_engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
         echo=False,
     )
-    
+
     @event.listens_for(test_engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
-    
+
     # 엔진 교체
     original_engine = _session_manager.engine
     _session_manager.engine = test_engine
-    
+
     # 테이블 생성
     SQLModel.metadata.create_all(test_engine)
-    
+
     # 3. TestClient 생성
     from app.main import app
     client = TestClient(app)
-    
+
     yield client
-    
+
     # 4. 정리
     # 엔진 복원
     _session_manager.engine = original_engine
     SQLModel.metadata.drop_all(test_engine)
     test_engine.dispose()
-    
+
     # 레이트 리밋 비활성화 복원
     os.environ["RATE_LIMIT_ENABLED"] = original_rate_limit
     config_module.settings = Settings()

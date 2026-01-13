@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class Schedule(UUIDBase, TimestampMixin, table=True):
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     title: str
     description: Optional[str] = None
     start_time: datetime
@@ -72,7 +72,7 @@ class ScheduleException(UUIDBase, TimestampMixin, table=True):
     """반복 일정의 예외 인스턴스 (특정 날짜만 수정/삭제)"""
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     parent_id: UUID = Field(
         sa_column=Column(
             ForeignKey("schedule.id", ondelete="CASCADE"),

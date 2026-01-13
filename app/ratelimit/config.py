@@ -21,10 +21,10 @@ class RateLimitRule(BaseModel):
         RateLimitRule(path_pattern="/api/v1/todos/*", ...)
     """
     methods: Optional[List[str]] = None  # None = 모든 메서드, ["POST", "PUT"] = 특정 메서드만
-    path_pattern: str                     # fnmatch 패턴: "/api/v1/todos/*", "/api/v1/todos"
-    window_seconds: int                   # 윈도우 크기 (초)
-    max_requests: int                     # 윈도우 내 최대 요청 수
-    
+    path_pattern: str  # fnmatch 패턴: "/api/v1/todos/*", "/api/v1/todos"
+    window_seconds: int  # 윈도우 크기 (초)
+    max_requests: int  # 윈도우 내 최대 요청 수
+
     def matches(self, method: str, path: str) -> bool:
         """
         요청이 이 규칙에 매칭되는지 확인
@@ -37,7 +37,7 @@ class RateLimitRule(BaseModel):
         if self.methods is not None:
             if method.upper() not in [m.upper() for m in self.methods]:
                 return False
-        
+
         # 경로 패턴 매칭 (fnmatch 사용)
         return fnmatch.fnmatch(path, self.path_pattern)
 
@@ -82,7 +82,7 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=30,
     ),
-    
+
     # --------------------------------------------------------
     # 도메인별 기본 규칙 (읽기 포함 모든 메서드)
     # --------------------------------------------------------
@@ -131,7 +131,7 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=60,
     ),
-    
+
     # --------------------------------------------------------
     # 전역 폴백 규칙
     # --------------------------------------------------------

@@ -1038,3 +1038,136 @@ def test_get_recurring_schedules_mixed_with_regular_e2e(e2e_client):
 
     assert len(regular_schedules) == 1
     assert len(recurring_instances) == 1
+
+
+# ==================== Schedule -> Todo 생성 E2E 테스트 ====================
+
+@pytest.mark.e2e
+def test_create_schedule_with_todo_options_e2e(e2e_client):
+    """Schedule 생성 시 create_todo_options로 Todo 동시 생성 E2E 테스트"""
+    # 1. 태그 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={
+            "name": "Schedule Todo 테스트 그룹",
+            "color": "#FF5733",
+        }
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+
+    # 2. create_todo_options와 함께 Schedule 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "Todo와 함께 생성할 일정",
+            "description": "설명입니다",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "create_todo_options": {
+                "tag_group_id": group_id
+            }
+        }
+    )
+    assert schedule_response.status_code == 201
+    schedule = schedule_response.json()
+
+    # Schedule에 source_todo_id가 설정되어야 함
+    assert schedule["source_todo_id"] is not None
+
+    # 3. 생성된 Todo 확인
+    todo_response = e2e_client.get(f"/v1/todos/{schedule['source_todo_id']}")
+    assert todo_response.status_code == 200
+    todo = todo_response.json()
+
+    assert todo["title"] == "Todo와 함께 생성할 일정"
+    assert todo["description"] == "설명입니다"
+    assert todo["tag_group_id"] == group_id
+
+
+@pytest.mark.e2e
+def test_create_todo_from_schedule_e2e(e2e_client):
+    """기존 Schedule에서 Todo 생성 E2E 테스트"""
+    # 1. 태그 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={
+            "name": "Schedule To Todo 테스트",
+            "color": "#00FF00",
+        }
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+
+    # 2. Schedule 생성 (Todo 없이)
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "나중에 Todo로 변환할 일정",
+            "description": "변환 테스트",
+            "start_time": "2024-02-01T14:00:00Z",
+            "end_time": "2024-02-01T16:00:00Z",
+        }
+    )
+    assert schedule_response.status_code == 201
+    schedule_id = schedule_response.json()["id"]
+
+    # 3. Schedule에서 Todo 생성
+    todo_response = e2e_client.post(
+        f"/v1/schedules/{schedule_id}/todo",
+        params={"tag_group_id": group_id}
+    )
+    assert todo_response.status_code == 201
+    todo = todo_response.json()
+
+    assert todo["title"] == "나중에 Todo로 변환할 일정"
+    assert todo["description"] == "변환 테스트"
+    assert todo["tag_group_id"] == group_id
+    assert todo["status"] == "SCHEDULED"
+
+    # 4. Schedule 확인 - source_todo_id가 설정되어야 함
+    schedule_check = e2e_client.get(f"/v1/schedules/{schedule_id}")
+    assert schedule_check.status_code == 200
+    assert schedule_check.json()["source_todo_id"] == todo["id"]
+
+
+@pytest.mark.e2e
+def test_create_todo_from_schedule_already_linked_e2e(e2e_client):
+    """이미 Todo와 연결된 Schedule에서 다시 Todo 생성 시 에러 E2E 테스트"""
+    # 1. 태그 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={
+            "name": "중복 테스트 그룹",
+            "color": "#0000FF",
+        }
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+
+    # 2. Schedule 생성 (Todo 없이)
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "중복 연결 테스트 일정",
+            "start_time": "2024-03-01T10:00:00Z",
+            "end_time": "2024-03-01T12:00:00Z",
+        }
+    )
+    assert schedule_response.status_code == 201
+    schedule_id = schedule_response.json()["id"]
+
+    # 3. 첫 번째 Todo 생성 - 성공
+    first_todo_response = e2e_client.post(
+        f"/v1/schedules/{schedule_id}/todo",
+        params={"tag_group_id": group_id}
+    )
+    assert first_todo_response.status_code == 201
+
+    # 4. 두 번째 Todo 생성 시도 - 에러
+    second_todo_response = e2e_client.post(
+        f"/v1/schedules/{schedule_id}/todo",
+        params={"tag_group_id": group_id}
+    )
+    assert second_todo_response.status_code == 400
+    assert "already linked" in second_todo_response.json()["message"].lower()

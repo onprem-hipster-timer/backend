@@ -43,7 +43,7 @@ async def get_context(request: Request) -> dict:
 
     # 인증 처리
     current_user: CurrentUser | None = None
-    
+
     if not settings.OIDC_ENABLED:
         # 인증 비활성화 시 테스트용 사용자 반환
         current_user = CurrentUser(

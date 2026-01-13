@@ -693,8 +693,7 @@ def test_delete_todo_with_children(test_session, sample_tag_group, test_user):
 def test_delete_todo_with_children_keeps_child_schedules(test_session, sample_tag_group, test_user):
     """부모 Todo 삭제 시 자식 Todo의 Schedule은 유지되어야 함"""
     from datetime import timedelta
-    from app.domain.schedule.service import ScheduleService
-    
+
     service = TodoService(test_session, test_user)
 
     # 부모 Todo 생성

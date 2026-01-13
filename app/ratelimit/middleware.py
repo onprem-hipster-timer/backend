@@ -27,36 +27,36 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     4. 레이트 리밋 체크
     5. 초과 시 429 응답, 허용 시 X-RateLimit-* 헤더 추가
     """
-    
+
     async def dispatch(
-        self,
-        request: Request,
-        call_next: RequestResponseEndpoint,
+            self,
+            request: Request,
+            call_next: RequestResponseEndpoint,
     ) -> Response:
         # 레이트 리밋 비활성화 시 바로 통과
         if not app_config.settings.RATE_LIMIT_ENABLED:
             return await call_next(request)
-        
+
         path = request.url.path
         method = request.method
-        
+
         # /v1/* 경로만 레이트 리밋 적용
         if not path.startswith("/v1"):
             return await call_next(request)
-        
+
         # 규칙 찾기
         rule = get_rule_for_request(method, path)
         if not rule:
             # 매칭되는 규칙 없으면 레이트 리밋 미적용
             return await call_next(request)
-        
+
         # 사용자 식별
         user_id = await self._get_user_id(request)
-        
+
         # 레이트 리밋 체크
         limiter = get_limiter()
         result = await limiter.check_and_record(user_id, method, rule)
-        
+
         if not result.allowed:
             # 429 Too Many Requests
             logger.warning(
@@ -76,17 +76,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "X-RateLimit-Reset": str(result.reset_after),
                 },
             )
-        
+
         # 요청 처리
         response = await call_next(request)
-        
+
         # 응답에 레이트 리밋 헤더 추가
         response.headers["X-RateLimit-Limit"] = str(result.max_requests)
         response.headers["X-RateLimit-Remaining"] = str(result.remaining)
         response.headers["X-RateLimit-Reset"] = str(result.reset_after)
-        
+
         return response
-    
+
     async def _get_user_id(self, request: Request) -> str:
         """
         사용자 식별자 추출
@@ -98,12 +98,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # AuthMiddleware에서 이미 검증된 사용자 정보 사용
         if hasattr(request.state, 'current_user') and request.state.current_user:
             return request.state.current_user.sub
-        
+
         # IP 주소 사용 (프록시 고려)
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             # 첫 번째 IP가 실제 클라이언트 IP
             return f"ip:{forwarded.split(',')[0].strip()}"
-        
+
         client_host = request.client.host if request.client else "unknown"
         return f"ip:{client_host}"

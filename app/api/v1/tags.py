@@ -9,7 +9,6 @@ Note: Schedule-Tag 관계는 Schedule 생성/수정 시 tag_ids 필드로 처리
       ScheduleException-Tag 관계는 반복 일정 인스턴스 수정 시 tag_ids 필드로 처리됩니다.
 """
 from typing import List
-
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status

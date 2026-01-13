@@ -8,8 +8,11 @@ FastAPI Best Practices:
 - 모든 datetime을 UTC naive로 변환하여 저장 (모든 DB 구조에서 일관성 보장)
 """
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from app.domain.todo.model import Todo
 
 from sqlmodel import Session, select
 
@@ -21,6 +24,7 @@ from app.domain.schedule.exceptions import (
     InvalidRecurrenceRuleError,
     InvalidRecurrenceEndError,
     RecurringScheduleError,
+    ScheduleAlreadyLinkedToTodoError,
 )
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
@@ -55,6 +59,7 @@ class ScheduleService:
         - 반복 일정 필드도 함께 저장
         - RRULE 검증
         - 태그 설정 (tag_ids가 있는 경우)
+        - create_todo_options가 있으면 Todo도 함께 생성
         
         :param data: 일정 생성 데이터 (datetime은 DTO에서 UTC naive로 변환됨)
         :return: 생성된 일정
@@ -77,6 +82,18 @@ class ScheduleService:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, data.tag_ids)
             # 태그 설정 후 relationship 갱신
+            self.session.refresh(schedule)
+
+        # create_todo_options가 있으면 Todo도 함께 생성
+        if data.create_todo_options:
+            todo = self._create_todo_for_schedule(
+                schedule=schedule,
+                tag_group_id=data.create_todo_options.tag_group_id,
+                tag_ids=data.tag_ids,
+            )
+            # Schedule에 source_todo_id 설정
+            schedule.source_todo_id = todo.id
+            self.session.flush()
             self.session.refresh(schedule)
 
         return schedule
@@ -701,3 +718,86 @@ class ScheduleService:
             .order_by(Tag.name)
         )
         return list(self.session.exec(statement).all())
+
+    def create_todo_from_schedule(self, schedule_id: UUID, tag_group_id: UUID) -> "Todo":
+        """
+        기존 Schedule에서 연관된 Todo 생성
+        
+        비즈니스 로직:
+        - 이미 source_todo_id가 있는 Schedule인 경우 에러 발생
+        - Schedule의 title, description, start_time(->deadline)을 Todo에 복사
+        - Schedule의 tags를 Todo에도 복사
+        - Todo 생성 후 Schedule의 source_todo_id 업데이트
+        
+        :param schedule_id: Schedule ID
+        :param tag_group_id: Todo가 속할 그룹 ID (필수)
+        :return: 생성된 Todo
+        :raises ScheduleNotFoundError: Schedule을 찾을 수 없는 경우
+        :raises ScheduleAlreadyLinkedToTodoError: 이미 Todo와 연결된 Schedule인 경우
+        """
+
+        schedule = self.get_schedule(schedule_id)
+
+        # 이미 Todo와 연결된 경우 에러
+        if schedule.source_todo_id is not None:
+            raise ScheduleAlreadyLinkedToTodoError()
+
+        # Schedule의 태그 ID 가져오기
+        schedule_tags = self.get_schedule_tags(schedule_id)
+        tag_ids = [tag.id for tag in schedule_tags] if schedule_tags else None
+
+        # Todo 생성
+        todo = self._create_todo_for_schedule(
+            schedule=schedule,
+            tag_group_id=tag_group_id,
+            tag_ids=tag_ids,
+        )
+
+        # Schedule에 source_todo_id 설정
+        schedule.source_todo_id = todo.id
+        self.session.flush()
+        self.session.refresh(schedule)
+
+        return todo
+
+    def _create_todo_for_schedule(
+            self,
+            schedule: Schedule,
+            tag_group_id: UUID,
+            tag_ids: Optional[List[UUID]] = None,
+    ) -> "Todo":
+        """
+        Schedule에서 Todo 생성 (내부 헬퍼 메서드)
+        
+        Schedule의 정보를 기반으로 Todo를 생성합니다.
+        deadline은 Schedule의 start_time으로 설정합니다.
+        
+        :param schedule: Schedule 객체
+        :param tag_group_id: Todo가 속할 그룹 ID
+        :param tag_ids: 태그 ID 리스트 (선택)
+        :return: 생성된 Todo
+        """
+        from app.crud import todo as todo_crud
+        from app.models.todo import Todo as TodoModel
+        from app.domain.todo.enums import TodoStatus
+
+        # Todo 모델 생성 (deadline = schedule.start_time)
+        todo = TodoModel(
+            owner_id=self.owner_id,
+            title=schedule.title,
+            description=schedule.description,
+            deadline=schedule.start_time,  # Schedule의 start_time을 deadline으로
+            tag_group_id=tag_group_id,
+            parent_id=None,
+            status=TodoStatus.SCHEDULED,  # Schedule이 있으므로 SCHEDULED
+        )
+        todo = todo_crud.create_todo(self.session, todo)
+
+        # 태그 설정
+        if tag_ids:
+            from app.domain.tag.service import TagService
+            tag_service = TagService(self.session, self.current_user)
+            tag_service.set_todo_tags(todo.id, tag_ids)
+            self.session.refresh(todo)
+
+        return todo

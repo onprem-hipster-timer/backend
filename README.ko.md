@@ -441,6 +441,148 @@ pytest --cov=app --cov-report=html
 | **Integration** | `tests/test_*_integration.py` | DB 연동, 트랜잭션 롤백 테스트 |
 | **E2E** | `tests/test_*_e2e.py` | HTTP API 전체 흐름 테스트 |
 
+### Coverage Report
+
+```
+Name                                                Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------------------
+app\__init__.py                                         0      0   100%
+app\api\__init__.py                                     0      0   100%
+app\api\v1\__init__.py                                 15      0   100%
+app\api\v1\graphql.py                                  27     10    63%   56-71
+app\api\v1\holidays.py                                 22     10    55%   41-56
+app\api\v1\schedules.py                                86      2    98%   181, 213
+app\api\v1\tags.py                                     51      9    82%   54-55, 77-78, 88-90, 137-138
+app\api\v1\timers.py                                  120     17    86%   74, 211-214, 261-264, 311-314, 361-364
+app\api\v1\todos.py                                    38      0   100%
+app\core\__init__.py                                    0      0   100%
+app\core\auth.py                                      115     14    88%   95, 146, 237, 287-305
+app\core\base_model.py                                 15      2    87%   39-40
+app\core\config.py                                     26      0   100%
+app\core\constants.py                                  14      0   100%
+app\core\error_handlers.py                             74     18    76%   109-126, 149-150, 177-183, 218-221, 230-236
+app\core\logging.py                                    24     17    29%   14-39, 44-63
+app\crud\__init__.py                                    2      0   100%
+app\crud\holiday.py                                    72     34    53%   36-37, 83-97, 115, 173-184, 212-258
+app\crud\schedule.py                                   68      3    96%   37-39
+app\crud\tag.py                                       126      8    94%   237, 256-260, 276, 305-310, 327
+app\crud\timer.py                                      23      0   100%
+app\crud\todo.py                                       45      2    96%   75, 90
+app\db\__init__.py                                      0      0   100%
+app\db\session.py                                     100     38    62%   22, 36-40, 55-57, 63-72, 77-86, 99, 108, 121-122, 125, 168-180, 194-206, 233-239, 248-254
+app\domain\__init__.py                                  0      0   100%
+app\domain\dateutil\__init__.py                         0      0   100%
+app\domain\dateutil\exceptions.py                       4      0   100%
+app\domain\dateutil\service.py                         77      0   100%
+app\domain\holiday\__init__.py                          7      0   100%
+app\domain\holiday\client.py                          125     97    22%   47-48, 57-72, 81, 92-102, 113-115, 125-129, 139-143, 156, 178, 199-229, 241-271, 284, 306, 327-357, 369-399
+app\domain\holiday\enums.py                            12      3    75%   23-29, 33
+app\domain\holiday\exceptions.py                       10      0   100%
+app\domain\holiday\logger.py                           65     30    54%   45, 135-153, 163-167, 177-179, 189-190, 216-224, 235, 245
+app\domain\holiday\model.py                            25      0   100%
+app\domain\holiday\schema\__init__.py                   2      0   100%
+app\domain\holiday\schema\dto.py                       84     29    65%   50-67, 78, 91-98, 103-107, 122-124, 145, 150, 154
+app\domain\holiday\service.py                         127     37    71%   93-104, 122-125, 135-136, 147, 163, 179, 195, 213-214, 225-239, 250, 408-410, 460-480
+app\domain\holiday\sync_guard.py                       42      0   100%
+app\domain\holiday\tasks.py                            31     18    42%   50-79
+app\domain\schedule\__init__.py                         0      0   100%
+app\domain\schedule\dependencies.py                    20     20     0%   9-70
+app\domain\schedule\enums.py                            5      0   100%
+app\domain\schedule\exceptions.py                      19      0   100%
+app\domain\schedule\model.py                            2      0   100%
+app\domain\schedule\schema\__init__.py                  0      0   100%
+app\domain\schedule\schema\dto.py                      80      1    99%   97
+app\domain\schedule\schema\query.py                    65      3    95%   88, 156-159
+app\domain\schedule\schema\types.py                    33      1    97%   52
+app\domain\schedule\service.py                        256     45    82%   120, 139-145, 210, 230-231, 352, 364-375, 409, 462, 464, 466, 473-475, 503-505, 538, 553-554, 582, 596, 643, 669-687
+app\domain\tag\__init__.py                              0      0   100%
+app\domain\tag\dependencies.py                         17     17     0%   9-65
+app\domain\tag\exceptions.py                           11      0   100%
+app\domain\tag\model.py                                 5      0   100%
+app\domain\tag\schema\__init__.py                       2      0   100%
+app\domain\tag\schema\dto.py                           67      0   100%
+app\domain\tag\schema\types.py                         33      1    97%   56
+app\domain\tag\service.py                             191     32    83%   79, 98, 124, 148, 160, 182, 215, 240, 259, 283, 301-310, 314-316, 328, 346-355, 359-361, 373
+app\domain\timer\__init__.py                            0      0   100%
+app\domain\timer\dependencies.py                       12     12     0%   9-41
+app\domain\timer\exceptions.py                         13      0   100%
+app\domain\timer\model.py                               2      0   100%
+app\domain\timer\schema\__init__.py                     0      0   100%
+app\domain\timer\schema\dto.py                         75      6    92%   129-130, 138-144
+app\domain\timer\service.py                           128      6    95%   160, 198, 232, 267, 288, 321
+app\domain\todo\__init__.py                             0      0   100%
+app\domain\todo\dependencies.py                        11     11     0%   6-32
+app\domain\todo\enums.py                                6      0   100%
+app\domain\todo\exceptions.py                          16      0   100%
+app\domain\todo\model.py                                2      0   100%
+app\domain\todo\schema\__init__.py                      2      0   100%
+app\domain\todo\schema\dto.py                          49      0   100%
+app\domain\todo\service.py                            200     21    90%   128, 135, 263, 293, 304-308, 389-402, 413-416
+app\main.py                                            69     42    39%   38-102
+app\middleware\__init__.py                              0      0   100%
+app\middleware\request_logger.py                       13      0   100%
+app\models\__init__.py                                  7      0   100%
+app\models\base.py                                      8      0   100%
+app\models\schedule.py                                 34      0   100%
+app\models\tag.py                                      43      0   100%
+app\models\timer.py                                    20      0   100%
+app\models\todo.py                                     22      0   100%
+app\ratelimit\__init__.py                               0      0   100%
+app\ratelimit\config.py                                22      0   100%
+app\ratelimit\exceptions.py                             7      7     0%   4-14
+app\ratelimit\limiter.py                               25      7    72%   56-58, 68-69, 77, 95
+app\ratelimit\middleware.py                            38      6    84%   51, 103-109
+app\ratelimit\storage\__init__.py                       3      0   100%
+app\ratelimit\storage\base.py                          24      4    83%   51, 62, 71, 80
+app\ratelimit\storage\memory.py                        64      5    92%   71, 89, 145, 148-149
+app\schemas\__init__.py                                 0      0   100%
+app\utils\__init__.py                                   0      0   100%
+app\utils\recurrence.py                                47      8    83%   40-42, 60-64, 91
+app\utils\validators.py                                11      0   100%
+app\valid\schedule.py                                   7      0   100%
+app\valid\tag.py                                       11      0   100%
+tests\__init__.py                                       0      0   100%
+tests\conftest.py                                     109      7    94%   63-65, 84, 115-117
+tests\core\__init__.py                                  0      0   100%
+tests\core\test_auth.py                               351      1    99%   78
+tests\domain\__init__.py                                0      0   100%
+tests\domain\dateutil\__init__.py                       0      0   100%
+tests\domain\dateutil\test_datetime_service.py        135      0   100%
+tests\domain\dateutil\test_locdate_service.py         160      0   100%
+tests\domain\dateutil\test_timezone_conversion.py     133     18    86%   58-62, 151-154, 210, 216, 232, 238-243, 258, 264
+tests\domain\dateutil\test_timezone_service.py         57      2    96%   81-83
+tests\domain\holiday\__init__.py                        0      0   100%
+tests\domain\holiday\conftest.py                        8      0   100%
+tests\domain\holiday\test_service.py                  289      0   100%
+tests\domain\holiday\test_sync_guard.py                73      0   100%
+tests\domain\schedule\__init__.py                       0      0   100%
+tests\domain\schedule\test_recurring_schedule.py      402      0   100%
+tests\domain\schedule\test_service.py                 236      0   100%
+tests\domain\tag\__init__.py                            0      0   100%
+tests\domain\tag\test_service.py                      385      1    99%   79
+tests\domain\timer\__init__.py                          0      0   100%
+tests\domain\timer\test_service.py                    157      0   100%
+tests\domain\todo\__init__.py                           0      0   100%
+tests\domain\todo\test_service.py                     533      0   100%
+tests\ratelimit\__init__.py                             0      0   100%
+tests\ratelimit\conftest.py                            34      0   100%
+tests\ratelimit\test_config.py                         57      0   100%
+tests\ratelimit\test_middleware.py                     58      0   100%
+tests\ratelimit\test_storage.py                        62      0   100%
+tests\test_auth_e2e.py                                 95      0   100%
+tests\test_graphql.py                                 331      0   100%
+tests\test_schedules_e2e.py                           422      0   100%
+tests\test_schedules_integration.py                    72      0   100%
+tests\test_tags_e2e.py                                110      0   100%
+tests\test_timers_e2e.py                              471      0   100%
+tests\test_timers_integration.py                      253      0   100%
+tests\test_todos_e2e.py                               399      0   100%
+tests\utils\__init__.py                                 0      0   100%
+tests\utils\test_validators.py                         41      0   100%
+---------------------------------------------------------------------------------
+TOTAL                                                8904    682    92%
+```
+
 ---
 
 ## ⚙️ Configuration

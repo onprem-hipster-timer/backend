@@ -19,10 +19,9 @@ Create Date: 2026-01-12 03:33:24.487348+09:00
 import os
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 import sqlmodel.sql.sqltypes
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'cf7d6e2ef7a7'
@@ -41,7 +40,7 @@ def upgrade() -> None:
     # 기존 데이터를 위해 먼저 nullable=True로 추가 후, 기본값 설정 후 nullable=False로 변경
     default_owner_id = DEFAULT_OWNER_ID
     print(f"[Migration] Using default owner_id: {default_owner_id}")
-    
+
     with op.batch_alter_table('schedule', schema=None) as batch_op:
         batch_op.add_column(sa.Column('owner_id', sqlmodel.sql.sqltypes.AutoString(), nullable=True))
     op.execute(f"UPDATE schedule SET owner_id = '{default_owner_id}' WHERE owner_id IS NULL")

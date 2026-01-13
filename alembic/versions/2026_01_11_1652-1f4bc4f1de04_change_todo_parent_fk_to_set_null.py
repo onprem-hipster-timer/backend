@@ -41,7 +41,7 @@ def upgrade() -> None:
         # 기존 FK 삭제 (이름이 있는 경우)
         if parent_fk_name:
             batch_op.drop_constraint(parent_fk_name, type_='foreignkey')
-        
+
         # 새 FK 생성: ondelete='SET NULL'
         batch_op.create_foreign_key(
             'fk_todo_parent_id',  # 명시적 이름 부여
@@ -71,7 +71,7 @@ def downgrade() -> None:
         # 기존 FK 삭제
         if parent_fk_name:
             batch_op.drop_constraint(parent_fk_name, type_='foreignkey')
-        
+
         # 기존 FK 복원: ondelete='CASCADE'
         batch_op.create_foreign_key(
             'fk_todo_parent_id',

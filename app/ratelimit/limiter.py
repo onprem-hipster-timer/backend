@@ -14,15 +14,15 @@ class RateLimiter:
     
     저장소를 사용하여 슬라이딩 윈도우 레이트 리밋 수행
     """
-    
+
     def __init__(self):
         self._storage = get_storage()
-    
+
     async def check_and_record(
-        self,
-        user_id: str,
-        method: str,
-        rule: RateLimitRule,
+            self,
+            user_id: str,
+            method: str,
+            rule: RateLimitRule,
     ) -> RateLimitResult:
         """
         요청을 체크하고 기록
@@ -38,12 +38,12 @@ class RateLimiter:
             window_seconds=rule.window_seconds,
             max_requests=rule.max_requests,
         )
-    
+
     async def get_remaining(
-        self,
-        user_id: str,
-        method: str,
-        rule: RateLimitRule,
+            self,
+            user_id: str,
+            method: str,
+            rule: RateLimitRule,
     ) -> int:
         """
         남은 요청 수 조회 (기록하지 않음)
@@ -56,7 +56,7 @@ class RateLimiter:
         key = build_rate_limit_key(user_id, method, rule)
         current = await self._storage.get_current_count(key, rule.window_seconds)
         return max(0, rule.max_requests - current)
-    
+
     async def reset_user(self, user_id: str, method: str, rule: RateLimitRule) -> None:
         """
         특정 사용자의 레이트 리밋 초기화
@@ -67,7 +67,7 @@ class RateLimiter:
         """
         key = build_rate_limit_key(user_id, method, rule)
         await self._storage.reset(key)
-    
+
     async def cleanup(self) -> int:
         """
         만료된 엔트리 정리

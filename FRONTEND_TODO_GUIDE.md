@@ -545,7 +545,52 @@ const childTodo = await createTodo({
 });
 ```
 
-### 4. 캘린더 태그 필터링
+### 4. Schedule에서 Todo 생성
+
+기존 Schedule에서 연관된 Todo를 생성할 수 있습니다. 두 가지 방법을 지원합니다.
+
+#### 방법 1: Schedule 생성 시 Todo도 함께 생성
+
+```typescript
+// Schedule 생성 시 create_todo_options 옵션 사용
+const response = await fetch('/v1/schedules', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    title: "회의 준비",
+    start_time: "2024-01-20T10:00:00Z",
+    end_time: "2024-01-20T12:00:00Z",
+    tag_ids: [tagId],
+    create_todo_options: {
+      tag_group_id: groupId  // Todo가 속할 그룹 (필수)
+    }
+  })
+});
+
+const schedule = await response.json();
+// ✅ schedule.source_todo_id에 자동 생성된 Todo ID 포함
+```
+
+#### 방법 2: 기존 Schedule에서 Todo 생성 (수동 API)
+
+```typescript
+// 기존 Schedule에서 Todo 생성
+const response = await fetch(`/v1/schedules/${scheduleId}/todo?tag_group_id=${groupId}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' }
+});
+
+const todo = await response.json();
+// ✅ Todo 생성됨
+// - title, description: Schedule에서 복사
+// - deadline: Schedule의 start_time
+// - tags: Schedule의 태그가 복사됨
+// - status: SCHEDULED
+```
+
+> ⚠️ **제약사항**: 이미 Todo와 연결된 Schedule에서는 다시 Todo를 생성할 수 없습니다 (400 에러).
+
+### 5. 캘린더 태그 필터링
 
 GraphQL Calendar 쿼리에서 태그로 일정을 필터링할 수 있습니다.
 
@@ -1007,6 +1052,13 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그도 함께 업
 | GET | `/v1/tags` | 태그 목록 조회 |
 | PATCH | `/v1/tags/{id}` | 태그 수정 |
 | DELETE | `/v1/tags/{id}` | 태그 삭제 |
+
+### Schedule API (Todo 연동)
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/v1/schedules` | Schedule 생성 (`create_todo_options`로 Todo 동시 생성 가능) |
+| POST | `/v1/schedules/{id}/todo` | 기존 Schedule에서 Todo 생성 |
 
 ### GraphQL API
 

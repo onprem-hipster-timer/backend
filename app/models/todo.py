@@ -26,7 +26,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
 
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     title: str
     description: Optional[str] = None
     deadline: Optional[datetime] = None  # 마감기간
