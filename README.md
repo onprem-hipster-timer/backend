@@ -438,6 +438,33 @@ pytest tests/domain/schedule/
 pytest --cov=app --cov-report=html
 ```
 
+### PostgreSQL Testing
+
+By default, tests run on SQLite in-memory database. To test with PostgreSQL:
+
+```bash
+# 1. Start PostgreSQL container
+docker compose -f docker-compose.test.yaml up -d
+
+# 2. Wait for PostgreSQL to be ready
+docker compose -f docker-compose.test.yaml ps
+
+# 3. Run tests with PostgreSQL
+# Windows PowerShell
+$env:TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb"
+pytest
+
+# Linux/macOS
+TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb" pytest
+
+# 4. Stop and clean up
+docker compose -f docker-compose.test.yaml down -v
+```
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `TEST_DATABASE_URL` | Test database connection string | SQLite in-memory |
+
 ### Test Structure
 
 | Type | Location | Description |

@@ -6,12 +6,33 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine, Session
 
 from app.core.auth import CurrentUser
+
+
+# ============ DB 타입 헬퍼 함수 ============
+
+def _get_test_database_url() -> str | None:
+    """TEST_DATABASE_URL 환경변수 반환 (없으면 None)"""
+    return os.environ.get("TEST_DATABASE_URL")
+
+
+def _is_postgresql(url: str) -> bool:
+    """PostgreSQL URL인지 확인"""
+    return url.startswith("postgresql")
+
+
+def _get_async_url(url: str) -> str:
+    """동기 URL을 비동기 URL로 변환"""
+    if url.startswith("sqlite:///"):
+        return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
 
 
 @pytest.fixture
@@ -26,28 +47,53 @@ def test_user() -> CurrentUser:
 
 @pytest.fixture
 def test_engine():
-    """테스트용 DB 엔진"""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        echo=False,
-        connect_args={"check_same_thread": False},
-    )
+    """
+    테스트용 DB 엔진
+    
+    TEST_DATABASE_URL 환경변수가 설정되면 해당 DB 사용,
+    없으면 SQLite 메모리 DB 사용
+    """
+    test_db_url = _get_test_database_url()
+    
+    if test_db_url and _is_postgresql(test_db_url):
+        # PostgreSQL 사용
+        engine = create_engine(
+            test_db_url,
+            echo=False,
+            pool_pre_ping=True,
+        )
+        
+        # 테스트용 테이블 생성
+        SQLModel.metadata.create_all(engine)
+        
+        yield engine
+        
+        # 테스트 후 정리 (테이블 삭제)
+        SQLModel.metadata.drop_all(engine)
+        engine.dispose()
+    else:
+        # SQLite 메모리 DB 사용 (기본값)
+        engine = create_engine(
+            "sqlite:///:memory:",
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
 
-    # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+        # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
-    # 테스트용 테이블 생성
-    SQLModel.metadata.create_all(engine)
+        # 테스트용 테이블 생성
+        SQLModel.metadata.create_all(engine)
 
-    yield engine
+        yield engine
 
-    # 테스트 후 정리
-    SQLModel.metadata.drop_all(engine)
-    engine.dispose()
+        # 테스트 후 정리
+        SQLModel.metadata.drop_all(engine)
+        engine.dispose()
 
 
 @pytest.fixture
@@ -67,35 +113,63 @@ def test_session(test_engine):
 
 @pytest_asyncio.fixture
 async def test_async_engine():
-    """테스트용 비동기 DB 엔진"""
-    # SQLite 비동기 엔진 생성
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        echo=False,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    """
+    테스트용 비동기 DB 엔진
+    
+    TEST_DATABASE_URL 환경변수가 설정되면 해당 DB 사용,
+    없으면 SQLite 메모리 DB 사용
+    """
+    test_db_url = _get_test_database_url()
+    
+    if test_db_url and _is_postgresql(test_db_url):
+        # PostgreSQL 비동기 엔진 생성
+        async_url = _get_async_url(test_db_url)
+        engine = create_async_engine(
+            async_url,
+            echo=False,
+            pool_pre_ping=True,
+        )
+        
+        # 테스트용 테이블 생성
+        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
 
-    # SQLite에서 외래 키 제약 조건 활성화
-    @event.listens_for(engine.sync_engine, "connect")
-    def set_sqlite_pragma(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
 
-    # 테스트용 테이블 생성
-    # 모든 모델 import (테이블 메타데이터 등록)
-    from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        yield engine
 
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        # 테스트 후 정리
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)
+        await engine.dispose()
+    else:
+        # SQLite 비동기 엔진 생성 (기본값)
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            echo=False,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
 
-    yield engine
+        # SQLite에서 외래 키 제약 조건 활성화
+        @event.listens_for(engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
-    # 테스트 후 정리
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-    await engine.dispose()
+        # 테스트용 테이블 생성
+        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        yield engine
+
+        # 테스트 후 정리
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -261,9 +335,10 @@ def e2e_client():
     """
     E2E 테스트용 FastAPI 클라이언트
     
-    테스트용 메모리 SQLite 데이터베이스를 사용하고 테이블을 초기화합니다.
+    TEST_DATABASE_URL 환경변수가 설정되면 해당 DB 사용,
+    없으면 SQLite 메모리 DB 사용
     
-    Bug Fix: StaticPool 사용
+    Bug Fix: StaticPool 사용 (SQLite 전용)
     - SQLite 메모리 DB는 커넥션마다 별도 인스턴스를 가짐
     - StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB 인스턴스를 공유하도록 함
     
@@ -288,21 +363,30 @@ def e2e_client():
     from app.ratelimit.storage.memory import reset_storage
     reset_storage()
 
-    # 테스트용 메모리 데이터베이스 엔진 생성
-    # StaticPool을 사용하여 모든 커넥션이 동일한 메모리 DB를 공유
-    test_engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=False,
-    )
+    test_db_url = _get_test_database_url()
+    
+    if test_db_url and _is_postgresql(test_db_url):
+        # PostgreSQL 사용
+        test_engine = create_engine(
+            test_db_url,
+            echo=False,
+            pool_pre_ping=True,
+        )
+    else:
+        # SQLite 메모리 DB 사용 (기본값)
+        test_engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
 
-    # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
-    @event.listens_for(test_engine, "connect")
-    def set_sqlite_pragma(dbapi_conn, connection_record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+        # SQLite에서 외래 키 제약 조건 활성화 (각 연결마다)
+        @event.listens_for(test_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
     # SessionManager의 엔진을 테스트용으로 임시 교체 (init_db 전에 교체)
     original_engine = _session_manager.engine

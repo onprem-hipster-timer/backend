@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # 데이터베이스
     DATABASE_URL: str = "sqlite:///./schedule.db"
+    TEST_DATABASE_URL: str | None = None  # 테스트용 데이터베이스 URL
     POOL_SIZE: int = 5
     MAX_OVERFLOW: int = 10
     DB_POOL_PRE_PING: bool = True  # 연결 유효성 검사 (PostgreSQL 권장)

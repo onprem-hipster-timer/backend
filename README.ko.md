@@ -433,6 +433,33 @@ pytest tests/domain/schedule/
 pytest --cov=app --cov-report=html
 ```
 
+### PostgreSQL 테스트
+
+기본적으로 테스트는 SQLite 인메모리 데이터베이스에서 실행됩니다. PostgreSQL로 테스트하려면:
+
+```bash
+# 1. PostgreSQL 컨테이너 시작
+docker compose -f docker-compose.test.yaml up -d
+
+# 2. PostgreSQL 준비 완료 대기
+docker compose -f docker-compose.test.yaml ps
+
+# 3. PostgreSQL로 테스트 실행
+# Windows PowerShell
+$env:TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb"
+pytest
+
+# Linux/macOS
+TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb" pytest
+
+# 4. 정리
+docker compose -f docker-compose.test.yaml down -v
+```
+
+| 환경 변수 | 설명 | 기본값 |
+|----------|------|--------|
+| `TEST_DATABASE_URL` | 테스트 DB 연결 문자열 | SQLite 인메모리 |
+
 ### Test Structure
 
 | 테스트 유형 | 위치 | 설명 |

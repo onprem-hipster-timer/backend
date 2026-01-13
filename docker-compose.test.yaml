@@ -1,0 +1,25 @@
+# PostgreSQL 테스트용 Docker Compose
+# 사용법:
+#   시작: docker compose -f docker-compose.test.yaml up -d
+#   종료: docker compose -f docker-compose.test.yaml down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: test-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: testdb
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_test_data:
