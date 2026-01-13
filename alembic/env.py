@@ -51,6 +51,11 @@ from app.core.config import settings  # noqa: E402
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 
+def _is_sqlite() -> bool:
+    """SQLite 데이터베이스 여부 확인"""
+    return settings.DATABASE_URL.startswith("sqlite")
+
+
 def run_migrations_offline() -> None:
     """
     Run migrations in 'offline' mode.
@@ -69,8 +74,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        # SQLite 특정 설정: batch mode 활성화 (ALTER TABLE 제한 우회)
-        render_as_batch=True,
+        # SQLite만 batch mode 필요 (ALTER TABLE 제한 우회)
+        render_as_batch=_is_sqlite(),
     )
 
     with context.begin_transaction():
@@ -94,8 +99,8 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            # SQLite 특정 설정: batch mode 활성화 (ALTER TABLE 제한 우회)
-            render_as_batch=True,
+            # SQLite만 batch mode 필요 (ALTER TABLE 제한 우회)
+            render_as_batch=_is_sqlite(),
             # 타입 변경 감지 (기본값 False)
             compare_type=True,
         )

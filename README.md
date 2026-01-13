@@ -10,6 +10,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.120-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![GraphQL](https://img.shields.io/badge/GraphQL-Strawberry-E10098?style=flat-square&logo=graphql&logoColor=white)](https://strawberry.rocks)
 [![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 
 [Features](#features) •
@@ -457,12 +458,31 @@ Configure via `.env` file or environment variables.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | DB connection string | `sqlite:///./schedule.db` |
 | `DEBUG` | Enable debug mode | `False` |
 | `LOG_LEVEL` | Log level | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | Allow GraphQL introspection | `True` |
+
+#### Database
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | DB connection string | `sqlite:///./schedule.db` |
+| `POOL_SIZE` | Connection pool size | `5` |
+| `MAX_OVERFLOW` | Max overflow connections | `10` |
+| `DB_POOL_PRE_PING` | Validate connections before use | `True` |
+| `DB_POOL_RECYCLE` | Connection recycle time (seconds) | `3600` |
+
+**Database URL Examples:**
+
+```bash
+# SQLite (development)
+DATABASE_URL=sqlite:///./schedule.db
+
+# PostgreSQL (production)
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+```
 
 #### Authentication (OIDC)
 
@@ -551,7 +571,7 @@ A guide for those who want to fork this codebase or use it as a learning referen
 | Purpose | Location | Description |
 |---------|----------|-------------|
 | Add new domain | `app/domain/` | Extend following existing domain structure |
-| Change DB | `app/db/session.py` | Easy switch to PostgreSQL, MySQL (SQLAlchemy-based) |
+| Change DB | `app/db/session.py` | SQLite/PostgreSQL auto-detection, optimized pool settings |
 | Add auth | `app/middleware/` | Add JWT or other auth logic in middleware layer |
 | Add API version | `app/api/` | Create v2 router and mount in `main.py` |
 

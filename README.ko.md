@@ -10,6 +10,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.120-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![GraphQL](https://img.shields.io/badge/GraphQL-Strawberry-E10098?style=flat-square&logo=graphql&logoColor=white)](https://strawberry.rocks)
 [![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 
 [Features](#features) •
@@ -452,12 +453,31 @@ pytest --cov=app --cov-report=html
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | DB 연결 문자열 | `sqlite:///./schedule.db` |
 | `DEBUG` | 디버그 모드 활성화 | `False` |
 | `LOG_LEVEL` | 로그 레벨 | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | GraphQL Introspection 허용 | `True` |
+
+#### 데이터베이스
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | DB 연결 문자열 | `sqlite:///./schedule.db` |
+| `POOL_SIZE` | 커넥션 풀 크기 | `5` |
+| `MAX_OVERFLOW` | 최대 초과 연결 수 | `10` |
+| `DB_POOL_PRE_PING` | 연결 유효성 검사 | `True` |
+| `DB_POOL_RECYCLE` | 연결 재활용 시간 (초) | `3600` |
+
+**데이터베이스 URL 예시:**
+
+```bash
+# SQLite (개발 환경)
+DATABASE_URL=sqlite:///./schedule.db
+
+# PostgreSQL (프로덕션)
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+```
 
 #### 인증 (OIDC)
 
@@ -546,7 +566,7 @@ docker compose logs -f
 | 목적 | 위치 | 설명 |
 |------|------|------|
 | 새 도메인 추가 | `app/domain/` | 기존 도메인 구조를 참고하여 확장 |
-| DB 변경 | `app/db/session.py` | SQLAlchemy 기반이므로 PostgreSQL, MySQL 등으로 교체 용이 |
+| DB 변경 | `app/db/session.py` | SQLite/PostgreSQL 자동 감지, 최적화된 풀 설정 |
 | 인증 추가 | `app/middleware/` | 미들웨어 레이어에서 JWT 등 인증 로직 추가 |
 | API 버전 추가 | `app/api/` | v2 라우터 생성 후 `main.py`에서 마운트 |
 

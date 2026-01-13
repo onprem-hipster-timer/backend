@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./schedule.db"
     POOL_SIZE: int = 5
     MAX_OVERFLOW: int = 10
+    DB_POOL_PRE_PING: bool = True  # 연결 유효성 검사 (PostgreSQL 권장)
+    DB_POOL_RECYCLE: int = 3600  # 연결 재활용 시간 (초, PostgreSQL 권장)
 
     # 로깅
     LOG_LEVEL: str = "INFO"

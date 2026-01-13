@@ -12,6 +12,16 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _is_sqlite() -> bool:
+    """SQLite 데이터베이스 여부 확인"""
+    return settings.DATABASE_URL.startswith("sqlite")
+
+
+def _is_postgresql() -> bool:
+    """PostgreSQL 데이터베이스 여부 확인"""
+    return settings.DATABASE_URL.startswith("postgresql")
+
+
 class SessionManager:
     """세션 관리자 - Context Manager 패턴"""
 
@@ -20,28 +30,60 @@ class SessionManager:
         self._init_engine()
 
     def _init_engine(self):
-        """엔진 초기화"""
-        connect_args = {}
+        """엔진 초기화 - DB 타입에 따라 최적화된 설정 적용"""
+        if _is_sqlite():
+            self._init_sqlite_engine()
+        elif _is_postgresql():
+            self._init_postgresql_engine()
+        else:
+            # 기타 DB: 기본 설정으로 생성
+            self._init_default_engine()
 
-        # SQLite인 경우 외래 키 제약 조건 활성화
-        if settings.DATABASE_URL.startswith("sqlite"):
-            connect_args = {"check_same_thread": False}
+    def _init_sqlite_engine(self):
+        """SQLite 엔진 초기화"""
+        connect_args = {"check_same_thread": False}
 
+        self.engine = create_engine(
+            settings.DATABASE_URL,
+            echo=settings.DEBUG,
+            connect_args=connect_args,
+        )
+
+        # SQLite 외래 키 제약 조건 활성화 (각 연결마다)
+        @event.listens_for(self.engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        logger.info("✅ SQLite engine initialized")
+
+    def _init_postgresql_engine(self):
+        """PostgreSQL 엔진 초기화 - 프로덕션 최적화 설정"""
         self.engine = create_engine(
             settings.DATABASE_URL,
             echo=settings.DEBUG,
             pool_size=settings.POOL_SIZE,
             max_overflow=settings.MAX_OVERFLOW,
-            connect_args=connect_args,
+            pool_pre_ping=settings.DB_POOL_PRE_PING,  # 연결 유효성 검사
+            pool_recycle=settings.DB_POOL_RECYCLE,  # 연결 재활용 시간
         )
 
-        # SQLite인 경우 외래 키 제약 조건 활성화 (각 연결마다)
-        if settings.DATABASE_URL.startswith("sqlite"):
-            @event.listens_for(self.engine, "connect")
-            def set_sqlite_pragma(dbapi_conn, connection_record):
-                cursor = dbapi_conn.cursor()
-                cursor.execute("PRAGMA foreign_keys=ON")
-                cursor.close()
+        logger.info("✅ PostgreSQL engine initialized (pool_size=%d, pool_pre_ping=%s)",
+                    settings.POOL_SIZE, settings.DB_POOL_PRE_PING)
+
+    def _init_default_engine(self):
+        """기본 엔진 초기화 (기타 DB)"""
+        self.engine = create_engine(
+            settings.DATABASE_URL,
+            echo=settings.DEBUG,
+            pool_size=settings.POOL_SIZE,
+            max_overflow=settings.MAX_OVERFLOW,
+            pool_pre_ping=settings.DB_POOL_PRE_PING,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+
+        logger.info("✅ Database engine initialized: %s", settings.DATABASE_URL.split("://")[0])
 
     @contextmanager
     def get_session(self):
@@ -138,21 +180,41 @@ def _get_async_database_url() -> str:
     return url
 
 
+def _create_async_engine():
+    """비동기 엔진 생성 - DB 타입에 따라 최적화된 설정 적용"""
+    async_url = _get_async_database_url()
+
+    if _is_sqlite():
+        # SQLite: connect_args 필요, pool 설정 불필요
+        return create_async_engine(
+            async_url,
+            echo=settings.DEBUG,
+            connect_args={"check_same_thread": False},
+        )
+    elif _is_postgresql():
+        # PostgreSQL: 프로덕션 최적화 설정
+        return create_async_engine(
+            async_url,
+            echo=settings.DEBUG,
+            pool_size=settings.POOL_SIZE,
+            max_overflow=settings.MAX_OVERFLOW,
+            pool_pre_ping=settings.DB_POOL_PRE_PING,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+    else:
+        # 기타 DB: 기본 설정
+        return create_async_engine(
+            async_url,
+            echo=settings.DEBUG,
+            pool_size=settings.POOL_SIZE,
+            max_overflow=settings.MAX_OVERFLOW,
+            pool_pre_ping=settings.DB_POOL_PRE_PING,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+        )
+
+
 # 비동기 엔진 생성
-async_database_url = _get_async_database_url()
-
-# SQLite의 경우 connect_args 필요
-async_connect_args = {}
-if async_database_url.startswith("sqlite+aiosqlite"):
-    async_connect_args = {"check_same_thread": False}
-
-async_engine = create_async_engine(
-    async_database_url,
-    echo=settings.DEBUG,
-    pool_size=settings.POOL_SIZE,
-    max_overflow=settings.MAX_OVERFLOW,
-    connect_args=async_connect_args,
-)
+async_engine = _create_async_engine()
 
 # 비동기 Session factory
 async_session_maker = async_sessionmaker(
