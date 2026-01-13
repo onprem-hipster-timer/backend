@@ -39,7 +39,7 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          VERSION="v$(git describe --tags --dirty --always)"
+          VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Log in to GitHub Container Registry
