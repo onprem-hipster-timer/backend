@@ -479,3 +479,110 @@ def test_get_active_timer_by_todo_none(test_session, sample_todo, test_user):
     # 활성 타이머 조회 (None 반환)
     active_timer = service.get_active_timer_by_todo(sample_todo.id)
     assert active_timer is None
+
+
+# ============================================================
+# 자동 연결 테스트
+# ============================================================
+
+def test_auto_link_schedule_to_todo(test_session, schedule_with_source_todo, todo_with_schedule, test_user):
+    """Schedule만 지정 시 연관된 Todo 자동 연결 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # Schedule만 지정하여 타이머 생성
+    timer_data = TimerCreate(
+        schedule_id=schedule_with_source_todo.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+
+    # Schedule의 source_todo_id가 자동으로 연결되어야 함
+    assert timer.schedule_id == schedule_with_source_todo.id
+    assert timer.todo_id == todo_with_schedule.id  # 자동 연결됨!
+
+    # 양쪽 엔드포인트에서 모두 조회 가능해야 함
+    timers_by_schedule = service.get_timers_by_schedule(schedule_with_source_todo.id)
+    timers_by_todo = service.get_timers_by_todo(todo_with_schedule.id)
+
+    assert timer.id in [t.id for t in timers_by_schedule]
+    assert timer.id in [t.id for t in timers_by_todo]
+
+
+def test_auto_link_todo_to_schedule(test_session, todo_with_schedule, test_user):
+    """Todo만 지정 시 연관된 Schedule 자동 연결 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # Todo의 연관 Schedule 확인
+    test_session.refresh(todo_with_schedule)
+    assert len(todo_with_schedule.schedules) > 0
+    linked_schedule = todo_with_schedule.schedules[0]
+
+    # Todo만 지정하여 타이머 생성
+    timer_data = TimerCreate(
+        todo_id=todo_with_schedule.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+
+    # Todo의 첫 번째 연관 Schedule이 자동으로 연결되어야 함
+    assert timer.todo_id == todo_with_schedule.id
+    assert timer.schedule_id == linked_schedule.id  # 자동 연결됨!
+
+    # 양쪽 엔드포인트에서 모두 조회 가능해야 함
+    timers_by_schedule = service.get_timers_by_schedule(linked_schedule.id)
+    timers_by_todo = service.get_timers_by_todo(todo_with_schedule.id)
+
+    assert timer.id in [t.id for t in timers_by_schedule]
+    assert timer.id in [t.id for t in timers_by_todo]
+
+
+def test_no_auto_link_for_unrelated_schedule(test_session, sample_schedule, test_user):
+    """연관된 Todo가 없는 Schedule은 자동 연결되지 않음 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # sample_schedule은 source_todo_id가 없음
+    timer_data = TimerCreate(
+        schedule_id=sample_schedule.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+
+    # source_todo_id가 없으므로 todo_id도 None
+    assert timer.schedule_id == sample_schedule.id
+    assert timer.todo_id is None
+
+
+def test_no_auto_link_for_todo_without_schedule(test_session, sample_todo, test_user):
+    """연관된 Schedule이 없는 Todo는 자동 연결되지 않음 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # sample_todo는 deadline이 없어서 연관 Schedule이 없음
+    test_session.refresh(sample_todo)
+    assert len(sample_todo.schedules) == 0
+
+    timer_data = TimerCreate(
+        todo_id=sample_todo.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+
+    # 연관 Schedule이 없으므로 schedule_id도 None
+    assert timer.todo_id == sample_todo.id
+    assert timer.schedule_id is None
+
+
+def test_explicit_link_overrides_auto_link(test_session, todo_with_schedule, sample_schedule, test_user):
+    """명시적 지정이 자동 연결보다 우선 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # sample_schedule(다른 Schedule)을 명시적으로 지정
+    timer_data = TimerCreate(
+        schedule_id=sample_schedule.id,
+        todo_id=todo_with_schedule.id,
+        allocated_duration=1800,
+    )
+    timer = service.create_timer(timer_data)
+
+    # 명시적으로 지정한 값이 그대로 유지됨 (자동 연결 안 함)
+    assert timer.schedule_id == sample_schedule.id
+    assert timer.todo_id == todo_with_schedule.id

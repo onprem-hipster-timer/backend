@@ -606,26 +606,66 @@ function TimerComponent({ todoId }: { todoId: string }) {
 
 ## 주의사항
 
-### 1. schedule_id, todo_id 모두 Optional
+### 1. 자동 연결 기능 ✨
+
+**백엔드가 자동으로 연관된 엔티티를 연결합니다!**
+
+| 입력 | 자동 처리 |
+|------|----------|
+| `schedule_id`만 지정 | 해당 Schedule의 `source_todo_id`가 있으면 `todo_id` 자동 설정 |
+| `todo_id`만 지정 | 해당 Todo에 연관된 Schedule이 있으면 `schedule_id` 자동 설정 |
+
+```
+사용자: Todo에서만 타이머 생성
+         ↓
+시스템: Todo의 연관 Schedule도 자동 연결
+         ↓
+결과: /todos/{id}/timers ✅ 보임
+      /schedules/{id}/timers ✅ 보임
+```
+
+**예시:**
+
+```typescript
+// Todo만 지정하여 타이머 생성
+const timer = await fetch('/v1/timers', {
+  method: 'POST',
+  body: JSON.stringify({
+    todo_id: todoId,              // Todo만 지정
+    allocated_duration: 3600
+  })
+}).then(r => r.json());
+
+// 결과: 연관된 Schedule이 자동 연결됨!
+console.log(timer.todo_id);      // todoId
+console.log(timer.schedule_id);  // 자동으로 연결된 Schedule ID
+```
+
+> 💡 **연관된 엔티티가 없으면 자동 연결되지 않습니다.**
+> - Schedule에 `source_todo_id`가 없으면 `todo_id`는 null
+> - Todo에 연관된 Schedule이 없으면 `schedule_id`는 null
+> - 명시적으로 둘 다 지정하면 자동 연결이 적용되지 않음
+
+### 2. schedule_id, todo_id 모두 Optional
 
 타이머 생성 시 둘 다 없어도 됩니다 (독립 타이머).
 
 ```typescript
 // ✅ 모두 허용
-{ schedule_id: "...", allocated_duration: 3600 }  // Schedule 연결
-{ todo_id: "...", allocated_duration: 3600 }      // Todo 연결
-{ schedule_id: "...", todo_id: "...", allocated_duration: 3600 }  // 둘 다 연결
+{ schedule_id: "...", allocated_duration: 3600 }  // Schedule 연결 (+ Todo 자동 연결)
+{ todo_id: "...", allocated_duration: 3600 }      // Todo 연결 (+ Schedule 자동 연결)
+{ schedule_id: "...", todo_id: "...", allocated_duration: 3600 }  // 둘 다 명시적 연결
 { allocated_duration: 3600 }  // 독립 타이머
 ```
 
-### 2. 존재하지 않는 ID 사용 시 에러
+### 3. 존재하지 않는 ID 사용 시 에러
 
 ```typescript
 // ❌ 존재하지 않는 schedule_id: 404 Schedule Not Found
 // ❌ 존재하지 않는 todo_id: 404 Todo Not Found
 ```
 
-### 3. allocated_duration은 양수 필수
+### 4. allocated_duration은 양수 필수
 
 ```typescript
 // ❌ 에러: allocated_duration이 음수 또는 0
@@ -636,7 +676,7 @@ function TimerComponent({ todoId }: { todoId: string }) {
 { allocated_duration: 60 }    // 최소 1초 이상
 ```
 
-### 4. 태그 상속 모드
+### 5. 태그 상속 모드
 
 `tag_include_mode` 파라미터로 태그 포함 방식을 제어할 수 있습니다:
 
@@ -656,7 +696,7 @@ const response = await fetch('/v1/timers/uuid?tag_include_mode=inherit_from_sche
 > - Todo만 연결된 경우: 타이머 태그 + Todo 태그
 > - 둘 다 없는 경우: 타이머 태그만
 
-### 5. 날짜/시간 형식
+### 6. 날짜/시간 형식
 
 모든 datetime 필드는 **ISO 8601** 형식을 사용합니다.
 
@@ -666,7 +706,7 @@ const response = await fetch('/v1/timers/uuid?tag_include_mode=inherit_from_sche
 "2024-01-20T19:00:00+09:00" // 타임존 포함
 ```
 
-### 6. 타이머 상태 전이
+### 7. 타이머 상태 전이
 
 ```
            ┌──────────────────────────────────────┐

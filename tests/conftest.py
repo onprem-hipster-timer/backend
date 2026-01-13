@@ -217,6 +217,46 @@ def sample_todo(test_session, sample_tag_group, test_user):
 
 
 @pytest.fixture
+def todo_with_schedule(test_session, sample_tag_group, test_user):
+    """
+    deadline이 있는 Todo (연관된 Schedule이 자동 생성됨)
+    
+    Todo → Schedule 자동 연결 테스트용
+    """
+    from datetime import datetime, UTC, timedelta
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.todo.service import TodoService
+
+    # deadline이 있는 Todo 생성 → Schedule 자동 생성
+    deadline = datetime.now(UTC) + timedelta(days=7)
+    todo_data = TodoCreate(
+        title="마감이 있는 Todo",
+        description="연관 Schedule이 있는 Todo",
+        tag_group_id=sample_tag_group.id,
+        deadline=deadline,
+    )
+
+    service = TodoService(test_session, test_user)
+    todo = service.create_todo(todo_data)
+    test_session.flush()
+    test_session.refresh(todo)
+    return todo
+
+
+@pytest.fixture
+def schedule_with_source_todo(test_session, todo_with_schedule, test_user):
+    """
+    source_todo_id가 있는 Schedule (Todo에서 자동 생성된 Schedule)
+    
+    Schedule → Todo 자동 연결 테스트용
+    """
+    # todo_with_schedule의 연관된 Schedule 반환
+    test_session.refresh(todo_with_schedule)
+    assert len(todo_with_schedule.schedules) > 0, "Todo에 연관된 Schedule이 없습니다"
+    return todo_with_schedule.schedules[0]
+
+
+@pytest.fixture
 def e2e_client():
     """
     E2E 테스트용 FastAPI 클라이언트

@@ -50,6 +50,8 @@ class TimerService:
         비즈니스 로직:
         - schedule_id가 있으면 Schedule 존재 확인
         - todo_id가 있으면 Todo 존재 확인
+        - 자동 연결: Todo만 지정 시 연관된 Schedule 자동 연결
+        - 자동 연결: Schedule만 지정 시 연관된 source_todo 자동 연결
         - 둘 다 없어도 독립 타이머로 생성 가능
         - status를 RUNNING으로 설정
         - started_at을 현재 시간으로 설정
@@ -59,23 +61,36 @@ class TimerService:
         :raises ScheduleNotFoundError: schedule_id가 있지만 일정을 찾을 수 없는 경우
         :raises TodoNotFoundError: todo_id가 있지만 Todo를 찾을 수 없는 경우
         """
-        # Schedule 존재 확인 (schedule_id가 있는 경우에만)
-        if data.schedule_id:
-            schedule = schedule_crud.get_schedule(self.session, data.schedule_id, self.owner_id)
+        schedule_id = data.schedule_id
+        todo_id = data.todo_id
+        
+        # Schedule 존재 확인 및 자동 연결 (schedule_id가 있는 경우)
+        schedule = None
+        if schedule_id:
+            schedule = schedule_crud.get_schedule(self.session, schedule_id, self.owner_id)
             if not schedule:
                 raise ScheduleNotFoundError()
+            
+            # Schedule만 지정된 경우 → 연관된 source_todo 자동 연결
+            if not todo_id and schedule.source_todo_id:
+                todo_id = schedule.source_todo_id
 
-        # Todo 존재 확인 (todo_id가 있는 경우에만)
-        if data.todo_id:
-            todo = todo_crud.get_todo(self.session, data.todo_id, self.owner_id)
+        # Todo 존재 확인 및 자동 연결 (todo_id가 있는 경우)
+        todo = None
+        if todo_id:
+            todo = todo_crud.get_todo(self.session, todo_id, self.owner_id)
             if not todo:
                 raise TodoNotFoundError()
+            
+            # Todo만 지정된 경우 → 연관된 첫 번째 Schedule 자동 연결
+            if not schedule_id and todo.schedules:
+                schedule_id = todo.schedules[0].id
 
         # 타이머 생성 (status = RUNNING, started_at = 현재 시간)
         now = ensure_utc_naive(datetime.now(UTC))
         timer_data = {
-            "schedule_id": data.schedule_id,
-            "todo_id": data.todo_id,
+            "schedule_id": schedule_id,
+            "todo_id": todo_id,
             "title": data.title,
             "description": data.description,
             "allocated_duration": data.allocated_duration,
