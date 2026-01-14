@@ -116,6 +116,15 @@ class HolidayApiBody(CustomModel):
     pageNo: Optional[int] = 1
     totalCount: Optional[int] = 0
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_items(cls, data):
+        """items가 빈 문자열인 경우 None으로 변환"""
+        if isinstance(data, dict) and "items" in data:
+            if data["items"] == "" or data["items"] is None:
+                data["items"] = None
+        return data
+
     @property
     def items_list(self) -> List[HolidayApiItem]:
         """items에서 HolidayApiItem 리스트 반환"""

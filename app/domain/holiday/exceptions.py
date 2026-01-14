@@ -24,3 +24,9 @@ class HolidayApiResponseError(DomainException):
     """국경일 API 응답 오류"""
     status_code = 502
     detail = "Invalid response from holiday API"
+
+
+class HolidayDataNotAvailable(DomainException):
+    """요청한 연도의 공휴일 데이터가 아직 준비되지 않음"""
+    status_code = 422
+    detail = "해당 연도의 공휴일 데이터가 아직 준비되지 않았습니다"
