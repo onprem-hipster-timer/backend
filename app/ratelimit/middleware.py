@@ -106,10 +106,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return request.state.current_user.sub
 
         # 실제 클라이언트 IP 추출 (프록시 설정 고려)
+        # ORIGIN_VERIFY_HEADER가 설정되어 있으면 해당 헤더 값 전달
+        origin_verify_header = None
+        if app_config.settings.ORIGIN_VERIFY_HEADER:
+            origin_verify_header = request.headers.get(app_config.settings.ORIGIN_VERIFY_HEADER)
+        
         client_ip = await get_real_client_ip(
             request_client_host=request.client.host if request.client else None,
             cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
             x_forwarded_for=request.headers.get("X-Forwarded-For"),
+            origin_verify_header=origin_verify_header,
         )
 
         return f"ip:{client_ip}"

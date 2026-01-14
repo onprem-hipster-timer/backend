@@ -244,103 +244,108 @@ def reset_managers() -> None:
     _trusted_proxy_manager = None
 
 
+def _extract_client_ip_from_xff(
+    x_forwarded_for: str,
+    trusted_proxy_manager: TrustedProxyManager,
+    cf_manager: CloudflareIPManager | None = None,
+) -> str | None:
+    """
+    X-Forwarded-For 헤더에서 실제 클라이언트 IP 추출
+    
+    형식: "client, proxy1, proxy2" - 왼쪽이 원본 클라이언트
+    첫 번째 비-프록시 IP를 반환합니다.
+    
+    :param x_forwarded_for: X-Forwarded-For 헤더 값
+    :param trusted_proxy_manager: Trusted Proxy 관리자
+    :param cf_manager: Cloudflare IP 관리자 (선택)
+    :return: 클라이언트 IP 또는 None
+    """
+    ips = [ip.strip() for ip in x_forwarded_for.split(",")]
+    for ip in ips:
+        if not ip:
+            continue
+        # Trusted Proxy가 아니고, Cloudflare IP도 아닌 첫 번째 IP
+        is_trusted = trusted_proxy_manager.is_trusted_proxy(ip)
+        is_cloudflare = cf_manager.is_cloudflare_ip(ip) if cf_manager else False
+        if not is_trusted and not is_cloudflare:
+            return ip
+    # 모든 IP가 프록시면 첫 번째 IP 반환
+    return ips[0] if ips else None
+
+
 async def get_real_client_ip(
     request_client_host: str | None,
     cf_connecting_ip: str | None,
     x_forwarded_for: str | None,
+    origin_verify_header: str | None = None,
 ) -> str:
     """
     실제 클라이언트 IP 추출
     
     프록시 설정에 따라 적절한 IP를 반환합니다.
+    request.client.host가 신뢰할 수 있는 프록시(Cloudflare 또는 TRUSTED_PROXY_IPS)일 때만
+    X-Forwarded-For 헤더를 신뢰합니다.
     
     :param request_client_host: request.client.host (직접 연결된 IP)
     :param cf_connecting_ip: CF-Connecting-IP 헤더 값
     :param x_forwarded_for: X-Forwarded-For 헤더 값
+    :param origin_verify_header: ORIGIN_VERIFY_HEADER로 지정된 커스텀 헤더 값 (선택적 추가 보안)
     :return: 실제 클라이언트 IP
     """
     # 직접 연결 IP가 없으면 unknown 반환
     if not request_client_host:
         return "unknown"
 
-    # CF_ENABLED=True: Cloudflare 모드
+    # 1. 프록시 여부 판별 (request.client.host 기준)
+    is_cloudflare = False
+    cf_manager: CloudflareIPManager | None = None
+    
     if app_config.settings.CF_ENABLED:
-        # PROXY_FORCE=True: Cloudflare 경유 강제 (request.client.host가 Cloudflare IP가 아니면 차단)
-        if app_config.settings.PROXY_FORCE:
-            cf_manager = get_cloudflare_manager()
-            await cf_manager.ensure_initialized()
-
-            if not cf_manager.is_cloudflare_ip(request_client_host):
-                raise ProxyEnforcementError("Cloudflare 프록시를 통하지 않은 접근은 허용되지 않습니다.")
-
-            if cf_connecting_ip:
-                return cf_connecting_ip
-            # 헤더가 없으면 경고 후 직접 IP 사용
-            logger.warning(
-                f"PROXY_FORCE enabled but CF-Connecting-IP header is missing. "
-                f"Using direct IP: {request_client_host}"
-            )
-            return request_client_host
-
-        # PROXY_FORCE=False: Cloudflare IP 검증 후 헤더 신뢰
         cf_manager = get_cloudflare_manager()
         await cf_manager.ensure_initialized()
+        is_cloudflare = cf_manager.is_cloudflare_ip(request_client_host)
+    
+    trusted_proxy_manager = get_trusted_proxy_manager()
+    is_trusted_proxy = trusted_proxy_manager.is_trusted_proxy(request_client_host)
+    
+    is_from_proxy = is_cloudflare or is_trusted_proxy
 
-        # Cloudflare IP에서 온 요청인지 확인
-        if cf_manager.is_cloudflare_ip(request_client_host):
-            # CF-Connecting-IP 헤더 신뢰
-            if cf_connecting_ip:
-                return cf_connecting_ip
-            # 헤더가 없으면 경고 후 직접 IP 사용
-            logger.warning(
-                f"Request from Cloudflare IP {request_client_host} "
-                "but CF-Connecting-IP header is missing"
+    # 2. PROXY_FORCE 검증: 프록시가 아니면 차단
+    if app_config.settings.PROXY_FORCE and not is_from_proxy:
+        if app_config.settings.CF_ENABLED:
+            raise ProxyEnforcementError(
+                "Cloudflare 또는 신뢰할 수 있는 프록시를 통하지 않은 접근은 허용되지 않습니다."
+            )
+        else:
+            raise ProxyEnforcementError(
+                "프록시를 통하지 않은 접근은 허용되지 않습니다. (TRUSTED_PROXY_IPS 확인)"
             )
 
-        # Cloudflare IP가 아니면 직접 IP 사용 (헤더 무시)
-        return request_client_host
+    # 3. Origin Verify 검증 (프록시에서 온 경우만, 설정된 경우만)
+    if is_from_proxy:
+        if app_config.settings.ORIGIN_VERIFY_HEADER and app_config.settings.ORIGIN_VERIFY_SECRET:
+            if origin_verify_header != app_config.settings.ORIGIN_VERIFY_SECRET:
+                raise ProxyEnforcementError("Origin 검증 헤더가 올바르지 않습니다.")
 
-    # CF_ENABLED=False: Trusted Proxy 또는 Direct 모드
-
-    # PROXY_FORCE=True: Trusted Proxy 경유 강제 (request.client.host가 Trusted Proxy가 아니면 차단)
-    if app_config.settings.PROXY_FORCE:
-        trusted_proxy_manager = get_trusted_proxy_manager()
-
-        if not trusted_proxy_manager.is_trusted_proxy(request_client_host):
-            raise ProxyEnforcementError("프록시를 통하지 않은 접근은 허용되지 않습니다. (TRUSTED_PROXY_IPS 확인)")
-
+    # 4. 클라이언트 IP 추출
+    if is_from_proxy:
+        # Cloudflare 환경: CF-Connecting-IP 우선 사용
+        if is_cloudflare and cf_connecting_ip:
+            return cf_connecting_ip
+        
+        # X-Forwarded-For에서 클라이언트 IP 추출
         if x_forwarded_for:
-            # X-Forwarded-For에서 첫 번째 비-프록시 IP 추출
-            # 형식: "client, proxy1, proxy2" - 왼쪽이 원본 클라이언트
-            ips = [ip.strip() for ip in x_forwarded_for.split(",")]
-            for ip in ips:
-                if ip and not trusted_proxy_manager.is_trusted_proxy(ip):
-                    return ip
-            # 모든 IP가 trusted proxy면 첫 번째 IP 사용
-            if ips:
-                return ips[0]
+            client_ip = _extract_client_ip_from_xff(
+                x_forwarded_for, trusted_proxy_manager, cf_manager
+            )
+            if client_ip:
+                return client_ip
+        
         # 헤더가 없으면 경고 후 직접 IP 사용
         logger.warning(
-            f"PROXY_FORCE enabled but X-Forwarded-For header is missing. "
+            f"Request from proxy but no client IP header found. "
             f"Using direct IP: {request_client_host}"
         )
-        return request_client_host
 
-    # PROXY_FORCE=False: Trusted Proxy 검증 후 헤더 신뢰
-    trusted_proxy_manager = get_trusted_proxy_manager()
-
-    if trusted_proxy_manager.is_trusted_proxy(request_client_host):
-        # Trusted Proxy에서 온 요청: X-Forwarded-For 사용
-        if x_forwarded_for:
-            # X-Forwarded-For에서 첫 번째 비-프록시 IP 추출
-            # 형식: "client, proxy1, proxy2" - 왼쪽이 원본 클라이언트
-            ips = [ip.strip() for ip in x_forwarded_for.split(",")]
-            for ip in ips:
-                if ip and not trusted_proxy_manager.is_trusted_proxy(ip):
-                    return ip
-            # 모든 IP가 trusted proxy면 첫 번째 IP 사용
-            if ips:
-                return ips[0]
-
-    # Trusted Proxy가 아니거나 설정이 비어있으면 직접 IP 사용
+    # 프록시가 아니거나 헤더가 없으면 직접 IP 사용
     return request_client_host

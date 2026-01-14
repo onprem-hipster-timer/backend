@@ -1,7 +1,10 @@
+import logging
 from typing import Literal, Self
 
 from pydantic import ConfigDict, model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -59,8 +62,12 @@ class Settings(BaseSettings):
     CF_ENABLED: bool = False  # Cloudflare 프록시 사용 여부 (True: CF-Connecting-IP 헤더 신뢰)
     CF_IP_CACHE_TTL: int = 86400  # Cloudflare IP 목록 캐시 TTL (초, 기본 24시간)
 
-    # Trusted Proxy 설정 (CF_ENABLED=False일 때 사용)
+    # Trusted Proxy 설정
     TRUSTED_PROXY_IPS: str = ""  # 신뢰할 프록시 IP 목록 (콤마 구분, CIDR 지원, 예: "127.0.0.1,10.0.0.0/8")
+
+    # Origin 검증 설정 (모든 프록시에서 사용 가능)
+    ORIGIN_VERIFY_HEADER: str = ""  # Origin 검증용 커스텀 헤더 이름 (예: "X-Origin-Verify")
+    ORIGIN_VERIFY_SECRET: str = ""  # 프록시에서 설정한 비밀 키 (Cloudflare Transform Rules, Nginx 등)
 
     # CORS 설정
     CORS_ALLOWED_ORIGINS: str = "*"  # 허용할 origin (콤마로 구분, 예: "http://localhost:3000,https://example.com")
@@ -92,6 +99,15 @@ class Settings(BaseSettings):
             object.__setattr__(self, "REDOC_URL", "")
             object.__setattr__(self, "GRAPHQL_ENABLE_PLAYGROUND", False)
             object.__setattr__(self, "GRAPHQL_ENABLE_INTROSPECTION", False)
+
+        # PROXY_FORCE=true일 때 ORIGIN_VERIFY 설정 없으면 경고
+        if self.PROXY_FORCE and not (self.ORIGIN_VERIFY_HEADER and self.ORIGIN_VERIFY_SECRET):
+            logger.warning(
+                "⚠️  PROXY_FORCE=true이지만 ORIGIN_VERIFY_HEADER/SECRET이 설정되지 않았습니다. "
+                "추가 보안을 위해 Origin 검증 헤더 설정을 권장합니다. "
+                "(ORIGIN_VERIFY_HEADER, ORIGIN_VERIFY_SECRET)"
+            )
+
         return self
 
     @property

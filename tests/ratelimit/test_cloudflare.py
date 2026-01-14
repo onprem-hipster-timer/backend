@@ -369,7 +369,7 @@ class TestGetRealClientIP:
                 await get_real_client_ip(
                     request_client_host="8.8.8.8",
                     cf_connecting_ip="203.0.113.50",
-                    x_forwarded_for=None,
+                    x_forwarded_for="203.0.113.50, 8.8.8.8",  # Cloudflare IP 없음
                 )
 
     @pytest.mark.asyncio
@@ -391,7 +391,84 @@ class TestGetRealClientIP:
             result = await get_real_client_ip(
                 request_client_host="173.245.48.1",
                 cf_connecting_ip="203.0.113.50",
-                x_forwarded_for=None,
+                x_forwarded_for="203.0.113.50, 173.245.48.1",  # 마지막이 Cloudflare IP
+            )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_cf_via_lb_with_trusted_proxy(self):
+        """PROXY_FORCE + CF_ENABLED + LB: LB가 Trusted Proxy면 통과"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.0/8"  # LB 서브넷 신뢰
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            # request_client_host(LB IP)는 Cloudflare 아님
+            mock_manager.is_cloudflare_ip.return_value = False
+            mock_get_manager.return_value = mock_manager
+
+            result = await get_real_client_ip(
+                request_client_host="10.0.0.50",  # LB 내부 IP (Trusted Proxy)
+                cf_connecting_ip="203.0.113.50",
+                x_forwarded_for="203.0.113.50, 173.245.48.1",
+            )
+
+        # Trusted Proxy이므로 X-Forwarded-For 사용
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_cf_via_lb_blocks_without_trusted_proxy(self):
+        """PROXY_FORCE + CF_ENABLED + LB: LB가 Trusted Proxy 아니면 차단"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = ""  # Trusted Proxy 없음
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = False  # LB IP는 Cloudflare 아님
+            mock_get_manager.return_value = mock_manager
+
+            with pytest.raises(ProxyEnforcementError):
+                await get_real_client_ip(
+                    request_client_host="10.0.0.50",  # LB 내부 IP (신뢰 안됨)
+                    cf_connecting_ip="203.0.113.50",
+                    x_forwarded_for="203.0.113.50, 173.245.48.1",
+                )
+
+    @pytest.mark.asyncio
+    async def test_cf_plus_trusted_proxy_combined(self):
+        """CF_ENABLED + TRUSTED_PROXY_IPS 조합: 둘 중 하나면 프록시로 인정"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "false"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.0/8"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = False  # Cloudflare 아님
+            mock_get_manager.return_value = mock_manager
+
+            # Trusted Proxy이므로 X-Forwarded-For 사용
+            result = await get_real_client_ip(
+                request_client_host="10.0.0.50",  # Trusted Proxy
+                cf_connecting_ip=None,
+                x_forwarded_for="203.0.113.50, 10.0.0.50",
             )
 
         assert result == "203.0.113.50"
@@ -445,6 +522,191 @@ class TestGetRealClientIP:
         assert result == "unknown"
 
 
+class TestOriginVerifyHeader:
+    """Origin Verify 헤더 테스트 (범용 - Cloudflare, Nginx 등)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """각 테스트 전 초기화"""
+        reset_managers()
+        self.original_cf_enabled = os.environ.get("CF_ENABLED")
+        self.original_proxy_force = os.environ.get("PROXY_FORCE")
+        self.original_trusted_ips = os.environ.get("TRUSTED_PROXY_IPS")
+        self.original_verify_header = os.environ.get("ORIGIN_VERIFY_HEADER")
+        self.original_verify_secret = os.environ.get("ORIGIN_VERIFY_SECRET")
+        yield
+        reset_managers()
+        if self.original_cf_enabled is not None:
+            os.environ["CF_ENABLED"] = self.original_cf_enabled
+        else:
+            os.environ.pop("CF_ENABLED", None)
+        if self.original_proxy_force is not None:
+            os.environ["PROXY_FORCE"] = self.original_proxy_force
+        else:
+            os.environ.pop("PROXY_FORCE", None)
+        if self.original_trusted_ips is not None:
+            os.environ["TRUSTED_PROXY_IPS"] = self.original_trusted_ips
+        else:
+            os.environ.pop("TRUSTED_PROXY_IPS", None)
+        if self.original_verify_header is not None:
+            os.environ["ORIGIN_VERIFY_HEADER"] = self.original_verify_header
+        else:
+            os.environ.pop("ORIGIN_VERIFY_HEADER", None)
+        if self.original_verify_secret is not None:
+            os.environ["ORIGIN_VERIFY_SECRET"] = self.original_verify_secret
+        else:
+            os.environ.pop("ORIGIN_VERIFY_SECRET", None)
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_header_valid_with_cloudflare(self):
+        """Origin Verify 헤더가 올바르면 통과 (Cloudflare)"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["ORIGIN_VERIFY_HEADER"] = "X-Origin-Verify"
+        os.environ["ORIGIN_VERIFY_SECRET"] = "my-secret-key"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = True
+            mock_get_manager.return_value = mock_manager
+
+            result = await get_real_client_ip(
+                request_client_host="173.245.48.1",  # Cloudflare IP
+                cf_connecting_ip="203.0.113.50",
+                x_forwarded_for="203.0.113.50, 173.245.48.1",
+                origin_verify_header="my-secret-key",  # 올바른 키
+            )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_header_valid_with_trusted_proxy(self):
+        """Origin Verify 헤더가 올바르면 통과 (Trusted Proxy)"""
+        os.environ["CF_ENABLED"] = "false"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.1"
+        os.environ["ORIGIN_VERIFY_HEADER"] = "X-Origin-Verify"
+        os.environ["ORIGIN_VERIFY_SECRET"] = "my-secret-key"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        result = await get_real_client_ip(
+            request_client_host="10.0.0.1",  # Trusted Proxy
+            cf_connecting_ip=None,
+            x_forwarded_for="203.0.113.50, 10.0.0.1",
+            origin_verify_header="my-secret-key",  # 올바른 키
+        )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_header_invalid(self):
+        """Origin Verify 헤더가 잘못되면 차단"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["ORIGIN_VERIFY_HEADER"] = "X-Origin-Verify"
+        os.environ["ORIGIN_VERIFY_SECRET"] = "my-secret-key"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = True
+            mock_get_manager.return_value = mock_manager
+
+            with pytest.raises(ProxyEnforcementError):
+                await get_real_client_ip(
+                    request_client_host="173.245.48.1",
+                    cf_connecting_ip="203.0.113.50",
+                    x_forwarded_for="203.0.113.50, 173.245.48.1",
+                    origin_verify_header="wrong-key",  # 잘못된 키
+                )
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_header_missing(self):
+        """Origin Verify 헤더가 없으면 차단"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["ORIGIN_VERIFY_HEADER"] = "X-Origin-Verify"
+        os.environ["ORIGIN_VERIFY_SECRET"] = "my-secret-key"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = True
+            mock_get_manager.return_value = mock_manager
+
+            with pytest.raises(ProxyEnforcementError):
+                await get_real_client_ip(
+                    request_client_host="173.245.48.1",
+                    cf_connecting_ip="203.0.113.50",
+                    x_forwarded_for="203.0.113.50, 173.245.48.1",
+                    origin_verify_header=None,  # 헤더 없음
+                )
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_not_configured_passes(self):
+        """Origin Verify 미설정시 헤더 검증 건너뜀"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ.pop("ORIGIN_VERIFY_HEADER", None)
+        os.environ.pop("ORIGIN_VERIFY_SECRET", None)
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = True
+            mock_get_manager.return_value = mock_manager
+
+            result = await get_real_client_ip(
+                request_client_host="173.245.48.1",
+                cf_connecting_ip="203.0.113.50",
+                x_forwarded_for="203.0.113.50, 173.245.48.1",
+                origin_verify_header=None,  # 헤더 없어도 OK
+            )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_origin_verify_with_trusted_proxy_invalid(self):
+        """Trusted Proxy에서 Origin Verify 헤더가 잘못되면 차단"""
+        os.environ["CF_ENABLED"] = "false"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.1"
+        os.environ["ORIGIN_VERIFY_HEADER"] = "X-Origin-Verify"
+        os.environ["ORIGIN_VERIFY_SECRET"] = "my-secret-key"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with pytest.raises(ProxyEnforcementError):
+            await get_real_client_ip(
+                request_client_host="10.0.0.1",
+                cf_connecting_ip=None,
+                x_forwarded_for="203.0.113.50, 10.0.0.1",
+                origin_verify_header="wrong-key",
+            )
+
+
 class TestSpoofingPrevention:
     """스푸핑 방지 테스트"""
 
@@ -475,6 +737,7 @@ class TestSpoofingPrevention:
         """공격자가 CF-Connecting-IP 헤더를 스푸핑해도 무시됨"""
         os.environ["CF_ENABLED"] = "true"
         os.environ["PROXY_FORCE"] = "false"
+        os.environ["TRUSTED_PROXY_IPS"] = ""
 
         from app.core.config import Settings
         import app.core.config as config_module
@@ -488,13 +751,13 @@ class TestSpoofingPrevention:
             mock_get_manager.return_value = mock_manager
 
             result = await get_real_client_ip(
-                request_client_host="attacker-ip",  # 실제 공격자 IP
+                request_client_host="203.0.113.100",  # 실제 공격자 IP
                 cf_connecting_ip="victim-ip",  # 스푸핑된 헤더
                 x_forwarded_for="another-victim",
             )
 
         # 스푸핑된 헤더 무시, 실제 IP 사용
-        assert result == "attacker-ip"
+        assert result == "203.0.113.100"
 
     @pytest.mark.asyncio
     async def test_cannot_spoof_x_forwarded_for_without_trusted_proxy(self):
@@ -508,10 +771,53 @@ class TestSpoofingPrevention:
         config_module.settings = Settings()
 
         result = await get_real_client_ip(
-            request_client_host="attacker-ip",
+            request_client_host="203.0.113.100",
             cf_connecting_ip=None,
             x_forwarded_for="spoofed-ip, another-spoofed",
         )
 
         # 스푸핑된 헤더 무시
-        assert result == "attacker-ip"
+        assert result == "203.0.113.100"
+
+    @pytest.mark.asyncio
+    async def test_cannot_spoof_xff_with_fake_cloudflare_ip(self):
+        """X-Forwarded-For에 가짜 Cloudflare IP를 넣어도 차단됨 (PROXY_FORCE)"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = ""
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            # request.client.host (공격자 IP)는 Cloudflare도 Trusted Proxy도 아님
+            mock_manager.is_cloudflare_ip.return_value = False
+            mock_get_manager.return_value = mock_manager
+
+            with pytest.raises(ProxyEnforcementError):
+                await get_real_client_ip(
+                    request_client_host="203.0.113.100",  # 공격자 IP (직접 연결)
+                    cf_connecting_ip="victim-ip",
+                    x_forwarded_for="victim-ip, 173.245.48.1",  # 스푸핑된 XFF
+                )
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_blocks_direct_access_even_with_headers(self):
+        """PROXY_FORCE: 헤더가 있어도 request.client.host가 프록시가 아니면 차단"""
+        os.environ["CF_ENABLED"] = "false"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.1"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with pytest.raises(ProxyEnforcementError):
+            await get_real_client_ip(
+                request_client_host="203.0.113.100",  # Trusted Proxy 아님
+                cf_connecting_ip=None,
+                x_forwarded_for="victim-ip, 10.0.0.1",  # XFF에 trusted proxy 있어도 무시
+            )

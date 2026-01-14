@@ -731,36 +731,84 @@ RATE_LIMIT_ENABLED=true
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PROXY_FORCE` | 프록시 경유 강제 | `False` |
+| `PROXY_FORCE` | 프록시 경유 강제 (직접 접근 차단) | `False` |
 | `CF_ENABLED` | Cloudflare 프록시 모드 활성화 | `False` |
 | `CF_IP_CACHE_TTL` | Cloudflare IP 목록 캐시 TTL (초) | `86400` |
 | `TRUSTED_PROXY_IPS` | 신뢰할 프록시 IP (콤마 구분, CIDR 지원) | `""` |
+| `ORIGIN_VERIFY_HEADER` | Origin 검증용 커스텀 헤더 이름 (선택) | `""` |
+| `ORIGIN_VERIFY_SECRET` | Origin 검증 헤더의 비밀 값 | `""` |
 
 > ⚠️ **경고**: 프록시 뒤에서 운영할 때 잘못된 설정은 공격자가 클라이언트 IP를 스푸핑하여 Rate Limit을 우회할 수 있게 합니다. 환경에 맞게 정확히 설정하세요.
 >
-> ⚠️ **PROXY_FORCE 경고**: `PROXY_FORCE=true`는 프록시/Cloudflare를 **반드시** 거치도록 강제합니다. (`CF_ENABLED=true`면 Cloudflare IP가 아니면 차단, `CF_ENABLED=false`면 `TRUSTED_PROXY_IPS`가 아니면 차단)
+> ⚠️ **PROXY_FORCE 경고**: `PROXY_FORCE=true`는 `request.client.host`가 Cloudflare IP (`CF_ENABLED=true`) 또는 `TRUSTED_PROXY_IPS`에 없으면 **차단**합니다. 이것이 핵심 보안 체크입니다 - X-Forwarded-For 헤더는 직접 연결이 알려진 프록시에서 올 때만 신뢰됩니다.
+
+**프록시 감지 동작 방식:**
+
+애플리케이션은 `request.client.host` (서버에 직접 연결된 IP)를 확인합니다:
+- Cloudflare IP인 경우 (`CF_ENABLED=true`) → `CF-Connecting-IP` 헤더 신뢰
+- `TRUSTED_PROXY_IPS`에 있는 경우 → `X-Forwarded-For` 헤더 신뢰
+- 그 외 → 직접 IP 사용 (스푸핑 방지를 위해 헤더 무시)
 
 **빠른 설정:**
 
 ```bash
-# Cloudflare 환경 (IP 검증 사용)
-CF_ENABLED=true
-
-# Cloudflare 환경 (프록시 경유 강제)
+# Cloudflare 직접 연결
 CF_ENABLED=true
 PROXY_FORCE=true
 
-# Nginx / 로드밸런서 환경 (IP 검증 사용)
-CF_ENABLED=false
-TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+# Cloudflare + 로드밸런서 (LB 서브넷 신뢰 필요)
+CF_ENABLED=true
+PROXY_FORCE=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
 
-# Nginx / 로드밸런서 환경 (프록시 경유 강제)
+# Cloudflare + 로드밸런서 + 추가 보안 (권장)
+CF_ENABLED=true
+PROXY_FORCE=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
+
+# Nginx / HAProxy / 기타 리버스 프록시
 CF_ENABLED=false
 PROXY_FORCE=true
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.1
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
 
 # 직접 연결 (개발 환경)
 # 기본값 사용 - 설정 불필요
 ```
+
+**로드밸런서 환경:**
+
+로드밸런서(예: AWS ALB, 관리형 컨테이너 서비스) 뒤에서 실행할 때 `request.client.host`는 Cloudflare IP가 아닌 로드밸런서의 내부 IP가 됩니다. LB 서브넷을 `TRUSTED_PROXY_IPS`에 추가해야 합니다:
+
+```bash
+# 예시: 10.0.0.0/8 서브넷의 ALB
+CF_ENABLED=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
+```
+
+**Origin Verify 헤더 (선택적 추가 보안):**
+
+추가 보안을 위해 프록시에서 비밀 헤더를 추가하도록 설정할 수 있습니다. 모든 프록시(Cloudflare, Nginx, HAProxy 등)에서 사용 가능합니다:
+
+**Cloudflare Transform Rules:**
+1. **규칙** > **변환 규칙** > **요청 헤더 수정**으로 이동
+2. 헤더 추가: `X-Origin-Verify` = `your-secret-key-here`
+
+**Nginx:**
+```nginx
+proxy_set_header X-Origin-Verify "your-secret-key-here";
+```
+
+**환경변수:**
+```bash
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
+```
+
+이렇게 하면 비밀 헤더가 없는 요청은 거부되어, 공격자가 서버에 직접 접근하더라도 차단됩니다.
 
 #### CORS (Cross-Origin Resource Sharing)
 

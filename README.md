@@ -736,36 +736,84 @@ RATE_LIMIT_ENABLED=true
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PROXY_FORCE` | Enforce proxy usage | `False` |
+| `PROXY_FORCE` | Enforce proxy usage (block direct access) | `False` |
 | `CF_ENABLED` | Enable Cloudflare proxy mode | `False` |
 | `CF_IP_CACHE_TTL` | Cloudflare IP list cache TTL (seconds) | `86400` |
 | `TRUSTED_PROXY_IPS` | Trusted proxy IPs (comma-separated, CIDR supported) | `""` |
+| `ORIGIN_VERIFY_HEADER` | Custom header name for origin verification (optional) | `""` |
+| `ORIGIN_VERIFY_SECRET` | Secret value for origin verification header | `""` |
 
 > ⚠️ **Security Warning**: When running behind a proxy, incorrect configuration can allow attackers to spoof client IPs and bypass rate limiting. Always configure proxy settings correctly for your environment.
 >
-> ⚠️ **PROXY_FORCE Warning**: `PROXY_FORCE=true` will **block** requests that do not come from Cloudflare IPs (`CF_ENABLED=true`) or `TRUSTED_PROXY_IPS` (`CF_ENABLED=false`). Make sure your network / firewall allows only proxy access if needed.
+> ⚠️ **PROXY_FORCE Warning**: `PROXY_FORCE=true` will **block** requests where `request.client.host` is not a Cloudflare IP (when `CF_ENABLED=true`) or not in `TRUSTED_PROXY_IPS`. This is the key security check - X-Forwarded-For headers are only trusted when the direct connection comes from a known proxy.
+
+**How Proxy Detection Works:**
+
+The application checks `request.client.host` (the IP that directly connected to the server):
+- If it's a Cloudflare IP (`CF_ENABLED=true`) → Trust `CF-Connecting-IP` header
+- If it's in `TRUSTED_PROXY_IPS` → Trust `X-Forwarded-For` header
+- Otherwise → Use the direct IP (ignore headers to prevent spoofing)
 
 **Quick Setup:**
 
 ```bash
-# Cloudflare environment (with IP validation)
-CF_ENABLED=true
-
-# Cloudflare environment (force trust - skip IP validation)
+# Cloudflare direct connection
 CF_ENABLED=true
 PROXY_FORCE=true
 
-# Nginx / Load Balancer environment (with IP validation)
-CF_ENABLED=false
-TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+# Cloudflare + Load Balancer (LB subnet must be trusted)
+CF_ENABLED=true
+PROXY_FORCE=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
 
-# Nginx / Load Balancer environment (enforce proxy usage)
+# Cloudflare + Load Balancer with extra security (recommended)
+CF_ENABLED=true
+PROXY_FORCE=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
+
+# Nginx / HAProxy / Other reverse proxy
 CF_ENABLED=false
 PROXY_FORCE=true
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.1
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
 
 # Direct connection (development)
 # Use defaults - no configuration needed
 ```
+
+**Load Balancer Environment:**
+
+When running behind a load balancer (e.g., AWS ALB, managed container services), `request.client.host` will be the load balancer's internal IP, not Cloudflare's IP. You must add the LB subnet to `TRUSTED_PROXY_IPS`:
+
+```bash
+# Example: ALB in 10.0.0.0/8 subnet
+CF_ENABLED=true
+TRUSTED_PROXY_IPS=10.0.0.0/8
+```
+
+**Origin Verify Header (Optional Extra Security):**
+
+For additional security, you can configure your proxy to add a secret header that the application will verify. This works with any proxy (Cloudflare, Nginx, HAProxy, etc.):
+
+**Cloudflare Transform Rules:**
+1. Go to **Rules** > **Transform Rules** > **Modify Request Header**
+2. Add header: `X-Origin-Verify` = `your-secret-key-here`
+
+**Nginx:**
+```nginx
+proxy_set_header X-Origin-Verify "your-secret-key-here";
+```
+
+**Environment Variables:**
+```bash
+ORIGIN_VERIFY_HEADER=X-Origin-Verify
+ORIGIN_VERIFY_SECRET=your-secret-key-here
+```
+
+This ensures that requests without the secret header will be rejected, even if an attacker somehow reaches your server directly.
 #### CORS (Cross-Origin Resource Sharing)
 
 | Variable | Description | Default |
