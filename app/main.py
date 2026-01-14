@@ -13,6 +13,7 @@ from app.core.logging import setup_logging
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
 from app.middleware.request_logger import RequestLoggerMiddleware
+from app.ratelimit.cloudflare import get_cloudflare_manager, get_trusted_proxy_manager
 from app.ratelimit.middleware import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,21 @@ async def lifespan(app: FastAPI):
         # 6. 공휴일 배경 태스크 시작
         _asyncio_task = asyncio.create_task(holiday_task.run())
         logger.info("✅ Holiday background task scheduled")
+
+        # 7. Cloudflare/Trusted Proxy 설정 초기화
+        if settings.CF_ENABLED:
+            cf_manager = get_cloudflare_manager()
+            success = await cf_manager.initialize()
+            if success:
+                logger.info("✅ Cloudflare IP list initialized")
+            else:
+                logger.warning("⚠️  Failed to fetch Cloudflare IPs, will use Fail-Safe mode")
+        elif settings.trusted_proxy_ips:
+            trusted_manager = get_trusted_proxy_manager()
+            trusted_manager.initialize()
+            logger.info(f"✅ Trusted proxy IPs configured: {len(settings.trusted_proxy_ips)} entries")
+        else:
+            logger.info("ℹ️  No proxy configuration (direct connection mode)")
 
     except Exception as e:
         logger.error(f"❌ Startup failed: {str(e)}", exc_info=True)

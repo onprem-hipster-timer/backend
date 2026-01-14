@@ -7,10 +7,11 @@
 1. [Rate Limit 개요](#1-rate-limit-개요)
 2. [환경변수 설정](#2-환경변수-설정)
 3. [활성화/비활성화](#3-활성화비활성화)
-4. [엔드포인트별 규칙](#4-엔드포인트별-규칙)
-5. [응답 헤더](#5-응답-헤더)
-6. [429 에러 처리](#6-429-에러-처리)
-7. [규칙 커스터마이징](#7-규칙-커스터마이징)
+4. [프록시 환경 설정](#4-프록시-환경-설정)
+5. [엔드포인트별 규칙](#5-엔드포인트별-규칙)
+6. [응답 헤더](#6-응답-헤더)
+7. [429 에러 처리](#7-429-에러-처리)
+8. [규칙 커스터마이징](#8-규칙-커스터마이징)
 
 ---
 
@@ -70,6 +71,9 @@ Rate Limit은 사용자별로 독립적으로 적용됩니다:
 | `RATE_LIMIT_ENABLED` | X | `true` | Rate Limit 활성화 여부 |
 | `RATE_LIMIT_DEFAULT_WINDOW` | X | `60` | 기본 윈도우 크기 (초) |
 | `RATE_LIMIT_DEFAULT_REQUESTS` | X | `60` | 기본 최대 요청 수 |
+| `CF_ENABLED` | X | `false` | Cloudflare 프록시 사용 여부 |
+| `CF_IP_CACHE_TTL` | X | `86400` | Cloudflare IP 목록 캐시 TTL (초, 기본 24시간) |
+| `TRUSTED_PROXY_IPS` | X | `""` | 신뢰할 프록시 IP 목록 (콤마 구분, CIDR 지원) |
 
 ### 예시 설정 (.env)
 
@@ -127,7 +131,115 @@ $env:RATE_LIMIT_ENABLED="false"; uvicorn app.main:app --reload
 
 ---
 
-## 4. 엔드포인트별 규칙
+## 4. 프록시 환경 설정
+
+프록시(Cloudflare, Nginx, 로드밸런서 등) 뒤에서 운영할 때 클라이언트 IP를 정확히 식별하기 위한 설정입니다.
+
+### 보안 경고
+
+> **⚠️ 중요**: 프록시 헤더(`X-Forwarded-For`, `CF-Connecting-IP`)는 클라이언트가 조작할 수 있습니다.  
+> 반드시 신뢰할 수 있는 프록시에서 온 요청에서만 이 헤더를 사용해야 합니다.
+
+### Cloudflare 환경 (권장)
+
+Cloudflare를 사용하는 경우 `CF_ENABLED=true`로 설정하세요:
+
+```bash
+# .env
+CF_ENABLED=true
+CF_IP_CACHE_TTL=86400  # 24시간 (선택사항)
+```
+
+#### 동작 방식
+
+1. **앱 시작 시**: Cloudflare 공식 IP 목록을 자동으로 fetch합니다
+   - IPv4: `https://www.cloudflare.com/ips-v4`
+   - IPv6: `https://www.cloudflare.com/ips-v6`
+2. **요청 처리 시**: 요청이 Cloudflare IP에서 왔는지 검증합니다
+3. **IP 추출**: Cloudflare IP에서 온 요청만 `CF-Connecting-IP` 헤더를 신뢰합니다
+
+```mermaid
+flowchart TD
+    A[요청 수신] --> B{CF_ENABLED?}
+    B -->|No| C[request.client.host 사용]
+    B -->|Yes| D{Cloudflare IP?}
+    D -->|No| C
+    D -->|Yes| E[CF-Connecting-IP 헤더 사용]
+```
+
+#### IP 목록 캐시
+
+- Cloudflare IP 목록은 거의 변경되지 않습니다 (보통 몇 달에 1번)
+- 기본 캐시 TTL: 24시간 (`CF_IP_CACHE_TTL=86400`)
+- 앱 재시작 또는 TTL 만료 시 백그라운드에서 자동 갱신
+
+#### Fetch 실패 시 동작
+
+1. **이전 캐시 있음**: 이전 캐시 계속 사용
+2. **캐시 없음**: Fail-Safe 모드 - 프록시 헤더 무시, `request.client.host` 직접 사용
+
+### Nginx/기타 프록시 환경
+
+Cloudflare가 아닌 다른 프록시를 사용하는 경우 `TRUSTED_PROXY_IPS`를 설정하세요:
+
+```bash
+# .env
+CF_ENABLED=false  # 기본값
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+#### 지원 형식
+
+- 단일 IP: `127.0.0.1`
+- CIDR 범위: `10.0.0.0/8`
+- 콤마로 구분: `127.0.0.1,10.0.0.0/8`
+
+#### 동작 방식
+
+1. 요청이 `TRUSTED_PROXY_IPS`에 해당하는 IP에서 왔는지 확인
+2. Trusted Proxy에서 온 요청만 `X-Forwarded-For` 헤더를 신뢰
+3. 그 외에는 `request.client.host` 직접 사용
+
+### 직접 연결 (개발 환경)
+
+프록시 없이 직접 연결하는 경우 아무 설정도 필요 없습니다:
+
+```bash
+# .env
+CF_ENABLED=false       # 기본값
+TRUSTED_PROXY_IPS=     # 기본값 (빈 문자열)
+```
+
+모든 프록시 헤더를 무시하고 `request.client.host`를 직접 사용합니다.
+
+### 설정 매트릭스
+
+| CF_ENABLED | TRUSTED_PROXY_IPS | 요청 출처 | IP 추출 방식 |
+|------------|-------------------|----------|-------------|
+| `true` | (무시됨) | Cloudflare IP | `CF-Connecting-IP` 헤더 |
+| `true` | (무시됨) | 다른 IP | `request.client.host` |
+| `false` | 설정됨 | Trusted IP | `X-Forwarded-For` 헤더 |
+| `false` | 설정됨 | 다른 IP | `request.client.host` |
+| `false` | 비어있음 | 어디든 | `request.client.host` |
+
+### Docker Compose 설정 예시
+
+```yaml
+# compose.yaml
+services:
+  backend:
+    environment:
+      # Cloudflare 환경
+      - CF_ENABLED=true
+      
+      # 또는 Nginx 프록시 환경
+      # - CF_ENABLED=false
+      # - TRUSTED_PROXY_IPS=nginx,10.0.0.0/8
+```
+
+---
+
+## 5. 엔드포인트별 규칙
 
 Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적용됩니다.
 
@@ -172,7 +284,7 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 
 ---
 
-## 5. 응답 헤더
+## 6. 응답 헤더
 
 모든 `/v1/*` API 응답에 Rate Limit 정보 헤더가 포함됩니다.
 
@@ -214,7 +326,7 @@ Content-Type: application/json
 
 ---
 
-## 6. 429 에러 처리
+## 7. 429 에러 처리
 
 ### 프론트엔드 처리 방법
 
@@ -288,7 +400,7 @@ api.interceptors.response.use(
 
 ---
 
-## 7. 규칙 커스터마이징
+## 8. 규칙 커스터마이징
 
 ### 규칙 수정 위치
 
@@ -343,6 +455,7 @@ class RateLimitRule(BaseModel):
 | `app/ratelimit/config.py` | 규칙 정의 및 매칭 로직 |
 | `app/ratelimit/middleware.py` | Rate Limit 미들웨어 |
 | `app/ratelimit/limiter.py` | 요청 카운트 및 제한 로직 |
+| `app/ratelimit/cloudflare.py` | Cloudflare/Trusted Proxy IP 관리 및 클라이언트 IP 추출 |
 | `app/ratelimit/storage/memory.py` | 인메모리 저장소 (슬라이딩 윈도우) |
 | `app/core/config.py` | 환경변수 설정 |
 

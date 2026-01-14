@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # API 문서 (빈 문자열로 설정하면 비활성화)
+    DOCS_ENABLED: bool = True  # API 문서 활성화 여부 (deprecated, OPENAPI_URL 등 사용 권장)
     OPENAPI_URL: str = "/openapi.json"  # OpenAPI 스키마 URL (빈 문자열이면 비활성화)
     DOCS_URL: str = "/docs"  # Swagger UI URL (빈 문자열이면 비활성화)
     REDOC_URL: str = "/redoc"  # ReDoc URL (빈 문자열이면 비활성화)
@@ -50,6 +51,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60  # 기본 최대 요청 수
+
+    # Cloudflare 프록시 설정
+    CF_ENABLED: bool = False  # Cloudflare 프록시 사용 여부 (True: CF-Connecting-IP 헤더 신뢰)
+    CF_IP_CACHE_TTL: int = 86400  # Cloudflare IP 목록 캐시 TTL (초, 기본 24시간)
+
+    # Trusted Proxy 설정 (CF_ENABLED=False일 때 사용)
+    TRUSTED_PROXY_IPS: str = ""  # 신뢰할 프록시 IP 목록 (콤마 구분, CIDR 지원, 예: "127.0.0.1,10.0.0.0/8")
 
     # CORS 설정
     CORS_ALLOWED_ORIGINS: str = "*"  # 허용할 origin (콤마로 구분, 예: "http://localhost:3000,https://example.com")
@@ -95,6 +103,13 @@ class Settings(BaseSettings):
         if self.CORS_ALLOW_HEADERS == "*":
             return ["*"]
         return [header.strip() for header in self.CORS_ALLOW_HEADERS.split(",") if header.strip()]
+
+    @property
+    def trusted_proxy_ips(self) -> list[str]:
+        """TRUSTED_PROXY_IPS를 리스트로 반환"""
+        if not self.TRUSTED_PROXY_IPS:
+            return []
+        return [ip.strip() for ip in self.TRUSTED_PROXY_IPS.split(",") if ip.strip()]
 
 
 settings = Settings()

@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import JSONResponse
 
 from app.core import config as app_config
+from app.ratelimit.cloudflare import get_real_client_ip
 from app.ratelimit.config import get_rule_for_request
 from app.ratelimit.limiter import get_limiter
 
@@ -93,17 +94,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         우선순위:
         1. request.state.current_user (AuthMiddleware에서 설정됨 - 중복 검증 방지)
-        2. Client IP 주소 (인증 없는 경우)
+        2. Client IP 주소 (인증 없는 경우, 프록시 설정 고려)
+        
+        프록시 설정:
+        - CF_ENABLED=True: Cloudflare IP 검증 후 CF-Connecting-IP 사용
+        - TRUSTED_PROXY_IPS 설정: 해당 IP에서 오는 X-Forwarded-For 신뢰
+        - 그 외: request.client.host 직접 사용
         """
         # AuthMiddleware에서 이미 검증된 사용자 정보 사용
         if hasattr(request.state, 'current_user') and request.state.current_user:
             return request.state.current_user.sub
 
-        # IP 주소 사용 (프록시 고려)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            # 첫 번째 IP가 실제 클라이언트 IP
-            return f"ip:{forwarded.split(',')[0].strip()}"
+        # 실제 클라이언트 IP 추출 (프록시 설정 고려)
+        client_ip = await get_real_client_ip(
+            request_client_host=request.client.host if request.client else None,
+            cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
+            x_forwarded_for=request.headers.get("X-Forwarded-For"),
+        )
 
-        client_host = request.client.host if request.client else "unknown"
-        return f"ip:{client_host}"
+        return f"ip:{client_ip}"

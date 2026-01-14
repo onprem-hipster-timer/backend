@@ -724,6 +724,40 @@ RATE_LIMIT_ENABLED=false
 RATE_LIMIT_ENABLED=true
 ```
 
+#### Proxy Settings (Cloudflare / Trusted Proxy)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CF_ENABLED` | Enable Cloudflare proxy mode | `False` |
+| `CF_IP_CACHE_TTL` | Cloudflare IP list cache TTL (seconds) | `86400` |
+| `TRUSTED_PROXY_IPS` | Trusted proxy IPs (comma-separated, CIDR supported) | `""` |
+
+> ⚠️ **Security Warning**: When running behind a proxy, incorrect configuration can allow attackers to spoof client IPs and bypass rate limiting. Always configure proxy settings correctly for your environment.
+
+**Quick Setup:**
+
+```bash
+# Cloudflare environment
+CF_ENABLED=true
+
+# Nginx / Load Balancer environment
+CF_ENABLED=false
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Direct connection (development)
+# Use defaults - no configuration needed
+```
+
+**Behavior Matrix:**
+
+| CF_ENABLED | TRUSTED_PROXY_IPS | Request Source | IP Extraction |
+|------------|-------------------|----------------|---------------|
+| `true` | (ignored) | Cloudflare IP | `CF-Connecting-IP` header |
+| `true` | (ignored) | Other IP | `request.client.host` |
+| `false` | configured | Trusted IP | `X-Forwarded-For` header |
+| `false` | configured | Other IP | `request.client.host` |
+| `false` | empty | any | `request.client.host` |
+
 #### CORS (Cross-Origin Resource Sharing)
 
 | Variable | Description | Default |

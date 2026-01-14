@@ -719,6 +719,40 @@ RATE_LIMIT_ENABLED=false
 RATE_LIMIT_ENABLED=true
 ```
 
+#### 프록시 설정 (Cloudflare / Trusted Proxy)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CF_ENABLED` | Cloudflare 프록시 모드 활성화 | `False` |
+| `CF_IP_CACHE_TTL` | Cloudflare IP 목록 캐시 TTL (초) | `86400` |
+| `TRUSTED_PROXY_IPS` | 신뢰할 프록시 IP (콤마 구분, CIDR 지원) | `""` |
+
+> ⚠️ **보안 경고**: 프록시 뒤에서 운영할 때 잘못된 설정은 공격자가 클라이언트 IP를 스푸핑하여 Rate Limit을 우회할 수 있게 합니다. 환경에 맞게 정확히 설정하세요.
+
+**빠른 설정:**
+
+```bash
+# Cloudflare 환경
+CF_ENABLED=true
+
+# Nginx / 로드밸런서 환경
+CF_ENABLED=false
+TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# 직접 연결 (개발 환경)
+# 기본값 사용 - 설정 불필요
+```
+
+**동작 매트릭스:**
+
+| CF_ENABLED | TRUSTED_PROXY_IPS | 요청 출처 | IP 추출 방식 |
+|------------|-------------------|----------|-------------|
+| `true` | (무시됨) | Cloudflare IP | `CF-Connecting-IP` 헤더 |
+| `true` | (무시됨) | 다른 IP | `request.client.host` |
+| `false` | 설정됨 | Trusted IP | `X-Forwarded-For` 헤더 |
+| `false` | 설정됨 | 다른 IP | `request.client.host` |
+| `false` | 비어있음 | 어디든 | `request.client.host` |
+
 #### CORS (Cross-Origin Resource Sharing)
 
 | Variable | Description | Default |
