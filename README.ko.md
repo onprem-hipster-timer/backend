@@ -758,6 +758,65 @@ alembic downgrade -1
 
 ## 🐳 Docker
 
+### 빌드된 이미지 사용 (권장)
+
+GitHub Container Registry에서 빌드된 이미지를 받아 실행합니다:
+
+```bash
+# 최신 이미지 받기
+docker pull ghcr.io/onprem-hipster-timer/backend:latest
+
+# 또는 특정 버전 받기
+docker pull ghcr.io/onprem-hipster-timer/backend:v2026.01.13-f81a7c0
+
+# 컨테이너 실행
+docker run -d \
+  --name hipster-timer-backend \
+  -p 2614:2614 \
+  -e DATABASE_URL=sqlite:///./data/schedule.db \
+  -e OIDC_ENABLED=false \
+  -v hipster-timer-data:/app/data \
+  ghcr.io/onprem-hipster-timer/backend:latest
+```
+
+**PostgreSQL과 함께 사용:**
+
+```bash
+# PostgreSQL로 실행
+docker run -d \
+  --name hipster-timer-backend \
+  -p 2614:2614 \
+  -e DATABASE_URL=postgresql://user:password@host:5432/dbname \
+  -e OIDC_ENABLED=false \
+  -e ENVIRONMENT=production \
+  ghcr.io/onprem-hipster-timer/backend:latest
+```
+
+**Docker Compose로 실행:**
+
+```yaml
+# compose.yaml
+services:
+  backend:
+    image: ghcr.io/onprem-hipster-timer/backend:latest
+    ports:
+      - "2614:2614"
+    environment:
+      - DATABASE_URL=sqlite:///./data/schedule.db
+      - OIDC_ENABLED=false
+    volumes:
+      - hipster-timer-data:/app/data
+
+volumes:
+  hipster-timer-data:
+```
+
+```bash
+docker compose up -d
+```
+
+### 소스에서 직접 빌드
+
 ```bash
 # 빌드 및 실행
 docker compose up --build

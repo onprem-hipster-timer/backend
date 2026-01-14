@@ -763,6 +763,65 @@ alembic downgrade -1
 
 ## 🐳 Docker
 
+### Using Pre-built Image (Recommended)
+
+Pull and run the pre-built image from GitHub Container Registry:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/onprem-hipster-timer/backend:latest
+
+# Or pull a specific version
+docker pull ghcr.io/onprem-hipster-timer/backend:v2026.01.13-f81a7c0
+
+# Run the container
+docker run -d \
+  --name hipster-timer-backend \
+  -p 2614:2614 \
+  -e DATABASE_URL=sqlite:///./data/schedule.db \
+  -e OIDC_ENABLED=false \
+  -v hipster-timer-data:/app/data \
+  ghcr.io/onprem-hipster-timer/backend:latest
+```
+
+**With PostgreSQL:**
+
+```bash
+# Run with PostgreSQL
+docker run -d \
+  --name hipster-timer-backend \
+  -p 2614:2614 \
+  -e DATABASE_URL=postgresql://user:password@host:5432/dbname \
+  -e OIDC_ENABLED=false \
+  -e ENVIRONMENT=production \
+  ghcr.io/onprem-hipster-timer/backend:latest
+```
+
+**With Docker Compose:**
+
+```yaml
+# compose.yaml
+services:
+  backend:
+    image: ghcr.io/onprem-hipster-timer/backend:latest
+    ports:
+      - "2614:2614"
+    environment:
+      - DATABASE_URL=sqlite:///./data/schedule.db
+      - OIDC_ENABLED=false
+    volumes:
+      - hipster-timer-data:/app/data
+
+volumes:
+  hipster-timer-data:
+```
+
+```bash
+docker compose up -d
+```
+
+### Building from Source
+
 ```bash
 # Build and run
 docker compose up --build
