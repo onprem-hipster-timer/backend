@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
@@ -156,3 +157,22 @@ app.add_middleware(AuthMiddleware)
 
 # API Router 등록 (REST + GraphQL 모두 포함)
 app.include_router(api_router)
+
+
+# Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """
+    애플리케이션 상태 확인
+    
+    로드밸런서, Kubernetes, ECS 등에서 사용하는 health check 엔드포인트.
+    인증 없이 접근 가능합니다.
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "version": settings.APP_VERSION,
+            "environment": settings.ENVIRONMENT,
+        }
+    )
