@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     # 로깅
     LOG_LEVEL: str = "INFO"
 
-    # API 문서 (빈 문자열로 설정하면 비활성화)
-    DOCS_ENABLED: bool = True  # API 문서 활성화 여부 (deprecated, OPENAPI_URL 등 사용 권장)
+    # API 문서 (DOCS_ENABLED=False로 모든 문서 비활성화)
+    DOCS_ENABLED: bool = True  # 모든 API 문서 비활성화 마스터 스위치 (Swagger, ReDoc, GraphQL Sandbox 포함)
     OPENAPI_URL: str = "/openapi.json"  # OpenAPI 스키마 URL (빈 문자열이면 비활성화)
     DOCS_URL: str = "/docs"  # Swagger UI URL (빈 문자열이면 비활성화)
     REDOC_URL: str = "/redoc"  # ReDoc URL (빈 문자열이면 비활성화)
@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60  # 기본 최대 요청 수
 
+    # 프록시 설정
+    PROXY_FORCE: bool = False  # 프록시/Cloudflare 경유 강제 (request.client.host 기준으로 프록시가 아니면 차단)
+
     # Cloudflare 프록시 설정
     CF_ENABLED: bool = False  # Cloudflare 프록시 사용 여부 (True: CF-Connecting-IP 헤더 신뢰)
     CF_IP_CACHE_TTL: int = 86400  # Cloudflare IP 목록 캐시 TTL (초, 기본 24시간)
@@ -72,7 +75,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def apply_production_defaults(self) -> Self:
-        """프로덕션 환경에서는 보안 관련 설정을 자동으로 비활성화"""
+        """프로덕션 환경 또는 DOCS_ENABLED=False일 때 문서 관련 설정 비활성화"""
+        # DOCS_ENABLED=False면 모든 문서 비활성화
+        if not self.DOCS_ENABLED:
+            object.__setattr__(self, "OPENAPI_URL", "")
+            object.__setattr__(self, "DOCS_URL", "")
+            object.__setattr__(self, "REDOC_URL", "")
+            object.__setattr__(self, "GRAPHQL_ENABLE_PLAYGROUND", False)
+            object.__setattr__(self, "GRAPHQL_ENABLE_INTROSPECTION", False)
+
         if self.ENVIRONMENT == "production":
             # 프로덕션에서는 디버그 및 문서 관련 기능 비활성화
             object.__setattr__(self, "DEBUG", False)

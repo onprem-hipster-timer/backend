@@ -12,3 +12,10 @@ class RateLimitExceededError(DomainException):
     def __init__(self, retry_after: int = 60):
         self.retry_after = retry_after
         super().__init__()
+
+
+class ProxyEnforcementError(DomainException):
+    """프록시(또는 Cloudflare) 경유가 강제된 환경에서 직접 접근이 감지된 경우"""
+
+    status_code: int = 403
+    detail: str = "프록시를 통하지 않은 접근은 허용되지 않습니다."

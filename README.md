@@ -651,6 +651,7 @@ ENVIRONMENT=production
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `DOCS_ENABLED` | Master switch for all API docs (Swagger, ReDoc, GraphQL Sandbox) | `True` |
 | `DEBUG` | Enable debug mode | `True` |
 | `OPENAPI_URL` | OpenAPI schema URL (empty string to disable) | `/openapi.json` |
 | `DOCS_URL` | Swagger UI URL (empty string to disable) | `/docs` |
@@ -659,6 +660,13 @@ ENVIRONMENT=production
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | Allow GraphQL introspection | `True` |
+
+**Disable all docs at once:**
+
+```bash
+# One command to disable Swagger, ReDoc, OpenAPI schema, GraphQL Sandbox
+DOCS_ENABLED=false
+```
 
 #### Database
 
@@ -728,36 +736,36 @@ RATE_LIMIT_ENABLED=true
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `PROXY_FORCE` | Enforce proxy usage | `False` |
 | `CF_ENABLED` | Enable Cloudflare proxy mode | `False` |
 | `CF_IP_CACHE_TTL` | Cloudflare IP list cache TTL (seconds) | `86400` |
 | `TRUSTED_PROXY_IPS` | Trusted proxy IPs (comma-separated, CIDR supported) | `""` |
 
 > ⚠️ **Security Warning**: When running behind a proxy, incorrect configuration can allow attackers to spoof client IPs and bypass rate limiting. Always configure proxy settings correctly for your environment.
+>
+> ⚠️ **PROXY_FORCE Warning**: `PROXY_FORCE=true` will **block** requests that do not come from Cloudflare IPs (`CF_ENABLED=true`) or `TRUSTED_PROXY_IPS` (`CF_ENABLED=false`). Make sure your network / firewall allows only proxy access if needed.
 
 **Quick Setup:**
 
 ```bash
-# Cloudflare environment
+# Cloudflare environment (with IP validation)
 CF_ENABLED=true
 
-# Nginx / Load Balancer environment
+# Cloudflare environment (force trust - skip IP validation)
+CF_ENABLED=true
+PROXY_FORCE=true
+
+# Nginx / Load Balancer environment (with IP validation)
 CF_ENABLED=false
 TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Nginx / Load Balancer environment (enforce proxy usage)
+CF_ENABLED=false
+PROXY_FORCE=true
 
 # Direct connection (development)
 # Use defaults - no configuration needed
 ```
-
-**Behavior Matrix:**
-
-| CF_ENABLED | TRUSTED_PROXY_IPS | Request Source | IP Extraction |
-|------------|-------------------|----------------|---------------|
-| `true` | (ignored) | Cloudflare IP | `CF-Connecting-IP` header |
-| `true` | (ignored) | Other IP | `request.client.host` |
-| `false` | configured | Trusted IP | `X-Forwarded-For` header |
-| `false` | configured | Other IP | `request.client.host` |
-| `false` | empty | any | `request.client.host` |
-
 #### CORS (Cross-Origin Resource Sharing)
 
 | Variable | Description | Default |

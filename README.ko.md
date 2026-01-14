@@ -646,6 +646,7 @@ ENVIRONMENT=production
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `DOCS_ENABLED` | 모든 API 문서 비활성화 마스터 스위치 (Swagger, ReDoc, GraphQL Sandbox) | `True` |
 | `DEBUG` | 디버그 모드 활성화 | `True` |
 | `OPENAPI_URL` | OpenAPI 스키마 URL (빈 문자열로 비활성화) | `/openapi.json` |
 | `DOCS_URL` | Swagger UI URL (빈 문자열로 비활성화) | `/docs` |
@@ -654,6 +655,13 @@ ENVIRONMENT=production
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | GraphQL Introspection 허용 | `True` |
+
+**모든 문서 한번에 비활성화:**
+
+```bash
+# Swagger, ReDoc, OpenAPI 스키마, GraphQL Sandbox 모두 비활성화
+DOCS_ENABLED=false
+```
 
 #### 데이터베이스
 
@@ -723,35 +731,36 @@ RATE_LIMIT_ENABLED=true
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `PROXY_FORCE` | 프록시 경유 강제 | `False` |
 | `CF_ENABLED` | Cloudflare 프록시 모드 활성화 | `False` |
 | `CF_IP_CACHE_TTL` | Cloudflare IP 목록 캐시 TTL (초) | `86400` |
 | `TRUSTED_PROXY_IPS` | 신뢰할 프록시 IP (콤마 구분, CIDR 지원) | `""` |
 
-> ⚠️ **보안 경고**: 프록시 뒤에서 운영할 때 잘못된 설정은 공격자가 클라이언트 IP를 스푸핑하여 Rate Limit을 우회할 수 있게 합니다. 환경에 맞게 정확히 설정하세요.
+> ⚠️ **경고**: 프록시 뒤에서 운영할 때 잘못된 설정은 공격자가 클라이언트 IP를 스푸핑하여 Rate Limit을 우회할 수 있게 합니다. 환경에 맞게 정확히 설정하세요.
+>
+> ⚠️ **PROXY_FORCE 경고**: `PROXY_FORCE=true`는 프록시/Cloudflare를 **반드시** 거치도록 강제합니다. (`CF_ENABLED=true`면 Cloudflare IP가 아니면 차단, `CF_ENABLED=false`면 `TRUSTED_PROXY_IPS`가 아니면 차단)
 
 **빠른 설정:**
 
 ```bash
-# Cloudflare 환경
+# Cloudflare 환경 (IP 검증 사용)
 CF_ENABLED=true
 
-# Nginx / 로드밸런서 환경
+# Cloudflare 환경 (프록시 경유 강제)
+CF_ENABLED=true
+PROXY_FORCE=true
+
+# Nginx / 로드밸런서 환경 (IP 검증 사용)
 CF_ENABLED=false
 TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# Nginx / 로드밸런서 환경 (프록시 경유 강제)
+CF_ENABLED=false
+PROXY_FORCE=true
 
 # 직접 연결 (개발 환경)
 # 기본값 사용 - 설정 불필요
 ```
-
-**동작 매트릭스:**
-
-| CF_ENABLED | TRUSTED_PROXY_IPS | 요청 출처 | IP 추출 방식 |
-|------------|-------------------|----------|-------------|
-| `true` | (무시됨) | Cloudflare IP | `CF-Connecting-IP` 헤더 |
-| `true` | (무시됨) | 다른 IP | `request.client.host` |
-| `false` | 설정됨 | Trusted IP | `X-Forwarded-For` 헤더 |
-| `false` | 설정됨 | 다른 IP | `request.client.host` |
-| `false` | 비어있음 | 어디든 | `request.client.host` |
 
 #### CORS (Cross-Origin Resource Sharing)
 

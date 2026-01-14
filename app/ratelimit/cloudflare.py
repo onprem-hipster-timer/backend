@@ -12,6 +12,7 @@ from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_add
 import httpx
 
 from app.core import config as app_config
+from app.ratelimit.exceptions import ProxyEnforcementError
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +265,24 @@ async def get_real_client_ip(
 
     # CF_ENABLED=True: Cloudflare 모드
     if app_config.settings.CF_ENABLED:
+        # PROXY_FORCE=True: Cloudflare 경유 강제 (request.client.host가 Cloudflare IP가 아니면 차단)
+        if app_config.settings.PROXY_FORCE:
+            cf_manager = get_cloudflare_manager()
+            await cf_manager.ensure_initialized()
+
+            if not cf_manager.is_cloudflare_ip(request_client_host):
+                raise ProxyEnforcementError("Cloudflare 프록시를 통하지 않은 접근은 허용되지 않습니다.")
+
+            if cf_connecting_ip:
+                return cf_connecting_ip
+            # 헤더가 없으면 경고 후 직접 IP 사용
+            logger.warning(
+                f"PROXY_FORCE enabled but CF-Connecting-IP header is missing. "
+                f"Using direct IP: {request_client_host}"
+            )
+            return request_client_host
+
+        # PROXY_FORCE=False: Cloudflare IP 검증 후 헤더 신뢰
         cf_manager = get_cloudflare_manager()
         await cf_manager.ensure_initialized()
 
@@ -282,6 +301,32 @@ async def get_real_client_ip(
         return request_client_host
 
     # CF_ENABLED=False: Trusted Proxy 또는 Direct 모드
+
+    # PROXY_FORCE=True: Trusted Proxy 경유 강제 (request.client.host가 Trusted Proxy가 아니면 차단)
+    if app_config.settings.PROXY_FORCE:
+        trusted_proxy_manager = get_trusted_proxy_manager()
+
+        if not trusted_proxy_manager.is_trusted_proxy(request_client_host):
+            raise ProxyEnforcementError("프록시를 통하지 않은 접근은 허용되지 않습니다. (TRUSTED_PROXY_IPS 확인)")
+
+        if x_forwarded_for:
+            # X-Forwarded-For에서 첫 번째 비-프록시 IP 추출
+            # 형식: "client, proxy1, proxy2" - 왼쪽이 원본 클라이언트
+            ips = [ip.strip() for ip in x_forwarded_for.split(",")]
+            for ip in ips:
+                if ip and not trusted_proxy_manager.is_trusted_proxy(ip):
+                    return ip
+            # 모든 IP가 trusted proxy면 첫 번째 IP 사용
+            if ips:
+                return ips[0]
+        # 헤더가 없으면 경고 후 직접 IP 사용
+        logger.warning(
+            f"PROXY_FORCE enabled but X-Forwarded-For header is missing. "
+            f"Using direct IP: {request_client_host}"
+        )
+        return request_client_host
+
+    # PROXY_FORCE=False: Trusted Proxy 검증 후 헤더 신뢰
     trusted_proxy_manager = get_trusted_proxy_manager()
 
     if trusted_proxy_manager.is_trusted_proxy(request_client_host):

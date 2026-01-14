@@ -147,24 +147,7 @@ Cloudflare를 사용하는 경우 `CF_ENABLED=true`로 설정하세요:
 ```bash
 # .env
 CF_ENABLED=true
-CF_IP_CACHE_TTL=86400  # 24시간 (선택사항)
-```
-
-#### 동작 방식
-
-1. **앱 시작 시**: Cloudflare 공식 IP 목록을 자동으로 fetch합니다
-   - IPv4: `https://www.cloudflare.com/ips-v4`
-   - IPv6: `https://www.cloudflare.com/ips-v6`
-2. **요청 처리 시**: 요청이 Cloudflare IP에서 왔는지 검증합니다
-3. **IP 추출**: Cloudflare IP에서 온 요청만 `CF-Connecting-IP` 헤더를 신뢰합니다
-
-```mermaid
-flowchart TD
-    A[요청 수신] --> B{CF_ENABLED?}
-    B -->|No| C[request.client.host 사용]
-    B -->|Yes| D{Cloudflare IP?}
-    D -->|No| C
-    D -->|Yes| E[CF-Connecting-IP 헤더 사용]
+CF_IP_CACHE_TTL=86400  # 24시간 (cf 권장)
 ```
 
 #### IP 목록 캐시
@@ -192,13 +175,7 @@ TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
 - 단일 IP: `127.0.0.1`
 - CIDR 범위: `10.0.0.0/8`
-- 콤마로 구분: `127.0.0.1,10.0.0.0/8`
-
-#### 동작 방식
-
-1. 요청이 `TRUSTED_PROXY_IPS`에 해당하는 IP에서 왔는지 확인
-2. Trusted Proxy에서 온 요청만 `X-Forwarded-For` 헤더를 신뢰
-3. 그 외에는 `request.client.host` 직접 사용
+- 콤마로 구분: `127.0.0.1,10.0.0.0/8`\
 
 ### 직접 연결 (개발 환경)
 

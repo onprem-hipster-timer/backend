@@ -15,6 +15,7 @@ from app.ratelimit.cloudflare import (
     get_real_client_ip,
     reset_managers,
 )
+from app.ratelimit.exceptions import ProxyEnforcementError
 
 pytestmark = pytest.mark.ratelimit
 
@@ -349,6 +350,90 @@ class TestGetRealClientIP:
         assert result == "173.245.48.1"
 
     @pytest.mark.asyncio
+    async def test_proxy_force_cf_blocks_non_cloudflare_source(self):
+        """PROXY_FORCE + CF_ENABLED: Cloudflare IP가 아니면 차단"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = False
+            mock_get_manager.return_value = mock_manager
+
+            with pytest.raises(ProxyEnforcementError):
+                await get_real_client_ip(
+                    request_client_host="8.8.8.8",
+                    cf_connecting_ip="203.0.113.50",
+                    x_forwarded_for=None,
+                )
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_cf_allows_cloudflare_source_and_uses_header(self):
+        """PROXY_FORCE + CF_ENABLED: Cloudflare IP면 통과, CF-Connecting-IP 사용"""
+        os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "true"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with patch("app.ratelimit.cloudflare.get_cloudflare_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.ensure_initialized = AsyncMock()
+            mock_manager.is_cloudflare_ip.return_value = True
+            mock_get_manager.return_value = mock_manager
+
+            result = await get_real_client_ip(
+                request_client_host="173.245.48.1",
+                cf_connecting_ip="203.0.113.50",
+                x_forwarded_for=None,
+            )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_trusted_proxy_blocks_untrusted_source(self):
+        """PROXY_FORCE + CF_DISABLED: Trusted Proxy가 아니면 차단"""
+        os.environ["CF_ENABLED"] = "false"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.1"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        with pytest.raises(ProxyEnforcementError):
+            await get_real_client_ip(
+                request_client_host="203.0.113.100",
+                cf_connecting_ip=None,
+                x_forwarded_for="203.0.113.50, 10.0.0.1",
+            )
+
+    @pytest.mark.asyncio
+    async def test_proxy_force_trusted_proxy_allows_trusted_source_and_uses_xff(self):
+        """PROXY_FORCE + CF_DISABLED: Trusted Proxy면 통과, X-Forwarded-For 사용"""
+        os.environ["CF_ENABLED"] = "false"
+        os.environ["PROXY_FORCE"] = "true"
+        os.environ["TRUSTED_PROXY_IPS"] = "10.0.0.1"
+
+        from app.core.config import Settings
+        import app.core.config as config_module
+        config_module.settings = Settings()
+
+        result = await get_real_client_ip(
+            request_client_host="10.0.0.1",
+            cf_connecting_ip=None,
+            x_forwarded_for="203.0.113.50, 10.0.0.1",
+        )
+
+        assert result == "203.0.113.50"
+
+    @pytest.mark.asyncio
     async def test_no_client_host(self):
         """클라이언트 호스트 없음 -> unknown 반환"""
         result = await get_real_client_ip(
@@ -369,6 +454,7 @@ class TestSpoofingPrevention:
         reset_managers()
         self.original_cf_enabled = os.environ.get("CF_ENABLED")
         self.original_trusted_ips = os.environ.get("TRUSTED_PROXY_IPS")
+        self.original_proxy_force = os.environ.get("PROXY_FORCE")
         yield
         reset_managers()
         if self.original_cf_enabled is not None:
@@ -379,11 +465,16 @@ class TestSpoofingPrevention:
             os.environ["TRUSTED_PROXY_IPS"] = self.original_trusted_ips
         else:
             os.environ.pop("TRUSTED_PROXY_IPS", None)
+        if self.original_proxy_force is not None:
+            os.environ["PROXY_FORCE"] = self.original_proxy_force
+        else:
+            os.environ.pop("PROXY_FORCE", None)
 
     @pytest.mark.asyncio
     async def test_cannot_spoof_cf_connecting_ip(self):
         """공격자가 CF-Connecting-IP 헤더를 스푸핑해도 무시됨"""
         os.environ["CF_ENABLED"] = "true"
+        os.environ["PROXY_FORCE"] = "false"
 
         from app.core.config import Settings
         import app.core.config as config_module
@@ -410,6 +501,7 @@ class TestSpoofingPrevention:
         """Trusted Proxy 없이 X-Forwarded-For 스푸핑 불가"""
         os.environ["CF_ENABLED"] = "false"
         os.environ["TRUSTED_PROXY_IPS"] = ""
+        os.environ["PROXY_FORCE"] = "false"
 
         from app.core.config import Settings
         import app.core.config as config_module
