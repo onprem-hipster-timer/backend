@@ -106,6 +106,10 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     lifespan=lifespan,
+    # API 문서 설정 (빈 문자열이면 비활성화 - FastAPI 공식 문서 권장 방식)
+    openapi_url=settings.OPENAPI_URL or None,
+    docs_url=settings.DOCS_URL or None,
+    redoc_url=settings.REDOC_URL or None,
 )
 
 # Exception Handler 등록

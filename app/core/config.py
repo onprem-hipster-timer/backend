@@ -26,8 +26,10 @@ class Settings(BaseSettings):
     # 로깅
     LOG_LEVEL: str = "INFO"
 
-    # API 문서
-    DOCS_ENABLED: bool = True  # Swagger/ReDoc 문서 활성화 (개발 환경에서만 True)
+    # API 문서 (빈 문자열로 설정하면 비활성화)
+    OPENAPI_URL: str = "/openapi.json"  # OpenAPI 스키마 URL (빈 문자열이면 비활성화)
+    DOCS_URL: str = "/docs"  # Swagger UI URL (빈 문자열이면 비활성화)
+    REDOC_URL: str = "/redoc"  # ReDoc URL (빈 문자열이면 비활성화)
 
     # GraphQL
     GRAPHQL_ENABLE_PLAYGROUND: bool = True  # 개발 환경에서만 True
@@ -66,7 +68,9 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production":
             # 프로덕션에서는 디버그 및 문서 관련 기능 비활성화
             object.__setattr__(self, "DEBUG", False)
-            object.__setattr__(self, "DOCS_ENABLED", False)
+            object.__setattr__(self, "OPENAPI_URL", "")
+            object.__setattr__(self, "DOCS_URL", "")
+            object.__setattr__(self, "REDOC_URL", "")
             object.__setattr__(self, "GRAPHQL_ENABLE_PLAYGROUND", False)
             object.__setattr__(self, "GRAPHQL_ENABLE_INTROSPECTION", False)
         return self

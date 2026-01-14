@@ -624,9 +624,11 @@ TOTAL                                                8904    682    92%
 |----------|-------------|---------|
 | `ENVIRONMENT` | 실행 환경 (`development`, `staging`, `production`) | `development` |
 
-> ⚠️ **프로덕션 모드**: `ENVIRONMENT=production` 설정 시 아래 설정이 자동으로 비활성화됩니다:
+> ⚠️ **프로덕션 모드**: `ENVIRONMENT=production` 설정 시 아래 설정이 자동으로 적용됩니다:
 > - `DEBUG` → `False`
-> - `DOCS_ENABLED` → `False`
+> - `OPENAPI_URL` → `""` (비활성화)
+> - `DOCS_URL` → `""` (비활성화)
+> - `REDOC_URL` → `""` (비활성화)
 > - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
 > - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
 
@@ -645,7 +647,9 @@ ENVIRONMENT=production
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DEBUG` | 디버그 모드 활성화 | `True` |
-| `DOCS_ENABLED` | Swagger/ReDoc 문서 활성화 | `True` |
+| `OPENAPI_URL` | OpenAPI 스키마 URL (빈 문자열로 비활성화) | `/openapi.json` |
+| `DOCS_URL` | Swagger UI URL (빈 문자열로 비활성화) | `/docs` |
+| `REDOC_URL` | ReDoc URL (빈 문자열로 비활성화) | `/redoc` |
 | `LOG_LEVEL` | 로그 레벨 | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |

@@ -47,11 +47,25 @@ ENVIRONMENT=production
 | 설정 | 프로덕션 값 | 설명 |
 |------|-------------|------|
 | `DEBUG` | `False` | 디버그 모드 비활성화 |
-| `DOCS_ENABLED` | `False` | Swagger/ReDoc 문서 비활성화 |
+| `OPENAPI_URL` | `""` (빈 문자열) | OpenAPI 스키마 비활성화 |
+| `DOCS_URL` | `""` (빈 문자열) | Swagger UI 비활성화 |
+| `REDOC_URL` | `""` (빈 문자열) | ReDoc 비활성화 |
 | `GRAPHQL_ENABLE_PLAYGROUND` | `False` | GraphQL Sandbox 비활성화 |
 | `GRAPHQL_ENABLE_INTROSPECTION` | `False` | GraphQL Introspection 비활성화 |
 
-> ⚠️ 이 설정들은 `ENVIRONMENT=production`일 때 자동으로 `False`가 되며, 개별적으로 `True`로 설정해도 무시됩니다.
+> ⚠️ 이 설정들은 `ENVIRONMENT=production`일 때 자동으로 적용되며, 개별적으로 다른 값을 설정해도 무시됩니다.
+
+### API 문서 수동 비활성화
+
+프로덕션이 아닌 환경에서도 개별적으로 API 문서를 비활성화할 수 있습니다 (FastAPI 공식 문서 권장 방식):
+
+```bash
+# 모든 API 문서 비활성화
+OPENAPI_URL="" DOCS_URL="" REDOC_URL="" uvicorn app.main:app
+
+# Swagger UI만 비활성화 (ReDoc은 유지)
+DOCS_URL="" uvicorn app.main:app
+```
 
 ---
 
@@ -328,6 +342,9 @@ docker compose -f compose.production.yaml up -d
 | `DB_POOL_PRE_PING` | `true` | `true` | 연결 유효성 검사 |
 | `DB_POOL_RECYCLE` | `3600` | `3600` | 연결 재활용 시간(초) |
 | `LOG_LEVEL` | `INFO` | `WARNING` | 로그 레벨 |
+| `OPENAPI_URL` | `/openapi.json` | `""` (자동) | OpenAPI 스키마 URL |
+| `DOCS_URL` | `/docs` | `""` (자동) | Swagger UI URL |
+| `REDOC_URL` | `/redoc` | `""` (자동) | ReDoc URL |
 | `RATE_LIMIT_ENABLED` | `true` | `true` | Rate Limit 활성화 |
 | `RATE_LIMIT_DEFAULT_WINDOW` | `60` | `60` | 윈도우 크기(초) |
 | `RATE_LIMIT_DEFAULT_REQUESTS` | `60` | `60` | 윈도우당 요청 수 |

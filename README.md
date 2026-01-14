@@ -629,9 +629,11 @@ Configure via `.env` file or environment variables.
 |----------|-------------|---------|
 | `ENVIRONMENT` | Runtime environment (`development`, `staging`, `production`) | `development` |
 
-> ⚠️ **Production Mode**: When `ENVIRONMENT=production`, the following settings are automatically disabled:
+> ⚠️ **Production Mode**: When `ENVIRONMENT=production`, the following settings are automatically applied:
 > - `DEBUG` → `False`
-> - `DOCS_ENABLED` → `False`
+> - `OPENAPI_URL` → `""` (disabled)
+> - `DOCS_URL` → `""` (disabled)
+> - `REDOC_URL` → `""` (disabled)
 > - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
 > - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
 
@@ -650,7 +652,9 @@ ENVIRONMENT=production
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DEBUG` | Enable debug mode | `True` |
-| `DOCS_ENABLED` | Enable Swagger/ReDoc documentation | `True` |
+| `OPENAPI_URL` | OpenAPI schema URL (empty string to disable) | `/openapi.json` |
+| `DOCS_URL` | Swagger UI URL (empty string to disable) | `/docs` |
+| `REDOC_URL` | ReDoc URL (empty string to disable) | `/redoc` |
 | `LOG_LEVEL` | Log level | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |
