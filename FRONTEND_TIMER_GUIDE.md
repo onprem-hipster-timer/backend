@@ -239,9 +239,62 @@ Content-Type: application/json
 
 {
   "title": "업데이트된 제목",
-  "description": "업데이트된 설명"
+  "description": "업데이트된 설명",
+  "todo_id": "uuid-or-null",
+  "schedule_id": "uuid-or-null"
 }
 ```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `title` | string | ❌ | 타이머 제목 |
+| `description` | string | ❌ | 타이머 설명 |
+| `tag_ids` | UUID[] | ❌ | 태그 ID 리스트 |
+| `todo_id` | UUID \| null | ❌ | Todo 연결 변경 (null로 연결 해제) |
+| `schedule_id` | UUID \| null | ❌ | Schedule 연결 변경 (null로 연결 해제) |
+
+**필드 동작:**
+
+| 필드 값 | 동작 |
+|---------|------|
+| 필드 미전송 | 기존 값 유지 |
+| UUID 값 | 해당 ID로 연결 변경 |
+| `null` | 연결 해제 |
+
+**사용 예시:**
+
+```typescript
+// Todo 연결 추가
+await fetch(`/v1/timers/${timerId}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    todo_id: "550e8400-e29b-41d4-a716-446655440000"
+  })
+});
+
+// Todo 연결 해제
+await fetch(`/v1/timers/${timerId}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    todo_id: null
+  })
+});
+
+// Schedule과 Todo 동시 변경
+await fetch(`/v1/timers/${timerId}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    schedule_id: "schedule-uuid",
+    todo_id: "todo-uuid"
+  })
+});
+```
+
+> ⚠️ **주의**: 업데이트 시에는 자동 연결 기능이 적용되지 않습니다 (생성 시와 다름).
+> `todo_id`만 변경해도 연관된 `schedule_id`가 자동으로 설정되지 않습니다.
 
 #### 타이머 일시정지
 
@@ -439,6 +492,8 @@ export interface TimerUpdate {
   title?: string;
   description?: string;
   tag_ids?: string[];
+  todo_id?: string | null;      // null로 연결 해제
+  schedule_id?: string | null;  // null로 연결 해제
 }
 
 // ============================================================

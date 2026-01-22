@@ -391,18 +391,50 @@ class TimerService:
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
-        타이머 메타데이터 업데이트 (title, description, tags)
+        타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id)
+        
+        todo_id, schedule_id 동작:
+        - 필드가 요청에 포함되지 않음: 기존 값 유지
+        - 필드가 UUID 값: 해당 ID로 연결 변경 (존재 및 권한 검증)
+        - 필드가 null: 연결 해제
+        
+        Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
         
         :param timer_id: 타이머 ID
         :param data: 업데이트 데이터
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        :raises TodoNotFoundError: todo_id가 있지만 Todo를 찾을 수 없는 경우
+        :raises ScheduleNotFoundError: schedule_id가 있지만 Schedule을 찾을 수 없는 경우
         """
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
-        update_data = data.model_dump(exclude_unset=True, exclude_none=True)
+        # exclude_unset=True: 요청에 포함되지 않은 필드는 제외
+        update_data = data.model_dump(exclude_unset=True)
+
+        # todo_id 처리 (요청에 포함된 경우에만)
+        if 'todo_id' in update_data:
+            new_todo_id = update_data['todo_id']
+            if new_todo_id is not None:
+                # 존재 및 권한 검증
+                todo = todo_crud.get_todo(self.session, new_todo_id, self.owner_id)
+                if not todo:
+                    raise TodoNotFoundError()
+            timer.todo_id = new_todo_id
+            del update_data['todo_id']
+
+        # schedule_id 처리 (요청에 포함된 경우에만)
+        if 'schedule_id' in update_data:
+            new_schedule_id = update_data['schedule_id']
+            if new_schedule_id is not None:
+                # 존재 및 권한 검증
+                schedule = schedule_crud.get_schedule(self.session, new_schedule_id, self.owner_id)
+                if not schedule:
+                    raise ScheduleNotFoundError()
+            timer.schedule_id = new_schedule_id
+            del update_data['schedule_id']
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_data
@@ -411,9 +443,10 @@ class TimerService:
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
             del update_data['tag_ids']  # CRUD에 전달하지 않음
 
-        # 나머지 필드 업데이트
+        # 나머지 필드 업데이트 (None이 아닌 경우에만)
         for field, value in update_data.items():
-            setattr(timer, field, value)
+            if value is not None:
+                setattr(timer, field, value)
 
         self.session.flush()
         self.session.refresh(timer)
