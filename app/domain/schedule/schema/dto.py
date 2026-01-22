@@ -16,6 +16,7 @@ from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.enums import ScheduleState
 from app.domain.tag.schema.dto import TagRead
+from app.models.visibility import VisibilityLevel
 from app.utils.validators import validate_time_order
 
 if TYPE_CHECKING:
@@ -25,6 +26,12 @@ if TYPE_CHECKING:
 class CreateTodoOptions(CustomModel):
     """Schedule 생성 시 함께 생성할 Todo 옵션"""
     tag_group_id: UUID  # Todo가 속할 그룹 (필수)
+
+
+class VisibilitySettings(CustomModel):
+    """가시성 설정 DTO"""
+    level: VisibilityLevel = VisibilityLevel.PRIVATE
+    allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
 
 
 class ScheduleCreate(CustomModel):
@@ -40,6 +47,7 @@ class ScheduleCreate(CustomModel):
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
+    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -70,6 +78,10 @@ class ScheduleRead(CustomModel):
     state: ScheduleState  # 상태
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
+    # 가시성 관련 필드
+    owner_id: Optional[str] = None  # 소유자 ID (공유된 일정 조회 시)
+    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    is_shared: bool = False  # 공유된 일정인지 (다른 사용자의 일정)
 
     def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "ScheduleRead":
         """
@@ -114,6 +126,7 @@ class ScheduleUpdate(CustomModel):
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = None  # 상태
+    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

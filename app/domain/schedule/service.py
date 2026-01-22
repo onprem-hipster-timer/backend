@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from app.core.auth import CurrentUser
 from app.crud import schedule as crud
+from app.crud import visibility as visibility_crud
 from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
@@ -28,6 +29,8 @@ from app.domain.schedule.exceptions import (
 )
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
+from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.service import VisibilityService
 from app.models.schedule import ScheduleException
 from app.models.tag import Tag, ScheduleTag
 from app.utils.recurrence import RecurrenceCalculator
@@ -75,6 +78,16 @@ class ScheduleService:
                 raise InvalidRecurrenceEndError()
 
         schedule = crud.create_schedule(self.session, data, self.owner_id)
+
+        # 가시성 설정
+        if data.visibility:
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.SCHEDULE,
+                resource_id=schedule.id,
+                level=data.visibility.level,
+                allowed_user_ids=data.visibility.allowed_user_ids,
+            )
 
         # 태그 설정
         if data.tag_ids:
@@ -382,6 +395,19 @@ class ScheduleService:
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
             del update_dict['tag_ids']  # CRUD에 전달하지 않음
 
+        # 가시성 업데이트 (visibility가 설정된 경우에만)
+        visibility_updated = 'visibility' in update_dict
+        if visibility_updated and update_dict['visibility']:
+            visibility_data = update_dict['visibility']
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.SCHEDULE,
+                resource_id=schedule.id,
+                level=visibility_data.level,
+                allowed_user_ids=visibility_data.allowed_user_ids,
+            )
+            del update_dict['visibility']  # CRUD에 전달하지 않음
+
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
 
@@ -399,6 +425,7 @@ class ScheduleService:
         
         비즈니스 로직:
         - DB 레벨 CASCADE DELETE로 관련 예외 인스턴스 자동 삭제
+        - 가시성 설정도 함께 삭제
         - 모든 DB 구조에서 일관성 보장
         
         :param schedule_id: 일정 ID
@@ -407,6 +434,11 @@ class ScheduleService:
         schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
         if not schedule:
             raise ScheduleNotFoundError()
+
+        # 가시성 설정 삭제
+        visibility_crud.delete_visibility_by_resource(
+            self.session, ResourceType.SCHEDULE, schedule_id
+        )
 
         crud.delete_schedule(self.session, schedule)
 
@@ -801,3 +833,41 @@ class ScheduleService:
             self.session.refresh(todo)
 
         return todo
+
+    def get_schedule_visibility(self, schedule_id: UUID) -> Optional[VisibilityLevel]:
+        """
+        일정의 가시성 레벨 조회
+        
+        :param schedule_id: 일정 ID
+        :return: 가시성 레벨 (설정되지 않은 경우 None = PRIVATE)
+        """
+        visibility = visibility_crud.get_visibility_by_resource(
+            self.session, ResourceType.SCHEDULE, schedule_id
+        )
+        return visibility.level if visibility else None
+
+    def set_schedule_visibility(
+        self,
+        schedule_id: UUID,
+        level: VisibilityLevel,
+        allowed_user_ids: Optional[List[str]] = None,
+    ) -> None:
+        """
+        일정 가시성 설정
+        
+        :param schedule_id: 일정 ID
+        :param level: 가시성 레벨
+        :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만)
+        """
+        # 일정 존재 확인
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
+        if not schedule:
+            raise ScheduleNotFoundError()
+
+        visibility_service = VisibilityService(self.session, self.current_user)
+        visibility_service.set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=schedule_id,
+            level=level,
+            allowed_user_ids=allowed_user_ids,
+        )

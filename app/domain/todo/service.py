@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
 from app.crud import todo as crud
+from app.crud import visibility as visibility_crud
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagRead
@@ -35,6 +36,8 @@ from app.domain.todo.schema.dto import (
     TagStat,
     TodoIncludeReason,
 )
+from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.service import VisibilityService
 from app.models.tag import Tag, TodoTag
 from app.models.todo import Todo as TodoModel
 
@@ -172,6 +175,16 @@ class TodoService:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
+
+        # 가시성 설정
+        if data.visibility:
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.TODO,
+                resource_id=todo.id,
+                level=data.visibility.level,
+                allowed_user_ids=data.visibility.allowed_user_ids,
+            )
 
         # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
@@ -416,6 +429,18 @@ class TodoService:
                     schedule_service.update_schedule(schedule.id, schedule_update)
             del update_dict['tag_ids']
 
+        # 가시성 업데이트 (visibility가 설정된 경우에만)
+        if 'visibility' in update_dict and update_dict['visibility']:
+            visibility_data = update_dict['visibility']
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.TODO,
+                resource_id=todo.id,
+                level=visibility_data.level,
+                allowed_user_ids=visibility_data.allowed_user_ids,
+            )
+            del update_dict['visibility']
+
         # 나머지 필드 업데이트
         for key, value in update_dict.items():
             setattr(todo, key, value)
@@ -453,6 +478,11 @@ class TodoService:
         # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
         crud.detach_children(self.session, todo_id, self.owner_id)
+
+        # 가시성 설정 삭제
+        visibility_crud.delete_visibility_by_resource(
+            self.session, ResourceType.TODO, todo_id
+        )
 
         # Todo 삭제
         crud.delete_todo(self.session, todo)

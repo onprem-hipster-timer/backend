@@ -16,6 +16,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.core.constants import TimerStatus
 from app.crud import timer as crud, schedule as schedule_crud, todo as todo_crud
+from app.crud import visibility as visibility_crud
 from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.tag.service import TagService
@@ -26,6 +27,8 @@ from app.domain.timer.exceptions import (
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.todo.exceptions import TodoNotFoundError
+from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.service import VisibilityService
 
 
 class TimerService:
@@ -100,6 +103,16 @@ class TimerService:
             "started_at": now,
         }
         timer = crud.create_timer(self.session, timer_data, self.owner_id)
+
+        # 가시성 설정
+        if data.visibility:
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.TIMER,
+                resource_id=timer.id,
+                level=data.visibility.level,
+                allowed_user_ids=data.visibility.allowed_user_ids,
+            )
 
         # 태그 설정
         if data.tag_ids:
@@ -443,6 +456,18 @@ class TimerService:
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
             del update_data['tag_ids']  # CRUD에 전달하지 않음
 
+        # 가시성 업데이트 (visibility가 설정된 경우에만)
+        if 'visibility' in update_data and update_data['visibility']:
+            visibility_data = update_data['visibility']
+            visibility_service = VisibilityService(self.session, self.current_user)
+            visibility_service.set_visibility(
+                resource_type=ResourceType.TIMER,
+                resource_id=timer.id,
+                level=visibility_data.level,
+                allowed_user_ids=visibility_data.allowed_user_ids,
+            )
+            del update_data['visibility']  # CRUD에 전달하지 않음
+
         # 나머지 필드 업데이트 (None이 아닌 경우에만)
         for field, value in update_data.items():
             if value is not None:
@@ -467,5 +492,10 @@ class TimerService:
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
+
+        # 가시성 설정 삭제
+        visibility_crud.delete_visibility_by_resource(
+            self.session, ResourceType.TIMER, timer_id
+        )
 
         crud.delete_timer(self.session, timer)
