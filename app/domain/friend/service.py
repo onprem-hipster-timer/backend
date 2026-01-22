@@ -9,6 +9,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import friendship as crud
+from app.crud import visibility as visibility_crud
 from app.domain.friend.exceptions import (
     FriendshipNotFoundError,
     FriendRequestAlreadyExistsError,
@@ -161,8 +162,15 @@ class FriendService:
     def remove_friend(self, friendship_id: UUID) -> None:
         """
         친구 삭제 (양방향)
+        
+        비즈니스 로직:
+        - 양방향 삭제 가능 (요청자/수신자 모두)
+        - 친구 삭제 시 양쪽의 AllowList에서 상대방 제거
+          (orphaned 데이터 방지 및 데이터 정합성 유지)
 
         :param friendship_id: 친구 관계 ID
+        :raises FriendshipNotFoundError: 친구 관계를 찾을 수 없는 경우
+        :raises NotFriendsError: 해당 친구 관계에 속하지 않는 경우
         """
         friendship = crud.get_friendship(self.session, friendship_id)
         if not friendship:
@@ -171,6 +179,16 @@ class FriendService:
         # 양쪽 모두 삭제 가능
         if friendship.requester_id != self.user_id and friendship.addressee_id != self.user_id:
             raise NotFriendsError()
+
+        # 상대방 ID 결정
+        other_user_id = (
+            friendship.addressee_id
+            if friendship.requester_id == self.user_id
+            else friendship.requester_id
+        )
+
+        # AllowList에서 상대방 제거 (양방향)
+        self._cleanup_allow_lists(other_user_id)
 
         # 친구 관계 삭제
         crud.delete_friendship(self.session, friendship)
@@ -183,6 +201,7 @@ class FriendService:
         - 자기 자신 차단 불가
         - 기존 친구 관계가 있으면 차단으로 변경
         - 없으면 새로운 차단 관계 생성
+        - 차단 시 양쪽의 AllowList에서 상대방 제거
 
         :param target_user_id: 차단할 사용자 ID
         :return: 차단 관계
@@ -196,6 +215,10 @@ class FriendService:
             if existing.status == FriendshipStatus.BLOCKED and existing.blocked_by == self.user_id:
                 # 이미 차단한 상태
                 return existing
+
+            # 기존 친구 관계가 있었다면 AllowList 정리
+            if existing.status == FriendshipStatus.ACCEPTED:
+                self._cleanup_allow_lists(target_user_id)
 
             # 상태를 차단으로 변경
             return crud.update_friendship_status(
@@ -216,6 +239,27 @@ class FriendService:
             self.session.flush()
             self.session.refresh(friendship)
             return friendship
+
+    def _cleanup_allow_lists(self, other_user_id: str) -> None:
+        """
+        양쪽의 AllowList에서 상대방 제거 (내부 헬퍼 메서드)
+        
+        친구 삭제/차단 시 호출되어 orphaned 데이터를 정리합니다.
+        
+        :param other_user_id: 상대방 사용자 ID
+        """
+        # 내 리소스의 AllowList에서 상대방 제거
+        visibility_crud.remove_user_from_all_allow_lists(
+            self.session,
+            owner_id=self.user_id,
+            user_id=other_user_id,
+        )
+        # 상대방 리소스의 AllowList에서 나 제거
+        visibility_crud.remove_user_from_all_allow_lists(
+            self.session,
+            owner_id=other_user_id,
+            user_id=self.user_id,
+        )
 
     def unblock_user(self, target_user_id: str) -> None:
         """

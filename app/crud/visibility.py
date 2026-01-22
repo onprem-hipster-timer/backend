@@ -217,3 +217,35 @@ def set_allow_list(
         entries.append(entry)
     
     return entries
+
+
+def remove_user_from_all_allow_lists(
+    session: Session,
+    owner_id: str,
+    user_id: str,
+) -> int:
+    """
+    특정 소유자의 모든 리소스 AllowList에서 사용자 제거
+    
+    친구 삭제 시 해당 친구가 포함된 모든 AllowList를 정리하기 위해 사용
+    
+    :param session: DB 세션
+    :param owner_id: 리소스 소유자 ID
+    :param user_id: 제거할 사용자 ID
+    :return: 제거된 항목 수
+    """
+    statement = (
+        select(VisibilityAllowList)
+        .join(ResourceVisibility)
+        .where(
+            ResourceVisibility.owner_id == owner_id,
+            VisibilityAllowList.allowed_user_id == user_id,
+        )
+    )
+    entries = list(session.exec(statement).all())
+    count = len(entries)
+    for entry in entries:
+        session.delete(entry)
+    if count > 0:
+        session.flush()
+    return count

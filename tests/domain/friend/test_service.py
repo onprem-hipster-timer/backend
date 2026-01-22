@@ -261,3 +261,170 @@ class TestRemoveFriend:
         
         with pytest.raises(FriendshipNotFoundError):
             service.remove_friend(uuid4())
+
+
+class TestAllowListCleanup:
+    """친구 삭제/차단 시 AllowList 정리 테스트"""
+
+    def test_remove_friend_cleans_allow_list(self, test_session, test_user, second_user):
+        """친구 삭제 시 AllowList에서 상대방 제거"""
+        from uuid import uuid4
+        from app.domain.visibility.service import VisibilityService
+        from app.domain.visibility.enums import VisibilityLevel, ResourceType
+        from app.crud import visibility as visibility_crud
+
+        # 1. 친구 관계 생성
+        user1_service = FriendService(test_session, test_user)
+        friendship = user1_service.send_friend_request(second_user.sub)
+        
+        user2_service = FriendService(test_session, second_user)
+        user2_service.accept_friend_request(friendship.id)
+
+        # 2. user1이 리소스에 SELECTED_FRIENDS로 second_user 추가
+        resource_id = uuid4()
+        vis_service = VisibilityService(test_session, test_user)
+        visibility = vis_service.set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            level=VisibilityLevel.SELECTED_FRIENDS,
+            allowed_user_ids=[second_user.sub],
+        )
+
+        # 3. AllowList에 있는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility.id, second_user.sub
+        ) is True
+
+        # 4. 친구 삭제
+        user1_service.remove_friend(friendship.id)
+
+        # 5. AllowList에서 제거되었는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility.id, second_user.sub
+        ) is False
+
+    def test_remove_friend_cleans_both_allow_lists(
+        self, test_session, test_user, second_user
+    ):
+        """친구 삭제 시 양쪽 AllowList 모두 정리"""
+        from uuid import uuid4
+        from app.domain.visibility.service import VisibilityService
+        from app.domain.visibility.enums import VisibilityLevel, ResourceType
+        from app.crud import visibility as visibility_crud
+
+        # 1. 친구 관계 생성
+        user1_service = FriendService(test_session, test_user)
+        friendship = user1_service.send_friend_request(second_user.sub)
+        
+        user2_service = FriendService(test_session, second_user)
+        user2_service.accept_friend_request(friendship.id)
+
+        # 2. user1이 second_user를 AllowList에 추가
+        resource_id_1 = uuid4()
+        vis_service_1 = VisibilityService(test_session, test_user)
+        visibility_1 = vis_service_1.set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id_1,
+            level=VisibilityLevel.SELECTED_FRIENDS,
+            allowed_user_ids=[second_user.sub],
+        )
+
+        # 3. second_user가 test_user를 AllowList에 추가
+        resource_id_2 = uuid4()
+        vis_service_2 = VisibilityService(test_session, second_user)
+        visibility_2 = vis_service_2.set_visibility(
+            resource_type=ResourceType.TIMER,
+            resource_id=resource_id_2,
+            level=VisibilityLevel.SELECTED_FRIENDS,
+            allowed_user_ids=[test_user.sub],
+        )
+
+        # 4. 양쪽 AllowList에 있는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility_1.id, second_user.sub
+        ) is True
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility_2.id, test_user.sub
+        ) is True
+
+        # 5. 친구 삭제
+        user1_service.remove_friend(friendship.id)
+
+        # 6. 양쪽 AllowList에서 모두 제거되었는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility_1.id, second_user.sub
+        ) is False
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility_2.id, test_user.sub
+        ) is False
+
+    def test_block_friend_cleans_allow_list(self, test_session, test_user, second_user):
+        """친구 차단 시 AllowList에서 상대방 제거"""
+        from uuid import uuid4
+        from app.domain.visibility.service import VisibilityService
+        from app.domain.visibility.enums import VisibilityLevel, ResourceType
+        from app.crud import visibility as visibility_crud
+
+        # 1. 친구 관계 생성
+        user1_service = FriendService(test_session, test_user)
+        friendship = user1_service.send_friend_request(second_user.sub)
+        
+        user2_service = FriendService(test_session, second_user)
+        user2_service.accept_friend_request(friendship.id)
+
+        # 2. user1이 리소스에 SELECTED_FRIENDS로 second_user 추가
+        resource_id = uuid4()
+        vis_service = VisibilityService(test_session, test_user)
+        visibility = vis_service.set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            level=VisibilityLevel.SELECTED_FRIENDS,
+            allowed_user_ids=[second_user.sub],
+        )
+
+        # 3. AllowList에 있는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility.id, second_user.sub
+        ) is True
+
+        # 4. 친구 차단
+        user1_service.block_user(second_user.sub)
+
+        # 5. AllowList에서 제거되었는지 확인
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility.id, second_user.sub
+        ) is False
+
+    def test_block_non_friend_does_not_affect_allow_list(
+        self, test_session, test_user, second_user, third_user
+    ):
+        """친구가 아닌 사용자 차단 시 AllowList 영향 없음"""
+        from uuid import uuid4
+        from app.domain.visibility.service import VisibilityService
+        from app.domain.visibility.enums import VisibilityLevel, ResourceType
+        from app.crud import visibility as visibility_crud
+
+        # 1. test_user와 third_user가 친구
+        user1_service = FriendService(test_session, test_user)
+        friendship = user1_service.send_friend_request(third_user.sub)
+        
+        user3_service = FriendService(test_session, third_user)
+        user3_service.accept_friend_request(friendship.id)
+
+        # 2. user1이 third_user를 AllowList에 추가
+        resource_id = uuid4()
+        vis_service = VisibilityService(test_session, test_user)
+        visibility = vis_service.set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            level=VisibilityLevel.SELECTED_FRIENDS,
+            allowed_user_ids=[third_user.sub],
+        )
+
+        # 3. second_user(친구 아님) 차단
+        user1_service.block_user(second_user.sub)
+
+        # 4. third_user는 여전히 AllowList에 있음
+        assert visibility_crud.is_user_in_allow_list(
+            test_session, visibility.id, third_user.sub
+        ) is True
