@@ -1,6 +1,6 @@
 # Timer API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-14
+> **최종 업데이트**: 2026-01-23
 
 ## 목차
 
@@ -157,6 +157,71 @@ Content-Type: application/json
   "schedule": null,
   "todo": null,
   "tags": []
+}
+```
+
+#### 타이머 목록 조회
+
+```http
+GET /v1/timers
+```
+
+**Query Parameters:**
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---------|------|--------|------|
+| `status` | string[] | - | 상태 필터 (RUNNING, PAUSED, COMPLETED, CANCELLED) - 복수 선택 가능 |
+| `type` | string | - | 타입 필터: independent(독립 타이머), schedule(Schedule 연결), todo(Todo 연결) |
+| `start_date` | datetime | - | 시작 날짜 필터 (started_at 기준, ISO 8601 형식) |
+| `end_date` | datetime | - | 종료 날짜 필터 (started_at 기준, ISO 8601 형식) |
+| `include_schedule` | boolean | false | Schedule 정보 포함 여부 |
+| `include_todo` | boolean | false | Todo 정보 포함 여부 |
+| `tag_include_mode` | string | none | 태그 포함 모드 (none, timer_only, inherit_from_schedule) |
+| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
+
+**사용 예시:**
+
+```typescript
+// 독립 타이머만 조회
+const independentTimers = await fetch('/v1/timers?type=independent');
+
+// 진행 중인 타이머 조회
+const runningTimers = await fetch('/v1/timers?status=RUNNING&status=PAUSED');
+
+// 완료된 타이머 히스토리 조회 (날짜 범위)
+const history = await fetch('/v1/timers?status=COMPLETED&start_date=2026-01-01T00:00:00Z');
+```
+
+#### 현재 활성 타이머 조회
+
+```http
+GET /v1/timers/active
+```
+
+사용자의 현재 활성 타이머(RUNNING 또는 PAUSED)를 조회합니다.
+
+- 활성 타이머가 없으면 **404 Not Found** 반환
+- 여러 개가 있으면 가장 최근 것 반환
+
+**Query Parameters:**
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---------|------|--------|------|
+| `include_schedule` | boolean | false | Schedule 정보 포함 여부 |
+| `include_todo` | boolean | false | Todo 정보 포함 여부 |
+| `tag_include_mode` | string | none | 태그 포함 모드 (none, timer_only, inherit_from_schedule) |
+| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
+
+**사용 예시:**
+
+```typescript
+// 앱 시작 시 활성 타이머 확인
+const response = await fetch('/v1/timers/active');
+if (response.ok) {
+  const activeTimer = await response.json();
+  console.log("진행 중인 타이머:", activeTimer.title);
+} else if (response.status === 404) {
+  console.log("활성 타이머 없음");
 }
 ```
 
@@ -736,6 +801,8 @@ const response = await fetch('/v1/timers/uuid?tag_include_mode=inherit_from_sche
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | POST | `/v1/timers` | 타이머 생성 및 시작 |
+| GET | `/v1/timers` | 타이머 목록 조회 (필터링 지원) |
+| GET | `/v1/timers/active` | 현재 활성 타이머 조회 |
 | GET | `/v1/timers/{id}` | 타이머 조회 |
 | PATCH | `/v1/timers/{id}` | 타이머 업데이트 |
 | PATCH | `/v1/timers/{id}/pause` | 타이머 일시정지 |

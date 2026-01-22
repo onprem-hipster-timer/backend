@@ -1350,3 +1350,927 @@ def test_timer_with_inherit_from_schedule_e2e(e2e_client):
     timer_only_tags = get_timer_only_response.json()["tags"]
     assert len(timer_only_tags) == 1
     assert timer_only_tags[0]["id"] == timer_tag_id
+
+
+# ============================================================
+# 타이머 목록 조회 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_list_timers_e2e(e2e_client):
+    """타이머 목록 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "목록 조회 테스트 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 여러 타이머 생성
+    timer_ids = []
+    for i in range(3):
+        timer_response = e2e_client.post(
+            "/v1/timers",
+            json={
+                "schedule_id": schedule_id,
+                "title": f"타이머 {i + 1}",
+                "allocated_duration": 1800 * (i + 1),
+            },
+        )
+        timer_ids.append(timer_response.json()["id"])
+
+    # 3. 타이머 목록 조회
+    response = e2e_client.get("/v1/timers")
+    assert response.status_code == 200
+    timers = response.json()
+    assert isinstance(timers, list)
+    assert len(timers) >= 3
+
+    # 모든 타이머가 조회되어야 함
+    retrieved_ids = [t["id"] for t in timers]
+    for timer_id in timer_ids:
+        assert timer_id in retrieved_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_status_filter_e2e(e2e_client):
+    """상태 필터로 타이머 목록 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "상태 필터 테스트 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성 및 상태 변경
+    # RUNNING 타이머
+    running_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    running_id = running_response.json()["id"]
+
+    # PAUSED 타이머
+    paused_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Paused 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    paused_id = paused_response.json()["id"]
+    e2e_client.patch(f"/v1/timers/{paused_id}/pause")
+
+    # COMPLETED 타이머
+    completed_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Completed 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    completed_id = completed_response.json()["id"]
+    e2e_client.post(f"/v1/timers/{completed_id}/stop")
+
+    # 3. RUNNING 상태만 조회
+    running_response = e2e_client.get("/v1/timers", params={"status": "running"})
+    assert running_response.status_code == 200
+    running_timers = running_response.json()
+    running_timer_ids = [t["id"] for t in running_timers]
+    assert running_id in running_timer_ids
+    assert paused_id not in running_timer_ids
+    assert completed_id not in running_timer_ids
+
+    # 4. PAUSED 상태만 조회
+    paused_response = e2e_client.get("/v1/timers", params={"status": "paused"})
+    assert paused_response.status_code == 200
+    paused_timers = paused_response.json()
+    paused_timer_ids = [t["id"] for t in paused_timers]
+    assert paused_id in paused_timer_ids
+
+    # 5. COMPLETED 상태만 조회
+    completed_response = e2e_client.get("/v1/timers", params={"status": "completed"})
+    assert completed_response.status_code == 200
+    completed_timers = completed_response.json()
+    completed_timer_ids = [t["id"] for t in completed_timers]
+    assert completed_id in completed_timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_type_filter_independent_e2e(e2e_client):
+    """독립 타이머 타입 필터 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "타입 필터 테스트 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 독립 타이머 생성
+    independent_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "title": "독립 타이머",
+            "allocated_duration": 600,
+        },
+    )
+    independent_id = independent_response.json()["id"]
+
+    # 3. 연결된 타이머 생성
+    linked_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "연결된 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    linked_id = linked_response.json()["id"]
+
+    # 4. 독립 타이머만 조회
+    response = e2e_client.get("/v1/timers", params={"type": "independent"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert independent_id in timer_ids
+    assert linked_id not in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_type_filter_schedule_e2e(e2e_client):
+    """Schedule 연결 타이머 타입 필터 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "Schedule 타입 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. Schedule 연결 타이머 생성
+    schedule_timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Schedule 연결 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    schedule_timer_id = schedule_timer_response.json()["id"]
+
+    # 3. 독립 타이머 생성
+    independent_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "title": "독립 타이머",
+            "allocated_duration": 600,
+        },
+    )
+    independent_id = independent_response.json()["id"]
+
+    # 4. Schedule 연결 타이머만 조회
+    response = e2e_client.get("/v1/timers", params={"type": "schedule"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert schedule_timer_id in timer_ids
+    assert independent_id not in timer_ids
+
+
+@pytest.mark.e2e
+def test_get_user_active_timer_e2e(e2e_client):
+    """사용자의 활성 타이머 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "사용자 활성 타이머 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성 (RUNNING 상태)
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "활성 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 3. 사용자 활성 타이머 조회
+    response = e2e_client.get("/v1/timers/active")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == timer_id
+    assert data["status"] == "running"
+
+
+@pytest.mark.e2e
+def test_get_user_active_timer_paused_e2e(e2e_client):
+    """일시정지된 타이머도 활성 타이머로 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "일시정지 활성 타이머 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성 후 일시정지
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "일시정지 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+    e2e_client.patch(f"/v1/timers/{timer_id}/pause")
+
+    # 3. 사용자 활성 타이머 조회
+    response = e2e_client.get("/v1/timers/active")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == timer_id
+    assert data["status"] == "paused"
+
+
+@pytest.mark.e2e
+def test_get_user_active_timer_not_found_e2e(e2e_client):
+    """활성 타이머가 없을 때 404 반환 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "활성 타이머 없음 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성 후 종료
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+    e2e_client.post(f"/v1/timers/{timer_id}/stop")
+
+    # 3. 사용자 활성 타이머 조회 (404 반환)
+    response = e2e_client.get("/v1/timers/active")
+    assert response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_list_timers_with_include_schedule_e2e(e2e_client):
+    """타이머 목록 조회 시 include_schedule 옵션 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "include_schedule 옵션 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+    schedule_title = schedule_response.json()["title"]
+
+    # 2. 타이머 생성
+    e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "include_schedule 테스트 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+
+    # 3. include_schedule=True로 조회
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"type": "schedule", "include_schedule": True}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    assert len(timers) > 0
+    # schedule 정보 포함 확인
+    timer = next((t for t in timers if t.get("schedule_id") == schedule_id), None)
+    assert timer is not None
+    assert timer["schedule"] is not None
+    assert timer["schedule"]["id"] == schedule_id
+    assert timer["schedule"]["title"] == schedule_title
+
+
+@pytest.mark.e2e
+def test_get_user_active_timer_with_include_schedule_e2e(e2e_client):
+    """사용자 활성 타이머 조회 시 include_schedule 옵션 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "활성 타이머 include_schedule 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+    schedule_title = schedule_response.json()["title"]
+
+    # 2. 타이머 생성
+    e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "활성 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+
+    # 3. include_schedule=True로 활성 타이머 조회
+    response = e2e_client.get(
+        "/v1/timers/active",
+        params={"include_schedule": True}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["schedule"] is not None
+    assert data["schedule"]["id"] == schedule_id
+    assert data["schedule"]["title"] == schedule_title
+
+
+# ============================================================
+# 타이머 목록 필터링 E2E 테스트 (대소문자 및 복수 상태 필터)
+# ============================================================
+
+@pytest.mark.e2e
+def test_list_timers_with_uppercase_status_filter_e2e(e2e_client):
+    """대문자 status 필터로 타이머 목록 조회 E2E 테스트 (프론트엔드 호환성)"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "대문자 status 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    running_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    running_id = running_response.json()["id"]
+
+    # 3. 대문자 "RUNNING"으로 조회 (프론트엔드 방식)
+    response = e2e_client.get("/v1/timers", params={"status": "RUNNING"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert running_id in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_multiple_status_filter_e2e(e2e_client):
+    """복수 status 필터로 타이머 목록 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "복수 status 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    running_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    running_id = running_response.json()["id"]
+
+    # 3. PAUSED 타이머 생성
+    paused_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Paused 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    paused_id = paused_response.json()["id"]
+    e2e_client.patch(f"/v1/timers/{paused_id}/pause")
+
+    # 4. COMPLETED 타이머 생성
+    completed_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Completed 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    completed_id = completed_response.json()["id"]
+    e2e_client.post(f"/v1/timers/{completed_id}/stop")
+
+    # 5. 복수 상태로 조회 (RUNNING, PAUSED)
+    response = e2e_client.get("/v1/timers", params=[("status", "running"), ("status", "paused")])
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    
+    # RUNNING, PAUSED 타이머만 포함
+    assert running_id in timer_ids
+    assert paused_id in timer_ids
+    # COMPLETED 타이머는 제외
+    assert completed_id not in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_uppercase_multiple_status_filter_e2e(e2e_client):
+    """대문자 복수 status 필터로 타이머 목록 조회 E2E 테스트 (프론트엔드 호환성)"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "대문자 복수 status 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    running_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    running_id = running_response.json()["id"]
+
+    # 3. PAUSED 타이머 생성
+    paused_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Paused 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    paused_id = paused_response.json()["id"]
+    e2e_client.patch(f"/v1/timers/{paused_id}/pause")
+
+    # 4. 대문자 복수 상태로 조회 (RUNNING, PAUSED) - 프론트엔드 방식
+    response = e2e_client.get("/v1/timers", params=[("status", "RUNNING"), ("status", "PAUSED")])
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    
+    # RUNNING, PAUSED 타이머 모두 포함
+    assert running_id in timer_ids
+    assert paused_id in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_active_consistency_e2e(e2e_client):
+    """
+    /v1/timers?status=RUNNING&status=PAUSED와 /v1/timers/active 일관성 테스트
+    
+    프론트엔드 이슈: 두 API의 결과가 일치해야 함
+    """
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "API 일관성 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "활성 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 3. /v1/timers/active 조회
+    active_response = e2e_client.get(
+        "/v1/timers/active",
+        params={"include_schedule": True, "include_todo": True}
+    )
+    assert active_response.status_code == 200
+    active_timer = active_response.json()
+    assert active_timer["id"] == timer_id
+
+    # 4. /v1/timers?status=RUNNING&status=PAUSED 조회 (대문자)
+    list_response = e2e_client.get(
+        "/v1/timers",
+        params=[
+            ("status", "RUNNING"),
+            ("status", "PAUSED"),
+            ("include_schedule", True),
+            ("include_todo", True),
+        ]
+    )
+    assert list_response.status_code == 200
+    timers = list_response.json()
+    
+    # 목록에서 해당 타이머 찾기
+    timer_ids = [t["id"] for t in timers]
+    assert timer_id in timer_ids, "활성 타이머가 목록에 포함되어야 함"
+
+
+@pytest.mark.e2e
+def test_list_timers_mixed_case_status_filter_e2e(e2e_client):
+    """대소문자 혼합 status 필터 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "혼합 대소문자 status 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 3. 혼합 대소문자로 조회 (Running, Paused)
+    response = e2e_client.get("/v1/timers", params=[("status", "Running"), ("status", "Paused")])
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert timer_id in timer_ids
+
+
+# ============================================================
+# 타이머 목록 날짜 필터링 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_list_timers_with_date_range_filter_e2e(e2e_client):
+    """날짜 범위 필터로 타이머 목록 조회 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "날짜 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "날짜 필터 테스트 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 3. 오늘 날짜 범위로 조회 (타이머가 포함되어야 함)
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    start_date = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_date = (now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"start_date": start_date, "end_date": end_date}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert timer_id in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_future_date_range_filter_e2e(e2e_client):
+    """미래 날짜 범위로 필터링 시 결과가 없어야 함"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "미래 날짜 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성
+    e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "미래 날짜 필터 테스트 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+
+    # 3. 미래 날짜 범위로 조회
+    from datetime import datetime, timedelta, timezone
+    future_start = (datetime.now(timezone.utc) + timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    future_end = (datetime.now(timezone.utc) + timedelta(days=101)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"start_date": future_start, "end_date": future_end}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    # 미래 날짜 범위이므로 현재 생성된 타이머는 포함되지 않아야 함
+    assert len(timers) == 0
+
+
+# ============================================================
+# 타이머 목록 Todo 타입 필터링 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_list_timers_with_type_filter_todo_e2e(e2e_client):
+    """Todo 연결 타이머 타입 필터 E2E 테스트"""
+    # 1. 태그 그룹 생성 (Todo 생성에 필요)
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "Todo 필터 테스트 그룹", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 2. Todo 생성
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "Todo 타입 필터 테스트",
+            "duration": 3600,
+            "tag_group_id": group_id,
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+
+    # 3. Todo 연결 타이머 생성
+    todo_timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "todo_id": todo_id,
+            "title": "Todo 연결 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    todo_timer_id = todo_timer_response.json()["id"]
+
+    # 4. 독립 타이머 생성
+    independent_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "title": "독립 타이머",
+            "allocated_duration": 600,
+        },
+    )
+    independent_id = independent_response.json()["id"]
+
+    # 5. Todo 연결 타이머만 조회
+    response = e2e_client.get("/v1/timers", params={"type": "todo"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert todo_timer_id in timer_ids
+    assert independent_id not in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_include_todo_e2e(e2e_client):
+    """타이머 목록 조회 시 include_todo 옵션 E2E 테스트"""
+    # 1. 태그 그룹 생성 (Todo 생성에 필요)
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "include_todo 테스트 그룹", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 2. Todo 생성
+    todo_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "include_todo 테스트",
+            "duration": 3600,
+            "tag_group_id": group_id,
+        },
+    )
+    assert todo_response.status_code == 201
+    todo_id = todo_response.json()["id"]
+    todo_title = todo_response.json()["title"]
+
+    # 3. Todo 연결 타이머 생성
+    e2e_client.post(
+        "/v1/timers",
+        json={
+            "todo_id": todo_id,
+            "title": "include_todo 테스트 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+
+    # 4. include_todo=True로 조회
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"type": "todo", "include_todo": True}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    assert len(timers) > 0
+    
+    # todo 정보 포함 확인
+    timer = next((t for t in timers if t.get("todo_id") == todo_id), None)
+    assert timer is not None
+    assert timer["todo"] is not None
+    assert timer["todo"]["id"] == todo_id
+    assert timer["todo"]["title"] == todo_title
+
+
+# ============================================================
+# 복합 필터링 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_list_timers_with_combined_filters_e2e(e2e_client):
+    """복합 필터 (status + type) E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "복합 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. Schedule 연결 RUNNING 타이머
+    schedule_running_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Schedule Running 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    schedule_running_id = schedule_running_response.json()["id"]
+
+    # 3. 독립 RUNNING 타이머
+    independent_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "title": "독립 Running 타이머",
+            "allocated_duration": 600,
+        },
+    )
+    independent_id = independent_response.json()["id"]
+
+    # 4. Schedule 연결 COMPLETED 타이머
+    schedule_completed_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "Schedule Completed 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    schedule_completed_id = schedule_completed_response.json()["id"]
+    e2e_client.post(f"/v1/timers/{schedule_completed_id}/stop")
+
+    # 5. status=RUNNING + type=schedule 조합 필터
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"status": "RUNNING", "type": "schedule"}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    
+    # Schedule 연결 RUNNING 타이머만 포함
+    assert schedule_running_id in timer_ids
+    # 독립 타이머 제외
+    assert independent_id not in timer_ids
+    # COMPLETED 타이머 제외
+    assert schedule_completed_id not in timer_ids
+
+
+@pytest.mark.e2e
+def test_list_timers_with_all_options_e2e(e2e_client):
+    """모든 옵션 (status + type + include_schedule + include_todo + timezone) E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "모든 옵션 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. 타이머 생성
+    timer_response = e2e_client.post(
+        "/v1/timers",
+        json={
+            "schedule_id": schedule_id,
+            "title": "모든 옵션 테스트 타이머",
+            "allocated_duration": 1800,
+        },
+    )
+    timer_id = timer_response.json()["id"]
+
+    # 3. 모든 옵션으로 조회
+    response = e2e_client.get(
+        "/v1/timers",
+        params={
+            "status": "RUNNING",
+            "type": "schedule",
+            "include_schedule": True,
+            "include_todo": True,
+            "timezone": "Asia/Seoul",
+        }
+    )
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert timer_id in timer_ids
+    
+    # 옵션 적용 확인
+    timer = next(t for t in timers if t["id"] == timer_id)
+    assert timer["schedule"] is not None
+    # 타임존 변환 확인 (+0900)
+    if timer.get("started_at"):
+        assert "+0900" in timer["started_at"] or timer["started_at"].endswith("+0900")

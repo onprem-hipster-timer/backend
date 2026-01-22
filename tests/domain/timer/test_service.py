@@ -586,3 +586,245 @@ def test_explicit_link_overrides_auto_link(test_session, todo_with_schedule, sam
     # 명시적으로 지정한 값이 그대로 유지됨 (자동 연결 안 함)
     assert timer.schedule_id == sample_schedule.id
     assert timer.todo_id == todo_with_schedule.id
+
+
+# ============================================================
+# 타이머 목록 조회 테스트
+# ============================================================
+
+def test_get_all_timers(test_session, sample_schedule, sample_todo, test_user):
+    """사용자의 모든 타이머 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 다양한 타이머 생성
+    timer1 = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Schedule 타이머",
+        allocated_duration=1800,
+    ))
+    timer2 = service.create_timer(TimerCreate(
+        todo_id=sample_todo.id,
+        title="Todo 타이머",
+        allocated_duration=1800,
+    ))
+    timer3 = service.create_timer(TimerCreate(
+        title="독립 타이머",
+        allocated_duration=600,
+    ))
+
+    # 모든 타이머 조회
+    timers = service.get_all_timers()
+
+    timer_ids = [t.id for t in timers]
+    assert timer1.id in timer_ids
+    assert timer2.id in timer_ids
+    assert timer3.id in timer_ids
+    assert len(timers) >= 3
+
+
+def test_get_all_timers_status_filter(test_session, sample_schedule, test_user):
+    """상태 필터로 타이머 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 타이머 생성
+    running_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Running",
+        allocated_duration=1800,
+    ))
+    paused_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Paused",
+        allocated_duration=1800,
+    ))
+    service.pause_timer(paused_timer.id)
+
+    completed_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Completed",
+        allocated_duration=1800,
+    ))
+    service.stop_timer(completed_timer.id)
+    test_session.flush()
+
+    # RUNNING 상태만 조회
+    running_timers = service.get_all_timers(status=[TimerStatus.RUNNING.value])
+    running_ids = [t.id for t in running_timers]
+    assert running_timer.id in running_ids
+    assert paused_timer.id not in running_ids
+    assert completed_timer.id not in running_ids
+
+    # PAUSED 상태만 조회
+    paused_timers = service.get_all_timers(status=[TimerStatus.PAUSED.value])
+    paused_ids = [t.id for t in paused_timers]
+    assert paused_timer.id in paused_ids
+
+    # RUNNING + PAUSED 조회
+    active_timers = service.get_all_timers(status=[
+        TimerStatus.RUNNING.value,
+        TimerStatus.PAUSED.value
+    ])
+    active_ids = [t.id for t in active_timers]
+    assert running_timer.id in active_ids
+    assert paused_timer.id in active_ids
+
+
+def test_get_all_timers_type_filter_independent(test_session, sample_schedule, test_user):
+    """독립 타이머 타입 필터 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 독립 타이머 생성
+    independent_timer = service.create_timer(TimerCreate(
+        title="독립 타이머",
+        allocated_duration=600,
+    ))
+    # Schedule 연결 타이머 생성
+    linked_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="연결 타이머",
+        allocated_duration=1800,
+    ))
+
+    # 독립 타이머만 조회
+    timers = service.get_all_timers(timer_type="independent")
+    timer_ids = [t.id for t in timers]
+
+    assert independent_timer.id in timer_ids
+    assert linked_timer.id not in timer_ids
+
+
+def test_get_all_timers_type_filter_schedule(test_session, sample_schedule, sample_todo, test_user):
+    """Schedule 연결 타이머 타입 필터 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # Schedule 연결 타이머 생성
+    schedule_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Schedule 타이머",
+        allocated_duration=1800,
+    ))
+    # Todo 연결 타이머 생성
+    todo_timer = service.create_timer(TimerCreate(
+        todo_id=sample_todo.id,
+        title="Todo 타이머",
+        allocated_duration=1800,
+    ))
+    # 독립 타이머 생성
+    independent_timer = service.create_timer(TimerCreate(
+        title="독립 타이머",
+        allocated_duration=600,
+    ))
+
+    # Schedule 연결 타이머만 조회
+    timers = service.get_all_timers(timer_type="schedule")
+    timer_ids = [t.id for t in timers]
+
+    assert schedule_timer.id in timer_ids
+    assert todo_timer.id not in timer_ids
+    assert independent_timer.id not in timer_ids
+
+
+def test_get_all_timers_type_filter_todo(test_session, sample_schedule, sample_todo, test_user):
+    """Todo 연결 타이머 타입 필터 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # Todo 연결 타이머 생성
+    todo_timer = service.create_timer(TimerCreate(
+        todo_id=sample_todo.id,
+        title="Todo 타이머",
+        allocated_duration=1800,
+    ))
+    # Schedule 연결 타이머 생성
+    schedule_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="Schedule 타이머",
+        allocated_duration=1800,
+    ))
+
+    # Todo 연결 타이머만 조회
+    timers = service.get_all_timers(timer_type="todo")
+    timer_ids = [t.id for t in timers]
+
+    assert todo_timer.id in timer_ids
+    assert schedule_timer.id not in timer_ids
+
+
+def test_get_user_active_timer(test_session, sample_schedule, test_user):
+    """사용자의 활성 타이머 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 활성 타이머 생성 (RUNNING 상태)
+    active_timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="활성 타이머",
+        allocated_duration=1800,
+    ))
+
+    # 활성 타이머 조회
+    retrieved = service.get_user_active_timer()
+
+    assert retrieved is not None
+    assert retrieved.id == active_timer.id
+    assert retrieved.status == TimerStatus.RUNNING.value
+
+
+def test_get_user_active_timer_paused(test_session, sample_schedule, test_user):
+    """일시정지된 타이머도 활성 타이머로 조회 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 타이머 생성 후 일시정지
+    timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="타이머",
+        allocated_duration=1800,
+    ))
+    service.pause_timer(timer.id)
+    test_session.flush()
+
+    # 활성 타이머 조회 (PAUSED도 활성 타이머)
+    retrieved = service.get_user_active_timer()
+
+    assert retrieved is not None
+    assert retrieved.id == timer.id
+    assert retrieved.status == TimerStatus.PAUSED.value
+
+
+def test_get_user_active_timer_none(test_session, sample_schedule, test_user):
+    """활성 타이머가 없을 때 None 반환 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 타이머 생성 후 종료
+    timer = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        allocated_duration=1800,
+    ))
+    service.stop_timer(timer.id)
+    test_session.flush()
+
+    # 활성 타이머 조회 (None 반환)
+    retrieved = service.get_user_active_timer()
+    assert retrieved is None
+
+
+def test_get_user_active_timer_returns_most_recent(test_session, sample_schedule, test_user):
+    """여러 활성 타이머가 있을 때 가장 최근 것 반환 테스트"""
+    service = TimerService(test_session, test_user)
+
+    # 여러 타이머 생성
+    timer1 = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="첫 번째",
+        allocated_duration=1800,
+    ))
+    timer2 = service.create_timer(TimerCreate(
+        schedule_id=sample_schedule.id,
+        title="두 번째 (최신)",
+        allocated_duration=1800,
+    ))
+
+    # 활성 타이머 조회 (가장 최근 것 반환)
+    retrieved = service.get_user_active_timer()
+
+    assert retrieved is not None
+    assert retrieved.id == timer2.id
+    assert retrieved.title == "두 번째 (최신)"
