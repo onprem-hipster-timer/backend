@@ -1,0 +1,3 @@
+"""
+Friend Domain Tests
+"""
