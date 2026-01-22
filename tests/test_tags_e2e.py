@@ -283,3 +283,253 @@ def test_delete_tag_keeps_group_with_remaining_tags_e2e(e2e_client):
     tags = tags_response.json()
     remaining_tags = [t for t in tags if t["group_id"] == group_id]
     assert len(remaining_tags) == 1  # tag2가 남아있음
+
+
+# ============================================================
+# 태그 그룹 목록 조회 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_get_all_tag_groups_e2e(e2e_client):
+    """태그 그룹 목록 조회 E2E"""
+    # 그룹 여러 개 생성
+    group1_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "그룹1", "color": "#FF5733"}
+    )
+    group1_id = group1_response.json()["id"]
+
+    group2_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "그룹2", "color": "#00FF00"}
+    )
+    group2_id = group2_response.json()["id"]
+
+    # 그룹 목록 조회
+    response = e2e_client.get("/v1/tags/groups")
+    assert response.status_code == 200
+    groups = response.json()
+    assert isinstance(groups, list)
+    assert len(groups) >= 2
+
+    group_ids = [g["id"] for g in groups]
+    assert group1_id in group_ids
+    assert group2_id in group_ids
+
+
+# ============================================================
+# 태그 그룹 업데이트 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_update_tag_group_e2e(e2e_client):
+    """태그 그룹 업데이트 E2E"""
+    # 그룹 생성
+    create_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "원본 그룹", "color": "#FF5733", "description": "원본 설명"}
+    )
+    group_id = create_response.json()["id"]
+
+    # 그룹 업데이트
+    update_response = e2e_client.patch(
+        f"/v1/tags/groups/{group_id}",
+        json={"name": "업데이트된 그룹", "description": "업데이트된 설명"}
+    )
+    assert update_response.status_code == 200
+    data = update_response.json()
+    assert data["name"] == "업데이트된 그룹"
+    assert data["description"] == "업데이트된 설명"
+    assert data["color"] == "#FF5733"  # 색상은 변경되지 않음
+
+
+@pytest.mark.e2e
+def test_update_tag_group_color_e2e(e2e_client):
+    """태그 그룹 색상 업데이트 E2E"""
+    # 그룹 생성
+    create_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "색상 업데이트 그룹", "color": "#FF5733"}
+    )
+    group_id = create_response.json()["id"]
+
+    # 색상 업데이트
+    update_response = e2e_client.patch(
+        f"/v1/tags/groups/{group_id}",
+        json={"color": "#0000FF"}
+    )
+    assert update_response.status_code == 200
+    data = update_response.json()
+    assert data["color"] == "#0000FF"
+
+
+@pytest.mark.e2e
+def test_update_tag_group_not_found_e2e(e2e_client):
+    """존재하지 않는 태그 그룹 업데이트 실패 E2E"""
+    fake_id = str(uuid4())
+    response = e2e_client.patch(
+        f"/v1/tags/groups/{fake_id}",
+        json={"name": "업데이트"}
+    )
+    assert response.status_code == 404
+
+
+# ============================================================
+# 태그 업데이트 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_update_tag_e2e(e2e_client):
+    """태그 업데이트 E2E"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "업무", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 태그 생성
+    create_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "원본 태그", "color": "#FF0000", "group_id": group_id}
+    )
+    tag_id = create_response.json()["id"]
+
+    # 태그 업데이트
+    update_response = e2e_client.patch(
+        f"/v1/tags/{tag_id}",
+        json={"name": "업데이트된 태그", "color": "#00FF00"}
+    )
+    assert update_response.status_code == 200
+    data = update_response.json()
+    assert data["name"] == "업데이트된 태그"
+    assert data["color"] == "#00FF00"
+
+
+@pytest.mark.e2e
+def test_update_tag_not_found_e2e(e2e_client):
+    """존재하지 않는 태그 업데이트 실패 E2E"""
+    fake_id = str(uuid4())
+    response = e2e_client.patch(
+        f"/v1/tags/{fake_id}",
+        json={"name": "업데이트"}
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_delete_tag_not_found_e2e(e2e_client):
+    """존재하지 않는 태그 삭제 실패 E2E"""
+    fake_id = str(uuid4())
+    response = e2e_client.delete(f"/v1/tags/{fake_id}")
+    assert response.status_code == 404
+
+
+# ============================================================
+# 태그 그룹 삭제 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_delete_tag_group_e2e(e2e_client):
+    """태그 그룹 삭제 E2E"""
+    # 그룹 생성
+    create_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "삭제할 그룹", "color": "#FF5733"}
+    )
+    group_id = create_response.json()["id"]
+
+    # 그룹 삭제
+    delete_response = e2e_client.delete(f"/v1/tags/groups/{group_id}")
+    assert delete_response.status_code == 200
+
+    # 삭제 확인
+    get_response = e2e_client.get(f"/v1/tags/groups/{group_id}")
+    assert get_response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_delete_tag_group_with_tags_e2e(e2e_client):
+    """태그가 있는 그룹 삭제 시 태그도 함께 삭제 E2E"""
+    # 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "삭제할 그룹", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 태그 생성
+    tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "삭제될 태그", "color": "#FF0000", "group_id": group_id}
+    )
+    tag_id = tag_response.json()["id"]
+
+    # 그룹 삭제
+    delete_response = e2e_client.delete(f"/v1/tags/groups/{group_id}")
+    assert delete_response.status_code == 200
+
+    # 태그도 삭제되었는지 확인
+    get_tag_response = e2e_client.get(f"/v1/tags/{tag_id}")
+    assert get_tag_response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_delete_tag_group_not_found_e2e(e2e_client):
+    """존재하지 않는 태그 그룹 삭제 실패 E2E"""
+    fake_id = str(uuid4())
+    response = e2e_client.delete(f"/v1/tags/groups/{fake_id}")
+    assert response.status_code == 404
+
+
+# ============================================================
+# 태그 워크플로우 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_tag_full_workflow_e2e(e2e_client):
+    """태그 전체 워크플로우 E2E"""
+    # 1. 태그 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "워크플로우 그룹", "color": "#FF5733"}
+    )
+    assert group_response.status_code == 201
+    group_id = group_response.json()["id"]
+
+    # 2. 태그 생성
+    tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "워크플로우 태그", "color": "#FF0000", "group_id": group_id}
+    )
+    assert tag_response.status_code == 201
+    tag_id = tag_response.json()["id"]
+
+    # 3. 태그 조회
+    get_tag_response = e2e_client.get(f"/v1/tags/{tag_id}")
+    assert get_tag_response.status_code == 200
+    assert get_tag_response.json()["name"] == "워크플로우 태그"
+
+    # 4. 태그 업데이트
+    update_tag_response = e2e_client.patch(
+        f"/v1/tags/{tag_id}",
+        json={"name": "업데이트된 워크플로우 태그"}
+    )
+    assert update_tag_response.status_code == 200
+    assert update_tag_response.json()["name"] == "업데이트된 워크플로우 태그"
+
+    # 5. 그룹 업데이트
+    update_group_response = e2e_client.patch(
+        f"/v1/tags/groups/{group_id}",
+        json={"name": "업데이트된 워크플로우 그룹"}
+    )
+    assert update_group_response.status_code == 200
+    assert update_group_response.json()["name"] == "업데이트된 워크플로우 그룹"
+
+    # 6. 태그 삭제
+    delete_tag_response = e2e_client.delete(f"/v1/tags/{tag_id}")
+    assert delete_tag_response.status_code == 200
+
+    # 7. 마지막 태그 삭제 시 그룹도 자동 삭제됨
+    get_group_response = e2e_client.get(f"/v1/tags/groups/{group_id}")
+    assert get_group_response.status_code == 404

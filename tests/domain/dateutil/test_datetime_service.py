@@ -248,7 +248,6 @@ class TestGetDatetimeRange:
 
         expected_start = datetime(2024, 1, 1, 9, 59, 30, 500000)
         expected_end = datetime(2024, 1, 1, 10, 0, 30, 500000)
-
         assert start_range == expected_start
         assert end_range == expected_end
 
