@@ -1,0 +1,12 @@
+# Include production dependencies
+-r requirements.txt
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov
+pytest-dotenv
+coverage
+
+# Development Tools
+pip-tools

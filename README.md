@@ -104,7 +104,7 @@
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+
 - pip or uv
 
 ### Installation
@@ -114,8 +114,20 @@
 git clone https://github.com/your-username/hipster-timer-backend.git
 cd hipster-timer-backend
 
-# Install dependencies
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+
+# Install dependencies (production)
 pip install -r requirements.txt
+
+# Install dependencies (development - includes test tools)
+pip install -r requirements-dev.txt
 
 # Set environment variables (optional)
 cp .env.example .env
@@ -334,7 +346,10 @@ hipster-timer-backend/
 │   ├── domain/                    # Unit tests
 │   ├── test_*_e2e.py              # E2E tests
 │   └── test_*_integration.py      # Integration tests
-├── requirements.txt
+├── requirements.in               # Direct production dependencies
+├── requirements.txt              # Full production deps (auto-generated)
+├── requirements-dev.in           # Direct dev dependencies
+├── requirements-dev.txt          # Full dev deps (auto-generated)
 ├── Dockerfile
 ├── compose.yaml
 └── README.md
@@ -464,6 +479,30 @@ docker compose -f docker-compose.test.yaml down -v
 | Environment Variable | Description | Default |
 |---------------------|-------------|---------|
 | `TEST_DATABASE_URL` | Test database connection string | SQLite in-memory |
+
+### Python Version Compatibility Testing
+
+> **Detailed Guide**: [PYTHON_VERSION_TEST_GUIDE.md](PYTHON_VERSION_TEST_GUIDE.md)
+
+Test across multiple Python versions using Docker:
+
+```bash
+# Test specific version
+docker compose -f docker-compose.python-matrix.yaml up --build python313 --abort-on-container-exit
+docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort-on-container-exit
+
+# Test all versions (script)
+./scripts/test-python-versions.sh      # Linux/macOS
+.\scripts\test-python-versions.ps1     # Windows
+```
+
+| Python Version | Status | Service Name |
+|----------------|--------|--------------|
+| 3.15 | Latest | `python315` |
+| 3.14 | Supported | `python314` |
+| 3.13 | Default (Production) | `python313` |
+| 3.12 | Supported | `python312` |
+| 3.11 | Minimum Supported | `python311` |
 
 ### Test Structure
 
@@ -936,6 +975,61 @@ docker compose logs -f
 ## 🛠️ For Developers
 
 A guide for those who want to fork this codebase or use it as a learning reference.
+
+### Dependency Management (pip-tools)
+
+This project uses [pip-tools](https://pip-tools.readthedocs.io/) to manage dependencies. This separates direct dependencies (what you explicitly need) from transitive dependencies (what your dependencies need).
+
+#### File Structure
+
+| File | Purpose |
+|------|---------|
+| `requirements.in` | Direct production dependencies (human-edited) |
+| `requirements.txt` | Full dependency tree with pinned versions (auto-generated) |
+| `requirements-dev.in` | Direct development/test dependencies (human-edited) |
+| `requirements-dev.txt` | Full dev dependency tree (auto-generated) |
+
+#### Common Commands
+
+```bash
+# Install pip-tools (in your venv)
+pip install pip-tools
+
+# Compile dependencies (after editing .in files)
+pip-compile requirements.in
+pip-compile requirements-dev.in
+
+# Upgrade all dependencies to latest versions
+pip-compile --upgrade requirements.in
+pip-compile --upgrade requirements-dev.in
+
+# Upgrade a specific package
+pip-compile --upgrade-package fastapi requirements.in
+
+# Sync your environment with requirements
+pip-sync requirements-dev.txt  # Development
+pip-sync requirements.txt      # Production
+```
+
+#### Adding New Dependencies
+
+1. Add the package name to `requirements.in` (production) or `requirements-dev.in` (dev/test)
+2. Run `pip-compile` to regenerate the `.txt` file
+3. Run `pip-sync` to install
+
+```bash
+# Example: Add httpx
+echo "httpx" >> requirements.in
+pip-compile requirements.in
+pip-sync requirements.txt
+```
+
+#### Why pip-tools?
+
+- **Reproducible builds**: Pinned versions ensure consistent environments
+- **Clean separation**: Direct vs transitive dependencies are clearly separated
+- **Easy upgrades**: `--upgrade` flag updates all dependencies safely
+- **Audit trail**: Generated `.txt` files show where each dependency comes from
 
 ### Customization Points
 

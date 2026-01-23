@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+
+# Python 버전 호환성 테스트용 Dockerfile
+# 사용법: docker build -f Dockerfile.test --build-arg PYTHON_VERSION=3.12 -t test-py312 .
+
+ARG PYTHON_VERSION=3.13
+FROM python:${PYTHON_VERSION}-slim
+
+# 빌드 시 사용된 Python 버전을 환경변수로 저장
+ARG PYTHON_VERSION
+ENV PYTHON_VERSION=${PYTHON_VERSION}
+
+# Python 설정
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 테스트 결과 출력 색상 지원
+ENV TERM=xterm-256color
+ENV FORCE_COLOR=1
+
+WORKDIR /app
+
+# 시스템 의존성 설치 (psycopg2-binary 빌드에 필요할 수 있음)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# pip 업그레이드
+RUN pip install --no-cache-dir --upgrade pip
+
+# 의존성 파일 복사 및 설치
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# 소스 코드 복사
+COPY . .
+
+# 테스트 실행 스크립트 생성
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo ""\n\
+echo "========================================"\n\
+echo "  Python Version Test Runner"\n\
+echo "========================================"\n\
+echo "Python: $(python --version)"\n\
+echo "Pip: $(pip --version)"\n\
+echo "========================================"\n\
+echo ""\n\
+\n\
+# pytest 실행\n\
+pytest "$@"\n\
+EXIT_CODE=$?\n\
+\n\
+echo ""\n\
+echo "========================================"\n\
+if [ $EXIT_CODE -eq 0 ]; then\n\
+    echo "  ✅ All tests PASSED on Python ${PYTHON_VERSION}"\n\
+else\n\
+    echo "  ❌ Tests FAILED on Python ${PYTHON_VERSION}"\n\
+fi\n\
+echo "========================================"\n\
+echo ""\n\
+\n\
+exit $EXIT_CODE\n\
+' > /run-tests.sh && chmod +x /run-tests.sh
+
+# 기본 명령: 테스트 실행
+ENTRYPOINT ["/bin/bash", "/run-tests.sh"]
+CMD ["-v", "--tb=short"]

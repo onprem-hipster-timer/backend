@@ -104,7 +104,7 @@
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.11+
 - pip 또는 uv
 
 ### Installation
@@ -114,8 +114,20 @@
 git clone https://github.com/your-username/hipster-timer-backend.git
 cd hipster-timer-backend
 
-# 의존성 설치
+# 가상환경 생성
+python -m venv .venv
+
+# 가상환경 활성화
+# Windows
+.venv\Scripts\activate
+# Linux/macOS
+source .venv/bin/activate
+
+# 의존성 설치 (프로덕션)
 pip install -r requirements.txt
+
+# 의존성 설치 (개발 환경 - 테스트 도구 포함)
+pip install -r requirements-dev.txt
 
 # 환경 변수 설정 (선택사항)
 cp .env.example .env
@@ -329,7 +341,10 @@ hipster-timer-backend/
 │   ├── domain/                    # 단위 테스트
 │   ├── test_*_e2e.py              # E2E 테스트
 │   └── test_*_integration.py      # 통합 테스트
-├── requirements.txt
+├── requirements.in               # 프로덕션 직접 의존성
+├── requirements.txt              # 프로덕션 전체 의존성 (자동 생성)
+├── requirements-dev.in           # 개발 직접 의존성
+├── requirements-dev.txt          # 개발 전체 의존성 (자동 생성)
 ├── Dockerfile
 ├── compose.yaml
 └── README.md
@@ -459,6 +474,29 @@ docker compose -f docker-compose.test.yaml down -v
 | 환경 변수 | 설명 | 기본값 |
 |----------|------|--------|
 | `TEST_DATABASE_URL` | 테스트 DB 연결 문자열 | SQLite 인메모리 |
+
+### Python 버전 호환성 테스트
+
+> **상세 가이드**: [PYTHON_VERSION_TEST_GUIDE.md](PYTHON_VERSION_TEST_GUIDE.md)
+
+Docker를 사용하여 여러 Python 버전에서 테스트를 실행할 수 있습니다:
+
+```powershell
+# 특정 버전 테스트
+docker compose -f docker-compose.python-matrix.yaml up --build python313 --abort-on-container-exit
+docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort-on-container-exit
+
+# 전체 버전 테스트 (스크립트)
+.\scripts\test-python-versions.ps1
+```
+
+| Python 버전 | 상태 | 서비스명 |
+|-------------|------|----------|
+| 3.15 | 최신 | `python315` |
+| 3.14 | 지원 | `python314` |
+| 3.13 | 기본 (프로덕션) | `python313` |
+| 3.12 | 지원 | `python312` |
+| 3.11 | 최소 지원 | `python311` |
 
 ### Test Structure
 
@@ -932,6 +970,61 @@ docker compose logs -f
 ## 🛠️ For Developers
 
 이 코드베이스를 Fork하거나 학습 목적으로 활용하실 분들을 위한 안내입니다.
+
+### 의존성 관리 (pip-tools)
+
+이 프로젝트는 [pip-tools](https://pip-tools.readthedocs.io/)를 사용하여 의존성을 관리합니다. 직접 의존성(직접 필요한 패키지)과 간접 의존성(의존성의 의존성)을 분리합니다.
+
+#### 파일 구조
+
+| 파일 | 용도 |
+|------|------|
+| `requirements.in` | 프로덕션 직접 의존성 (사람이 편집) |
+| `requirements.txt` | 버전이 고정된 전체 의존성 트리 (자동 생성) |
+| `requirements-dev.in` | 개발/테스트 직접 의존성 (사람이 편집) |
+| `requirements-dev.txt` | 개발 환경 전체 의존성 트리 (자동 생성) |
+
+#### 주요 명령어
+
+```bash
+# pip-tools 설치 (venv 내에서)
+pip install pip-tools
+
+# 의존성 컴파일 (.in 파일 편집 후)
+pip-compile requirements.in
+pip-compile requirements-dev.in
+
+# 모든 의존성을 최신 버전으로 업그레이드
+pip-compile --upgrade requirements.in
+pip-compile --upgrade requirements-dev.in
+
+# 특정 패키지만 업그레이드
+pip-compile --upgrade-package fastapi requirements.in
+
+# 환경을 requirements와 동기화
+pip-sync requirements-dev.txt  # 개발 환경
+pip-sync requirements.txt      # 프로덕션
+```
+
+#### 새 의존성 추가하기
+
+1. `requirements.in` (프로덕션) 또는 `requirements-dev.in` (개발/테스트)에 패키지 이름 추가
+2. `pip-compile` 실행하여 `.txt` 파일 재생성
+3. `pip-sync` 실행하여 설치
+
+```bash
+# 예시: httpx 추가
+echo "httpx" >> requirements.in
+pip-compile requirements.in
+pip-sync requirements.txt
+```
+
+#### pip-tools를 사용하는 이유
+
+- **재현 가능한 빌드**: 고정된 버전으로 일관된 환경 보장
+- **명확한 분리**: 직접 의존성과 간접 의존성이 명확하게 구분됨
+- **쉬운 업그레이드**: `--upgrade` 플래그로 모든 의존성을 안전하게 업데이트
+- **감사 추적**: 생성된 `.txt` 파일에서 각 의존성의 출처 확인 가능
 
 ### 커스터마이징 포인트
 

@@ -309,3 +309,6 @@ pyrightconfig.json
 
 .idea/*
 *.db
+
+# Python version compatibility test results
+test-results/
