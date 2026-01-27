@@ -155,6 +155,27 @@ class ScheduleService:
 
         return schedule, True
 
+    def try_get_schedule_read(self, schedule_id: UUID) -> Optional["ScheduleRead"]:
+        """
+        Schedule 권한 검증 후 DTO 반환 (공통 메서드)
+        
+        외부(라우터, 다른 서비스)에서 사용하는 공통 메서드입니다.
+        권한이 없거나 리소스가 없으면 None을 반환합니다 (예외 발생 안 함).
+        
+        [보안 설계] 각 도메인 서비스가 자신의 리소스에 대한 권한 검증을 담당합니다.
+        라우터나 다른 서비스에서 이 메서드를 호출하여 안전하게 연관 리소스를 조회합니다.
+        
+        :param schedule_id: Schedule ID
+        :return: ScheduleRead DTO 또는 None (권한 없거나 리소스 없음)
+        """
+        from app.domain.visibility.exceptions import AccessDeniedError
+        
+        try:
+            schedule, is_shared = self.get_schedule_with_access_check(schedule_id)
+            return self.to_read_dto(schedule, is_shared=is_shared)
+        except (ScheduleNotFoundError, AccessDeniedError):
+            return None
+
     def get_all_schedules(self) -> list[Schedule]:
         """
         모든 일정 조회 (본인 소유만)

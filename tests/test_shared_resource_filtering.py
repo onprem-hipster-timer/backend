@@ -927,3 +927,232 @@ class TestRelationshipLazyLoadingProtection:
 
         # schedules가 빈 리스트여야 함 (lazy load로 유출되지 않음)
         assert todo_read.schedules == []
+
+
+class TestDomainServiceAuthorizationHelpers:
+    """
+    도메인 서비스의 권한 검증 공통 메서드 테스트
+    
+    [Clean Architecture] 각 도메인 서비스는 자신의 리소스에 대한 권한 검증만 담당합니다.
+    - ScheduleService.try_get_schedule_read(): Schedule 권한 검증 후 DTO 반환
+    - 연관 리소스 조합은 라우터(orchestrator)에서 수행
+    """
+
+    def test_schedule_service_try_get_schedule_read_returns_dto_when_accessible(
+            self, test_session, test_user
+    ):
+        """
+        ScheduleService.try_get_schedule_read()는 접근 가능한 Schedule에 대해 DTO를 반환해야 함
+        """
+        from app.domain.schedule.service import ScheduleService
+        from app.domain.schedule.schema.dto import ScheduleCreate
+        from datetime import datetime, timezone
+
+        schedule_service = ScheduleService(test_session, test_user)
+        now = datetime.now(timezone.utc)
+        schedule = schedule_service.create_schedule(
+            ScheduleCreate(
+                title="테스트 일정",
+                start_time=now,
+                end_time=now.replace(hour=now.hour + 1 if now.hour < 23 else 0),
+            )
+        )
+
+        # try_get_schedule_read()로 조회
+        result = schedule_service.try_get_schedule_read(schedule.id)
+
+        assert result is not None
+        assert result.id == schedule.id
+        assert result.title == "테스트 일정"
+
+    def test_schedule_service_try_get_schedule_read_returns_none_when_not_found(
+            self, test_session, test_user
+    ):
+        """
+        ScheduleService.try_get_schedule_read()는 존재하지 않는 Schedule에 대해 None을 반환해야 함
+        """
+        from uuid import uuid4
+        from app.domain.schedule.service import ScheduleService
+
+        schedule_service = ScheduleService(test_session, test_user)
+
+        # 존재하지 않는 ID로 조회
+        result = schedule_service.try_get_schedule_read(uuid4())
+
+        assert result is None
+
+    def test_schedule_service_try_get_schedule_read_returns_none_when_access_denied(
+            self, test_session, test_user, second_user
+    ):
+        """
+        ScheduleService.try_get_schedule_read()는 접근 권한이 없으면 None을 반환해야 함
+        """
+        from app.domain.schedule.service import ScheduleService
+        from app.domain.schedule.schema.dto import ScheduleCreate
+        from datetime import datetime, timezone
+
+        # second_user가 Schedule 생성 (PRIVATE)
+        user2_schedule_service = ScheduleService(test_session, second_user)
+        now = datetime.now(timezone.utc)
+        schedule = user2_schedule_service.create_schedule(
+            ScheduleCreate(
+                title="비공개 일정",
+                start_time=now,
+                end_time=now.replace(hour=now.hour + 1 if now.hour < 23 else 0),
+            )
+        )
+
+        # test_user가 조회 시도
+        user1_schedule_service = ScheduleService(test_session, test_user)
+        result = user1_schedule_service.try_get_schedule_read(schedule.id)
+
+        assert result is None
+
+    def test_router_orchestration_timer_with_schedule(
+            self, test_session, test_user
+    ):
+        """
+        [라우터 Orchestration 테스트]
+        라우터 헬퍼 함수가 Timer와 연관 Schedule을 올바르게 조합하는지 테스트
+        """
+        from app.domain.timer.service import TimerService
+        from app.domain.schedule.service import ScheduleService
+        from app.domain.todo.service import TodoService
+        from app.domain.schedule.schema.dto import ScheduleCreate
+        from app.domain.timer.schema.dto import TimerCreate
+        from app.api.v1.timers import _build_timer_read_with_relations
+        from datetime import datetime, timezone
+
+        # Schedule + Timer 생성
+        schedule_service = ScheduleService(test_session, test_user)
+        now = datetime.now(timezone.utc)
+        schedule = schedule_service.create_schedule(
+            ScheduleCreate(
+                title="테스트 일정",
+                start_time=now,
+                end_time=now.replace(hour=now.hour + 1 if now.hour < 23 else 0),
+            )
+        )
+
+        timer_service = TimerService(test_session, test_user)
+        todo_service = TodoService(test_session, test_user)
+        timer = timer_service.create_timer(
+            TimerCreate(
+                title="테스트 타이머",
+                allocated_duration=3600,
+                schedule_id=schedule.id,
+            )
+        )
+
+        # 라우터 헬퍼 함수로 조회
+        result = _build_timer_read_with_relations(
+            timer,
+            timer_service=timer_service,
+            schedule_service=schedule_service,
+            todo_service=todo_service,
+            is_shared=False,
+            include_schedule=True,
+            include_todo=False,
+        )
+
+        assert result.id == timer.id
+        assert result.schedule is not None
+        assert result.schedule.id == schedule.id
+
+    def test_router_orchestration_timer_excludes_private_schedule(
+            self, test_session, test_user, second_user, friendship
+    ):
+        """
+        [라우터 Orchestration 테스트]
+        라우터 헬퍼 함수가 접근 권한 없는 Schedule을 제외하는지 테스트
+        """
+        from app.domain.timer.service import TimerService
+        from app.domain.schedule.service import ScheduleService
+        from app.domain.todo.service import TodoService
+        from app.domain.schedule.schema.dto import ScheduleCreate
+        from app.domain.timer.schema.dto import TimerCreate
+        from app.api.v1.timers import _build_timer_read_with_relations
+        from datetime import datetime, timezone
+
+        # second_user가 Schedule(PRIVATE) + Timer(FRIENDS) 생성
+        user2_schedule_service = ScheduleService(test_session, second_user)
+        now = datetime.now(timezone.utc)
+        private_schedule = user2_schedule_service.create_schedule(
+            ScheduleCreate(
+                title="비공개 일정",
+                start_time=now,
+                end_time=now.replace(hour=now.hour + 1 if now.hour < 23 else 0),
+            )
+        )
+        # visibility 설정 안 함 = PRIVATE
+
+        user2_timer_service = TimerService(test_session, second_user)
+        timer = user2_timer_service.create_timer(
+            TimerCreate(
+                title="공유 타이머",
+                allocated_duration=3600,
+                schedule_id=private_schedule.id,
+            )
+        )
+
+        visibility_service = VisibilityService(test_session, second_user)
+        visibility_service.set_visibility(
+            resource_type=ResourceType.TIMER,
+            resource_id=timer.id,
+            level=VisibilityLevel.FRIENDS,
+        )
+
+        # test_user의 서비스로 Timer 조회
+        user1_timer_service = TimerService(test_session, test_user)
+        user1_schedule_service = ScheduleService(test_session, test_user)
+        user1_todo_service = TodoService(test_session, test_user)
+        
+        result = _build_timer_read_with_relations(
+            timer,
+            timer_service=user1_timer_service,
+            schedule_service=user1_schedule_service,
+            todo_service=user1_todo_service,
+            is_shared=True,
+            include_schedule=True,
+        )
+
+        # PRIVATE Schedule은 포함되지 않아야 함
+        assert result.id == timer.id
+        assert result.schedule is None
+        assert result.schedule_id == private_schedule.id  # ID는 있어야 함
+
+    def test_router_orchestration_todo_with_schedules(
+            self, test_session, test_user
+    ):
+        """
+        [라우터 Orchestration 테스트]
+        라우터 헬퍼 함수가 Todo와 연관 Schedule을 올바르게 조합하는지 테스트
+        """
+        from app.domain.todo.service import TodoService
+        from app.domain.schedule.service import ScheduleService
+        from app.domain.tag.service import TagService
+        from app.domain.tag.schema.dto import TagGroupCreate
+        from app.domain.todo.schema.dto import TodoCreate
+        from app.api.v1.todos import _get_related_schedule_reads
+        from datetime import datetime, timezone, timedelta
+
+        # Todo 생성 (deadline 포함 → Schedule 자동 생성)
+        tag_service = TagService(test_session, test_user)
+        group = tag_service.create_tag_group(TagGroupCreate(name="테스트", color="#FF5733"))
+
+        todo_service = TodoService(test_session, test_user)
+        schedule_service = ScheduleService(test_session, test_user)
+        
+        deadline = datetime.now(timezone.utc) + timedelta(days=1)
+        todo = todo_service.create_todo(
+            TodoCreate(
+                title="테스트 할일",
+                tag_group_id=group.id,
+                deadline=deadline,
+            )
+        )
+
+        # 라우터 헬퍼 함수로 연관 Schedule 조회
+        schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
+
+        assert len(schedule_reads) > 0  # 자동 생성된 Schedule이 포함됨

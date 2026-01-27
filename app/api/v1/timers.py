@@ -5,7 +5,14 @@ FastAPI Best Practices:
 - 모든 라우트는 async
 - Dependencies를 활용한 검증
 - Service는 session을 받아서 CRUD 직접 사용
-- 각 도메인 서비스가 독립적으로 권한 검증 (Orchestrator 패턴)
+
+[보안 설계 - Clean Architecture Orchestrator 패턴]
+- Router가 orchestrator 역할을 수행
+- 각 도메인 서비스는 자신의 리소스만 처리 (서비스 간 직접 호출 금지)
+- 연관 리소스는 라우터에서 각 서비스를 독립적으로 호출하여 조합
+  - ScheduleService.try_get_schedule_read(): Schedule 권한 검증 후 DTO 반환
+  - TodoService.get_todo_with_access_check(): Todo 권한 검증
+  - TimerService.to_read_dto(): 검증된 DTO를 주입받아 최종 DTO 생성
 """
 from datetime import datetime
 from typing import Optional, List
@@ -16,9 +23,9 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import TagIncludeMode, ResourceScope
+from app.crud import schedule as schedule_crud
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import (
     TimerCreate,
@@ -26,92 +33,77 @@ from app.domain.timer.schema.dto import (
     TimerUpdate,
 )
 from app.domain.timer.service import TimerService
-from app.domain.timer.model import TimerSession
-from app.domain.todo.schema.dto import TodoRead
 from app.domain.todo.service import TodoService
-from app.domain.visibility.exceptions import AccessDeniedError
 
 router = APIRouter(prefix="/timers", tags=["Timers"])
 
 
-def _get_timer_related_resources(
-        timer: TimerSession,
-        include_schedule: bool,
-        include_todo: bool,
-        session: Session,
-        current_user: CurrentUser,
-) -> tuple[Optional[ScheduleRead], Optional[TodoRead]]:
+def _build_timer_read_with_relations(
+        timer,
+        timer_service: TimerService,
+        schedule_service: ScheduleService,
+        todo_service: TodoService,
+        is_shared: bool = False,
+        include_schedule: bool = False,
+        include_todo: bool = False,
+        tag_include_mode: Optional[TagIncludeMode] = None,
+) -> TimerRead:
     """
-    Timer의 연관 리소스(Schedule, Todo)를 각 서비스에서 독립적으로 권한 검증 후 조회
+    Timer와 연관 리소스를 조립하여 TimerRead DTO 생성 (라우터 orchestrator 헬퍼)
     
-    각 도메인 서비스가 자신의 권한 검증 로직을 사용하므로:
-    - Schedule 접근 권한: ScheduleService.get_schedule_with_access_check()
-    - Todo 접근 권한: TodoService.get_todo_with_access_check()
+    [Clean Architecture] 라우터가 각 도메인 서비스를 독립적으로 호출합니다.
+    - 서비스 간 직접 호출 없음
+    - 각 서비스는 자신의 도메인만 처리
     
-    권한이 없으면 해당 리소스는 null로 반환됩니다.
+    :param timer: Timer 모델
+    :param timer_service: TimerService 인스턴스
+    :param schedule_service: ScheduleService 인스턴스
+    :param todo_service: TodoService 인스턴스
+    :param is_shared: 공유된 리소스인지 여부
+    :param include_schedule: Schedule 정보 포함 여부
+    :param include_todo: Todo 정보 포함 여부
+    :param tag_include_mode: 태그 포함 모드
+    :return: TimerRead DTO
     """
+    from app.domain.visibility.exceptions import AccessDeniedError
+    from app.domain.todo.exceptions import TodoNotFoundError
+    
     schedule_read = None
     todo_read = None
-
-    # Schedule 조회 (권한 검증 포함)
+    
+    # Schedule 조회 (ScheduleService에서 권한 검증)
     if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        try:
-            schedule, _ = schedule_service.get_schedule_with_access_check(timer.schedule_id)
-            schedule_read = schedule_service.to_read_dto(schedule)
-        except AccessDeniedError:
-            pass  # 접근 권한 없으면 null
-        except Exception:
-            pass  # 리소스가 없으면 null
-
-    # Todo 조회 (권한 검증 포함)
+        schedule_read = schedule_service.try_get_schedule_read(timer.schedule_id)
+    
+    # Todo 조회 (TodoService에서 권한 검증 + 연관 Schedule 조회)
     if include_todo and timer.todo_id:
-        todo_service = TodoService(session, current_user)
         try:
             todo, todo_is_shared = todo_service.get_todo_with_access_check(timer.todo_id)
-            # Todo의 연관 Schedule도 권한 검증 후 조회
-            todo_schedules = _get_todo_related_schedules(
-                todo, todo_is_shared, session, current_user
+            
+            # Todo의 연관 Schedule 조회 (각 Schedule은 ScheduleService에서 권한 검증)
+            schedule_owner_id = todo.owner_id if todo_is_shared else todo_service.owner_id
+            schedules = schedule_crud.get_schedules_by_source_todo_id(
+                todo_service.session, todo.id, schedule_owner_id
             )
-            todo_read = todo_service.to_read_dto(
-                todo, is_shared=todo_is_shared, schedules=todo_schedules
-            )
-        except AccessDeniedError:
-            pass  # 접근 권한 없으면 null
-        except Exception:
-            pass  # 리소스가 없으면 null
-
-    return schedule_read, todo_read
-
-
-def _get_todo_related_schedules(
-        todo,
-        is_shared: bool,
-        session: Session,
-        current_user: CurrentUser,
-) -> List[ScheduleRead]:
-    """
-    Todo의 연관 Schedule을 권한 검증 후 조회
-    """
-    from app.crud import schedule as schedule_crud
-    
-    schedule_owner_id = todo.owner_id if is_shared else current_user.sub
-    schedules = schedule_crud.get_schedules_by_source_todo_id(session, todo.id, schedule_owner_id)
-    
-    schedule_reads = []
-    schedule_service = ScheduleService(session, current_user)
-    
-    for schedule in schedules:
-        try:
-            # 각 Schedule에 대해 권한 검증
-            _, _ = schedule_service.get_schedule_with_access_check(schedule.id)
-            schedule_reads.append(schedule_service.to_read_dto(schedule))
-        except AccessDeniedError:
-            pass  # 접근 권한 없으면 제외
-        except Exception:
+            
+            schedule_reads = []
+            for schedule in schedules:
+                s_read = schedule_service.try_get_schedule_read(schedule.id)
+                if s_read:
+                    schedule_reads.append(s_read)
+            
+            todo_read = todo_service.to_read_dto(todo, is_shared=todo_is_shared, schedules=schedule_reads)
+        except (TodoNotFoundError, AccessDeniedError):
+            # 접근 불가한 Todo는 None으로 처리
             pass
     
-    return schedule_reads
+    return timer_service.to_read_dto(
+        timer,
+        is_shared=is_shared,
+        schedule=schedule_read,
+        todo=todo_read,
+        tag_include_mode=tag_include_mode,
+    )
 
 
 @router.post("", response_model=TimerRead, status_code=status.HTTP_201_CREATED)
@@ -146,20 +138,21 @@ async def create_timer(
     - todo_id만: Todo에 연결된 타이머
     - 둘 다 있으면: Schedule과 Todo 모두에 연결된 타이머
     """
-    service = TimerService(session, current_user)
-    timer = service.create_timer(data)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.create_timer(data)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -228,7 +221,10 @@ async def list_timers(
       - todo: Todo 연결 타이머 (todo_id != null)
     - start_date, end_date: 날짜 범위 필터 (started_at 기준)
     """
-    service = TimerService(session, current_user)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
     tz_obj = parse_timezone(tz) if tz else None
     result = []
 
@@ -237,29 +233,28 @@ async def list_timers(
 
     # 내 타이머 조회 (scope=mine 또는 scope=all)
     if scope in (ResourceScope.MINE, ResourceScope.ALL):
-        my_timers = service.get_all_timers(
+        my_timers = timer_service.get_all_timers(
             status=normalized_status,
             timer_type=timer_type,
             start_date=start_date,
             end_date=end_date,
         )
         for timer in my_timers:
-            # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-            schedule_read, todo_read = _get_timer_related_resources(
-                timer, include_schedule, include_todo, session, current_user
-            )
-            timer_read = service.to_read_dto(
+            timer_read = _build_timer_read_with_relations(
                 timer,
+                timer_service=timer_service,
+                schedule_service=schedule_service,
+                todo_service=todo_service,
                 is_shared=False,
-                schedule=schedule_read,
-                todo=todo_read,
+                include_schedule=include_schedule,
+                include_todo=include_todo,
                 tag_include_mode=tag_include_mode,
             )
             result.append(timer_read.to_timezone(tz_obj, validate=False))
 
     # 공유된 타이머 조회 (scope=shared 또는 scope=all)
     if scope in (ResourceScope.SHARED, ResourceScope.ALL):
-        shared_timers = service.get_shared_timers()
+        shared_timers = timer_service.get_shared_timers()
         for timer in shared_timers:
             # status 필터 적용
             if normalized_status and timer.status not in normalized_status:
@@ -270,15 +265,14 @@ async def list_timers(
             if end_date and timer.started_at and timer.started_at > end_date:
                 continue
 
-            # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-            schedule_read, todo_read = _get_timer_related_resources(
-                timer, include_schedule, include_todo, session, current_user
-            )
-            timer_read = service.to_read_dto(
+            timer_read = _build_timer_read_with_relations(
                 timer,
+                timer_service=timer_service,
+                schedule_service=schedule_service,
+                todo_service=todo_service,
                 is_shared=True,
-                schedule=schedule_read,
-                todo=todo_read,
+                include_schedule=include_schedule,
+                include_todo=include_todo,
                 tag_include_mode=tag_include_mode,
             )
             result.append(timer_read.to_timezone(tz_obj, validate=False))
@@ -314,8 +308,11 @@ async def get_user_active_timer(
     활성 타이머가 없으면 404 반환
     여러 개가 있으면 가장 최근 것 반환
     """
-    service = TimerService(session, current_user)
-    timer = service.get_user_active_timer()
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.get_user_active_timer()
 
     if not timer:
         raise HTTPException(
@@ -323,17 +320,15 @@ async def get_user_active_timer(
             detail="No active timer found"
         )
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -371,20 +366,21 @@ async def get_timer(
     본인 소유 타이머 또는 공유 접근 권한이 있는 타이머를 조회합니다.
     접근 권한이 없으면 403 Forbidden을 반환합니다.
     """
-    service = TimerService(session, current_user)
-    timer, is_shared = service.get_timer_with_access_check(timer_id)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer, is_shared = timer_service.get_timer_with_access_check(timer_id)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=is_shared,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -420,20 +416,21 @@ async def update_timer(
     """
     타이머 메타데이터 업데이트 (title, description, tags)
     """
-    service = TimerService(session, current_user)
-    timer = service.update_timer(timer_id, data)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.update_timer(timer_id, data)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -468,20 +465,21 @@ async def pause_timer(
     """
     타이머 일시정지
     """
-    service = TimerService(session, current_user)
-    timer = service.pause_timer(timer_id)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.pause_timer(timer_id)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -516,20 +514,21 @@ async def resume_timer(
     """
     타이머 재개
     """
-    service = TimerService(session, current_user)
-    timer = service.resume_timer(timer_id)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.resume_timer(timer_id)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -564,20 +563,21 @@ async def stop_timer(
     """
     타이머 종료
     """
-    service = TimerService(session, current_user)
-    timer = service.stop_timer(timer_id)
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+    
+    timer = timer_service.stop_timer(timer_id)
 
-    # 연관 리소스 조회 (각 서비스에서 독립적으로 권한 검증)
-    schedule_read, todo_read = _get_timer_related_resources(
-        timer, include_schedule, include_todo, session, current_user
-    )
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = service.to_read_dto(
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
         timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
         is_shared=False,
-        schedule=schedule_read,
-        todo=todo_read,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
         tag_include_mode=tag_include_mode,
     )
 
@@ -595,6 +595,6 @@ async def delete_timer(
     """
     타이머 삭제
     """
-    service = TimerService(session, current_user)
-    service.delete_timer(timer_id)
+    timer_service = TimerService(session, current_user)
+    timer_service.delete_timer(timer_id)
     return {"ok": True}

@@ -709,6 +709,7 @@ class TimerService:
 
         return timer_read
 
+
     def _get_timer_tags(
             self,
             timer_id: UUID,
