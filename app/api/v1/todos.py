@@ -5,6 +5,7 @@ FastAPI Best Practices:
 - 모든 라우트는 async
 - Service는 session을 받아서 CRUD 직접 사용
 - Todo 전용 엔드포인트 (Schedule과 분리)
+- 각 도메인 서비스가 독립적으로 권한 검증 (Orchestrator 패턴)
 """
 from typing import Optional, List
 from uuid import UUID
@@ -14,10 +15,14 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import ResourceScope
+from app.crud import schedule as schedule_crud
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
+from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import TimerRead
 from app.domain.timer.service import TimerService
+from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import (
     TodoCreate,
     TodoRead,
@@ -26,8 +31,42 @@ from app.domain.todo.schema.dto import (
     TodoIncludeReason,
 )
 from app.domain.todo.service import TodoService
+from app.domain.visibility.exceptions import AccessDeniedError
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
+
+
+def _get_todo_related_schedules(
+        todo: Todo,
+        is_shared: bool,
+        session: Session,
+        current_user: CurrentUser,
+) -> List[ScheduleRead]:
+    """
+    Todo의 연관 Schedule을 각 서비스에서 독립적으로 권한 검증 후 조회
+    
+    각 도메인 서비스가 자신의 권한 검증 로직을 사용하므로:
+    - Schedule 접근 권한: ScheduleService.get_schedule_with_access_check()
+    
+    권한이 없는 Schedule은 결과에서 제외됩니다.
+    """
+    schedule_owner_id = todo.owner_id if is_shared else current_user.sub
+    schedules = schedule_crud.get_schedules_by_source_todo_id(session, todo.id, schedule_owner_id)
+    
+    schedule_reads = []
+    schedule_service = ScheduleService(session, current_user)
+    
+    for schedule in schedules:
+        try:
+            # 각 Schedule에 대해 권한 검증
+            _, _ = schedule_service.get_schedule_with_access_check(schedule.id)
+            schedule_reads.append(schedule_service.to_read_dto(schedule))
+        except AccessDeniedError:
+            pass  # 접근 권한 없으면 제외
+        except Exception:
+            pass
+    
+    return schedule_reads
 
 
 @router.post("", response_model=TodoRead, status_code=status.HTTP_201_CREATED)
@@ -44,7 +83,11 @@ async def create_todo(
     """
     service = TodoService(session, current_user)
     todo = service.create_todo(data)
-    return service.to_read_dto(todo)
+    
+    # 연관 Schedule 조회 (각 서비스에서 독립적으로 권한 검증)
+    schedule_reads = _get_todo_related_schedules(todo, is_shared=False, session=session, current_user=current_user)
+    
+    return service.to_read_dto(todo, schedules=schedule_reads)
 
 
 @router.get("", response_model=list[TodoRead])
@@ -94,10 +137,13 @@ async def read_todos(
     if scope in (ResourceScope.MINE, ResourceScope.ALL):
         result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
         for todo in result.todos:
+            # 연관 Schedule 조회 (각 서비스에서 독립적으로 권한 검증)
+            schedule_reads = _get_todo_related_schedules(todo, is_shared=False, session=session, current_user=current_user)
             todo_read = service.to_read_dto(
                 todo,
                 include_reason=result.include_reason_by_id.get(todo.id, TodoIncludeReason.MATCH),
                 is_shared=False,
+                schedules=schedule_reads,
             )
             result_list.append(todo_read)
 
@@ -109,7 +155,15 @@ async def read_todos(
             if group_ids and todo.tag_group_id not in group_ids:
                 continue
 
-            todo_read = service.to_read_dto(todo, is_shared=True)
+            # tag_ids 필터 적용 (AND 방식)
+            if tag_ids:
+                todo_tag_ids = {tag.id for tag in todo.tags}
+                if not all(tid in todo_tag_ids for tid in tag_ids):
+                    continue
+
+            # 연관 Schedule 조회 (각 서비스에서 독립적으로 권한 검증)
+            schedule_reads = _get_todo_related_schedules(todo, is_shared=True, session=session, current_user=current_user)
+            todo_read = service.to_read_dto(todo, is_shared=True, schedules=schedule_reads)
             result_list.append(todo_read)
 
     return result_list
@@ -148,7 +202,11 @@ async def read_todo(
     """
     service = TodoService(session, current_user)
     todo, is_shared = service.get_todo_with_access_check(todo_id)
-    return service.to_read_dto(todo, is_shared=is_shared)
+    
+    # 연관 Schedule 조회 (각 서비스에서 독립적으로 권한 검증)
+    schedule_reads = _get_todo_related_schedules(todo, is_shared=is_shared, session=session, current_user=current_user)
+    
+    return service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
 
 
 @router.patch("/{todo_id}", response_model=TodoRead)
@@ -170,7 +228,11 @@ async def update_todo(
     """
     service = TodoService(session, current_user)
     todo = service.update_todo(todo_id, data)
-    return service.to_read_dto(todo)
+    
+    # 연관 Schedule 조회 (각 서비스에서 독립적으로 권한 검증)
+    schedule_reads = _get_todo_related_schedules(todo, is_shared=False, session=session, current_user=current_user)
+    
+    return service.to_read_dto(todo, schedules=schedule_reads)
 
 
 @router.delete("/{todo_id}", status_code=status.HTTP_200_OK)
@@ -208,15 +270,16 @@ async def get_todo_timers(
     Schedule의 /schedules/{schedule_id}/timers 엔드포인트와 동일한 패턴입니다.
     """
     todo_service = TodoService(session, current_user)
-    todo, _ = todo_service.get_todo_with_access_check(todo_id)
+    todo, is_shared = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_todo(todo.id)
 
-    # Todo 정보 처리
+    # Todo 정보 처리 (연관 Schedule 권한 검증 포함)
     todo_read = None
     if include_todo:
-        todo_read = todo_service.to_read_dto(todo)
+        schedule_reads = _get_todo_related_schedules(todo, is_shared=is_shared, session=session, current_user=current_user)
+        todo_read = todo_service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
 
     tz_obj = parse_timezone(tz) if tz else None
     return [
@@ -253,17 +316,18 @@ async def get_todo_active_timer(
     from app.domain.timer.exceptions import TimerNotFoundError
 
     todo_service = TodoService(session, current_user)
-    todo, _ = todo_service.get_todo_with_access_check(todo_id)
+    todo, is_shared = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer_by_todo(todo.id)
     if not timer:
         raise TimerNotFoundError()
 
-    # Todo 정보 처리
+    # Todo 정보 처리 (연관 Schedule 권한 검증 포함)
     todo_read = None
     if include_todo:
-        todo_read = todo_service.to_read_dto(todo)
+        schedule_reads = _get_todo_related_schedules(todo, is_shared=is_shared, session=session, current_user=current_user)
+        todo_read = todo_service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
 
     # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
     timer_read = TimerRead.from_model(

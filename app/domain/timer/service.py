@@ -8,8 +8,12 @@ FastAPI Best Practices:
 - 모든 datetime을 UTC naive로 변환하여 저장
 """
 from datetime import datetime, UTC
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.domain.schedule.schema.dto import ScheduleRead
+    from app.domain.todo.schema.dto import TodoRead
 
 from sqlmodel import Session
 
@@ -640,23 +644,31 @@ class TimerService:
             self,
             timer: TimerSession,
             is_shared: bool = False,
-            include_schedule: bool = False,
-            include_todo: bool = False,
+            schedule: Optional["ScheduleRead"] = None,
+            todo: Optional["TodoRead"] = None,
             tag_include_mode: Optional[str] = None,
     ) -> "TimerRead":
         """
         Timer를 TimerRead DTO로 변환하고 가시성 정보를 채웁니다.
+        
+        [보안 설계] 연관 리소스(Schedule, Todo)는 반드시 외부에서 권한 검증 후 주입받습니다.
+        
+        이유:
+        - 각 도메인 서비스가 독립적으로 권한 검증을 수행하는 Orchestrator 패턴
+        - 라우터에서 ScheduleService.get_schedule_with_access_check() 등을 호출하여 권한 검증
+        - 권한이 없는 연관 리소스는 null로 전달하여 응답에서 제외
+        
+        주의: 이 메서드에서 연관 리소스를 직접 조회하면 visibility 검증을 우회하게 됩니다.
+              연관 리소스 조회는 반드시 라우터에서 수행하세요.
 
         :param timer: Timer 모델
         :param is_shared: 공유된 리소스인지 여부
-        :param include_schedule: Schedule 정보 포함 여부
-        :param include_todo: Todo 정보 포함 여부
+        :param schedule: 외부에서 권한 검증 후 주입된 Schedule DTO (Optional, 권한 없으면 None)
+        :param todo: 외부에서 권한 검증 후 주입된 Todo DTO (Optional, 권한 없으면 None)
         :param tag_include_mode: 태그 포함 모드 (none, timer_only, inherit_from_schedule)
         :return: TimerRead DTO (가시성 정보 포함)
         """
         from app.core.constants import TagIncludeMode
-        from app.domain.schedule.schema.dto import ScheduleRead
-        from app.domain.schedule.service import ScheduleService
         from app.domain.timer.schema.dto import TimerRead
 
         # 태그 포함 모드 파싱
@@ -667,28 +679,8 @@ class TimerService:
         else:
             tag_mode = tag_include_mode
 
-        # Schedule 정보 처리
-        schedule_read = None
-        if include_schedule and timer.schedule_id:
-            schedule_service = ScheduleService(self.session, self.current_user)
-            try:
-                schedule = schedule_service.get_schedule(timer.schedule_id)
-                if schedule:
-                    schedule_read = ScheduleRead.model_validate(schedule)
-            except Exception:
-                pass  # 접근 권한이 없으면 무시
-
-        # Todo 정보 처리
-        todo_read = None
-        if include_todo and timer.todo_id:
-            from app.domain.todo.service import TodoService
-            todo_service = TodoService(self.session, self.current_user)
-            try:
-                todo = todo_service.get_todo(timer.todo_id)
-                if todo:
-                    todo_read = todo_service.to_read_dto(todo)
-            except Exception:
-                pass  # 접근 권한이 없으면 무시
+        # [보안] 연관 리소스는 외부에서 주입받은 것만 사용
+        # 내부에서 직접 조회하면 visibility 검증을 우회하게 됨
 
         # Tags 정보 처리
         tags_read = self._get_timer_tags(timer.id, timer.schedule_id, timer.todo_id, tag_mode)
@@ -696,10 +688,10 @@ class TimerService:
         # Timer 모델을 TimerRead로 변환
         timer_read = TimerRead.from_model(
             timer,
-            include_schedule=include_schedule,
-            schedule=schedule_read,
-            include_todo=include_todo,
-            todo=todo_read,
+            include_schedule=(schedule is not None),
+            schedule=schedule,
+            include_todo=(todo is not None),
+            todo=todo,
             tag_include_mode=tag_mode,
             tags=tags_read,
         )

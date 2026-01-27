@@ -46,6 +46,16 @@ def test_user() -> CurrentUser:
 
 
 @pytest.fixture
+def other_user() -> CurrentUser:
+    """공유 리소스 테스트를 위한 다른 사용자"""
+    return CurrentUser(
+        sub="other-user-id",
+        email="other@example.com",
+        name="Other User",
+    )
+
+
+@pytest.fixture
 def test_engine():
     """
     테스트용 DB 엔진

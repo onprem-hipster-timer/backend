@@ -16,7 +16,7 @@ from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
 from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
-from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
+from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
@@ -622,23 +622,25 @@ class TodoService:
             todo: Todo,
             include_reason: TodoIncludeReason = TodoIncludeReason.MATCH,
             is_shared: bool = False,
+            schedules: Optional[List["ScheduleRead"]] = None,
     ) -> TodoRead:
         """
         Todo를 TodoRead DTO로 변환하고 가시성 정보를 채웁니다.
         
+        연관 Schedule은 외부에서 권한 검증 후 주입받습니다.
+        각 도메인 서비스가 독립적으로 권한 검증을 수행하는 구조입니다.
+        
         :param todo: Todo 모델
         :param include_reason: 포함 사유 (MATCH/ANCESTOR)
         :param is_shared: 공유된 리소스인지 여부
+        :param schedules: 외부에서 권한 검증 후 주입된 Schedule DTO 리스트 (Optional)
         :return: TodoRead DTO (가시성 정보 포함)
         """
-        from app.domain.schedule.schema.dto import ScheduleRead
-
         tags = self.get_todo_tags(todo.id)
         tag_reads = [TagRead.model_validate(tag) for tag in tags]
 
-        # 연관된 Schedule 조회
-        schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo.id, self.owner_id)
-        schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
+        # 연관 Schedule은 외부에서 주입받은 것을 사용 (없으면 빈 리스트)
+        schedule_reads = schedules if schedules is not None else []
 
         todo_read = TodoRead(
             id=todo.id,

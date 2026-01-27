@@ -11,6 +11,7 @@ import pytest
 from app.domain.schedule.enums import ScheduleState
 from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
 from app.domain.tag.service import TagService
+from app.crud import schedule as schedule_crud
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate, TodoIncludeReason
@@ -1235,3 +1236,107 @@ def test_get_all_todos_includes_deep_ancestors_with_tag_filter(test_session, sam
     assert result.include_reason_by_id[child.id] == TodoIncludeReason.MATCH
     assert result.include_reason_by_id[parent.id] == TodoIncludeReason.ANCESTOR
     assert result.include_reason_by_id[grandparent.id] == TodoIncludeReason.ANCESTOR
+
+
+# ============================================================
+# 공유 리소스 to_read_dto 테스트
+# ============================================================
+
+def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, other_user):
+    """공유된 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트"""
+    from datetime import UTC
+
+    tag_service = TagService(test_session, other_user)
+    
+    # other_user의 태그 그룹 생성
+    other_group = tag_service.create_tag_group(TagGroupCreate(
+        name="Other User Group",
+        color="#FF0000",
+    ))
+    test_session.flush()
+
+    # other_user가 deadline이 있는 Todo 생성 (Schedule 자동 생성됨)
+    other_todo_service = TodoService(test_session, other_user)
+    deadline = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+    todo = other_todo_service.create_todo(TodoCreate(
+        title="Other User's Todo",
+        tag_group_id=other_group.id,
+        deadline=deadline,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+
+    # Schedule이 생성되었는지 확인
+    schedules = schedule_crud.get_schedules_by_source_todo_id(
+        test_session, todo.id, other_user.sub
+    )
+    assert len(schedules) == 1, "Todo의 Schedule이 생성되어야 함"
+    schedule_id = schedules[0].id
+
+    # test_user가 공유된 Todo를 to_read_dto로 변환 (is_shared=True)
+    test_todo_service = TodoService(test_session, test_user)
+    dto = test_todo_service.to_read_dto(todo, is_shared=True)
+
+    # 공유된 Todo여도 연관 Schedule이 포함되어야 함
+    assert len(dto.schedules) == 1, "공유된 Todo의 schedules 필드가 채워져야 함"
+    assert dto.schedules[0].id == schedule_id
+    assert dto.is_shared is True
+    assert dto.owner_id == other_user.sub
+
+
+def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group, test_user):
+    """본인 소유 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트"""
+    from datetime import UTC
+
+    service = TodoService(test_session, test_user)
+    deadline = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
+    
+    # deadline이 있는 Todo 생성 (Schedule 자동 생성됨)
+    todo = service.create_todo(TodoCreate(
+        title="My Todo with Schedule",
+        tag_group_id=sample_tag_group.id,
+        deadline=deadline,
+    ))
+    test_session.flush()
+    test_session.refresh(todo)
+
+    # Schedule이 생성되었는지 확인
+    schedules = schedule_crud.get_schedules_by_source_todo_id(
+        test_session, todo.id, test_user.sub
+    )
+    assert len(schedules) == 1
+
+    # is_shared=False로 to_read_dto 호출 (기본값)
+    dto = service.to_read_dto(todo, is_shared=False)
+
+    # 본인 소유 Todo도 연관 Schedule이 포함되어야 함
+    assert len(dto.schedules) == 1
+    assert dto.is_shared is False
+
+
+def test_to_read_dto_shared_todo_without_schedule(test_session, test_user, other_user):
+    """Schedule이 없는 공유된 Todo를 to_read_dto로 변환 테스트"""
+    tag_service = TagService(test_session, other_user)
+    
+    # other_user의 태그 그룹 생성
+    other_group = tag_service.create_tag_group(TagGroupCreate(
+        name="Other User Group",
+        color="#00FF00",
+    ))
+    test_session.flush()
+
+    # other_user가 deadline 없는 Todo 생성 (Schedule 없음)
+    other_todo_service = TodoService(test_session, other_user)
+    todo = other_todo_service.create_todo(TodoCreate(
+        title="Todo without Schedule",
+        tag_group_id=other_group.id,
+    ))
+    test_session.flush()
+
+    # test_user가 공유된 Todo를 to_read_dto로 변환
+    test_todo_service = TodoService(test_session, test_user)
+    dto = test_todo_service.to_read_dto(todo, is_shared=True)
+
+    # Schedule이 없는 것이 정상
+    assert len(dto.schedules) == 0
+    assert dto.is_shared is True

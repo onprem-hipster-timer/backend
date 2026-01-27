@@ -1458,3 +1458,102 @@ def test_update_timer_preserves_unset_fields(test_session, sample_schedule, samp
     assert updated_timer.description == "기존 설명"
     assert updated_timer.schedule_id == sample_schedule.id
     assert updated_timer.todo_id == sample_todo.id
+
+
+
+# ============================================================
+# 공유 리소스 to_read_dto 테스트
+# ============================================================
+
+def test_to_read_dto_shared_timer_includes_schedule(test_session, test_user, other_user):
+    """
+    공유된 Timer를 to_read_dto로 변환할 때 외부에서 주입된 Schedule이 포함되는지 테스트
+    
+    [보안 설계] 연관 리소스는 외부(라우터)에서 권한 검증 후 주입받습니다.
+    to_read_dto()에서 직접 조회하면 visibility 검증을 우회하게 됩니다.
+    """
+    from datetime import datetime, UTC
+    from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead
+    from app.domain.schedule.service import ScheduleService
+    from app.domain.tag.schema.dto import TagGroupCreate
+    from app.domain.tag.service import TagService
+
+    tag_service = TagService(test_session, other_user)
+    other_group = tag_service.create_tag_group(TagGroupCreate(
+        name="Other User Group",
+        color="#FF0000",
+    ))
+    test_session.flush()
+
+    schedule_service = ScheduleService(test_session, other_user)
+    schedule = schedule_service.create_schedule(ScheduleCreate(
+        title="Other User Schedule",
+        start_time=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        end_time=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
+        tag_group_id=other_group.id,
+    ))
+    test_session.flush()
+
+    other_timer_service = TimerService(test_session, other_user)
+    timer = other_timer_service.create_timer(TimerCreate(
+        schedule_id=schedule.id,
+        title="Other Timer",
+        allocated_duration=1800,
+    ))
+    test_session.flush()
+
+    # 외부에서 Schedule DTO를 생성하여 주입 (라우터에서 권한 검증 후 수행)
+    schedule_read = ScheduleRead.model_validate(schedule)
+
+    test_timer_service = TimerService(test_session, test_user)
+    dto = test_timer_service.to_read_dto(timer, is_shared=True, schedule=schedule_read)
+
+    assert dto.schedule is not None
+    assert dto.schedule.id == schedule.id
+    assert dto.is_shared is True
+    assert dto.owner_id == other_user.sub
+
+
+def test_to_read_dto_shared_timer_includes_todo(test_session, test_user, other_user):
+    """
+    공유된 Timer를 to_read_dto로 변환할 때 외부에서 주입된 Todo가 포함되는지 테스트
+    
+    [보안 설계] 연관 리소스는 외부(라우터)에서 권한 검증 후 주입받습니다.
+    """
+    from app.domain.tag.schema.dto import TagGroupCreate
+    from app.domain.tag.service import TagService
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.todo.service import TodoService
+
+    tag_service = TagService(test_session, other_user)
+    other_group = tag_service.create_tag_group(TagGroupCreate(
+        name="Other User Group",
+        color="#00FF00",
+    ))
+    test_session.flush()
+
+    todo_service = TodoService(test_session, other_user)
+    todo = todo_service.create_todo(TodoCreate(
+        title="Other Todo",
+        tag_group_id=other_group.id,
+    ))
+    test_session.flush()
+
+    other_timer_service = TimerService(test_session, other_user)
+    timer = other_timer_service.create_timer(TimerCreate(
+        todo_id=todo.id,
+        title="Other Timer",
+        allocated_duration=1800,
+    ))
+    test_session.flush()
+
+    # 외부에서 Todo DTO를 생성하여 주입 (라우터에서 권한 검증 후 수행)
+    todo_read = todo_service.to_read_dto(todo)
+
+    test_timer_service = TimerService(test_session, test_user)
+    dto = test_timer_service.to_read_dto(timer, is_shared=True, todo=todo_read)
+
+    assert dto.todo is not None
+    assert dto.todo.id == todo.id
+    assert dto.is_shared is True
+    assert dto.owner_id == other_user.sub
