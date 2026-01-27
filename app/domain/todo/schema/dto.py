@@ -14,9 +14,10 @@ from uuid import UUID
 from pydantic import ConfigDict
 
 from app.core.base_model import CustomModel
-from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.schedule.schema.dto import ScheduleRead, VisibilitySettings
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
+from app.models.visibility import VisibilityLevel
 
 
 class TodoIncludeReason(str, Enum):
@@ -34,6 +35,7 @@ class TodoCreate(CustomModel):
     deadline: Optional[datetime] = None  # 마감기간 (선택)
     parent_id: Optional[UUID] = None  # 부모 Todo ID (트리 구조)
     status: Optional[TodoStatus] = TodoStatus.UNSCHEDULED  # 상태 (기본값: UNSCHEDULED)
+    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
 
 class TodoRead(CustomModel):
@@ -51,6 +53,10 @@ class TodoRead(CustomModel):
     tags: List[TagRead] = []
     schedules: List[ScheduleRead] = []  # 연관된 Schedule 목록
     include_reason: TodoIncludeReason = TodoIncludeReason.MATCH  # 포함 사유 (필터 매칭/조상)
+    # 가시성 관련 필드
+    owner_id: Optional[str] = None  # 소유자 ID (공유된 Todo 조회 시)
+    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    is_shared: bool = False  # 공유된 Todo인지
 
 
 class TodoUpdate(CustomModel):
@@ -62,6 +68,7 @@ class TodoUpdate(CustomModel):
     deadline: Optional[datetime] = None  # 마감기간 변경
     parent_id: Optional[UUID] = None  # 부모 Todo 변경
     status: Optional[TodoStatus] = None  # 상태 변경
+    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
 
 class TagStat(CustomModel):

@@ -148,8 +148,9 @@ app.add_middleware(
 app.add_middleware(RequestLoggerMiddleware)
 
 # 2. Rate Limit - 인증된 사용자 정보(request.state.current_user)를 활용
-if settings.RATE_LIMIT_ENABLED:
-    app.add_middleware(RateLimitMiddleware)
+# 항상 미들웨어 추가 (내부에서 settings.RATE_LIMIT_ENABLED 체크하여 비활성화 시 바로 통과)
+# 조건부 추가 시 Python 모듈 캐싱으로 인해 테스트에서 동적 활성화가 불가능함
+app.add_middleware(RateLimitMiddleware)
 
 # 3. Auth - 가장 먼저 실행되어 request.state.current_user 설정
 #    RateLimitMiddleware와 엔드포인트에서 중복 토큰 검증 없이 재사용

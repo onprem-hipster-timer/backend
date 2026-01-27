@@ -79,6 +79,31 @@ def get_schedule(session: Session, schedule_id: UUID, owner_id: str) -> Schedule
     return session.exec(statement).first()
 
 
+def get_schedule_by_id(session: Session, schedule_id: UUID) -> Schedule | None:
+    """
+    ID로 Schedule 조회 (소유자 검증 없음 - 접근 제어는 Service에서 처리)
+    
+    공유 리소스 접근 시 사용
+    """
+    return session.get(Schedule, schedule_id)
+
+
+def get_schedules_by_ids(session: Session, schedule_ids: list[UUID]) -> list[Schedule]:
+    """
+    여러 ID로 Schedule 배치 조회 (소유자 검증 없음)
+    
+    공유 리소스 조회 시 N+1 문제 방지를 위해 사용
+    
+    :param session: DB 세션
+    :param schedule_ids: 조회할 Schedule ID 목록
+    :return: Schedule 리스트
+    """
+    if not schedule_ids:
+        return []
+    statement = select(Schedule).where(Schedule.id.in_(schedule_ids))
+    return list(session.exec(statement).all())
+
+
 def update_schedule(
         session: Session,
         schedule: Schedule,

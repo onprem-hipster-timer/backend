@@ -1,0 +1,3 @@
+"""
+Friend Schema Package
+"""

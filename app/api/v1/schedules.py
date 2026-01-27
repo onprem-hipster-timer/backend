@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.constants import ResourceScope
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.schema.dto import (
@@ -68,6 +69,10 @@ async def read_schedules(
             ...,
             description="조회 종료 날짜/시간 (ISO 8601 형식)"
         ),
+        scope: ResourceScope = Query(
+            ResourceScope.MINE,
+            description="조회 범위: mine(내 일정만), shared(공유된 일정만), all(모두)"
+        ),
         tag_ids: Optional[List[UUID]] = Query(
             None,
             description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 일정만 반환)"
@@ -87,6 +92,11 @@ async def read_schedules(
     """
     날짜 범위 기반 일정 조회 (반복 일정 포함, 태그 필터링 지원)
     
+    조회 범위 (scope):
+    - mine: 내 일정만 (기본값)
+    - shared: 공유된 타인의 일정만
+    - all: 내 일정 + 공유된 일정
+    
     날짜 범위:
     - start_date: 조회 시작 날짜/시간 (필수)
     - end_date: 조회 종료 날짜/시간 (필수)
@@ -101,20 +111,35 @@ async def read_schedules(
     - async 라우트 사용
     """
     service = ScheduleService(session, current_user)
-
-    # 날짜 범위 기반 조회 (태그 필터링 포함)
-    schedules = service.get_schedules_by_date_range(
-        start_date=start_date,
-        end_date=end_date,
-        tag_ids=tag_ids,
-        group_ids=group_ids,
-    )
-
     tz_obj = parse_timezone(tz) if tz else None
-    return [
-        ScheduleRead.model_validate(schedule).to_timezone(tz_obj)
-        for schedule in schedules
-    ]
+    result = []
+
+    # 내 일정 조회 (scope=mine 또는 scope=all)
+    if scope in (ResourceScope.MINE, ResourceScope.ALL):
+        my_schedules = service.get_schedules_by_date_range(
+            start_date=start_date,
+            end_date=end_date,
+            tag_ids=tag_ids,
+            group_ids=group_ids,
+        )
+        for schedule in my_schedules:
+            schedule_read = service.to_read_dto(schedule, is_shared=False)
+            result.append(schedule_read.to_timezone(tz_obj))
+
+    # 공유된 일정 조회 (scope=shared 또는 scope=all)
+    if scope in (ResourceScope.SHARED, ResourceScope.ALL):
+        from app.domain.dateutil.service import ensure_utc_naive
+        start_date_naive = ensure_utc_naive(start_date)
+        end_date_naive = ensure_utc_naive(end_date)
+
+        shared_schedules = service.get_shared_schedules()
+        for schedule in shared_schedules:
+            # 날짜 범위 필터링 (shared에도 적용)
+            if schedule.start_time <= end_date_naive and schedule.end_time >= start_date_naive:
+                schedule_read = service.to_read_dto(schedule, is_shared=True)
+                result.append(schedule_read.to_timezone(tz_obj))
+
+    return result
 
 
 @router.get("/{schedule_id}", response_model=ScheduleRead)
@@ -129,16 +154,16 @@ async def read_schedule(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    ID로 일정 조회
+    ID로 일정 조회 (공유된 일정 포함)
     
-    FastAPI Best Practices:
-    - 인증된 사용자만 자신의 일정 조회 가능
+    본인 소유 일정 또는 공유 접근 권한이 있는 일정을 조회합니다.
+    접근 권한이 없으면 403 Forbidden을 반환합니다.
     """
     service = ScheduleService(session, current_user)
-    schedule = service.get_schedule(schedule_id)
+    schedule, is_shared = service.get_schedule_with_access_check(schedule_id)
 
-    # Schedule 모델을 ScheduleRead로 변환
-    schedule_read = ScheduleRead.model_validate(schedule)
+    # Schedule 모델을 ScheduleRead로 변환 (가시성 정보 포함)
+    schedule_read = service.to_read_dto(schedule, is_shared=is_shared)
 
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
@@ -233,13 +258,13 @@ async def get_schedule_timers(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    일정의 모든 타이머 조회
+    일정의 모든 타이머 조회 (공유된 일정 포함)
     """
     from app.domain.schedule.schema.dto import ScheduleRead
     from app.domain.timer.schema.dto import TimerRead
 
     schedule_service = ScheduleService(session, current_user)
-    schedule = schedule_service.get_schedule(schedule_id)
+    schedule, _ = schedule_service.get_schedule_with_access_check(schedule_id)
 
     timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_schedule(schedule.id)
@@ -276,7 +301,7 @@ async def get_active_timer(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED, 공유된 일정 포함)
     
     활성 타이머가 없으면 404를 반환합니다.
     """
@@ -285,7 +310,7 @@ async def get_active_timer(
     from app.domain.timer.schema.dto import TimerRead
 
     schedule_service = ScheduleService(session, current_user)
-    schedule = schedule_service.get_schedule(schedule_id)
+    schedule, _ = schedule_service.get_schedule_with_access_check(schedule_id)
 
     timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer(schedule.id)

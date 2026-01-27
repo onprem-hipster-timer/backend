@@ -37,6 +37,31 @@ def get_todo(session: Session, todo_id: UUID, owner_id: str) -> Todo | None:
     return session.exec(statement).first()
 
 
+def get_todo_by_id(session: Session, todo_id: UUID) -> Todo | None:
+    """
+    ID로 Todo 조회 (소유자 검증 없음 - 접근 제어는 Service에서 처리)
+    
+    공유 리소스 접근 시 사용
+    """
+    return session.get(Todo, todo_id)
+
+
+def get_todos_by_ids(session: Session, todo_ids: list[UUID]) -> list[Todo]:
+    """
+    여러 ID로 Todo 배치 조회 (소유자 검증 없음)
+    
+    공유 리소스 조회 시 N+1 문제 방지를 위해 사용
+    
+    :param session: DB 세션
+    :param todo_ids: 조회할 Todo ID 목록
+    :return: Todo 리스트
+    """
+    if not todo_ids:
+        return []
+    statement = select(Todo).where(Todo.id.in_(todo_ids))
+    return list(session.exec(statement).all())
+
+
 def get_todos_sorted(
         session: Session,
         owner_id: str,
