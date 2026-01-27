@@ -49,6 +49,22 @@ def get_timer_by_id(session: Session, timer_id: UUID) -> TimerSession | None:
     return session.get(TimerSession, timer_id)
 
 
+def get_timers_by_ids(session: Session, timer_ids: list[UUID]) -> list[TimerSession]:
+    """
+    여러 ID로 TimerSession 배치 조회 (소유자 검증 없음)
+    
+    공유 리소스 조회 시 N+1 문제 방지를 위해 사용
+    
+    :param session: DB 세션
+    :param timer_ids: 조회할 Timer ID 목록
+    :return: TimerSession 리스트
+    """
+    if not timer_ids:
+        return []
+    statement = select(TimerSession).where(TimerSession.id.in_(timer_ids))
+    return list(session.exec(statement).all())
+
+
 def get_timers_by_schedule(
         session: Session,
         schedule_id: UUID,

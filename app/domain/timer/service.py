@@ -188,36 +188,46 @@ class TimerService:
         """
         공유된 타이머 조회 (타인 소유, 접근 권한 있는 것만)
         
+        N+1 문제 방지를 위해 배치 패턴 사용:
+        1. visibility 후보 목록 조회
+        2. 리소스 배치 조회
+        3. 배치 권한 필터링
+        4. RUNNING 상태 경과 시간 계산
+        
         :return: 공유된 타이머 리스트
         """
-        # 공개된 리소스 ID 목록 조회
-        shared_info = visibility_crud.get_shared_resource_ids(
+        # 1. 후보 목록 조회 (visibility != PRIVATE, owner != me)
+        visibilities = visibility_crud.get_shared_visibilities(
             self.session,
             ResourceType.TIMER,
             exclude_owner_id=self.owner_id,
         )
         
-        if not shared_info:
+        if not visibilities:
             return []
         
-        visibility_service = VisibilityService(self.session, self.current_user)
-        accessible_timers = []
-        now = ensure_utc_naive(datetime.now(UTC))
+        # 2. 리소스 ID 추출 및 배치 조회
+        resource_ids = [v.resource_id for v in visibilities]
+        timers = crud.get_timers_by_ids(self.session, resource_ids)
         
-        for resource_id, owner_id in shared_info:
-            # 실제 접근 가능 여부 확인
-            if visibility_service.can_access(
-                resource_type=ResourceType.TIMER,
-                resource_id=resource_id,
-                owner_id=owner_id,
-            ):
-                timer = crud.get_timer_by_id(self.session, resource_id)
-                if timer:
-                    # RUNNING 상태인 경우 경과 시간 실시간 계산
-                    if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                        elapsed_since_start = int((now - timer.started_at).total_seconds())
-                        timer.elapsed_time = max(0, elapsed_since_start)
-                    accessible_timers.append(timer)
+        if not timers:
+            return []
+        
+        # 3. 배치 권한 필터링
+        visibility_service = VisibilityService(self.session, self.current_user)
+        accessible_timers = visibility_service.filter_accessible_resources(
+            resource_type=ResourceType.TIMER,
+            visibilities=visibilities,
+            resources=timers,
+            get_resource_id=lambda t: t.id,
+        )
+        
+        # 4. RUNNING 상태인 타이머들의 경과 시간 실시간 계산
+        now = ensure_utc_naive(datetime.now(UTC))
+        for timer in accessible_timers:
+            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+                elapsed_since_start = int((now - timer.started_at).total_seconds())
+                timer.elapsed_time = max(0, elapsed_since_start)
         
         return accessible_timers
 

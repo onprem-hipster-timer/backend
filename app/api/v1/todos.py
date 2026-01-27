@@ -203,12 +203,12 @@ async def get_todo_timers(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Todo의 모든 타이머 조회
+    Todo의 모든 타이머 조회 (공유된 Todo 포함)
     
     Schedule의 /schedules/{schedule_id}/timers 엔드포인트와 동일한 패턴입니다.
     """
     todo_service = TodoService(session, current_user)
-    todo = todo_service.get_todo(todo_id)
+    todo, _ = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_todo(todo.id)
@@ -245,7 +245,7 @@ async def get_todo_active_timer(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    Todo의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    Todo의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED, 공유된 Todo 포함)
     
     활성 타이머가 없으면 404를 반환합니다.
     Schedule의 /schedules/{schedule_id}/timers/active 엔드포인트와 동일한 패턴입니다.
@@ -253,7 +253,7 @@ async def get_todo_active_timer(
     from app.domain.timer.exceptions import TimerNotFoundError
 
     todo_service = TodoService(session, current_user)
-    todo = todo_service.get_todo(todo_id)
+    todo, _ = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer_by_todo(todo.id)

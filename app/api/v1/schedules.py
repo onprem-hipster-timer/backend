@@ -258,13 +258,13 @@ async def get_schedule_timers(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    일정의 모든 타이머 조회
+    일정의 모든 타이머 조회 (공유된 일정 포함)
     """
     from app.domain.schedule.schema.dto import ScheduleRead
     from app.domain.timer.schema.dto import TimerRead
 
     schedule_service = ScheduleService(session, current_user)
-    schedule = schedule_service.get_schedule(schedule_id)
+    schedule, _ = schedule_service.get_schedule_with_access_check(schedule_id)
 
     timer_service = TimerService(session, current_user)
     timers = timer_service.get_timers_by_schedule(schedule.id)
@@ -301,7 +301,7 @@ async def get_active_timer(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+    일정의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED, 공유된 일정 포함)
     
     활성 타이머가 없으면 404를 반환합니다.
     """
@@ -310,7 +310,7 @@ async def get_active_timer(
     from app.domain.timer.schema.dto import TimerRead
 
     schedule_service = ScheduleService(session, current_user)
-    schedule = schedule_service.get_schedule(schedule_id)
+    schedule, _ = schedule_service.get_schedule_with_access_check(schedule_id)
 
     timer_service = TimerService(session, current_user)
     timer = timer_service.get_active_timer(schedule.id)

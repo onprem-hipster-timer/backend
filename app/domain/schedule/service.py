@@ -168,35 +168,38 @@ class ScheduleService:
         """
         공유된 일정 조회 (타인 소유, 접근 권한 있는 것만)
         
+        N+1 문제 방지를 위해 배치 패턴 사용:
+        1. visibility 후보 목록 조회
+        2. 리소스 배치 조회
+        3. 배치 권한 필터링
+        
         :return: 공유된 일정 리스트
         """
-        from app.models.visibility import ResourceType
-        
-        # 공개된 리소스 ID 목록 조회
-        shared_info = visibility_crud.get_shared_resource_ids(
+        # 1. 후보 목록 조회 (visibility != PRIVATE, owner != me)
+        visibilities = visibility_crud.get_shared_visibilities(
             self.session,
             ResourceType.SCHEDULE,
             exclude_owner_id=self.owner_id,
         )
         
-        if not shared_info:
+        if not visibilities:
             return []
         
+        # 2. 리소스 ID 추출 및 배치 조회
+        resource_ids = [v.resource_id for v in visibilities]
+        schedules = crud.get_schedules_by_ids(self.session, resource_ids)
+        
+        if not schedules:
+            return []
+        
+        # 3. 배치 권한 필터링
         visibility_service = VisibilityService(self.session, self.current_user)
-        accessible_schedules = []
-        
-        for resource_id, owner_id in shared_info:
-            # 실제 접근 가능 여부 확인
-            if visibility_service.can_access(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=resource_id,
-                owner_id=owner_id,
-            ):
-                schedule = crud.get_schedule_by_id(self.session, resource_id)
-                if schedule:
-                    accessible_schedules.append(schedule)
-        
-        return accessible_schedules
+        return visibility_service.filter_accessible_resources(
+            resource_type=ResourceType.SCHEDULE,
+            visibilities=visibilities,
+            resources=schedules,
+            get_resource_id=lambda s: s.id,
+        )
 
     def get_all_schedules_with_tag_filter(
             self,

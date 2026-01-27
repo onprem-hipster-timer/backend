@@ -253,33 +253,38 @@ class TodoService:
         """
         공유된 Todo 조회 (타인 소유, 접근 권한 있는 것만)
         
+        N+1 문제 방지를 위해 배치 패턴 사용:
+        1. visibility 후보 목록 조회
+        2. 리소스 배치 조회
+        3. 배치 권한 필터링
+        
         :return: 공유된 Todo 리스트
         """
-        # 공개된 리소스 ID 목록 조회
-        shared_info = visibility_crud.get_shared_resource_ids(
+        # 1. 후보 목록 조회 (visibility != PRIVATE, owner != me)
+        visibilities = visibility_crud.get_shared_visibilities(
             self.session,
             ResourceType.TODO,
             exclude_owner_id=self.owner_id,
         )
         
-        if not shared_info:
+        if not visibilities:
             return []
         
+        # 2. 리소스 ID 추출 및 배치 조회
+        resource_ids = [v.resource_id for v in visibilities]
+        todos = crud.get_todos_by_ids(self.session, resource_ids)
+        
+        if not todos:
+            return []
+        
+        # 3. 배치 권한 필터링
         visibility_service = VisibilityService(self.session, self.current_user)
-        accessible_todos = []
-        
-        for resource_id, owner_id in shared_info:
-            # 실제 접근 가능 여부 확인
-            if visibility_service.can_access(
-                resource_type=ResourceType.TODO,
-                resource_id=resource_id,
-                owner_id=owner_id,
-            ):
-                todo = crud.get_todo_by_id(self.session, resource_id)
-                if todo:
-                    accessible_todos.append(todo)
-        
-        return accessible_todos
+        return visibility_service.filter_accessible_resources(
+            resource_type=ResourceType.TODO,
+            visibilities=visibilities,
+            resources=todos,
+            get_resource_id=lambda t: t.id,
+        )
 
     def get_all_todos(
             self,
