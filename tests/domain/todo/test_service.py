@@ -1243,8 +1243,10 @@ def test_get_all_todos_includes_deep_ancestors_with_tag_filter(test_session, sam
 # ============================================================
 
 def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, other_user):
-    """공유된 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트"""
+    """공유된 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트
+    """
     from datetime import UTC
+    from app.domain.schedule.schema.dto import ScheduleRead
 
     tag_service = TagService(test_session, other_user)
     
@@ -1273,9 +1275,12 @@ def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, oth
     assert len(schedules) == 1, "Todo의 Schedule이 생성되어야 함"
     schedule_id = schedules[0].id
 
+    #Schedule을 조회하고 DTO로 변환 후 주입
+    schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
+
     # test_user가 공유된 Todo를 to_read_dto로 변환 (is_shared=True)
     test_todo_service = TodoService(test_session, test_user)
-    dto = test_todo_service.to_read_dto(todo, is_shared=True)
+    dto = test_todo_service.to_read_dto(todo, is_shared=True, schedules=schedule_reads)
 
     # 공유된 Todo여도 연관 Schedule이 포함되어야 함
     assert len(dto.schedules) == 1, "공유된 Todo의 schedules 필드가 채워져야 함"
@@ -1285,8 +1290,9 @@ def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, oth
 
 
 def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group, test_user):
-    """본인 소유 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트"""
+    """본인 소유 Todo를 to_read_dto로 변환할 때 연관 Schedule이 포함되는지 테스트   """
     from datetime import UTC
+    from app.domain.schedule.schema.dto import ScheduleRead
 
     service = TodoService(test_session, test_user)
     deadline = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
@@ -1306,8 +1312,11 @@ def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group,
     )
     assert len(schedules) == 1
 
-    # is_shared=False로 to_read_dto 호출 (기본값)
-    dto = service.to_read_dto(todo, is_shared=False)
+    #chedule을 조회하고 DTO로 변환 후 주입
+    schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
+
+    # is_shared=False로 to_read_dto 호출
+    dto = service.to_read_dto(todo, is_shared=False, schedules=schedule_reads)
 
     # 본인 소유 Todo도 연관 Schedule이 포함되어야 함
     assert len(dto.schedules) == 1
