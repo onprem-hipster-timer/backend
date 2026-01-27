@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.constants import ResourceScope
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.timer.schema.dto import TimerRead
@@ -48,6 +49,10 @@ async def create_todo(
 
 @router.get("", response_model=list[TodoRead])
 async def read_todos(
+        scope: ResourceScope = Query(
+            ResourceScope.MINE,
+            description="조회 범위: mine(내 Todo만), shared(공유된 Todo만), all(모두)"
+        ),
         tag_ids: Optional[List[UUID]] = Query(
             None,
             description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 Todo만 반환)"
@@ -61,6 +66,11 @@ async def read_todos(
 ):
     """
     Todo 목록 조회 (태그/그룹 필터링 지원)
+    
+    조회 범위 (scope):
+    - mine: 내 Todo만 (기본값)
+    - shared: 공유된 타인의 Todo만
+    - all: 내 Todo + 공유된 Todo
     
     그룹 필터링:
     - group_ids: 해당 그룹에 속한 Todo 반환
@@ -78,15 +88,31 @@ async def read_todos(
     둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
     """
     service = TodoService(session, current_user)
-    result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
+    result_list = []
 
-    return [
-        service.to_read_dto(
-            todo,
-            include_reason=result.include_reason_by_id.get(todo.id, TodoIncludeReason.MATCH),
-        )
-        for todo in result.todos
-    ]
+    # 내 Todo 조회 (scope=mine 또는 scope=all)
+    if scope in (ResourceScope.MINE, ResourceScope.ALL):
+        result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
+        for todo in result.todos:
+            todo_read = service.to_read_dto(
+                todo, 
+                include_reason=result.include_reason_by_id.get(todo.id, TodoIncludeReason.MATCH),
+                is_shared=False,
+            )
+            result_list.append(todo_read)
+
+    # 공유된 Todo 조회 (scope=shared 또는 scope=all)
+    if scope in (ResourceScope.SHARED, ResourceScope.ALL):
+        shared_todos = service.get_shared_todos()
+        for todo in shared_todos:
+            # group_ids 필터 적용 (shared에도)
+            if group_ids and todo.tag_group_id not in group_ids:
+                continue
+            
+            todo_read = service.to_read_dto(todo, is_shared=True)
+            result_list.append(todo_read)
+
+    return result_list
 
 
 @router.get("/stats", response_model=TodoStats)
@@ -115,11 +141,14 @@ async def read_todo(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    ID로 Todo 조회
+    ID로 Todo 조회 (공유된 Todo 포함)
+    
+    본인 소유 Todo 또는 공유 접근 권한이 있는 Todo를 조회합니다.
+    접근 권한이 없으면 403 Forbidden을 반환합니다.
     """
     service = TodoService(session, current_user)
-    todo = service.get_todo(todo_id)
-    return service.to_read_dto(todo)
+    todo, is_shared = service.get_todo_with_access_check(todo_id)
+    return service.to_read_dto(todo, is_shared=is_shared)
 
 
 @router.patch("/{todo_id}", response_model=TodoRead)

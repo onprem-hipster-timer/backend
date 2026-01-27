@@ -79,6 +79,15 @@ def get_schedule(session: Session, schedule_id: UUID, owner_id: str) -> Schedule
     return session.exec(statement).first()
 
 
+def get_schedule_by_id(session: Session, schedule_id: UUID) -> Schedule | None:
+    """
+    ID로 Schedule 조회 (소유자 검증 없음 - 접근 제어는 Service에서 처리)
+    
+    공유 리소스 접근 시 사용
+    """
+    return session.get(Schedule, schedule_id)
+
+
 def update_schedule(
         session: Session,
         schedule: Schedule,

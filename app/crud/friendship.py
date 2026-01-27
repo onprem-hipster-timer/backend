@@ -11,6 +11,13 @@ from sqlmodel import Session, select, or_, and_
 from app.models.friendship import Friendship, FriendshipStatus
 
 
+def _compute_pair_ids(user_a: str, user_b: str) -> tuple[str, str]:
+    """두 사용자 ID를 정렬하여 (min, max) 페어 반환"""
+    if user_a <= user_b:
+        return user_a, user_b
+    return user_b, user_a
+
+
 def create_friendship(
     session: Session,
     requester_id: str,
@@ -18,10 +25,15 @@ def create_friendship(
     status: FriendshipStatus = FriendshipStatus.PENDING,
 ) -> Friendship:
     """친구 관계 생성"""
+    # 양방향 유니크 제약을 위한 정렬된 페어 ID 계산
+    pair_1, pair_2 = _compute_pair_ids(requester_id, addressee_id)
+    
     friendship = Friendship(
         requester_id=requester_id,
         addressee_id=addressee_id,
         status=status,
+        pair_user_id_1=pair_1,
+        pair_user_id_2=pair_2,
     )
     session.add(friendship)
     session.flush()

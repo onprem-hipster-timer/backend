@@ -113,7 +113,7 @@ class ScheduleService:
 
     def get_schedule(self, schedule_id: UUID) -> Schedule:
         """
-        일정 조회
+        일정 조회 (본인 소유만)
         
         :param schedule_id: 일정 ID
         :return: 일정
@@ -124,13 +124,79 @@ class ScheduleService:
             raise ScheduleNotFoundError()
         return schedule
 
+    def get_schedule_with_access_check(self, schedule_id: UUID) -> tuple[Schedule, bool]:
+        """
+        일정 조회 (공유 리소스 접근 제어 포함)
+        
+        본인 소유이거나 공유 접근 권한이 있는 경우 반환합니다.
+        
+        :param schedule_id: 일정 ID
+        :return: (일정, is_shared) 튜플
+        :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        :raises AccessDeniedError: 접근 권한이 없는 경우
+        """
+        from app.domain.visibility.exceptions import AccessDeniedError
+        
+        # 먼저 ID로만 조회 (소유자 무관)
+        schedule = crud.get_schedule_by_id(self.session, schedule_id)
+        if not schedule:
+            raise ScheduleNotFoundError()
+        
+        # 본인 소유인 경우
+        if schedule.owner_id == self.owner_id:
+            return schedule, False
+        
+        # 타인 소유인 경우 접근 권한 확인
+        visibility_service = VisibilityService(self.session, self.current_user)
+        visibility_service.require_access(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=schedule_id,
+            owner_id=schedule.owner_id,
+        )
+        
+        return schedule, True
+
     def get_all_schedules(self) -> list[Schedule]:
         """
-        모든 일정 조회
+        모든 일정 조회 (본인 소유만)
         
         :return: 일정 리스트
         """
         return crud.get_schedules(self.session, self.owner_id)
+
+    def get_shared_schedules(self) -> list[Schedule]:
+        """
+        공유된 일정 조회 (타인 소유, 접근 권한 있는 것만)
+        
+        :return: 공유된 일정 리스트
+        """
+        from app.models.visibility import ResourceType
+        
+        # 공개된 리소스 ID 목록 조회
+        shared_info = visibility_crud.get_shared_resource_ids(
+            self.session,
+            ResourceType.SCHEDULE,
+            exclude_owner_id=self.owner_id,
+        )
+        
+        if not shared_info:
+            return []
+        
+        visibility_service = VisibilityService(self.session, self.current_user)
+        accessible_schedules = []
+        
+        for resource_id, owner_id in shared_info:
+            # 실제 접근 가능 여부 확인
+            if visibility_service.can_access(
+                resource_type=ResourceType.SCHEDULE,
+                resource_id=resource_id,
+                owner_id=owner_id,
+            ):
+                schedule = crud.get_schedule_by_id(self.session, resource_id)
+                if schedule:
+                    accessible_schedules.append(schedule)
+        
+        return accessible_schedules
 
     def get_all_schedules_with_tag_filter(
             self,
@@ -871,3 +937,32 @@ class ScheduleService:
             level=level,
             allowed_user_ids=allowed_user_ids,
         )
+
+    def to_read_dto(
+        self,
+        schedule: Schedule,
+        is_shared: bool = False,
+    ) -> "ScheduleRead":
+        """
+        Schedule을 ScheduleRead DTO로 변환하고 가시성 정보를 채웁니다.
+        
+        :param schedule: Schedule 모델
+        :param is_shared: 공유된 리소스인지 여부
+        :return: ScheduleRead DTO (가시성 정보 포함)
+        """
+        from app.domain.schedule.schema.dto import ScheduleRead
+        
+        schedule_read = ScheduleRead.model_validate(schedule)
+        
+        # 가시성 정보 채우기
+        schedule_read.owner_id = schedule.owner_id
+        schedule_read.is_shared = is_shared
+        
+        # 가시성 레벨 조회
+        visibility = visibility_crud.get_visibility_by_resource(
+            self.session, ResourceType.SCHEDULE, schedule.id
+        )
+        if visibility:
+            schedule_read.visibility_level = visibility.level
+        
+        return schedule_read

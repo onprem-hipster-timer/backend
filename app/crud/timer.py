@@ -40,6 +40,15 @@ def get_timer(session: Session, timer_id: UUID, owner_id: str) -> TimerSession |
     return session.exec(statement).first()
 
 
+def get_timer_by_id(session: Session, timer_id: UUID) -> TimerSession | None:
+    """
+    ID로 TimerSession 조회 (소유자 검증 없음 - 접근 제어는 Service에서 처리)
+    
+    공유 리소스 접근 시 사용
+    """
+    return session.get(TimerSession, timer_id)
+
+
 def get_timers_by_schedule(
         session: Session,
         schedule_id: UUID,

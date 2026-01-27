@@ -249,3 +249,49 @@ def remove_user_from_all_allow_lists(
     if count > 0:
         session.flush()
     return count
+
+
+# ============================================================
+# 공유 리소스 조회 (Shared Resource Query)
+# ============================================================
+
+def get_shared_visibilities(
+    session: Session,
+    resource_type: ResourceType,
+    exclude_owner_id: str,
+) -> list[ResourceVisibility]:
+    """
+    타인 소유의 공개된(visibility != PRIVATE) 리소스 가시성 목록 조회
+    
+    scope=shared 조회 시 사용. 반환된 목록에 대해 추가로 
+    VisibilityService.can_access()로 실제 접근 가능 여부 확인 필요.
+    
+    :param session: DB 세션
+    :param resource_type: 리소스 타입
+    :param exclude_owner_id: 제외할 소유자 ID (본인)
+    :return: 공개된 가시성 설정 목록
+    """
+    statement = (
+        select(ResourceVisibility)
+        .where(ResourceVisibility.resource_type == resource_type)
+        .where(ResourceVisibility.owner_id != exclude_owner_id)
+        .where(ResourceVisibility.level != VisibilityLevel.PRIVATE)
+    )
+    return list(session.exec(statement).all())
+
+
+def get_shared_resource_ids(
+    session: Session,
+    resource_type: ResourceType,
+    exclude_owner_id: str,
+) -> list[tuple[UUID, str]]:
+    """
+    공유된 리소스 ID와 소유자 ID 튜플 목록 조회
+    
+    :param session: DB 세션
+    :param resource_type: 리소스 타입
+    :param exclude_owner_id: 제외할 소유자 ID (본인)
+    :return: (resource_id, owner_id) 튜플 목록
+    """
+    visibilities = get_shared_visibilities(session, resource_type, exclude_owner_id)
+    return [(v.resource_id, v.owner_id) for v in visibilities]

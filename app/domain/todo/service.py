@@ -206,7 +206,7 @@ class TodoService:
 
     def get_todo(self, todo_id: UUID) -> Todo:
         """
-        Todo 조회
+        Todo 조회 (본인 소유만)
         
         :param todo_id: Todo ID
         :return: Todo
@@ -216,6 +216,70 @@ class TodoService:
         if not todo:
             raise TodoNotFoundError()
         return todo
+
+    def get_todo_with_access_check(self, todo_id: UUID) -> tuple[Todo, bool]:
+        """
+        Todo 조회 (공유 리소스 접근 제어 포함)
+        
+        본인 소유이거나 공유 접근 권한이 있는 경우 반환합니다.
+        
+        :param todo_id: Todo ID
+        :return: (Todo, is_shared) 튜플
+        :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
+        :raises AccessDeniedError: 접근 권한이 없는 경우
+        """
+        from app.domain.visibility.exceptions import AccessDeniedError
+        
+        # 먼저 ID로만 조회 (소유자 무관)
+        todo = crud.get_todo_by_id(self.session, todo_id)
+        if not todo:
+            raise TodoNotFoundError()
+        
+        # 본인 소유인 경우
+        if todo.owner_id == self.owner_id:
+            return todo, False
+        
+        # 타인 소유인 경우 접근 권한 확인
+        visibility_service = VisibilityService(self.session, self.current_user)
+        visibility_service.require_access(
+            resource_type=ResourceType.TODO,
+            resource_id=todo_id,
+            owner_id=todo.owner_id,
+        )
+        
+        return todo, True
+
+    def get_shared_todos(self) -> list[Todo]:
+        """
+        공유된 Todo 조회 (타인 소유, 접근 권한 있는 것만)
+        
+        :return: 공유된 Todo 리스트
+        """
+        # 공개된 리소스 ID 목록 조회
+        shared_info = visibility_crud.get_shared_resource_ids(
+            self.session,
+            ResourceType.TODO,
+            exclude_owner_id=self.owner_id,
+        )
+        
+        if not shared_info:
+            return []
+        
+        visibility_service = VisibilityService(self.session, self.current_user)
+        accessible_todos = []
+        
+        for resource_id, owner_id in shared_info:
+            # 실제 접근 가능 여부 확인
+            if visibility_service.can_access(
+                resource_type=ResourceType.TODO,
+                resource_id=resource_id,
+                owner_id=owner_id,
+            ):
+                todo = crud.get_todo_by_id(self.session, resource_id)
+                if todo:
+                    accessible_todos.append(todo)
+        
+        return accessible_todos
 
     def get_all_todos(
             self,
@@ -553,13 +617,15 @@ class TodoService:
             self,
             todo: Todo,
             include_reason: TodoIncludeReason = TodoIncludeReason.MATCH,
+            is_shared: bool = False,
     ) -> TodoRead:
         """
-        Todo를 TodoRead DTO로 변환
+        Todo를 TodoRead DTO로 변환하고 가시성 정보를 채웁니다.
         
         :param todo: Todo 모델
         :param include_reason: 포함 사유 (MATCH/ANCESTOR)
-        :return: TodoRead DTO
+        :param is_shared: 공유된 리소스인지 여부
+        :return: TodoRead DTO (가시성 정보 포함)
         """
         from app.domain.schedule.schema.dto import ScheduleRead
 
@@ -570,7 +636,7 @@ class TodoService:
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo.id, self.owner_id)
         schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
 
-        return TodoRead(
+        todo_read = TodoRead(
             id=todo.id,
             title=todo.title,
             description=todo.description,
@@ -583,3 +649,16 @@ class TodoService:
             schedules=schedule_reads,
             include_reason=include_reason,
         )
+        
+        # 가시성 정보 채우기
+        todo_read.owner_id = todo.owner_id
+        todo_read.is_shared = is_shared
+        
+        # 가시성 레벨 조회
+        visibility = visibility_crud.get_visibility_by_resource(
+            self.session, ResourceType.TODO, todo.id
+        )
+        if visibility:
+            todo_read.visibility_level = visibility.level
+        
+        return todo_read

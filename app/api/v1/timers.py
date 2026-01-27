@@ -14,13 +14,9 @@ from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.constants import TagIncludeMode
+from app.core.constants import TagIncludeMode, ResourceScope
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.schema.dto import ScheduleRead
-from app.domain.schedule.service import ScheduleService
-from app.domain.tag.schema.dto import TagRead
-from app.domain.tag.service import TagService
 from app.domain.timer.schema.dto import (
     TimerCreate,
     TimerRead,
@@ -29,59 +25,6 @@ from app.domain.timer.schema.dto import (
 from app.domain.timer.service import TimerService
 
 router = APIRouter(prefix="/timers", tags=["Timers"])
-
-
-def get_timer_tags(
-        session: Session,
-        current_user: CurrentUser,
-        timer_id: UUID,
-        schedule_id: Optional[UUID],
-        todo_id: Optional[UUID],
-        tag_include_mode: TagIncludeMode,
-) -> list[TagRead]:
-    """
-    타이머 태그 조회 헬퍼 함수
-    
-    :param session: DB 세션
-    :param current_user: 현재 사용자
-    :param timer_id: 타이머 ID
-    :param schedule_id: 스케줄 ID (Optional)
-    :param todo_id: Todo ID (Optional)
-    :param tag_include_mode: 태그 포함 모드
-    :return: TagRead 리스트
-    """
-    if tag_include_mode == TagIncludeMode.NONE:
-        return []
-
-    tag_service = TagService(session, current_user)
-
-    if tag_include_mode == TagIncludeMode.TIMER_ONLY:
-        tags = tag_service.get_timer_tags(timer_id)
-        return [TagRead.model_validate(tag) for tag in tags]
-
-    elif tag_include_mode == TagIncludeMode.INHERIT_FROM_SCHEDULE:
-        # 타이머 태그 조회
-        timer_tags = tag_service.get_timer_tags(timer_id)
-        all_tags = {tag.id: tag for tag in timer_tags}
-
-        # 스케줄 태그 조회 (schedule_id가 있는 경우)
-        if schedule_id:
-            schedule_service = ScheduleService(session, current_user)
-            schedule_tags = schedule_service.get_schedule_tags(schedule_id)
-            for tag in schedule_tags:
-                all_tags[tag.id] = tag
-
-        # Todo 태그 조회 (todo_id가 있고 schedule_id가 없는 경우)
-        if todo_id and not schedule_id:
-            from app.domain.todo.service import TodoService
-            todo_service = TodoService(session, current_user)
-            todo_tags = todo_service.get_todo_tags(todo_id)
-            for tag in todo_tags:
-                all_tags[tag.id] = tag
-
-        return [TagRead.model_validate(tag) for tag in all_tags.values()]
-
-    return []
 
 
 @router.post("", response_model=TimerRead, status_code=status.HTTP_201_CREATED)
@@ -119,44 +62,26 @@ async def create_timer(
     service = TimerService(session, current_user)
     timer = service.create_timer(data)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.get("", response_model=List[TimerRead])
 async def list_timers(
+        scope: ResourceScope = Query(
+            ResourceScope.MINE,
+            description="조회 범위: mine(내 타이머만), shared(공유된 타이머만), all(모두)"
+        ),
         status_filter: Optional[List[str]] = Query(
             None,
             alias="status",
@@ -198,6 +123,11 @@ async def list_timers(
     """
     타이머 목록 조회
     
+    조회 범위 (scope):
+    - mine: 내 타이머만 (기본값)
+    - shared: 공유된 타인의 타이머만
+    - all: 내 타이머 + 공유된 타이머
+    
     필터링 옵션:
     - status: 상태 필터 (RUNNING, PAUSED, COMPLETED, CANCELLED) - 복수 선택 가능
     - type: 타입 필터
@@ -207,54 +137,51 @@ async def list_timers(
     - start_date, end_date: 날짜 범위 필터 (started_at 기준)
     """
     service = TimerService(session, current_user)
-    
-    # status 필터를 소문자로 변환 (API는 대문자, DB는 소문자 저장)
-    normalized_status = [s.lower() for s in status_filter] if status_filter else None
-    
-    timers = service.get_all_timers(
-        status=normalized_status,
-        timer_type=timer_type,
-        start_date=start_date,
-        end_date=end_date,
-    )
-
     tz_obj = parse_timezone(tz) if tz else None
     result = []
 
-    for timer in timers:
-        # Schedule 정보 처리
-        schedule_read = None
-        if include_schedule and timer.schedule_id:
-            schedule_service = ScheduleService(session, current_user)
-            schedule = schedule_service.get_schedule(timer.schedule_id)
-            if schedule:
-                schedule_read = ScheduleRead.model_validate(schedule)
+    # status 필터를 소문자로 변환 (API는 대문자, DB는 소문자 저장)
+    normalized_status = [s.lower() for s in status_filter] if status_filter else None
 
-        # Todo 정보 처리
-        todo_read = None
-        if include_todo and timer.todo_id:
-            from app.domain.todo.service import TodoService
-            todo_service = TodoService(session, current_user)
-            todo = todo_service.get_todo(timer.todo_id)
-            if todo:
-                todo_read = todo_service.to_read_dto(todo)
-
-        # Tags 정보 처리
-        tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-        # Timer 모델을 TimerRead로 변환
-        timer_read = TimerRead.from_model(
-            timer,
-            include_schedule=include_schedule,
-            schedule=schedule_read,
-            include_todo=include_todo,
-            todo=todo_read,
-            tag_include_mode=tag_include_mode,
-            tags=tags_read,
+    # 내 타이머 조회 (scope=mine 또는 scope=all)
+    if scope in (ResourceScope.MINE, ResourceScope.ALL):
+        my_timers = service.get_all_timers(
+            status=normalized_status,
+            timer_type=timer_type,
+            start_date=start_date,
+            end_date=end_date,
         )
+        for timer in my_timers:
+            timer_read = service.to_read_dto(
+                timer,
+                is_shared=False,
+                include_schedule=include_schedule,
+                include_todo=include_todo,
+                tag_include_mode=tag_include_mode,
+            )
+            result.append(timer_read.to_timezone(tz_obj, validate=False))
 
-        # 타임존 변환
-        result.append(timer_read.to_timezone(tz_obj, validate=False))
+    # 공유된 타이머 조회 (scope=shared 또는 scope=all)
+    if scope in (ResourceScope.SHARED, ResourceScope.ALL):
+        shared_timers = service.get_shared_timers()
+        for timer in shared_timers:
+            # status 필터 적용
+            if normalized_status and timer.status not in normalized_status:
+                continue
+            # 날짜 범위 필터 적용
+            if start_date and timer.started_at and timer.started_at < start_date:
+                continue
+            if end_date and timer.started_at and timer.started_at > end_date:
+                continue
+            
+            timer_read = service.to_read_dto(
+                timer,
+                is_shared=True,
+                include_schedule=include_schedule,
+                include_todo=include_todo,
+                tag_include_mode=tag_include_mode,
+            )
+            result.append(timer_read.to_timezone(tz_obj, validate=False))
 
     return result
 
@@ -296,35 +223,13 @@ async def get_user_active_timer(
             detail="No active timer found"
         )
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
     # 타임존 변환
@@ -356,43 +261,24 @@ async def get_timer(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    타이머 조회
+    타이머 조회 (공유된 타이머 포함)
+    
+    본인 소유 타이머 또는 공유 접근 권한이 있는 타이머를 조회합니다.
+    접근 권한이 없으면 403 Forbidden을 반환합니다.
     """
     service = TimerService(session, current_user)
-    timer = service.get_timer(timer_id)
+    timer, is_shared = service.get_timer_with_access_check(timer_id)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=is_shared,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 
@@ -427,38 +313,16 @@ async def update_timer(
     service = TimerService(session, current_user)
     timer = service.update_timer(timer_id, data)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 
@@ -492,38 +356,16 @@ async def pause_timer(
     service = TimerService(session, current_user)
     timer = service.pause_timer(timer_id)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 
@@ -557,38 +399,16 @@ async def resume_timer(
     service = TimerService(session, current_user)
     timer = service.resume_timer(timer_id)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 
@@ -622,38 +442,16 @@ async def stop_timer(
     service = TimerService(session, current_user)
     timer = service.stop_timer(timer_id)
 
-    # Schedule 정보 처리
-    schedule_read = None
-    if include_schedule and timer.schedule_id:
-        schedule_service = ScheduleService(session, current_user)
-        schedule = schedule_service.get_schedule(timer.schedule_id)
-        if schedule:
-            schedule_read = ScheduleRead.model_validate(schedule)
-
-    # Todo 정보 처리
-    todo_read = None
-    if include_todo and timer.todo_id:
-        from app.domain.todo.service import TodoService
-        todo_service = TodoService(session, current_user)
-        todo = todo_service.get_todo(timer.todo_id)
-        if todo:
-            todo_read = todo_service.to_read_dto(todo)
-
-    # Tags 정보 처리
-    tags_read = get_timer_tags(session, current_user, timer.id, timer.schedule_id, timer.todo_id, tag_include_mode)
-
-    # Timer 모델을 TimerRead로 변환 (안전한 변환 - 관계 필드 제외)
-    timer_read = TimerRead.from_model(
+    # Timer 모델을 TimerRead로 변환 (서비스에서 가시성 정보 포함)
+    timer_read = service.to_read_dto(
         timer,
+        is_shared=False,
         include_schedule=include_schedule,
-        schedule=schedule_read,
         include_todo=include_todo,
-        todo=todo_read,
         tag_include_mode=tag_include_mode,
-        tags=tags_read,
     )
 
-    # 타임존 변환 (from_model로 이미 검증된 인스턴스이므로 validate=False)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return timer_read.to_timezone(tz_obj, validate=False)
 

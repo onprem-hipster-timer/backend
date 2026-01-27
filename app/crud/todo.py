@@ -37,6 +37,15 @@ def get_todo(session: Session, todo_id: UUID, owner_id: str) -> Todo | None:
     return session.exec(statement).first()
 
 
+def get_todo_by_id(session: Session, todo_id: UUID) -> Todo | None:
+    """
+    ID로 Todo 조회 (소유자 검증 없음 - 접근 제어는 Service에서 처리)
+    
+    공유 리소스 접근 시 사용
+    """
+    return session.get(Todo, todo_id)
+
+
 def get_todos_sorted(
         session: Session,
         owner_id: str,

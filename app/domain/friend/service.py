@@ -5,6 +5,7 @@ Friend Service
 """
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
@@ -68,12 +69,18 @@ class FriendService:
                 raise FriendRequestAlreadyExistsError()
 
         # 친구 요청 생성
-        friendship = crud.create_friendship(
-            self.session,
-            requester_id=self.user_id,
-            addressee_id=addressee_id,
-            status=FriendshipStatus.PENDING,
-        )
+        # IntegrityError는 race condition에서 발생할 수 있음 (양방향 유니크 제약)
+        try:
+            friendship = crud.create_friendship(
+                self.session,
+                requester_id=self.user_id,
+                addressee_id=addressee_id,
+                status=FriendshipStatus.PENDING,
+            )
+        except IntegrityError:
+            # 양방향 유니크 제약 위반 → 이미 요청이 존재
+            self.session.rollback()
+            raise FriendRequestAlreadyExistsError()
 
         return friendship
 
