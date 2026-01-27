@@ -16,7 +16,6 @@ from app.domain.friend.schema.dto import (
     FriendshipRead,
     FriendRead,
     PendingRequestRead,
-    FriendshipActionResponse,
 )
 from app.domain.friend.service import FriendService
 

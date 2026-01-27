@@ -1228,7 +1228,7 @@ def test_get_schedules_with_timezone_and_tag_filter_e2e(e2e_client):
     )
     assert response.status_code == 200
     schedules = response.json()
-    
+
     # 태그 필터링 확인
     schedule_ids = [s["id"] for s in schedules]
     assert tagged_id in schedule_ids
@@ -1305,7 +1305,7 @@ def test_get_schedules_with_timezone_and_group_filter_e2e(e2e_client):
     )
     assert response.status_code == 200
     schedules = response.json()
-    
+
     # 그룹 필터링 확인
     schedule_ids = [s["id"] for s in schedules]
     assert schedule1_id in schedule_ids
@@ -1416,7 +1416,7 @@ def test_get_schedules_with_multiple_tag_and_group_filter_e2e(e2e_client):
     assert response.status_code == 200
     schedules = response.json()
     schedule_ids = [s["id"] for s in schedules]
-    
+
     # 태그A, 태그B 모두 있는 일정만 반환
     assert schedule_ab_id in schedule_ids
     assert schedule_a_id not in schedule_ids  # 태그B 없음
@@ -1432,7 +1432,7 @@ def test_schedule_visibility_friends_scope_shared(multi_user_e2e):
     """친구에게 공유된 일정이 scope=shared로 조회되는지 E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
-    
+
     # 1. user-a가 친구에게 공개된 일정 생성
     schedule_response = client_a.post(
         "/v1/schedules",
@@ -1447,14 +1447,14 @@ def test_schedule_visibility_friends_scope_shared(multi_user_e2e):
     )
     assert schedule_response.status_code == 201
     schedule_id = schedule_response.json()["id"]
-    
+
     # 2. user-a가 user-b에게 친구 요청
     friend_request = client_a.post(
         "/v1/friends/requests",
         json={"addressee_id": multi_user_e2e.get_user("user-b").sub}
     )
     assert friend_request.status_code == 201
-    
+
     # 3. user-b가 친구 요청 수락
     # 수신된 요청 조회
     pending_response = client_b.get("/v1/friends/requests/received")
@@ -1462,11 +1462,11 @@ def test_schedule_visibility_friends_scope_shared(multi_user_e2e):
     pending_list = pending_response.json()
     assert len(pending_list) > 0
     friendship_id = pending_list[0]["id"]
-    
+
     # 친구 수락
     accept_response = client_b.post(f"/v1/friends/requests/{friendship_id}/accept")
     assert accept_response.status_code == 200
-    
+
     # 4. user-b가 scope=shared로 일정 조회 시 일정 포함되는지 확인
     shared_response = client_b.get(
         "/v1/schedules",
@@ -1480,7 +1480,7 @@ def test_schedule_visibility_friends_scope_shared(multi_user_e2e):
     shared_schedules = shared_response.json()
     shared_ids = [s["id"] for s in shared_schedules]
     assert schedule_id in shared_ids, "친구 공개 일정이 scope=shared에 포함되어야 함"
-    
+
     # is_shared=True 확인
     shared_schedule = next(s for s in shared_schedules if s["id"] == schedule_id)
     assert shared_schedule["is_shared"] is True
@@ -1492,7 +1492,7 @@ def test_schedule_visibility_friends_single_item_access(multi_user_e2e):
     """친구가 공유된 일정을 단건 조회할 수 있는지 E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
-    
+
     # 1. user-a가 친구에게 공개된 일정 생성
     schedule_response = client_a.post(
         "/v1/schedules",
@@ -1507,13 +1507,13 @@ def test_schedule_visibility_friends_single_item_access(multi_user_e2e):
     )
     assert schedule_response.status_code == 201
     schedule_id = schedule_response.json()["id"]
-    
+
     # 2. 친구 관계 생성
     client_a.post("/v1/friends/requests", json={"addressee_id": multi_user_e2e.get_user("user-b").sub})
     pending_response = client_b.get("/v1/friends/requests/received")
     friendship_id = pending_response.json()[0]["id"]
     client_b.post(f"/v1/friends/requests/{friendship_id}/accept")
-    
+
     # 3. user-b가 단건 조회 성공
     get_response = client_b.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 200
@@ -1527,7 +1527,7 @@ def test_schedule_visibility_non_friend_cannot_access(multi_user_e2e):
     """친구가 아닌 사용자는 친구 공개 일정에 접근 불가 E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_c = multi_user_e2e.as_user("user-c")  # 친구 아님
-    
+
     # 1. user-a가 친구에게 공개된 일정 생성
     schedule_response = client_a.post(
         "/v1/schedules",
@@ -1542,7 +1542,7 @@ def test_schedule_visibility_non_friend_cannot_access(multi_user_e2e):
     )
     assert schedule_response.status_code == 201
     schedule_id = schedule_response.json()["id"]
-    
+
     # 2. user-c가 scope=shared로 조회 시 포함 안 됨
     shared_response = client_c.get(
         "/v1/schedules",
@@ -1555,7 +1555,7 @@ def test_schedule_visibility_non_friend_cannot_access(multi_user_e2e):
     assert shared_response.status_code == 200
     shared_ids = [s["id"] for s in shared_response.json()]
     assert schedule_id not in shared_ids
-    
+
     # 3. user-c가 단건 조회 시 403
     get_response = client_c.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 403
@@ -1567,19 +1567,19 @@ def test_schedule_visibility_selected_friends(multi_user_e2e):
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
     client_c = multi_user_e2e.as_user("user-c")
-    
+
     user_b_id = multi_user_e2e.get_user("user-b").sub
     user_c_id = multi_user_e2e.get_user("user-c").sub
-    
+
     # 1. user-a ↔ user-b, user-c 친구 관계 생성
     client_a.post("/v1/friends/requests", json={"addressee_id": user_b_id})
     pending_b = client_b.get("/v1/friends/requests/received")
     client_b.post(f"/v1/friends/requests/{pending_b.json()[0]['id']}/accept")
-    
+
     client_a.post("/v1/friends/requests", json={"addressee_id": user_c_id})
     pending_c = client_c.get("/v1/friends/requests/received")
     client_c.post(f"/v1/friends/requests/{pending_c.json()[0]['id']}/accept")
-    
+
     # 2. user-a가 user-b에게만 공개된 일정 생성
     schedule_response = client_a.post(
         "/v1/schedules",
@@ -1595,7 +1595,7 @@ def test_schedule_visibility_selected_friends(multi_user_e2e):
     )
     assert schedule_response.status_code == 201
     schedule_id = schedule_response.json()["id"]
-    
+
     # 3. user-b는 scope=shared로 볼 수 있음
     shared_b = client_b.get(
         "/v1/schedules",
@@ -1607,7 +1607,7 @@ def test_schedule_visibility_selected_friends(multi_user_e2e):
     )
     shared_b_ids = [s["id"] for s in shared_b.json()]
     assert schedule_id in shared_b_ids
-    
+
     # 4. user-c는 친구지만 allowlist에 없어서 볼 수 없음
     shared_c = client_c.get(
         "/v1/schedules",
@@ -1626,7 +1626,7 @@ def test_schedule_visibility_public(multi_user_e2e):
     """전체 공개 일정 E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_c = multi_user_e2e.as_user("user-c")  # 친구 아님
-    
+
     # 1. user-a가 전체 공개 일정 생성
     schedule_response = client_a.post(
         "/v1/schedules",
@@ -1641,7 +1641,7 @@ def test_schedule_visibility_public(multi_user_e2e):
     )
     assert schedule_response.status_code == 201
     schedule_id = schedule_response.json()["id"]
-    
+
     # 2. 친구가 아닌 user-c도 scope=shared로 볼 수 있음
     shared_response = client_c.get(
         "/v1/schedules",
@@ -1653,7 +1653,7 @@ def test_schedule_visibility_public(multi_user_e2e):
     )
     shared_ids = [s["id"] for s in shared_response.json()]
     assert schedule_id in shared_ids
-    
+
     # 3. 단건 조회도 성공
     get_response = client_c.get(f"/v1/schedules/{schedule_id}")
     assert get_response.status_code == 200
@@ -1664,7 +1664,7 @@ def test_schedule_scope_all(multi_user_e2e):
     """scope=all로 내 일정 + 공유 일정 모두 조회 E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
-    
+
     # 1. user-a가 공개 일정 생성
     schedule_a = client_a.post(
         "/v1/schedules",
@@ -1676,7 +1676,7 @@ def test_schedule_scope_all(multi_user_e2e):
         },
     )
     schedule_a_id = schedule_a.json()["id"]
-    
+
     # 2. user-b가 자신의 일정 생성
     schedule_b = client_b.post(
         "/v1/schedules",
@@ -1687,7 +1687,7 @@ def test_schedule_scope_all(multi_user_e2e):
         },
     )
     schedule_b_id = schedule_b.json()["id"]
-    
+
     # 3. user-b가 scope=all로 조회
     all_response = client_b.get(
         "/v1/schedules",
@@ -1700,7 +1700,7 @@ def test_schedule_scope_all(multi_user_e2e):
     assert all_response.status_code == 200
     all_schedules = all_response.json()
     all_ids = [s["id"] for s in all_schedules]
-    
+
     # 내 일정과 공유 일정 모두 포함
     assert schedule_a_id in all_ids  # 공유 일정
     assert schedule_b_id in all_ids  # 내 일정

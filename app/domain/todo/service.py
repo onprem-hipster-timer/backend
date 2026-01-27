@@ -36,7 +36,7 @@ from app.domain.todo.schema.dto import (
     TagStat,
     TodoIncludeReason,
 )
-from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
 from app.models.tag import Tag, TodoTag
 from app.models.todo import Todo as TodoModel
@@ -228,17 +228,16 @@ class TodoService:
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
         :raises AccessDeniedError: 접근 권한이 없는 경우
         """
-        from app.domain.visibility.exceptions import AccessDeniedError
-        
+
         # 먼저 ID로만 조회 (소유자 무관)
         todo = crud.get_todo_by_id(self.session, todo_id)
         if not todo:
             raise TodoNotFoundError()
-        
+
         # 본인 소유인 경우
         if todo.owner_id == self.owner_id:
             return todo, False
-        
+
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
         visibility_service.require_access(
@@ -246,7 +245,7 @@ class TodoService:
             resource_id=todo_id,
             owner_id=todo.owner_id,
         )
-        
+
         return todo, True
 
     def get_shared_todos(self) -> list[Todo]:
@@ -266,17 +265,17 @@ class TodoService:
             ResourceType.TODO,
             exclude_owner_id=self.owner_id,
         )
-        
+
         if not visibilities:
             return []
-        
+
         # 2. 리소스 ID 추출 및 배치 조회
         resource_ids = [v.resource_id for v in visibilities]
         todos = crud.get_todos_by_ids(self.session, resource_ids)
-        
+
         if not todos:
             return []
-        
+
         # 3. 배치 권한 필터링
         visibility_service = VisibilityService(self.session, self.current_user)
         return visibility_service.filter_accessible_resources(
@@ -654,16 +653,16 @@ class TodoService:
             schedules=schedule_reads,
             include_reason=include_reason,
         )
-        
+
         # 가시성 정보 채우기
         todo_read.owner_id = todo.owner_id
         todo_read.is_shared = is_shared
-        
+
         # 가시성 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TODO, todo.id
         )
         if visibility:
             todo_read.visibility_level = visibility.level
-        
+
         return todo_read

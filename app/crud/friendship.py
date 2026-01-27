@@ -19,15 +19,15 @@ def _compute_pair_ids(user_a: str, user_b: str) -> tuple[str, str]:
 
 
 def create_friendship(
-    session: Session,
-    requester_id: str,
-    addressee_id: str,
-    status: FriendshipStatus = FriendshipStatus.PENDING,
+        session: Session,
+        requester_id: str,
+        addressee_id: str,
+        status: FriendshipStatus = FriendshipStatus.PENDING,
 ) -> Friendship:
     """친구 관계 생성"""
     # 양방향 유니크 제약을 위한 정렬된 페어 ID 계산
     pair_1, pair_2 = _compute_pair_ids(requester_id, addressee_id)
-    
+
     friendship = Friendship(
         requester_id=requester_id,
         addressee_id=addressee_id,
@@ -47,9 +47,9 @@ def get_friendship(session: Session, friendship_id: UUID) -> Optional[Friendship
 
 
 def get_friendship_between(
-    session: Session,
-    user_id_1: str,
-    user_id_2: str,
+        session: Session,
+        user_id_1: str,
+        user_id_2: str,
 ) -> Optional[Friendship]:
     """두 사용자 간의 친구 관계 조회 (방향 무관)"""
     statement = select(Friendship).where(
@@ -68,8 +68,8 @@ def get_friendship_between(
 
 
 def get_pending_requests_received(
-    session: Session,
-    user_id: str,
+        session: Session,
+        user_id: str,
 ) -> list[Friendship]:
     """받은 친구 요청 목록 조회 (대기 중)"""
     statement = select(Friendship).where(
@@ -80,8 +80,8 @@ def get_pending_requests_received(
 
 
 def get_pending_requests_sent(
-    session: Session,
-    user_id: str,
+        session: Session,
+        user_id: str,
 ) -> list[Friendship]:
     """보낸 친구 요청 목록 조회 (대기 중)"""
     statement = select(Friendship).where(
@@ -134,17 +134,17 @@ def is_blocked(session: Session, blocker_id: str, blocked_id: str) -> bool:
     """차단 여부 확인"""
     friendship = get_friendship_between(session, blocker_id, blocked_id)
     return (
-        friendship is not None
-        and friendship.status == FriendshipStatus.BLOCKED
-        and friendship.blocked_by == blocker_id
+            friendship is not None
+            and friendship.status == FriendshipStatus.BLOCKED
+            and friendship.blocked_by == blocker_id
     )
 
 
 def update_friendship_status(
-    session: Session,
-    friendship: Friendship,
-    status: FriendshipStatus,
-    blocked_by: Optional[str] = None,
+        session: Session,
+        friendship: Friendship,
+        status: FriendshipStatus,
+        blocked_by: Optional[str] = None,
 ) -> Friendship:
     """친구 관계 상태 업데이트"""
     friendship.status = status

@@ -245,9 +245,9 @@ def reset_managers() -> None:
 
 
 def _extract_client_ip_from_xff(
-    x_forwarded_for: str,
-    trusted_proxy_manager: TrustedProxyManager,
-    cf_manager: CloudflareIPManager | None = None,
+        x_forwarded_for: str,
+        trusted_proxy_manager: TrustedProxyManager,
+        cf_manager: CloudflareIPManager | None = None,
 ) -> str | None:
     """
     X-Forwarded-For 헤더에서 실제 클라이언트 IP 추출
@@ -274,10 +274,10 @@ def _extract_client_ip_from_xff(
 
 
 async def get_real_client_ip(
-    request_client_host: str | None,
-    cf_connecting_ip: str | None,
-    x_forwarded_for: str | None,
-    origin_verify_header: str | None = None,
+        request_client_host: str | None,
+        cf_connecting_ip: str | None,
+        x_forwarded_for: str | None,
+        origin_verify_header: str | None = None,
 ) -> str:
     """
     실제 클라이언트 IP 추출
@@ -299,15 +299,15 @@ async def get_real_client_ip(
     # 1. 프록시 여부 판별 (request.client.host 기준)
     is_cloudflare = False
     cf_manager: CloudflareIPManager | None = None
-    
+
     if app_config.settings.CF_ENABLED:
         cf_manager = get_cloudflare_manager()
         await cf_manager.ensure_initialized()
         is_cloudflare = cf_manager.is_cloudflare_ip(request_client_host)
-    
+
     trusted_proxy_manager = get_trusted_proxy_manager()
     is_trusted_proxy = trusted_proxy_manager.is_trusted_proxy(request_client_host)
-    
+
     is_from_proxy = is_cloudflare or is_trusted_proxy
 
     # 2. PROXY_FORCE 검증: 프록시가 아니면 차단
@@ -332,7 +332,7 @@ async def get_real_client_ip(
         # Cloudflare 환경: CF-Connecting-IP 우선 사용
         if is_cloudflare and cf_connecting_ip:
             return cf_connecting_ip
-        
+
         # X-Forwarded-For에서 클라이언트 IP 추출
         if x_forwarded_for:
             client_ip = _extract_client_ip_from_xff(
@@ -340,7 +340,7 @@ async def get_real_client_ip(
             )
             if client_ip:
                 return client_ip
-        
+
         # 헤더가 없으면 경고 후 직접 IP 사용
         logger.warning(
             f"Request from proxy but no client IP header found. "

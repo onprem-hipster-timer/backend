@@ -1,12 +1,12 @@
 from fastapi import APIRouter
 
+from app.api.v1.friends import router as friends_router
 from app.api.v1.graphql import create_graphql_router
 from app.api.v1.holidays import router as holidays_router
 from app.api.v1.schedules import router as schedules_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.timers import router as timers_router
 from app.api.v1.todos import router as todos_router
-from app.api.v1.friends import router as friends_router
 
 api_router = APIRouter()
 

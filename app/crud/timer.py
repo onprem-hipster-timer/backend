@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlmodel import Session, select, and_, or_
+from sqlmodel import Session, select, and_
 
 from app.core.constants import TimerStatus
 from app.models.timer import TimerSession
@@ -207,11 +207,11 @@ def get_all_timers(
         select(TimerSession)
         .where(TimerSession.owner_id == owner_id)
     )
-    
+
     # 상태 필터
     if status:
         statement = statement.where(TimerSession.status.in_(status))
-    
+
     # 타입 필터
     if timer_type == "independent":
         # 독립 타이머: schedule_id와 todo_id 모두 null
@@ -227,16 +227,16 @@ def get_all_timers(
     elif timer_type == "todo":
         # Todo 연결 타이머
         statement = statement.where(TimerSession.todo_id.is_not(None))
-    
+
     # 날짜 범위 필터 (started_at 기준)
     if start_date:
         statement = statement.where(TimerSession.started_at >= start_date)
     if end_date:
         statement = statement.where(TimerSession.started_at <= end_date)
-    
+
     # 최신순 정렬
     statement = statement.order_by(TimerSession.created_at.desc())
-    
+
     results = session.exec(statement)
     return results.all()
 
@@ -266,5 +266,5 @@ def get_user_active_timer(
         .order_by(TimerSession.created_at.desc())
         .limit(1)
     )
-    
+
     return session.exec(statement).first()

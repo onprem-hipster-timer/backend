@@ -173,7 +173,7 @@ async def list_timers(
                 continue
             if end_date and timer.started_at and timer.started_at > end_date:
                 continue
-            
+
             timer_read = service.to_read_dto(
                 timer,
                 is_shared=True,

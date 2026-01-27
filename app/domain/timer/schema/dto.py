@@ -75,7 +75,7 @@ class TimerRead(CustomModel):
 
     # 태그 목록
     tags: List["TagRead"] = []
-    
+
     # 가시성 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 타이머 조회 시)
     visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
@@ -199,5 +199,5 @@ class TimerUpdate(CustomModel):
 
 # Forward reference 해결
 # TodoRead를 런타임에 import하여 forward reference 해결
-from app.domain.todo.schema.dto import TodoRead  # noqa: E402
+
 TimerRead.model_rebuild()

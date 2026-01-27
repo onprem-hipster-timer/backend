@@ -27,7 +27,7 @@ from app.domain.timer.exceptions import (
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.todo.exceptions import TodoNotFoundError
-from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
 
 
@@ -67,14 +67,14 @@ class TimerService:
         """
         schedule_id = data.schedule_id
         todo_id = data.todo_id
-        
+
         # Schedule 존재 확인 및 자동 연결 (schedule_id가 있는 경우)
         schedule = None
         if schedule_id:
             schedule = schedule_crud.get_schedule(self.session, schedule_id, self.owner_id)
             if not schedule:
                 raise ScheduleNotFoundError()
-            
+
             # Schedule만 지정된 경우 → 연관된 source_todo 자동 연결
             if not todo_id and schedule.source_todo_id:
                 todo_id = schedule.source_todo_id
@@ -85,7 +85,7 @@ class TimerService:
             todo = todo_crud.get_todo(self.session, todo_id, self.owner_id)
             if not todo:
                 raise TodoNotFoundError()
-            
+
             # Todo만 지정된 경우 → 연관된 첫 번째 Schedule 자동 연결
             if not schedule_id and todo.schedules:
                 schedule_id = todo.schedules[0].id
@@ -157,23 +157,22 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises AccessDeniedError: 접근 권한이 없는 경우
         """
-        from app.domain.visibility.exceptions import AccessDeniedError
-        
+
         # 먼저 ID로만 조회 (소유자 무관)
         timer = crud.get_timer_by_id(self.session, timer_id)
         if not timer:
             raise TimerNotFoundError()
-        
+
         # RUNNING 상태인 경우 경과 시간 실시간 계산
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             elapsed_since_start = int((now - timer.started_at).total_seconds())
             timer.elapsed_time = max(0, elapsed_since_start)
-        
+
         # 본인 소유인 경우
         if timer.owner_id == self.owner_id:
             return timer, False
-        
+
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
         visibility_service.require_access(
@@ -181,7 +180,7 @@ class TimerService:
             resource_id=timer_id,
             owner_id=timer.owner_id,
         )
-        
+
         return timer, True
 
     def get_shared_timers(self) -> list[TimerSession]:
@@ -202,17 +201,17 @@ class TimerService:
             ResourceType.TIMER,
             exclude_owner_id=self.owner_id,
         )
-        
+
         if not visibilities:
             return []
-        
+
         # 2. 리소스 ID 추출 및 배치 조회
         resource_ids = [v.resource_id for v in visibilities]
         timers = crud.get_timers_by_ids(self.session, resource_ids)
-        
+
         if not timers:
             return []
-        
+
         # 3. 배치 권한 필터링
         visibility_service = VisibilityService(self.session, self.current_user)
         accessible_timers = visibility_service.filter_accessible_resources(
@@ -221,14 +220,14 @@ class TimerService:
             resources=timers,
             get_resource_id=lambda t: t.id,
         )
-        
+
         # 4. RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in accessible_timers:
             if timer.status == TimerStatus.RUNNING.value and timer.started_at:
                 elapsed_since_start = int((now - timer.started_at).total_seconds())
                 timer.elapsed_time = max(0, elapsed_since_start)
-        
+
         return accessible_timers
 
     def get_timers_by_schedule(self, schedule_id: UUID) -> list[TimerSession]:
@@ -586,12 +585,12 @@ class TimerService:
         crud.delete_timer(self.session, timer)
 
     def to_read_dto(
-        self,
-        timer: TimerSession,
-        is_shared: bool = False,
-        include_schedule: bool = False,
-        include_todo: bool = False,
-        tag_include_mode: Optional[str] = None,
+            self,
+            timer: TimerSession,
+            is_shared: bool = False,
+            include_schedule: bool = False,
+            include_todo: bool = False,
+            tag_include_mode: Optional[str] = None,
     ) -> "TimerRead":
         """
         Timer를 TimerRead DTO로 변환하고 가시성 정보를 채웁니다.
@@ -606,9 +605,8 @@ class TimerService:
         from app.core.constants import TagIncludeMode
         from app.domain.schedule.schema.dto import ScheduleRead
         from app.domain.schedule.service import ScheduleService
-        from app.domain.tag.schema.dto import TagRead
         from app.domain.timer.schema.dto import TimerRead
-        
+
         # 태그 포함 모드 파싱
         if tag_include_mode is None:
             tag_mode = TagIncludeMode.NONE
@@ -616,7 +614,7 @@ class TimerService:
             tag_mode = TagIncludeMode(tag_include_mode)
         else:
             tag_mode = tag_include_mode
-        
+
         # Schedule 정보 처리
         schedule_read = None
         if include_schedule and timer.schedule_id:
@@ -653,33 +651,33 @@ class TimerService:
             tag_include_mode=tag_mode,
             tags=tags_read,
         )
-        
+
         # 가시성 정보 채우기
         timer_read.owner_id = timer.owner_id
         timer_read.is_shared = is_shared
-        
+
         # 가시성 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TIMER, timer.id
         )
         if visibility:
             timer_read.visibility_level = visibility.level
-        
+
         return timer_read
 
     def _get_timer_tags(
-        self,
-        timer_id: UUID,
-        schedule_id: Optional[UUID],
-        todo_id: Optional[UUID],
-        tag_include_mode,
+            self,
+            timer_id: UUID,
+            schedule_id: Optional[UUID],
+            todo_id: Optional[UUID],
+            tag_include_mode,
     ) -> list:
         """
         타이머 태그 조회 헬퍼 메서드
         """
         from app.core.constants import TagIncludeMode
         from app.domain.tag.schema.dto import TagRead
-        
+
         if tag_include_mode == TagIncludeMode.NONE:
             return []
 
@@ -691,7 +689,7 @@ class TimerService:
 
         elif tag_include_mode == TagIncludeMode.INHERIT_FROM_SCHEDULE:
             from app.domain.schedule.service import ScheduleService
-            
+
             # 타이머 태그 조회
             timer_tags = tag_service.get_timer_tags(timer_id)
             all_tags = {tag.id: tag for tag in timer_tags}

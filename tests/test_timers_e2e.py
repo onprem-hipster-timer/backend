@@ -1824,7 +1824,7 @@ def test_list_timers_with_multiple_status_filter_e2e(e2e_client):
     assert response.status_code == 200
     timers = response.json()
     timer_ids = [t["id"] for t in timers]
-    
+
     # RUNNING, PAUSED 타이머만 포함
     assert running_id in timer_ids
     assert paused_id in timer_ids
@@ -1874,7 +1874,7 @@ def test_list_timers_with_uppercase_multiple_status_filter_e2e(e2e_client):
     assert response.status_code == 200
     timers = response.json()
     timer_ids = [t["id"] for t in timers]
-    
+
     # RUNNING, PAUSED 타이머 모두 포함
     assert running_id in timer_ids
     assert paused_id in timer_ids
@@ -1930,7 +1930,7 @@ def test_list_timers_active_consistency_e2e(e2e_client):
     )
     assert list_response.status_code == 200
     timers = list_response.json()
-    
+
     # 목록에서 해당 타이머 찾기
     timer_ids = [t["id"] for t in timers]
     assert timer_id in timer_ids, "활성 타이머가 목록에 포함되어야 함"
@@ -2150,7 +2150,7 @@ def test_list_timers_with_include_todo_e2e(e2e_client):
     assert response.status_code == 200
     timers = response.json()
     assert len(timers) > 0
-    
+
     # todo 정보 포함 확인
     timer = next((t for t in timers if t.get("todo_id") == todo_id), None)
     assert timer is not None
@@ -2218,7 +2218,7 @@ def test_list_timers_with_combined_filters_e2e(e2e_client):
     assert response.status_code == 200
     timers = response.json()
     timer_ids = [t["id"] for t in timers]
-    
+
     # Schedule 연결 RUNNING 타이머만 포함
     assert schedule_running_id in timer_ids
     # 독립 타이머 제외
@@ -2267,7 +2267,7 @@ def test_list_timers_with_all_options_e2e(e2e_client):
     timers = response.json()
     timer_ids = [t["id"] for t in timers]
     assert timer_id in timer_ids
-    
+
     # 옵션 적용 확인
     timer = next(t for t in timers if t["id"] == timer_id)
     assert timer["schedule"] is not None

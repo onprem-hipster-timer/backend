@@ -15,10 +15,10 @@ from app.models.base import UUIDBase, TimestampMixin
 
 class VisibilityLevel(str, Enum):
     """가시성 레벨"""
-    PRIVATE = "private"           # 본인만 (기본값)
-    FRIENDS = "friends"           # 모든 친구
-    SELECTED_FRIENDS = "selected" # 선택한 친구만
-    PUBLIC = "public"             # 전체 공개
+    PRIVATE = "private"  # 본인만 (기본값)
+    FRIENDS = "friends"  # 모든 친구
+    SELECTED_FRIENDS = "selected"  # 선택한 친구만
+    PUBLIC = "public"  # 전체 공개
 
 
 class ResourceType(str, Enum):
@@ -40,7 +40,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
     Note: 레코드가 없으면 PRIVATE으로 간주
     """
     __tablename__ = "resource_visibility"
-    
+
     # 리소스 타입
     resource_type: ResourceType = Field(
         sa_column=Column(
@@ -48,13 +48,13 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
             nullable=False,
         )
     )
-    
+
     # 리소스 ID (외래 키 없음 - 다형성 지원)
     resource_id: UUID = Field(index=True)
-    
+
     # 소유자 ID (OIDC sub claim)
     owner_id: str = Field(index=True)
-    
+
     # 가시성 레벨
     level: VisibilityLevel = Field(
         default=VisibilityLevel.PRIVATE,
@@ -64,7 +64,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
             default=VisibilityLevel.PRIVATE.value,
         )
     )
-    
+
     __table_args__ = (
         # 리소스별 하나의 가시성 설정만 허용
         UniqueConstraint("resource_type", "resource_id", name="uq_resource_visibility"),
@@ -81,7 +81,7 @@ class VisibilityAllowList(UUIDBase, table=True):
     특정 리소스에 대해 접근을 허용할 사용자 목록
     """
     __tablename__ = "visibility_allow_list"
-    
+
     # 가시성 설정 참조
     visibility_id: UUID = Field(
         sa_column=Column(
@@ -90,10 +90,10 @@ class VisibilityAllowList(UUIDBase, table=True):
             index=True,
         )
     )
-    
+
     # 허용된 사용자 ID (OIDC sub claim)
     allowed_user_id: str = Field(index=True)
-    
+
     __table_args__ = (
         # 동일한 visibility에 대해 사용자 중복 방지
         UniqueConstraint("visibility_id", "allowed_user_id", name="uq_allow_list_entry"),

@@ -110,7 +110,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         origin_verify_header = None
         if app_config.settings.ORIGIN_VERIFY_HEADER:
             origin_verify_header = request.headers.get(app_config.settings.ORIGIN_VERIFY_HEADER)
-        
+
         client_ip = await get_real_client_ip(
             request_client_host=request.client.host if request.client else None,
             cf_connecting_ip=request.headers.get("CF-Connecting-IP"),

@@ -131,7 +131,7 @@ async def read_schedules(
         from app.domain.dateutil.service import ensure_utc_naive
         start_date_naive = ensure_utc_naive(start_date)
         end_date_naive = ensure_utc_naive(end_date)
-        
+
         shared_schedules = service.get_shared_schedules()
         for schedule in shared_schedules:
             # 날짜 범위 필터링 (shared에도 적용)

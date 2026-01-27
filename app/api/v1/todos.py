@@ -95,7 +95,7 @@ async def read_todos(
         result = service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
         for todo in result.todos:
             todo_read = service.to_read_dto(
-                todo, 
+                todo,
                 include_reason=result.include_reason_by_id.get(todo.id, TodoIncludeReason.MATCH),
                 is_shared=False,
             )
@@ -108,7 +108,7 @@ async def read_todos(
             # group_ids 필터 적용 (shared에도)
             if group_ids and todo.tag_group_id not in group_ids:
                 continue
-            
+
             todo_read = service.to_read_dto(todo, is_shared=True)
             result_list.append(todo_read)
 

@@ -15,9 +15,9 @@ from app.models.base import UUIDBase, TimestampMixin
 
 class FriendshipStatus(str, Enum):
     """친구 관계 상태"""
-    PENDING = "pending"       # 요청 대기 중
-    ACCEPTED = "accepted"     # 수락됨 (친구)
-    BLOCKED = "blocked"       # 차단됨
+    PENDING = "pending"  # 요청 대기 중
+    ACCEPTED = "accepted"  # 수락됨 (친구)
+    BLOCKED = "blocked"  # 차단됨
 
 
 def _compute_pair_ids(user_a: str, user_b: str) -> tuple[str, str]:
@@ -39,18 +39,18 @@ class Friendship(UUIDBase, TimestampMixin, table=True):
     Note: 양방향 관계이므로, 친구 조회 시 양쪽 모두 확인해야 함
     """
     __tablename__ = "friendship"
-    
+
     # 요청자 (OIDC sub claim)
     requester_id: str = Field(index=True)
-    
+
     # 수신자 (OIDC sub claim)
     addressee_id: str = Field(index=True)
-    
+
     # 정렬된 사용자 페어 (양방향 유니크 보장)
     # pair_user_id_1 <= pair_user_id_2 항상 성립
     pair_user_id_1: Optional[str] = Field(default=None, nullable=True)
     pair_user_id_2: Optional[str] = Field(default=None, nullable=True)
-    
+
     # 관계 상태
     status: FriendshipStatus = Field(
         default=FriendshipStatus.PENDING,
@@ -60,10 +60,10 @@ class Friendship(UUIDBase, TimestampMixin, table=True):
             default=FriendshipStatus.PENDING.value,
         )
     )
-    
+
     # 차단한 경우 차단한 사용자 ID (양방향 중 누가 차단했는지)
     blocked_by: Optional[str] = Field(default=None, nullable=True)
-    
+
     __table_args__ = (
         # 동일한 사용자 쌍에 대해 중복 관계 방지 (단방향)
         UniqueConstraint("requester_id", "addressee_id", name="uq_friendship_pair"),
@@ -73,7 +73,7 @@ class Friendship(UUIDBase, TimestampMixin, table=True):
         Index("ix_friendship_status", "status"),
         Index("ix_friendship_addressee_status", "addressee_id", "status"),
     )
-    
+
     def compute_pair_ids(self) -> None:
         """requester_id와 addressee_id로부터 pair_user_id_1/2를 계산"""
         self.pair_user_id_1, self.pair_user_id_2 = _compute_pair_ids(

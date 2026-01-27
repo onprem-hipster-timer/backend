@@ -25,6 +25,6 @@ class TagIncludeMode(str, Enum):
 
 class ResourceScope(str, Enum):
     """리소스 조회 범위 (공유 리소스 포함 여부)"""
-    MINE = "mine"      # 내 리소스만 (기본값)
+    MINE = "mine"  # 내 리소스만 (기본값)
     SHARED = "shared"  # 공유된 타인 리소스만
-    ALL = "all"        # 내 리소스 + 공유 리소스
+    ALL = "all"  # 내 리소스 + 공유 리소스

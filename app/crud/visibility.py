@@ -21,11 +21,11 @@ from app.models.visibility import (
 # ============================================================
 
 def create_visibility(
-    session: Session,
-    resource_type: ResourceType,
-    resource_id: UUID,
-    owner_id: str,
-    level: VisibilityLevel = VisibilityLevel.PRIVATE,
+        session: Session,
+        resource_type: ResourceType,
+        resource_id: UUID,
+        owner_id: str,
+        level: VisibilityLevel = VisibilityLevel.PRIVATE,
 ) -> ResourceVisibility:
     """리소스 가시성 생성"""
     visibility = ResourceVisibility(
@@ -41,17 +41,17 @@ def create_visibility(
 
 
 def get_visibility(
-    session: Session,
-    visibility_id: UUID,
+        session: Session,
+        visibility_id: UUID,
 ) -> Optional[ResourceVisibility]:
     """ID로 가시성 조회"""
     return session.get(ResourceVisibility, visibility_id)
 
 
 def get_visibility_by_resource(
-    session: Session,
-    resource_type: ResourceType,
-    resource_id: UUID,
+        session: Session,
+        resource_type: ResourceType,
+        resource_id: UUID,
 ) -> Optional[ResourceVisibility]:
     """리소스로 가시성 조회"""
     statement = select(ResourceVisibility).where(
@@ -62,9 +62,9 @@ def get_visibility_by_resource(
 
 
 def get_visibilities_by_owner(
-    session: Session,
-    owner_id: str,
-    resource_type: Optional[ResourceType] = None,
+        session: Session,
+        owner_id: str,
+        resource_type: Optional[ResourceType] = None,
 ) -> list[ResourceVisibility]:
     """소유자의 가시성 설정 목록 조회"""
     statement = select(ResourceVisibility).where(
@@ -76,9 +76,9 @@ def get_visibilities_by_owner(
 
 
 def update_visibility(
-    session: Session,
-    visibility: ResourceVisibility,
-    level: VisibilityLevel,
+        session: Session,
+        visibility: ResourceVisibility,
+        level: VisibilityLevel,
 ) -> ResourceVisibility:
     """가시성 레벨 업데이트"""
     visibility.level = level
@@ -88,11 +88,11 @@ def update_visibility(
 
 
 def upsert_visibility(
-    session: Session,
-    resource_type: ResourceType,
-    resource_id: UUID,
-    owner_id: str,
-    level: VisibilityLevel,
+        session: Session,
+        resource_type: ResourceType,
+        resource_id: UUID,
+        owner_id: str,
+        level: VisibilityLevel,
 ) -> ResourceVisibility:
     """가시성 생성 또는 업데이트"""
     visibility = get_visibility_by_resource(session, resource_type, resource_id)
@@ -108,9 +108,9 @@ def delete_visibility(session: Session, visibility: ResourceVisibility) -> None:
 
 
 def delete_visibility_by_resource(
-    session: Session,
-    resource_type: ResourceType,
-    resource_id: UUID,
+        session: Session,
+        resource_type: ResourceType,
+        resource_id: UUID,
 ) -> bool:
     """리소스로 가시성 삭제"""
     visibility = get_visibility_by_resource(session, resource_type, resource_id)
@@ -125,9 +125,9 @@ def delete_visibility_by_resource(
 # ============================================================
 
 def add_to_allow_list(
-    session: Session,
-    visibility_id: UUID,
-    allowed_user_id: str,
+        session: Session,
+        visibility_id: UUID,
+        allowed_user_id: str,
 ) -> VisibilityAllowList:
     """허용 목록에 사용자 추가"""
     entry = VisibilityAllowList(
@@ -141,8 +141,8 @@ def add_to_allow_list(
 
 
 def get_allow_list(
-    session: Session,
-    visibility_id: UUID,
+        session: Session,
+        visibility_id: UUID,
 ) -> list[VisibilityAllowList]:
     """허용 목록 조회"""
     statement = select(VisibilityAllowList).where(
@@ -152,8 +152,8 @@ def get_allow_list(
 
 
 def get_allowed_user_ids(
-    session: Session,
-    visibility_id: UUID,
+        session: Session,
+        visibility_id: UUID,
 ) -> list[str]:
     """허용된 사용자 ID 목록 조회"""
     entries = get_allow_list(session, visibility_id)
@@ -161,9 +161,9 @@ def get_allowed_user_ids(
 
 
 def is_user_in_allow_list(
-    session: Session,
-    visibility_id: UUID,
-    user_id: str,
+        session: Session,
+        visibility_id: UUID,
+        user_id: str,
 ) -> bool:
     """사용자가 허용 목록에 있는지 확인"""
     statement = select(VisibilityAllowList).where(
@@ -174,9 +174,9 @@ def is_user_in_allow_list(
 
 
 def remove_from_allow_list(
-    session: Session,
-    visibility_id: UUID,
-    allowed_user_id: str,
+        session: Session,
+        visibility_id: UUID,
+        allowed_user_id: str,
 ) -> bool:
     """허용 목록에서 사용자 제거"""
     statement = select(VisibilityAllowList).where(
@@ -202,27 +202,27 @@ def clear_allow_list(session: Session, visibility_id: UUID) -> int:
 
 
 def set_allow_list(
-    session: Session,
-    visibility_id: UUID,
-    allowed_user_ids: list[str],
+        session: Session,
+        visibility_id: UUID,
+        allowed_user_ids: list[str],
 ) -> list[VisibilityAllowList]:
     """허용 목록 전체 설정 (기존 목록 교체)"""
     # 기존 목록 삭제
     clear_allow_list(session, visibility_id)
-    
+
     # 새 목록 추가
     entries = []
     for user_id in allowed_user_ids:
         entry = add_to_allow_list(session, visibility_id, user_id)
         entries.append(entry)
-    
+
     return entries
 
 
 def remove_user_from_all_allow_lists(
-    session: Session,
-    owner_id: str,
-    user_id: str,
+        session: Session,
+        owner_id: str,
+        user_id: str,
 ) -> int:
     """
     특정 소유자의 모든 리소스 AllowList에서 사용자 제거
@@ -256,9 +256,9 @@ def remove_user_from_all_allow_lists(
 # ============================================================
 
 def get_shared_visibilities(
-    session: Session,
-    resource_type: ResourceType,
-    exclude_owner_id: str,
+        session: Session,
+        resource_type: ResourceType,
+        exclude_owner_id: str,
 ) -> list[ResourceVisibility]:
     """
     타인 소유의 공개된(visibility != PRIVATE) 리소스 가시성 목록 조회
@@ -281,9 +281,9 @@ def get_shared_visibilities(
 
 
 def get_shared_resource_ids(
-    session: Session,
-    resource_type: ResourceType,
-    exclude_owner_id: str,
+        session: Session,
+        resource_type: ResourceType,
+        exclude_owner_id: str,
 ) -> list[tuple[UUID, str]]:
     """
     공유된 리소스 ID와 소유자 ID 튜플 목록 조회

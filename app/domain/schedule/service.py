@@ -135,17 +135,16 @@ class ScheduleService:
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         :raises AccessDeniedError: 접근 권한이 없는 경우
         """
-        from app.domain.visibility.exceptions import AccessDeniedError
-        
+
         # 먼저 ID로만 조회 (소유자 무관)
         schedule = crud.get_schedule_by_id(self.session, schedule_id)
         if not schedule:
             raise ScheduleNotFoundError()
-        
+
         # 본인 소유인 경우
         if schedule.owner_id == self.owner_id:
             return schedule, False
-        
+
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
         visibility_service.require_access(
@@ -153,7 +152,7 @@ class ScheduleService:
             resource_id=schedule_id,
             owner_id=schedule.owner_id,
         )
-        
+
         return schedule, True
 
     def get_all_schedules(self) -> list[Schedule]:
@@ -181,17 +180,17 @@ class ScheduleService:
             ResourceType.SCHEDULE,
             exclude_owner_id=self.owner_id,
         )
-        
+
         if not visibilities:
             return []
-        
+
         # 2. 리소스 ID 추출 및 배치 조회
         resource_ids = [v.resource_id for v in visibilities]
         schedules = crud.get_schedules_by_ids(self.session, resource_ids)
-        
+
         if not schedules:
             return []
-        
+
         # 3. 배치 권한 필터링
         visibility_service = VisibilityService(self.session, self.current_user)
         return visibility_service.filter_accessible_resources(
@@ -916,10 +915,10 @@ class ScheduleService:
         return visibility.level if visibility else None
 
     def set_schedule_visibility(
-        self,
-        schedule_id: UUID,
-        level: VisibilityLevel,
-        allowed_user_ids: Optional[List[str]] = None,
+            self,
+            schedule_id: UUID,
+            level: VisibilityLevel,
+            allowed_user_ids: Optional[List[str]] = None,
     ) -> None:
         """
         일정 가시성 설정
@@ -942,9 +941,9 @@ class ScheduleService:
         )
 
     def to_read_dto(
-        self,
-        schedule: Schedule,
-        is_shared: bool = False,
+            self,
+            schedule: Schedule,
+            is_shared: bool = False,
     ) -> "ScheduleRead":
         """
         Schedule을 ScheduleRead DTO로 변환하고 가시성 정보를 채웁니다.
@@ -954,18 +953,18 @@ class ScheduleService:
         :return: ScheduleRead DTO (가시성 정보 포함)
         """
         from app.domain.schedule.schema.dto import ScheduleRead
-        
+
         schedule_read = ScheduleRead.model_validate(schedule)
-        
+
         # 가시성 정보 채우기
         schedule_read.owner_id = schedule.owner_id
         schedule_read.is_shared = is_shared
-        
+
         # 가시성 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule.id
         )
         if visibility:
             schedule_read.visibility_level = visibility.level
-        
+
         return schedule_read

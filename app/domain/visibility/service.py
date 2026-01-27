@@ -7,14 +7,14 @@ Visibility Service
 - 모든 리소스의 가시성 체크를 이 서비스에서 처리
 - ReBAC + ABAC 패턴 적용
 """
-from typing import Optional, List, Any, TypeVar
+from typing import Optional, List, TypeVar
 from uuid import UUID
 
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
-from app.crud import visibility as crud
 from app.crud import friendship as friendship_crud
+from app.crud import visibility as crud
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.exceptions import (
     AccessDeniedError,
@@ -50,10 +50,10 @@ class VisibilityService:
         self.user_id = current_user.sub
 
     def can_access(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
-        owner_id: str,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            owner_id: str,
     ) -> bool:
         """
         리소스에 대한 접근 권한 확인
@@ -86,9 +86,9 @@ class VisibilityService:
         return self._check_visibility_level(visibility, owner_id)
 
     def _check_visibility_level(
-        self,
-        visibility: ResourceVisibility,
-        owner_id: str,
+            self,
+            visibility: ResourceVisibility,
+            owner_id: str,
     ) -> bool:
         """가시성 레벨에 따른 접근 권한 확인"""
         level = visibility.level
@@ -112,15 +112,15 @@ class VisibilityService:
     def _is_blocked_relation(self, other_user_id: str) -> bool:
         """차단 관계 확인 (양방향)"""
         return (
-            friendship_crud.is_blocked(self.session, self.user_id, other_user_id)
-            or friendship_crud.is_blocked(self.session, other_user_id, self.user_id)
+                friendship_crud.is_blocked(self.session, self.user_id, other_user_id)
+                or friendship_crud.is_blocked(self.session, other_user_id, self.user_id)
         )
 
     def require_access(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
-        owner_id: str,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            owner_id: str,
     ) -> None:
         """
         리소스 접근 권한 확인 (없으면 예외 발생)
@@ -131,11 +131,11 @@ class VisibilityService:
             raise AccessDeniedError()
 
     def set_visibility(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
-        level: VisibilityLevel,
-        allowed_user_ids: Optional[List[str]] = None,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            level: VisibilityLevel,
+            allowed_user_ids: Optional[List[str]] = None,
     ) -> ResourceVisibility:
         """
         리소스 가시성 설정
@@ -173,9 +173,9 @@ class VisibilityService:
         return visibility
 
     def get_visibility(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
     ) -> Optional[VisibilityRead]:
         """
         리소스 가시성 설정 조회
@@ -206,9 +206,9 @@ class VisibilityService:
         )
 
     def delete_visibility(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
     ) -> bool:
         """
         리소스 가시성 설정 삭제 (PRIVATE으로 복귀)
@@ -222,10 +222,10 @@ class VisibilityService:
         )
 
     def get_accessible_resource_ids(
-        self,
-        resource_type: ResourceType,
-        resource_ids: List[UUID],
-        owner_ids: dict[UUID, str],
+            self,
+            resource_type: ResourceType,
+            resource_ids: List[UUID],
+            owner_ids: dict[UUID, str],
     ) -> List[UUID]:
         """
         접근 가능한 리소스 ID 필터링
@@ -247,10 +247,10 @@ class VisibilityService:
         return accessible_ids
 
     def add_to_allow_list(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
-        user_id: str,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            user_id: str,
     ) -> None:
         """
         AllowList에 사용자 추가
@@ -277,10 +277,10 @@ class VisibilityService:
             crud.add_to_allow_list(self.session, visibility.id, user_id)
 
     def remove_from_allow_list(
-        self,
-        resource_type: ResourceType,
-        resource_id: UUID,
-        user_id: str,
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            user_id: str,
     ) -> None:
         """
         AllowList에서 사용자 제거
@@ -301,11 +301,11 @@ class VisibilityService:
         crud.remove_from_allow_list(self.session, visibility.id, user_id)
 
     def filter_accessible_resources(
-        self,
-        resource_type: ResourceType,
-        visibilities: List[ResourceVisibility],
-        resources: List[T],
-        get_resource_id: callable,
+            self,
+            resource_type: ResourceType,
+            visibilities: List[ResourceVisibility],
+            resources: List[T],
+            get_resource_id: callable,
     ) -> List[T]:
         """
         접근 가능한 리소스만 필터링 (배치)
@@ -321,10 +321,10 @@ class VisibilityService:
         """
         if not resources:
             return []
-        
+
         # 1. 친구 목록 한 번에 조회 (캐싱)
         friend_ids = set(friendship_crud.get_friend_ids(self.session, self.user_id))
-        
+
         # 2. 차단 목록 한 번에 조회 (내가 차단한 + 나를 차단한)
         blocked_by_me = set()
         blocked_me = set()
@@ -334,57 +334,57 @@ class VisibilityService:
                 blocked_by_me.add(f.addressee_id)
             else:
                 blocked_by_me.add(f.requester_id)
-        
+
         # 나를 차단한 사용자들 조회를 위해 모든 owner_id에 대해 확인
         owner_ids = {v.owner_id for v in visibilities}
         for owner_id in owner_ids:
             if friendship_crud.is_blocked(self.session, owner_id, self.user_id):
                 blocked_me.add(owner_id)
-        
+
         # 3. visibility를 resource_id로 매핑
         visibility_map: dict[UUID, ResourceVisibility] = {
             v.resource_id: v for v in visibilities
         }
-        
+
         # 4. 각 리소스의 owner_id 매핑 (visibility에서 추출)
         owner_map: dict[UUID, str] = {
             v.resource_id: v.owner_id for v in visibilities
         }
-        
+
         # 5. AllowList 일괄 조회 (SELECTED_FRIENDS인 경우만)
         selected_friend_visibility_ids = [
-            v.id for v in visibilities 
+            v.id for v in visibilities
             if v.level == VisibilityLevel.SELECTED_FRIENDS
         ]
         allow_list_map: dict[UUID, set[str]] = {}
         for v_id in selected_friend_visibility_ids:
             allow_list_map[v_id] = set(crud.get_allowed_user_ids(self.session, v_id))
-        
+
         # 6. 배치 권한 체크
         accessible_resources = []
         for resource in resources:
             resource_id = get_resource_id(resource)
             visibility = visibility_map.get(resource_id)
-            
+
             if not visibility:
                 continue
-            
+
             owner_id = owner_map.get(resource_id)
             if not owner_id:
                 continue
-            
+
             # 소유자는 항상 접근 가능
             if owner_id == self.user_id:
                 accessible_resources.append(resource)
                 continue
-            
+
             # 차단 관계 확인
             if owner_id in blocked_by_me or owner_id in blocked_me:
                 continue
-            
+
             # 가시성 레벨에 따른 접근 제어
             level = visibility.level
-            
+
             if level == VisibilityLevel.PUBLIC:
                 accessible_resources.append(resource)
             elif level == VisibilityLevel.FRIENDS:
@@ -396,5 +396,5 @@ class VisibilityService:
                     if self.user_id in allowed:
                         accessible_resources.append(resource)
             # PRIVATE은 이미 get_shared_visibilities에서 제외됨
-        
+
         return accessible_resources

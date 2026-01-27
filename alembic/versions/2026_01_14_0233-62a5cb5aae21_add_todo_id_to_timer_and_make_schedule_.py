@@ -7,9 +7,8 @@ Create Date: 2026-01-14 02:33:53.658203+09:00
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '62a5cb5aae21'
@@ -24,12 +23,13 @@ def upgrade() -> None:
     with op.batch_alter_table('timersession', schema=None, recreate='always') as batch_op:
         batch_op.add_column(sa.Column('todo_id', sa.Uuid(), nullable=True))
         batch_op.alter_column('schedule_id',
-               existing_type=sa.CHAR(length=32),
-               nullable=True)
+                              existing_type=sa.CHAR(length=32),
+                              nullable=True)
         batch_op.create_index(batch_op.f('ix_timersession_todo_id'), ['todo_id'], unique=False)
         # 기존 FK 삭제하고 새 FK 생성 (recreate 모드에서 자동 처리)
         batch_op.create_foreign_key('fk_timersession_todo_id', 'todo', ['todo_id'], ['id'], ondelete='SET NULL')
-        batch_op.create_foreign_key('fk_timersession_schedule_id', 'schedule', ['schedule_id'], ['id'], ondelete='SET NULL')
+        batch_op.create_foreign_key('fk_timersession_schedule_id', 'schedule', ['schedule_id'], ['id'],
+                                    ondelete='SET NULL')
 
     # ### end Alembic commands ###
 
@@ -40,11 +40,12 @@ def downgrade() -> None:
     with op.batch_alter_table('timersession', schema=None, recreate='always') as batch_op:
         batch_op.drop_constraint('fk_timersession_todo_id', type_='foreignkey')
         batch_op.drop_constraint('fk_timersession_schedule_id', type_='foreignkey')
-        batch_op.create_foreign_key('fk_timersession_schedule_id', 'schedule', ['schedule_id'], ['id'], ondelete='CASCADE')
+        batch_op.create_foreign_key('fk_timersession_schedule_id', 'schedule', ['schedule_id'], ['id'],
+                                    ondelete='CASCADE')
         batch_op.drop_index(batch_op.f('ix_timersession_todo_id'))
         batch_op.alter_column('schedule_id',
-               existing_type=sa.CHAR(length=32),
-               nullable=False)
+                              existing_type=sa.CHAR(length=32),
+                              nullable=False)
         batch_op.drop_column('todo_id')
 
     # ### end Alembic commands ###

@@ -7,9 +7,8 @@ Create Date: 2026-01-23 12:00:00.000000+09:00
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'a1b2c3d4e5f6'
@@ -67,8 +66,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
     )
     op.create_index(op.f('ix_visibility_allow_list_id'), 'visibility_allow_list', ['id'], unique=False)
-    op.create_index(op.f('ix_visibility_allow_list_visibility_id'), 'visibility_allow_list', ['visibility_id'], unique=False)
-    op.create_index(op.f('ix_visibility_allow_list_allowed_user_id'), 'visibility_allow_list', ['allowed_user_id'], unique=False)
+    op.create_index(op.f('ix_visibility_allow_list_visibility_id'), 'visibility_allow_list', ['visibility_id'],
+                    unique=False)
+    op.create_index(op.f('ix_visibility_allow_list_allowed_user_id'), 'visibility_allow_list', ['allowed_user_id'],
+                    unique=False)
     op.create_unique_constraint('uq_allow_list_entry', 'visibility_allow_list', ['visibility_id', 'allowed_user_id'])
 
 
