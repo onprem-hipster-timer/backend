@@ -1423,6 +1423,256 @@ def test_get_schedules_with_multiple_tag_and_group_filter_e2e(e2e_client):
     assert schedule_c_id not in schedule_ids  # 태그A, 태그B 없음
 
 
+# ============================================================
+# 일정 복합 필터링 E2E 테스트
+# ============================================================
+
+@pytest.mark.e2e
+def test_get_schedules_with_timezone_and_tag_filter_e2e(e2e_client):
+    """타임존 + 태그 필터 복합 조회 E2E 테스트"""
+    # 1. 태그 그룹 및 태그 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "복합필터 테스트", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    tag_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "중요", "color": "#FF0000", "group_id": group_id}
+    )
+    tag_id = tag_response.json()["id"]
+
+    # 2. 태그가 있는 일정 생성
+    tagged_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 있는 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag_id],
+        }
+    )
+    tagged_id = tagged_response.json()["id"]
+
+    # 3. 태그 없는 일정 생성
+    untagged_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그 없는 일정",
+            "start_time": "2024-01-01T14:00:00Z",
+            "end_time": "2024-01-01T16:00:00Z",
+        }
+    )
+    untagged_id = untagged_response.json()["id"]
+
+    # 4. 타임존 + 태그 필터로 조회
+    response = e2e_client.get(
+        "/v1/schedules",
+        params={
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-01T23:59:59Z",
+            "tag_ids": [tag_id],
+            "timezone": "Asia/Seoul",
+        }
+    )
+    assert response.status_code == 200
+    schedules = response.json()
+
+    # 태그 필터링 확인
+    schedule_ids = [s["id"] for s in schedules]
+    assert tagged_id in schedule_ids
+    assert untagged_id not in schedule_ids
+
+    # 타임존 변환 확인
+    tagged_schedule = next(s for s in schedules if s["id"] == tagged_id)
+    assert "+0900" in tagged_schedule["start_time"]
+    # UTC 10:00 -> KST 19:00
+    assert "19:00:00" in tagged_schedule["start_time"]
+
+
+@pytest.mark.e2e
+def test_get_schedules_with_timezone_and_group_filter_e2e(e2e_client):
+    """타임존 + 그룹 필터 복합 조회 E2E 테스트"""
+    # 1. 태그 그룹 생성
+    group1_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "그룹1", "color": "#FF5733"}
+    )
+    group1_id = group1_response.json()["id"]
+
+    group2_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "그룹2", "color": "#00FF00"}
+    )
+    group2_id = group2_response.json()["id"]
+
+    # 2. 태그 생성
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그1", "color": "#FF0000", "group_id": group1_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그2", "color": "#0000FF", "group_id": group2_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+
+    # 3. 일정 생성
+    schedule1_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "그룹1 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag1_id],
+        }
+    )
+    schedule1_id = schedule1_response.json()["id"]
+
+    schedule2_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "그룹2 일정",
+            "start_time": "2024-01-01T14:00:00Z",
+            "end_time": "2024-01-01T16:00:00Z",
+            "tag_ids": [tag2_id],
+        }
+    )
+    schedule2_id = schedule2_response.json()["id"]
+
+    # 4. 그룹1 + 타임존으로 조회
+    response = e2e_client.get(
+        "/v1/schedules",
+        params={
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-01T23:59:59Z",
+            "group_ids": [group1_id],
+            "timezone": "+09:00",
+        }
+    )
+    assert response.status_code == 200
+    schedules = response.json()
+
+    # 그룹 필터링 확인
+    schedule_ids = [s["id"] for s in schedules]
+    assert schedule1_id in schedule_ids
+    assert schedule2_id not in schedule_ids
+
+    # 타임존 변환 확인
+    schedule1 = next(s for s in schedules if s["id"] == schedule1_id)
+    assert "+0900" in schedule1["start_time"]
+
+
+@pytest.mark.e2e
+def test_get_schedules_empty_result_with_filter_e2e(e2e_client):
+    """필터 조건에 맞는 일정이 없을 때 빈 배열 반환 E2E 테스트"""
+    from uuid import uuid4
+
+    # 존재하지 않는 태그 ID로 조회
+    fake_tag_id = str(uuid4())
+    response = e2e_client.get(
+        "/v1/schedules",
+        params={
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-01T23:59:59Z",
+            "tag_ids": [fake_tag_id],
+        }
+    )
+    assert response.status_code == 200
+    schedules = response.json()
+    assert isinstance(schedules, list)
+    assert len(schedules) == 0
+
+
+@pytest.mark.e2e
+def test_get_schedules_with_multiple_tag_and_group_filter_e2e(e2e_client):
+    """복수 태그 + 복수 그룹 필터 E2E 테스트"""
+    # 1. 태그 그룹 생성
+    group_response = e2e_client.post(
+        "/v1/tags/groups",
+        json={"name": "복합필터 그룹", "color": "#FF5733"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 2. 태그 여러 개 생성
+    tag1_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그A", "color": "#FF0000", "group_id": group_id}
+    )
+    tag1_id = tag1_response.json()["id"]
+
+    tag2_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그B", "color": "#00FF00", "group_id": group_id}
+    )
+    tag2_id = tag2_response.json()["id"]
+
+    tag3_response = e2e_client.post(
+        "/v1/tags",
+        json={"name": "태그C", "color": "#0000FF", "group_id": group_id}
+    )
+    tag3_id = tag3_response.json()["id"]
+
+    # 3. 일정 생성 (다양한 태그 조합)
+    # 태그A, 태그B 모두 있는 일정
+    schedule_ab_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그AB 일정",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+            "tag_ids": [tag1_id, tag2_id],
+        }
+    )
+    schedule_ab_id = schedule_ab_response.json()["id"]
+
+    # 태그A만 있는 일정
+    schedule_a_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그A 일정",
+            "start_time": "2024-01-01T14:00:00Z",
+            "end_time": "2024-01-01T16:00:00Z",
+            "tag_ids": [tag1_id],
+        }
+    )
+    schedule_a_id = schedule_a_response.json()["id"]
+
+    # 태그C만 있는 일정
+    schedule_c_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "태그C 일정",
+            "start_time": "2024-01-01T18:00:00Z",
+            "end_time": "2024-01-01T20:00:00Z",
+            "tag_ids": [tag3_id],
+        }
+    )
+    schedule_c_id = schedule_c_response.json()["id"]
+
+    # 4. 태그A AND 태그B 필터 (둘 다 있는 일정만)
+    response = e2e_client.get(
+        "/v1/schedules",
+        params={
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-01-01T23:59:59Z",
+            "tag_ids": [tag1_id, tag2_id],
+            "group_ids": [group_id],
+        }
+    )
+    assert response.status_code == 200
+    schedules = response.json()
+    schedule_ids = [s["id"] for s in schedules]
+
+    # 태그A, 태그B 모두 있는 일정만 반환
+    assert schedule_ab_id in schedule_ids
+    assert schedule_a_id not in schedule_ids  # 태그B 없음
+    assert schedule_c_id not in schedule_ids  # 태그A, 태그B 없음
+
+
 # ============================================================================
 # Visibility & Scope E2E Tests (공유 기능)
 # ============================================================================

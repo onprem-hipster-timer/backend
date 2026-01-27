@@ -67,14 +67,14 @@ class TimerService:
         """
         schedule_id = data.schedule_id
         todo_id = data.todo_id
-
+        
         # Schedule 존재 확인 및 자동 연결 (schedule_id가 있는 경우)
         schedule = None
         if schedule_id:
             schedule = schedule_crud.get_schedule(self.session, schedule_id, self.owner_id)
             if not schedule:
                 raise ScheduleNotFoundError()
-
+            
             # Schedule만 지정된 경우 → 연관된 source_todo 자동 연결
             if not todo_id and schedule.source_todo_id:
                 todo_id = schedule.source_todo_id
@@ -85,7 +85,7 @@ class TimerService:
             todo = todo_crud.get_todo(self.session, todo_id, self.owner_id)
             if not todo:
                 raise TodoNotFoundError()
-
+            
             # Todo만 지정된 경우 → 연관된 첫 번째 Schedule 자동 연결
             if not schedule_id and todo.schedules:
                 schedule_id = todo.schedules[0].id
@@ -149,9 +149,9 @@ class TimerService:
     def get_timer_with_access_check(self, timer_id: UUID) -> tuple[TimerSession, bool]:
         """
         타이머 조회 (공유 리소스 접근 제어 포함)
-        
+
         본인 소유이거나 공유 접근 권한이 있는 경우 반환합니다.
-        
+
         :param timer_id: 타이머 ID
         :return: (타이머, is_shared) 튜플
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
@@ -186,13 +186,13 @@ class TimerService:
     def get_shared_timers(self) -> list[TimerSession]:
         """
         공유된 타이머 조회 (타인 소유, 접근 권한 있는 것만)
-        
+
         N+1 문제 방지를 위해 배치 패턴 사용:
         1. visibility 후보 목록 조회
         2. 리소스 배치 조회
         3. 배치 권한 필터링
         4. RUNNING 상태 경과 시간 계산
-        
+
         :return: 공유된 타이머 리스트
         """
         # 1. 후보 목록 조회 (visibility != PRIVATE, owner != me)
@@ -309,7 +309,7 @@ class TimerService:
     ) -> list[TimerSession]:
         """
         사용자의 모든 타이머 조회 (필터링 옵션 지원)
-        
+
         :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
         :param timer_type: 타입 필터 (independent, schedule, todo)
         :param start_date: 시작 날짜 필터 (started_at 기준)
@@ -337,9 +337,61 @@ class TimerService:
     def get_user_active_timer(self) -> TimerSession | None:
         """
         사용자의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
-        
+
         여러 개가 있으면 가장 최근 것 반환
-        
+
+        :return: 활성 타이머 또는 None
+        """
+        timer = crud.get_user_active_timer(self.session, self.owner_id)
+
+        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            # 경과 시간 실시간 계산
+            now = ensure_utc_naive(datetime.now(UTC))
+            elapsed_since_start = int((now - timer.started_at).total_seconds())
+            timer.elapsed_time = max(0, elapsed_since_start)
+
+        return timer
+
+    def get_all_timers(
+            self,
+            status: Optional[list[str]] = None,
+            timer_type: Optional[str] = None,
+            start_date: Optional[datetime] = None,
+            end_date: Optional[datetime] = None,
+    ) -> list[TimerSession]:
+        """
+        사용자의 모든 타이머 조회 (필터링 옵션 지원)
+
+        :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
+        :param timer_type: 타입 필터 (independent, schedule, todo)
+        :param start_date: 시작 날짜 필터 (started_at 기준)
+        :param end_date: 종료 날짜 필터 (started_at 기준)
+        :return: 타이머 리스트
+        """
+        timers = crud.get_all_timers(
+            self.session,
+            self.owner_id,
+            status=status,
+            timer_type=timer_type,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
+        now = ensure_utc_naive(datetime.now(UTC))
+        for timer in timers:
+            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+                elapsed_since_start = int((now - timer.started_at).total_seconds())
+                timer.elapsed_time = max(0, elapsed_since_start)
+
+        return timers
+
+    def get_user_active_timer(self) -> TimerSession | None:
+        """
+        사용자의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
+
+        여러 개가 있으면 가장 최근 것 반환
+
         :return: 활성 타이머 또는 None
         """
         timer = crud.get_user_active_timer(self.session, self.owner_id)
@@ -489,12 +541,12 @@ class TimerService:
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
         타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id)
-        
+
         todo_id, schedule_id 동작:
         - 필드가 요청에 포함되지 않음: 기존 값 유지
         - 필드가 UUID 값: 해당 ID로 연결 변경 (존재 및 권한 검증)
         - 필드가 null: 연결 해제
-        
+
         Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
         
         :param timer_id: 타이머 ID
@@ -594,7 +646,7 @@ class TimerService:
     ) -> "TimerRead":
         """
         Timer를 TimerRead DTO로 변환하고 가시성 정보를 채웁니다.
-        
+
         :param timer: Timer 모델
         :param is_shared: 공유된 리소스인지 여부
         :param include_schedule: Schedule 정보 포함 여부

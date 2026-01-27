@@ -1,0 +1,32 @@
+# Core Framework
+fastapi
+uvicorn
+starlette
+
+# Database
+sqlalchemy
+sqlmodel
+alembic
+asyncpg
+aiosqlite
+psycopg2-binary
+
+# Authentication
+authlib
+cryptography
+
+# HTTP Client
+httpx
+
+# Validation & Settings
+pydantic
+pydantic-settings
+
+# GraphQL
+strawberry-graphql
+
+# Utilities
+python-dateutil
+python-dotenv
+python-multipart
+cachetools

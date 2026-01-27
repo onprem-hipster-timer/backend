@@ -195,6 +195,8 @@ class TimerUpdate(CustomModel):
     todo_id: Optional[UUID] = None  # Todo 연결 변경 (null로 연결 해제)
     schedule_id: Optional[UUID] = None  # Schedule 연결 변경 (null로 연결 해제)
     visibility: Optional[VisibilitySettings] = None  # 가시성 설정
+    todo_id: Optional[UUID] = None  # Todo 연결 변경 (null로 연결 해제)
+    schedule_id: Optional[UUID] = None  # Schedule 연결 변경 (null로 연결 해제)
 
 
 # Forward reference 해결

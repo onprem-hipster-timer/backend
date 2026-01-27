@@ -1,0 +1,142 @@
+# Python 버전 호환성 테스트용 Docker Compose
+#
+# 사용법:
+#   전체 버전 테스트:
+#     docker compose -f docker-compose.python-matrix.yaml up --build --abort-on-container-exit
+#
+#   특정 버전만 테스트:
+#     docker compose -f docker-compose.python-matrix.yaml up --build python313
+#     docker compose -f docker-compose.python-matrix.yaml up --build python312
+#
+#   PostgreSQL과 함께 테스트:
+#     docker compose -f docker-compose.python-matrix.yaml --profile postgres up --build
+#
+#   정리:
+#     docker compose -f docker-compose.python-matrix.yaml down -v --rmi local
+
+x-test-environment: &test-environment
+  DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+  OIDC_ENABLED: "false"
+  RATE_LIMIT_ENABLED: "false"
+
+services:
+  # ============================================
+  # Python 3.15 (최신 버전)
+  # ============================================
+  python315:
+    container_name: test-python315
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.15"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      <<: *test-environment
+    command: ["-v", "--tb=short", "-x"]
+
+  # ============================================
+  # Python 3.14
+  # ============================================
+  python314:
+    container_name: test-python314
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.14"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      <<: *test-environment
+    command: ["-v", "--tb=short", "-x"]
+
+  # ============================================
+  # Python 3.13 (현재 프로젝트 기본 버전)
+  # ============================================
+  python313:
+    container_name: test-python313
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.13"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      <<: *test-environment
+    command: ["-v", "--tb=short", "-x"]
+
+  # ============================================
+  # Python 3.12
+  # ============================================
+  python312:
+    container_name: test-python312
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.12"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      <<: *test-environment
+    command: ["-v", "--tb=short", "-x"]
+
+  # ============================================
+  # Python 3.11 (최소 지원 버전)
+  # ============================================
+  python311:
+    container_name: test-python311
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.11"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      <<: *test-environment
+    command: ["-v", "--tb=short", "-x"]
+
+  # ============================================
+  # PostgreSQL 서비스 (프로파일로 선택적 사용)
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: test-matrix-postgres
+    profiles: ["postgres"]
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: testdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================
+  # PostgreSQL + Python 3.13 테스트
+  # ============================================
+  python313-postgres:
+    container_name: test-python313-postgres
+    profiles: ["postgres"]
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.13"
+    volumes:
+      - ./test-results:/app/test-results
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://testuser:testpass@postgres:5432/testdb"
+      OIDC_ENABLED: "false"
+      RATE_LIMIT_ENABLED: "false"
+    command: ["-v", "--tb=short", "-x"]
+    depends_on:
+      postgres:
+        condition: service_healthy
