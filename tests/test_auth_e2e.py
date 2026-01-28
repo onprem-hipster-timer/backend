@@ -7,10 +7,7 @@ OIDC 인증 E2E 테스트
 """
 import pytest
 
-from tests.test_timers_e2e import (
-    create_timer_via_websocket,
-    pause_timer_via_websocket,
-)
+from tests.conftest import timer_ws_client
 
 
 class TestAuthenticationDisabled:
@@ -271,20 +268,20 @@ class TestTimerAuthentication:
         schedule_id = schedule_response.json()["id"]
 
         # 2. 타이머 생성 (WebSocket)
-        timer_data = create_timer_via_websocket(
-            e2e_client,
-            schedule_id=schedule_id,
-            title="타이머 테스트",
-            allocated_duration=3600,
-        )
-        timer_id = timer_data["id"]
+        with timer_ws_client(e2e_client) as ws:
+            timer_data = ws.create_timer(
+                schedule_id=schedule_id,
+                title="타이머 테스트",
+                allocated_duration=3600,
+            )
+            timer_id = timer_data["id"]
 
-        # 3. 타이머 조회 (REST API)
-        get_response = e2e_client.get(f"/v1/timers/{timer_id}")
-        assert get_response.status_code == 200
-        assert get_response.json()["schedule_id"] == schedule_id
-        assert get_response.json()["status"] == "running"
+            # 3. 타이머 조회 (REST API)
+            get_response = e2e_client.get(f"/v1/timers/{timer_id}")
+            assert get_response.status_code == 200
+            assert get_response.json()["schedule_id"] == schedule_id
+            assert get_response.json()["status"] == "running"
 
-        # 4. 타이머 일시정지 (WebSocket)
-        pause_data = pause_timer_via_websocket(e2e_client, timer_id)
-        assert pause_data.get("status") == "paused"
+            # 4. 타이머 일시정지 (WebSocket)
+            pause_data = ws.pause_timer(timer_id)
+            assert pause_data.get("status") == "paused"
