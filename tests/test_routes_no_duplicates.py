@@ -198,24 +198,39 @@ class TestRouteConfiguration:
     """라우트 설정 검증 테스트"""
     
     def test_expected_timer_routes_exist(self):
-        """필수 타이머 라우트가 모두 존재해야 함"""
+        """필수 타이머 라우트가 모두 존재해야 함
+        
+        [WebSocket 전환 - 2026-01-28]
+        타이머 생성/일시정지/재개/종료는 WebSocket으로 이동됨:
+        - WebSocket 엔드포인트: /ws/timers
+        - REST API는 조회/업데이트/삭제만 지원
+        """
         timer_routes = {
             (method, path)
             for method, path, _ in get_all_routes(app)
             if "/timers" in path
         }
         
+        # REST API 라우트 (조회/업데이트/삭제)
         expected_routes = [
-            ("POST", "/v1/timers"),
             ("GET", "/v1/timers"),
             ("GET", "/v1/timers/active"),
             ("GET", "/v1/timers/{timer_id}"),
             ("PATCH", "/v1/timers/{timer_id}"),
-            ("PATCH", "/v1/timers/{timer_id}/pause"),
-            ("PATCH", "/v1/timers/{timer_id}/resume"),
-            ("POST", "/v1/timers/{timer_id}/stop"),
             ("DELETE", "/v1/timers/{timer_id}"),
+            # Schedule 연관 타이머 조회
+            ("GET", "/v1/schedules/{schedule_id}/timers"),
+            ("GET", "/v1/schedules/{schedule_id}/timers/active"),
+            # Todo 연관 타이머 조회
+            ("GET", "/v1/todos/{todo_id}/timers"),
+            ("GET", "/v1/todos/{todo_id}/timers/active"),
         ]
+        
+        # WebSocket으로 이동된 라우트 (더 이상 REST API에 없음):
+        # - POST /v1/timers (타이머 생성)
+        # - PATCH /v1/timers/{timer_id}/pause (일시정지)
+        # - PATCH /v1/timers/{timer_id}/resume (재개)
+        # - POST /v1/timers/{timer_id}/stop (종료)
         
         for method, path in expected_routes:
             assert (method, path) in timer_routes, (
