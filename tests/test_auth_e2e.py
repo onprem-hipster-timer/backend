@@ -7,6 +7,11 @@ OIDC 인증 E2E 테스트
 """
 import pytest
 
+from tests.test_timers_e2e import (
+    create_timer_via_websocket,
+    pause_timer_via_websocket,
+)
+
 
 class TestAuthenticationDisabled:
     """OIDC 비활성화 상태 테스트 (기본 테스트 환경)"""
@@ -265,24 +270,21 @@ class TestTimerAuthentication:
         assert schedule_response.status_code == 201
         schedule_id = schedule_response.json()["id"]
 
-        # 2. 타이머 생성
-        timer_response = e2e_client.post(
-            "/v1/timers",
-            json={
-                "schedule_id": schedule_id,
-                "allocated_duration": 3600,
-            },
+        # 2. 타이머 생성 (WebSocket)
+        timer_data = create_timer_via_websocket(
+            e2e_client,
+            schedule_id=schedule_id,
+            title="타이머 테스트",
+            allocated_duration=3600,
         )
-        assert timer_response.status_code == 201
-        timer_id = timer_response.json()["id"]
+        timer_id = timer_data["id"]
 
-        # 3. 타이머 조회
+        # 3. 타이머 조회 (REST API)
         get_response = e2e_client.get(f"/v1/timers/{timer_id}")
         assert get_response.status_code == 200
         assert get_response.json()["schedule_id"] == schedule_id
         assert get_response.json()["status"] == "running"
 
-        # 4. 타이머 일시정지 (PATCH 메서드 사용)
-        pause_response = e2e_client.patch(f"/v1/timers/{timer_id}/pause")
-        assert pause_response.status_code == 200
-        assert pause_response.json()["status"] == "paused"
+        # 4. 타이머 일시정지 (WebSocket)
+        pause_data = pause_timer_via_websocket(e2e_client, timer_id)
+        assert pause_data.get("status") == "paused"

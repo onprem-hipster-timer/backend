@@ -48,15 +48,20 @@ def create_timer_via_websocket(
         payload["payload"]["tag_ids"] = tag_ids
     
     with client.websocket_connect("/v1/ws/timers") as ws:
+        # 연결 메시지 수신 (connected)
+        connected_msg = ws.receive_json()
+        assert connected_msg.get("type") == "connected", f"Expected 'connected', got: {connected_msg}"
+        
+        # 타이머 생성 요청
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
         
         # 에러 응답 처리
         if response.get("type") == "error":
-            raise Exception(f"Timer creation failed: {response.get('message')}")
+            raise Exception(f"Timer creation failed: {response.get('payload', {}).get('message', response)}")
         
-        # timer.created 응답 반환
-        return response.get("data", response)
+        # timer.created 응답에서 timer 데이터 반환
+        return response.get("payload", {}).get("timer", response)
 
 
 def pause_timer_via_websocket(client, timer_id: str):
@@ -67,9 +72,12 @@ def pause_timer_via_websocket(client, timer_id: str):
     }
     
     with client.websocket_connect("/v1/ws/timers") as ws:
+        # 연결 메시지 수신 (connected)
+        ws.receive_json()
+        
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
-        return response.get("data", response)
+        return response.get("payload", {}).get("timer", response)
 
 
 def resume_timer_via_websocket(client, timer_id: str):
@@ -80,9 +88,12 @@ def resume_timer_via_websocket(client, timer_id: str):
     }
     
     with client.websocket_connect("/v1/ws/timers") as ws:
+        # 연결 메시지 수신 (connected)
+        ws.receive_json()
+        
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
-        return response.get("data", response)
+        return response.get("payload", {}).get("timer", response)
 
 
 def stop_timer_via_websocket(client, timer_id: str):
@@ -93,9 +104,12 @@ def stop_timer_via_websocket(client, timer_id: str):
     }
     
     with client.websocket_connect("/v1/ws/timers") as ws:
+        # 연결 메시지 수신 (connected)
+        ws.receive_json()
+        
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
-        return response.get("data", response)
+        return response.get("payload", {}).get("timer", response)
 
 
 # ============================================================
