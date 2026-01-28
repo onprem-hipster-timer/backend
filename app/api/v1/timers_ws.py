@@ -80,6 +80,30 @@ async def timer_websocket(websocket: WebSocket):
     )
     await connection_manager.send_to_websocket(websocket, connected_msg)
 
+    # 활성 타이머 자동 동기화 (항상 수행)
+    with _session_manager.get_session() as session:
+        try:
+            from app.domain.timer.service import TimerService
+            from app.domain.timer.schema.ws import TimerData, TimerWSMessageType
+
+            timer_service = TimerService(session, current_user)
+            active_timers = timer_service.get_all_timers(status=["RUNNING", "PAUSED"])
+
+            timer_list = [TimerData.model_validate(t) for t in active_timers]
+            sync_msg = WSServerMessage(
+                type=TimerWSMessageType.SYNC_RESULT.value,
+                payload={
+                    "timers": [t.model_dump(mode="json") for t in timer_list],
+                    "count": len(timer_list),
+                },
+                from_user=current_user.sub,
+            )
+            await connection_manager.send_to_websocket(websocket, sync_msg)
+            logger.info(f"Auto-synced {len(timer_list)} active timers for user {current_user.sub}")
+        except Exception as e:
+            logger.error(f"Auto-sync failed: {e}")
+            # 자동 동기화 실패는 치명적이지 않으므로 연결은 유지
+
     try:
         while True:
             # 메시지 수신

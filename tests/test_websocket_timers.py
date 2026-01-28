@@ -73,6 +73,13 @@ class TestWebSocketConnection:
             data = websocket.receive_json()
             assert data["type"] == "connected"
             assert "user_id" in data["payload"]
+            
+            # 자동 동기화 메시지 확인 (활성 타이머 없으면 빈 목록)
+            sync_data = websocket.receive_json()
+            assert sync_data["type"] == "timer.sync_result"
+            assert "timers" in sync_data["payload"]
+            assert "count" in sync_data["payload"]
+            assert sync_data["payload"]["count"] == 0  # 초기 상태는 타이머 없음
 
     def test_websocket_connection_with_query_token(self, ws_client):
         """쿼리 파라미터 토큰으로 연결"""
@@ -80,6 +87,10 @@ class TestWebSocketConnection:
         with ws_client.websocket_connect("/v1/ws/timers?token=test-token") as websocket:
             data = websocket.receive_json()
             assert data["type"] == "connected"
+            
+            # 자동 동기화 메시지 확인
+            sync_data = websocket.receive_json()
+            assert sync_data["type"] == "timer.sync_result"
 
 
 class TestWebSocketTimerOperations:
@@ -459,8 +470,184 @@ class TestWebSocketMultipleConnections:
         with ws_client.websocket_connect("/v1/ws/timers") as websocket1:
             data1 = websocket1.receive_json()
             assert data1["type"] == "connected"
+            
+            # 자동 동기화 메시지
+            sync1 = websocket1.receive_json()
+            assert sync1["type"] == "timer.sync_result"
 
         # 두 번째 연결 (첫 번째 연결 종료 후)
         with ws_client.websocket_connect("/v1/ws/timers") as websocket2:
             data2 = websocket2.receive_json()
             assert data2["type"] == "connected"
+            
+            # 자동 동기화 메시지
+            sync2 = websocket2.receive_json()
+            assert sync2["type"] == "timer.sync_result"
+
+
+class TestWebSocketAutoSync:
+    """WebSocket 자동 동기화 테스트"""
+
+    @pytest.fixture
+    def ws_client(self):
+        """WebSocket 테스트 클라이언트"""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.db.session import _session_manager
+
+        test_engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
+
+        @event.listens_for(test_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        original_engine = _session_manager.engine
+        _session_manager.engine = test_engine
+        SQLModel.metadata.create_all(test_engine)
+
+        try:
+            client = TestClient(app)
+            yield client
+        finally:
+            _session_manager.engine = original_engine
+            SQLModel.metadata.drop_all(test_engine)
+            test_engine.dispose()
+
+    def test_auto_sync_with_existing_active_timer(self, ws_client):
+        """연결 시 기존 활성 타이머 자동 전송"""
+        # 1. WebSocket 연결하여 타이머 생성
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
+            # 연결 메시지 수신
+            connected = websocket.receive_json()
+            assert connected["type"] == "connected"
+            
+            # 자동 동기화 (빈 목록)
+            sync1 = websocket.receive_json()
+            assert sync1["type"] == "timer.sync_result"
+            assert sync1["payload"]["count"] == 0
+
+            # 타이머 생성
+            create_message = {
+                "type": "timer.create",
+                "payload": {
+                    "title": "자동 동기화 테스트",
+                    "allocated_duration": 1800,
+                },
+            }
+            websocket.send_json(create_message)
+            
+            # 생성 응답
+            create_response = websocket.receive_json()
+            assert create_response["type"] == "timer.created"
+            timer_id = create_response["payload"]["timer"]["id"]
+
+        # 2. 새로운 연결 시 기존 활성 타이머 자동 수신
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket2:
+            # 연결 메시지
+            connected2 = websocket2.receive_json()
+            assert connected2["type"] == "connected"
+            
+            # 자동 동기화 - 이번에는 1개 타이머 포함
+            sync2 = websocket2.receive_json()
+            assert sync2["type"] == "timer.sync_result"
+            assert sync2["payload"]["count"] == 1
+            assert len(sync2["payload"]["timers"]) == 1
+            assert sync2["payload"]["timers"][0]["id"] == timer_id
+            assert sync2["payload"]["timers"][0]["status"] == "RUNNING"
+
+    def test_auto_sync_only_active_timers(self, ws_client):
+        """자동 동기화는 활성 타이머만 전송 (완료된 타이머 제외)"""
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
+            # 연결
+            websocket.receive_json()  # connected
+            websocket.receive_json()  # sync_result (빈 목록)
+
+            # 타이머 1 생성
+            websocket.send_json({
+                "type": "timer.create",
+                "payload": {"title": "타이머 1", "allocated_duration": 1800},
+            })
+            create1 = websocket.receive_json()
+            assert create1["type"] == "timer.created"
+            timer1_id = create1["payload"]["timer"]["id"]
+
+            # 타이머 1 일시정지
+            websocket.send_json({
+                "type": "timer.pause",
+                "payload": {"timer_id": timer1_id},
+            })
+            pause1 = websocket.receive_json()
+            assert pause1["type"] == "timer.updated"
+            assert pause1["payload"]["timer"]["status"] == "PAUSED"
+
+            # 타이머 2 생성
+            websocket.send_json({
+                "type": "timer.create",
+                "payload": {"title": "타이머 2", "allocated_duration": 1800},
+            })
+            create2 = websocket.receive_json()
+            timer2_id = create2["payload"]["timer"]["id"]
+
+            # 타이머 2 종료
+            websocket.send_json({
+                "type": "timer.stop",
+                "payload": {"timer_id": timer2_id},
+            })
+            stop2 = websocket.receive_json()
+            assert stop2["payload"]["timer"]["status"] == "COMPLETED"
+
+        # 새 연결 시 활성 타이머만 수신 (PAUSED 포함, COMPLETED 제외)
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket2:
+            websocket2.receive_json()  # connected
+            sync = websocket2.receive_json()
+            
+            assert sync["type"] == "timer.sync_result"
+            assert sync["payload"]["count"] == 1  # PAUSED 타이머만
+            assert sync["payload"]["timers"][0]["id"] == timer1_id
+            assert sync["payload"]["timers"][0]["status"] == "PAUSED"
+
+    def test_manual_sync_with_scope(self, ws_client):
+        """수동 sync 요청 시 scope 옵션 테스트"""
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
+            websocket.receive_json()  # connected
+            websocket.receive_json()  # auto sync
+
+            # 타이머 생성 후 종료
+            websocket.send_json({
+                "type": "timer.create",
+                "payload": {"title": "완료될 타이머", "allocated_duration": 1800},
+            })
+            create_resp = websocket.receive_json()
+            timer_id = create_resp["payload"]["timer"]["id"]
+
+            websocket.send_json({
+                "type": "timer.stop",
+                "payload": {"timer_id": timer_id},
+            })
+            websocket.receive_json()  # stop response
+
+            # scope=active: 활성 타이머만
+            websocket.send_json({
+                "type": "timer.sync",
+                "payload": {"scope": "active"},
+            })
+            sync_active = websocket.receive_json()
+            assert sync_active["type"] == "timer.sync_result"
+            assert sync_active["payload"]["count"] == 0  # 활성 타이머 없음
+
+            # scope=all: 모든 타이머
+            websocket.send_json({
+                "type": "timer.sync",
+                "payload": {"scope": "all"},
+            })
+            sync_all = websocket.receive_json()
+            assert sync_all["type"] == "timer.sync_result"
+            assert sync_all["payload"]["count"] == 1  # 완료된 타이머 포함
+            assert sync_all["payload"]["timers"][0]["status"] == "COMPLETED"

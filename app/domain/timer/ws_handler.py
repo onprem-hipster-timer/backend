@@ -278,7 +278,7 @@ class TimerWSHandler:
         """
         타이머 동기화 요청 처리
 
-        현재 활성 타이머 또는 특정 타이머 정보 반환
+        특정 타이머 조회 또는 활성 타이머 목록 반환
 
         :param payload: TimerSyncPayload 데이터
         :param websocket: 발신 WebSocket
@@ -286,25 +286,38 @@ class TimerWSHandler:
         """
         try:
             timer_id = payload.get("timer_id")
+            scope = payload.get("scope", "active")
 
             if timer_id:
-                # 특정 타이머 조회
+                # 특정 타이머 조회 (단건)
                 timer = self.timer_service.get_timer(UUID(timer_id))
+                if timer:
+                    timer_data = TimerData.model_validate(timer)
+                    return WSServerMessage(
+                        type=TimerWSMessageType.UPDATED.value,
+                        payload={"timer": timer_data.model_dump(mode="json"), "action": "sync"},
+                        from_user=self.current_user.sub,
+                    )
+                else:
+                    return WSServerMessage(
+                        type=TimerWSMessageType.UPDATED.value,
+                        payload={"timer": None, "action": "sync"},
+                        from_user=self.current_user.sub,
+                    )
             else:
-                # 활성 타이머 조회
-                timer = self.timer_service.get_user_active_timer()
+                # 타이머 목록 조회
+                if scope == "active":
+                    timers = self.timer_service.get_all_timers(status=["RUNNING", "PAUSED"])
+                else:
+                    timers = self.timer_service.get_all_timers()
 
-            if timer:
-                timer_data = TimerData.model_validate(timer)
+                timer_list = [TimerData.model_validate(t) for t in timers]
                 return WSServerMessage(
-                    type=TimerWSMessageType.UPDATED.value,
-                    payload={"timer": timer_data.model_dump(mode="json"), "action": "sync"},
-                    from_user=self.current_user.sub,
-                )
-            else:
-                return WSServerMessage(
-                    type=TimerWSMessageType.UPDATED.value,
-                    payload={"timer": None, "action": "sync"},
+                    type=TimerWSMessageType.SYNC_RESULT.value,
+                    payload={
+                        "timers": [t.model_dump(mode="json") for t in timer_list],
+                        "count": len(timer_list),
+                    },
                     from_user=self.current_user.sub,
                 )
 

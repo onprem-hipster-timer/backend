@@ -24,6 +24,7 @@ class TimerWSMessageType(str, Enum):
     CREATED = "timer.created"
     UPDATED = "timer.updated"
     DELETED = "timer.deleted"
+    SYNC_RESULT = "timer.sync_result"  # 타이머 목록 동기화 결과
     FRIEND_ACTIVITY = "timer.friend_activity"
 
 
@@ -56,7 +57,8 @@ class TimerActionPayload(BaseModel):
 
 class TimerSyncPayload(BaseModel):
     """타이머 동기화 요청 페이로드"""
-    timer_id: Optional[UUID] = None  # None이면 전체 활성 타이머 동기화
+    timer_id: Optional[UUID] = None  # None이면 활성 타이머 목록 동기화
+    scope: Optional[str] = "active"  # active(활성만), all(전체)
 
 
 # ============================================================
@@ -97,3 +99,9 @@ class FriendActivityPayload(BaseModel):
     action: TimerAction
     timer_id: UUID
     timer_title: Optional[str] = None
+
+
+class TimerSyncResultPayload(BaseModel):
+    """타이머 동기화 결과 페이로드"""
+    timers: list[TimerData]
+    count: int

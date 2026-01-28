@@ -156,6 +156,25 @@ const ws = new WebSocket('ws://localhost:8000/v1/ws/timers', [
 ]);
 ```
 
+### 연결 후 자동 동기화 (NEW!) 🔥
+
+**연결 즉시 활성 타이머가 자동으로 전송됩니다!**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: WebSocket 연결
+    Server->>Client: 1. connected 메시지
+    Server->>Client: 2. timer.sync_result (자동 전송)
+    Note over Client: 즉시 타이머 상태 동기화 완료!
+```
+
+**특징:**
+- ✅ **자동 전송**: 연결 즉시 활성 타이머(RUNNING/PAUSED) 자동 수신
+- ✅ **빠른 초기화**: 별도 sync 요청 불필요
+- ✅ **멀티 디바이스**: 새 기기 연결 시 즉시 동기화
+
 ### ⚠️ 중요: CORS 설정
 
 WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
@@ -174,6 +193,8 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
 
 ### 연결 성공 응답
 
+**1. 연결 확인 메시지:**
+
 ```json
 {
   "type": "connected",
@@ -184,6 +205,30 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
   "timestamp": "2026-01-28T10:00:00Z"
 }
 ```
+
+**2. 자동 동기화 메시지 (즉시 전송):**
+
+```json
+{
+  "type": "timer.sync_result",
+  "payload": {
+    "timers": [
+      {
+        "id": "timer-uuid",
+        "title": "작업 중인 타이머",
+        "status": "RUNNING",
+        "elapsed_time": 1234,
+        ...
+      }
+    ],
+    "count": 1
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+> **참고**: `timers` 배열이 비어있으면(`count: 0`) 활성 타이머가 없는 상태입니다.
 
 ---
 
@@ -249,14 +294,30 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
 
 #### 타이머 동기화 요청 (timer.sync)
 
+**수동 동기화가 필요한 경우에만 사용:**
+
 ```json
 {
   "type": "timer.sync",
   "payload": {
-    "timer_id": "timer-uuid"  // 생략 시 활성 타이머 반환
+    "timer_id": "timer-uuid",  // 선택: 특정 타이머 조회
+    "scope": "active"           // 선택: "active" (기본값) | "all"
   }
 }
+}
 ```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `timer_id` | UUID | - | 특정 타이머 ID (생략 시 목록 조회) |
+| `scope` | string | active | `active`: 활성 타이머만, `all`: 모든 타이머 |
+
+**응답:**
+
+- 단건 조회 (timer_id 지정): `timer.updated` 메시지
+- 목록 조회 (timer_id 생략): `timer.sync_result` 메시지
+
+> **💡 Tip**: 연결 시 자동 동기화가 되므로, 수동 sync는 **재연결 후 상태 확인**이 필요한 경우에만 사용하세요.
 
 ---
 
@@ -284,6 +345,20 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
   "payload": {
     "timer": { /* Timer 객체 */ },
     "action": "pause"  // "pause" | "resume" | "stop" | "sync"
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:30:00Z"
+}
+```
+
+#### 타이머 동기화 결과 (timer.sync_result)
+
+```json
+{
+  "type": "timer.sync_result",
+  "payload": {
+    "timers": [ /* Timer 객체 배열 */ ],
+    "count": 2
   },
   "from_user": "user-uuid",
   "timestamp": "2026-01-28T10:30:00Z"
@@ -397,7 +472,7 @@ export type TimerStatus = "RUNNING" | "PAUSED" | "COMPLETED" | "CANCELLED";
 export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "sync";
 export type WSMessageType = 
   | "timer.create" | "timer.pause" | "timer.resume" | "timer.stop" | "timer.sync"
-  | "timer.created" | "timer.updated" | "timer.deleted" | "timer.friend_activity"
+  | "timer.created" | "timer.updated" | "timer.deleted" | "timer.sync_result" | "timer.friend_activity"
   | "connected" | "error";
 
 // ============================================================
@@ -467,6 +542,11 @@ export interface FriendActivityPayload {
   action: TimerAction;
   timer_id: string;
   timer_title?: string;
+}
+
+export interface TimerSyncResultPayload {
+  timers: Timer[];
+  count: number;
 }
 
 export interface ErrorPayload {
@@ -584,9 +664,10 @@ class TimerWebSocket {
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 function useTimerWebSocket(token: string) {
-  const [timer, setTimer] = useState<Timer | null>(null);
+  const [activeTimers, setActiveTimers] = useState<Timer[]>([]);
   const [friendActivity, setFriendActivity] = useState<FriendActivityPayload | null>(null);
   const [connected, setConnected] = useState(false);
+  const [synced, setSynced] = useState(false);  // 초기 동기화 완료 여부
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<TimerWebSocket | null>(null);
 
@@ -596,14 +677,26 @@ function useTimerWebSocket(token: string) {
         case 'connected':
           setConnected(true);
           break;
+        case 'timer.sync_result':
+          // 자동 동기화 또는 수동 sync 응답
+          const syncPayload = msg.payload as TimerSyncResultPayload;
+          setActiveTimers(syncPayload.timers);
+          setSynced(true);
+          break;
         case 'timer.created':
         case 'timer.updated':
           const payload = msg.payload as TimerUpdatedPayload;
-          setTimer(payload.timer);
+          // 활성 타이머 목록 업데이트
+          setActiveTimers(prev => {
+            const filtered = prev.filter(t => t.id !== payload.timer.id);
+            if (payload.timer.status === 'RUNNING' || payload.timer.status === 'PAUSED') {
+              return [...filtered, payload.timer];
+            }
+            return filtered;
+          });
           break;
         case 'timer.friend_activity':
           setFriendActivity(msg.payload as FriendActivityPayload);
-          // 3초 후 알림 숨김
           setTimeout(() => setFriendActivity(null), 3000);
           break;
         case 'error':
@@ -625,26 +718,30 @@ function useTimerWebSocket(token: string) {
     wsRef.current?.createTimer(data);
   }, []);
 
-  const pauseTimer = useCallback(() => {
-    if (timer) wsRef.current?.pauseTimer(timer.id);
-  }, [timer]);
+  const pauseTimer = useCallback((timerId: string) => {
+    wsRef.current?.pauseTimer(timerId);
+  }, []);
 
-  const resumeTimer = useCallback(() => {
-    if (timer) wsRef.current?.resumeTimer(timer.id);
-  }, [timer]);
+  const resumeTimer = useCallback((timerId: string) => {
+    wsRef.current?.resumeTimer(timerId);
+  }, []);
 
-  const stopTimer = useCallback(() => {
-    if (timer) wsRef.current?.stopTimer(timer.id);
-  }, [timer]);
+  const stopTimer = useCallback((timerId: string) => {
+    wsRef.current?.stopTimer(timerId);
+  }, []);
 
-  const syncTimer = useCallback(() => {
-    wsRef.current?.syncTimer();
+  const syncTimer = useCallback((scope: 'active' | 'all' = 'active') => {
+    wsRef.current?.send({
+      type: 'timer.sync',
+      payload: { scope },
+    });
   }, []);
 
   return {
-    timer,
+    activeTimers,  // 활성 타이머 목록
     friendActivity,
     connected,
+    synced,  // 초기 동기화 완료 여부
     error,
     createTimer,
     pauseTimer,
@@ -657,9 +754,10 @@ function useTimerWebSocket(token: string) {
 // 사용 예시
 function TimerComponent() {
   const {
-    timer,
+    activeTimers,
     friendActivity,
     connected,
+    synced,
     createTimer,
     pauseTimer,
     resumeTimer,
@@ -667,6 +765,7 @@ function TimerComponent() {
   } = useTimerWebSocket(authToken);
 
   if (!connected) return <div>연결 중...</div>;
+  if (!synced) return <div>동기화 중...</div>;
 
   return (
     <div>
@@ -676,22 +775,26 @@ function TimerComponent() {
         </div>
       )}
 
-      {timer ? (
+      {activeTimers.length > 0 ? (
         <div>
-          <h3>{timer.title || '타이머'}</h3>
-          <p>상태: {timer.status}</p>
-          <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
-          <p>이력: {timer.pause_history.length}개 이벤트</p>
-          
-          {timer.status === 'RUNNING' && (
-            <button onClick={pauseTimer}>일시정지</button>
-          )}
-          {timer.status === 'PAUSED' && (
-            <>
-              <button onClick={resumeTimer}>재개</button>
-              <button onClick={stopTimer}>종료</button>
-            </>
-          )}
+          <h3>활성 타이머 ({activeTimers.length}개)</h3>
+          {activeTimers.map(timer => (
+            <div key={timer.id}>
+              <h4>{timer.title || '타이머'}</h4>
+              <p>상태: {timer.status}</p>
+              <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
+              
+              {timer.status === 'RUNNING' && (
+                <button onClick={() => pauseTimer(timer.id)}>일시정지</button>
+              )}
+              {timer.status === 'PAUSED' && (
+                <>
+                  <button onClick={() => resumeTimer(timer.id)}>재개</button>
+                  <button onClick={() => stopTimer(timer.id)}>종료</button>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
         <button onClick={() => createTimer({
@@ -742,7 +845,8 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
 
 같은 사용자가 여러 기기에서 접속한 경우:
 - 한 기기에서 타이머를 일시정지하면 다른 기기에도 즉시 반영됩니다
-- WebSocket 연결이 끊어진 기기는 재연결 시 `timer.sync`로 상태를 동기화하세요
+- **새 기기 연결 시 자동으로 활성 타이머가 전송됩니다** (수동 sync 불필요)
+- WebSocket 연결이 끊어진 기기는 재연결 시 자동 동기화로 상태를 복구합니다
 
 ### 4. 친구 알림
 
@@ -819,6 +923,7 @@ const delay = Math.pow(2, attempt) * 1000;  // 2초, 4초, 8초, 16초...
 | → | `timer.stop` | 타이머 종료 |
 | → | `timer.sync` | 타이머 동기화 요청 |
 | ← | `connected` | 연결 성공 |
+| ← | `timer.sync_result` | 타이머 목록 (자동/수동) |
 | ← | `timer.created` | 타이머 생성됨 |
 | ← | `timer.updated` | 타이머 업데이트됨 |
 | ← | `timer.friend_activity` | 친구 활동 알림 |
