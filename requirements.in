@@ -25,6 +25,9 @@ pydantic-settings
 # GraphQL
 strawberry-graphql
 
+# Templates
+jinja2
+
 # Utilities
 python-dateutil
 python-dotenv

@@ -8,6 +8,7 @@ from app.api.v1.tags import router as tags_router
 from app.api.v1.timers import router as timers_router
 from app.api.v1.timers_ws import router as timers_ws_router
 from app.api.v1.todos import router as todos_router
+from app.api.v1.ws_playground import router as ws_playground_router
 
 api_router = APIRouter()
 
@@ -25,3 +26,6 @@ api_router.include_router(timers_ws_router, prefix="/v1")
 # GraphQL API 등록 (v1에 통합)
 graphql_router = create_graphql_router()
 api_router.include_router(graphql_router, prefix="/v1/graphql", tags=["GraphQL"])
+
+# WebSocket Playground (개발 환경 전용)
+api_router.include_router(ws_playground_router)
