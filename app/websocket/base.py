@@ -3,11 +3,13 @@ WebSocket 공용 스키마
 
 도메인 무관한 WebSocket 인프라 레벨 메시지 구조 정의
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Any
 
 from pydantic import BaseModel, Field
+
+from app.domain.dateutil.service import ensure_utc_naive
 
 
 class WSMessageType(str, Enum):
@@ -28,7 +30,7 @@ class WSServerMessage(BaseModel):
     type: str  # 도메인별로 다른 타입 사용 가능
     payload: dict[str, Any] = {}
     from_user: Optional[str] = None  # 메시지 발생 사용자 (동기화용)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: ensure_utc_naive(datetime.now(timezone.utc)))
 
     def to_json(self) -> str:
         """JSON 문자열로 변환"""

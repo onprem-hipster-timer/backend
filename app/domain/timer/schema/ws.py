@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Optional, Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 
@@ -85,8 +85,7 @@ class TimerData(BaseModel):
     updated_at: datetime
     owner_id: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     def to_timezone(self, tz: timezone | str | None) -> "TimerData":
         """
