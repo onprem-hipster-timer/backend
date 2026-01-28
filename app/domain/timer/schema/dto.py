@@ -7,7 +7,7 @@ Timer Domain DTO (Data Transfer Objects)
 - Pydantic을 사용한 데이터 검증
 """
 from datetime import datetime, timezone
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
@@ -66,6 +66,9 @@ class TimerRead(CustomModel):
     ended_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+    # 일시정지/재개 이력 (WebSocket 멀티 플랫폼 동기화용)
+    pause_history: List[dict[str, Any]] = []
 
     # 일정 정보 포함 (선택적)
     schedule: Optional[ScheduleRead] = None

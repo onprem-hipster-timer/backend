@@ -12,6 +12,7 @@
 6. [응답 헤더](#6-응답-헤더)
 7. [429 에러 처리](#7-429-에러-처리)
 8. [규칙 커스터마이징](#8-규칙-커스터마이징)
+9. [WebSocket Rate Limit](#9-websocket-rate-limit)
 
 ---
 
@@ -425,15 +426,177 @@ class RateLimitRule(BaseModel):
 
 ---
 
+## 9. WebSocket Rate Limit
+
+WebSocket 연결에 대한 레이트 리밋은 REST API와 별도로 관리됩니다.
+
+### 동작 방식
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant WS as WebSocket Handler
+    participant Limiter as WSRateLimiter
+    participant Storage as InMemoryStorage
+
+    Note over Client,WS: 연결 시도
+    Client->>WS: WebSocket 연결 요청
+    WS->>Limiter: 연결 Rate Limit 체크
+    Limiter->>Storage: 연결 카운트 조회
+    alt 연결 한도 초과
+        Storage-->>Limiter: 초과 상태
+        Limiter-->>WS: 차단
+        WS-->>Client: 연결 거부 (4029)
+    else 연결 허용
+        Storage-->>Limiter: 허용
+        WS-->>Client: 연결 수락
+
+        Note over Client,WS: 메시지 교환
+        Client->>WS: 메시지 전송
+        WS->>Limiter: 메시지 Rate Limit 체크
+        alt 메시지 한도 초과
+            Limiter-->>WS: 차단
+            WS-->>Client: 에러 메시지 (RATE_LIMIT_EXCEEDED)
+        else 메시지 허용
+            WS->>WS: 메시지 처리
+            WS-->>Client: 응답 메시지
+        end
+    end
+```
+
+### 환경변수 설정
+
+| 환경변수 | 기본값 | 설명 |
+|----------|--------|------|
+| `WS_RATE_LIMIT_ENABLED` | `true` | WebSocket Rate Limit 활성화 |
+| `WS_CONNECT_WINDOW` | `60` | 연결 제한 윈도우 (초) |
+| `WS_CONNECT_MAX` | `10` | 윈도우 내 최대 연결 횟수 |
+| `WS_MESSAGE_WINDOW` | `60` | 메시지 제한 윈도우 (초) |
+| `WS_MESSAGE_MAX` | `120` | 윈도우 내 최대 메시지 수 |
+
+### 예시 설정 (.env)
+
+```bash
+# WebSocket Rate Limit 설정
+WS_RATE_LIMIT_ENABLED=true
+WS_CONNECT_WINDOW=60      # 1분
+WS_CONNECT_MAX=10         # 분당 10회 연결
+WS_MESSAGE_WINDOW=60      # 1분
+WS_MESSAGE_MAX=120        # 분당 120개 메시지
+```
+
+### 두 가지 제한 유형
+
+#### 1. 연결 제한 (Connection Rate Limit)
+
+- **목적**: 동일 사용자가 짧은 시간 내에 반복적으로 연결/해제하는 것 방지
+- **적용 시점**: WebSocket 연결 수락 전
+- **초과 시**: 연결 거부 (close code: `4029`)
+
+```javascript
+// 클라이언트 측 에러 처리
+ws.onclose = (event) => {
+  if (event.code === 4029) {
+    console.error('연결 Rate Limit 초과:', event.reason);
+    // 재연결 대기
+  }
+};
+```
+
+#### 2. 메시지 제한 (Message Rate Limit)
+
+- **목적**: 연결된 사용자의 메시지 폭주 방지
+- **적용 시점**: 각 메시지 수신 시
+- **초과 시**: 에러 메시지 응답 (연결 유지)
+
+```json
+{
+  "type": "error",
+  "payload": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "WebSocket 메시지 한도를 초과했습니다. 35초 후에 다시 시도해주세요."
+  }
+}
+```
+
+### 프론트엔드 처리
+
+```javascript
+// WebSocket Rate Limit 처리 예시
+class TimerWebSocket {
+  constructor(url, token) {
+    this.url = url;
+    this.token = token;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.connect();
+  }
+
+  connect() {
+    this.ws = new WebSocket(`${this.url}?token=${this.token}`);
+
+    this.ws.onclose = (event) => {
+      if (event.code === 4029) {
+        // 연결 Rate Limit - 지수 백오프 재연결
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
+        console.warn(`연결 Rate Limit. ${delay/1000}초 후 재연결...`);
+        setTimeout(() => this.connect(), delay);
+        this.reconnectAttempts++;
+      }
+    };
+
+    this.ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      
+      if (message.type === 'error' && message.payload.code === 'RATE_LIMIT_EXCEEDED') {
+        // 메시지 Rate Limit - 일시적으로 전송 중지
+        console.warn('메시지 Rate Limit:', message.payload.message);
+        this.pauseMessageQueue();
+      }
+    };
+
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0; // 성공 시 리셋
+    };
+  }
+
+  pauseMessageQueue() {
+    // 메시지 큐 일시 중지 로직
+  }
+}
+```
+
+### 권장 클라이언트 동작
+
+| 상황 | 권장 동작 |
+|------|-----------|
+| 연결 Rate Limit (4029) | 지수 백오프로 재연결 시도 |
+| 메시지 Rate Limit | 메시지 큐 일시 중지, 에러 메시지에서 retry_after 확인 |
+| 정상 연결 끊김 | 즉시 재연결 시도 |
+
+### 비활성화
+
+개발/테스트 환경에서 WebSocket Rate Limit을 비활성화할 수 있습니다:
+
+```bash
+WS_RATE_LIMIT_ENABLED=false
+```
+
+> **주의**: 프로덕션 환경에서는 반드시 활성화하세요!
+
+---
+
 ## 관련 코드 참조
 
 | 파일 | 설명 |
 |------|------|
 | `app/ratelimit/config.py` | 규칙 정의 및 매칭 로직 |
-| `app/ratelimit/middleware.py` | Rate Limit 미들웨어 |
+| `app/ratelimit/middleware.py` | REST API Rate Limit 미들웨어 |
 | `app/ratelimit/limiter.py` | 요청 카운트 및 제한 로직 |
+| `app/ratelimit/websocket.py` | WebSocket Rate Limit 로직 |
 | `app/ratelimit/cloudflare.py` | Cloudflare/Trusted Proxy IP 관리 및 클라이언트 IP 추출 |
 | `app/ratelimit/storage/memory.py` | 인메모리 저장소 (슬라이딩 윈도우) |
+| `app/websocket/router.py` | WebSocket 엔드포인트 (Rate Limit 적용) |
 | `app/core/config.py` | 환경변수 설정 |
 
 ---

@@ -105,6 +105,7 @@ class TimerService:
             "elapsed_time": 0,
             "status": TimerStatus.RUNNING.value,
             "started_at": now,
+            "pause_history": [{"action": "start", "at": now.isoformat()}],
         }
         timer = crud.create_timer(self.session, timer_data, self.owner_id)
 
@@ -442,6 +443,15 @@ class TimerService:
         timer.status = TimerStatus.PAUSED.value
         timer.paused_at = now
 
+        # pause_history에 pause 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "pause",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
@@ -475,6 +485,14 @@ class TimerService:
         timer.status = TimerStatus.RUNNING.value
         timer.started_at = now  # 재개 시간으로 재설정
         timer.paused_at = None
+
+        # pause_history에 resume 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "resume",
+            "at": now.isoformat(),
+        })
+        timer.pause_history = history
 
         self.session.flush()
         self.session.refresh(timer)
@@ -514,6 +532,15 @@ class TimerService:
         timer.status = TimerStatus.COMPLETED.value
         timer.ended_at = now
 
+        # pause_history에 stop 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "stop",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
@@ -538,9 +565,32 @@ class TimerService:
         timer.status = TimerStatus.CANCELLED.value
         timer.ended_at = now
 
+        # pause_history에 cancel 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "cancel",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
+
+    def get_pause_history(self, timer_id: UUID) -> list[dict]:
+        """
+        타이머 일시정지/재개 이력 조회
+        
+        :param timer_id: 타이머 ID
+        :return: 이력 리스트
+        :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        """
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
+        if not timer:
+            raise TimerNotFoundError()
+        
+        return list(timer.pause_history) if timer.pause_history else []
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """

@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING, List
+from typing import Optional, TYPE_CHECKING, List, Any
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, JSON
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -52,6 +52,18 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
     started_at: Optional[datetime] = None
     paused_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+
+    # 일시정지/재개 이력 (WebSocket 기반 멀티 플랫폼 동기화용)
+    # 예시: [
+    #   {"action": "start", "at": "2026-01-28T10:00:00Z"},
+    #   {"action": "pause", "at": "2026-01-28T10:30:00Z", "elapsed": 1800},
+    #   {"action": "resume", "at": "2026-01-28T10:35:00Z"},
+    #   {"action": "stop", "at": "2026-01-28T11:00:00Z", "elapsed": 3300}
+    # ]
+    pause_history: List[dict[str, Any]] = Field(
+        default=[],
+        sa_column=Column(JSON, nullable=False, default=list)
+    )
 
     # Relationships
     schedule: Optional["Schedule"] = Relationship(back_populates="timers")
