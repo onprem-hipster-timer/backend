@@ -27,18 +27,22 @@ async def timer_websocket(websocket: WebSocket):
     타이머 실시간 동기화 WebSocket 엔드포인트
 
     연결 방법:
-    1. 쿼리 파라미터: ws://host/ws/timers?token=<jwt>&timezone=Asia/Seoul
-    2. Sec-WebSocket-Protocol: authorization.bearer.<jwt>
+    - Sec-WebSocket-Protocol: authorization.bearer.<jwt>
+    - 쿼리 파라미터: timezone=Asia/Seoul (선택, 타임존 설정)
+
+    보안:
+    - 토큰은 반드시 Sec-WebSocket-Protocol 헤더로 전달해야 합니다.
+    - 쿼리 파라미터를 통한 토큰 전달은 보안상 지원하지 않습니다.
 
     메시지 프로토콜:
     - 클라이언트 -> 서버: { "type": "timer.create|pause|resume|stop|sync", "payload": {...} }
-    - 서버 -> 클라이언트: { "type": "timer.created|updated|error", "payload": {...} }
+    - 서버 -> 클라이언트: { "type": "timer.created|updated|sync_result|error", "payload": {...} }
 
     기능:
     - 타이머 생성/일시정지/재개/종료
     - 동일 사용자 멀티 기기 동기화
     - 친구에게 타이머 활동 알림
-    - 타임존 지원 (timezone 파라미터)
+    - 타임존 지원 (timezone 쿼리 파라미터)
 
     Rate Limit:
     - 연결: WS_CONNECT_MAX 회/WS_CONNECT_WINDOW 초 (기본 10회/60초)

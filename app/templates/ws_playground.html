@@ -525,9 +525,18 @@
                                 <input type="text" id="ws-url" value="{{ ws_url }}" readonly>
                             </div>
                             <div class="input-group">
-                                <label for="jwt-token">JWT Token (optional for dev mode)</label>
+                                <label for="jwt-token">JWT Token (Sec-WebSocket-Protocol, optional for dev mode)</label>
                                 <div class="input-row">
-                                    <input type="text" id="jwt-token" placeholder="Enter JWT token or leave empty for dev mode">
+                                    <input type="text" id="jwt-token" placeholder="Enter JWT token (sent via Sec-WebSocket-Protocol header)">
+                                </div>
+                                <small style="color: var(--text-secondary); font-size: 12px;">
+                                    🔐 토큰은 <code>Sec-WebSocket-Protocol</code> 헤더로 전달됩니다 (보안)
+                                </small>
+                            </div>
+                            <div class="input-group">
+                                <label for="timezone">Timezone (optional)</label>
+                                <div class="input-row">
+                                    <input type="text" id="timezone" placeholder="e.g., Asia/Seoul, +09:00, UTC">
                                 </div>
                             </div>
                             <div class="btn-group">
@@ -829,16 +838,20 @@
             const baseUrl = window.location.origin.replace(/^http/, 'ws');
             const wsPath = wsUrlInput.value;
             const token = jwtTokenInput.value.trim();
+            const timezone = document.getElementById('timezone').value.trim();
             
+            // timezone만 쿼리 파라미터로 전달
             let wsUrl = `${baseUrl}${wsPath}`;
-            if (token) {
-                wsUrl += `?token=${token}`;
+            if (timezone) {
+                wsUrl += `?timezone=${encodeURIComponent(timezone)}`;
             }
 
             updateStatus('connecting', 'Connecting...');
             connectBtn.disabled = true;
 
-            ws = new WebSocket(wsUrl);
+            // 토큰은 Sec-WebSocket-Protocol 헤더로 전달 (보안)
+            const protocols = token ? [`authorization.bearer.${token}`] : [];
+            ws = new WebSocket(wsUrl, protocols);
 
             ws.onopen = () => {
                 updateStatus('connected', 'Connected');

@@ -81,10 +81,11 @@ class TestWebSocketConnection:
             assert "count" in sync_data["payload"]
             assert sync_data["payload"]["count"] == 0  # 초기 상태는 타이머 없음
 
-    def test_websocket_connection_with_query_token(self, ws_client):
-        """쿼리 파라미터 토큰으로 연결"""
+    def test_websocket_connection_with_timezone_param(self, ws_client):
+        """타임존 쿼리 파라미터로 연결 (토큰은 Sec-WebSocket-Protocol로)"""
         # OIDC 비활성화 상태에서 테스트
-        with ws_client.websocket_connect("/v1/ws/timers?token=test-token") as websocket:
+        # 실제 환경에서는 토큰을 Sec-WebSocket-Protocol 헤더로 전달해야 함
+        with ws_client.websocket_connect("/v1/ws/timers?timezone=Asia/Seoul") as websocket:
             data = websocket.receive_json()
             assert data["type"] == "connected"
             

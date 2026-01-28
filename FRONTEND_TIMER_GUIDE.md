@@ -138,29 +138,32 @@ interface PauseEvent {
 
 ### 연결
 
+**중요: 보안상 JWT는 반드시 `Sec-WebSocket-Protocol` 헤더로 전달해야 합니다.**
+
 **개발 환경:**
-```
-ws://localhost:8000/v1/ws/timers?token=<JWT_TOKEN>&timezone=Asia/Seoul
+```javascript
+const ws = new WebSocket(
+  'ws://localhost:8000/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
 ```
 
 **프로덕션 환경:**
-```
-wss://your-domain.com/v1/ws/timers?token=<JWT_TOKEN>&timezone=Asia/Seoul
+```javascript
+const ws = new WebSocket(
+  'wss://your-domain.com/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
 ```
 
 **쿼리 파라미터:**
-- `token`: JWT 인증 토큰 (필수)
 - `timezone`: 타임존 (선택, 예: `UTC`, `+09:00`, `Asia/Seoul`)
   - 지정하지 않으면 UTC naive datetime으로 반환
   - 지정하면 모든 응답의 datetime 필드가 해당 타임존으로 변환됨
 
-또는 Sec-WebSocket-Protocol 헤더 사용:
-
-```javascript
-const ws = new WebSocket('ws://localhost:8000/v1/ws/timers?timezone=Asia/Seoul', [
-  `authorization.bearer.${jwtToken}`
-]);
-```
+**인증:**
+- `Sec-WebSocket-Protocol` 헤더: `authorization.bearer.<JWT_TOKEN>` (필수)
+- WebSocket 생성자의 두 번째 인자(subprotocols)로 전달
 
 ### 연결 후 자동 동기화 (NEW!) 🔥
 
@@ -585,14 +588,18 @@ class TimerWebSocket {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host; // 또는 명시적으로 API 서버 주소 지정
     
-    // 타임존 파라미터 추가
-    const params = new URLSearchParams({ token: this.token });
+    // timezone만 쿼리 파라미터로 (토큰은 헤더로)
+    const params = new URLSearchParams();
     if (this.timezone) {
       params.append('timezone', this.timezone);
     }
-    const wsUrl = `${protocol}//${host}/v1/ws/timers?${params.toString()}`;
+    const queryString = params.toString();
+    const wsUrl = `${protocol}//${host}/v1/ws/timers${queryString ? '?' + queryString : ''}`;
     
-    this.ws = new WebSocket(wsUrl);
+    // 🔐 토큰은 반드시 Sec-WebSocket-Protocol 헤더로 전달 (보안)
+    this.ws = new WebSocket(wsUrl, [
+      `authorization.bearer.${this.token}`
+    ]);
 
     this.ws.onopen = () => {
       console.log('Timer WebSocket connected');
@@ -833,7 +840,28 @@ function TimerComponent() {
 타이머 제어 작업(생성, 일시정지, 재개, 종료)은 **WebSocket 연결이 필수**입니다.
 REST API로는 조회/삭제/메타데이터 업데이트만 가능합니다.
 
-### 2. CORS 설정 필수 ⚠️
+### 2. 🔐 보안: JWT 전달 방법
+
+**중요**: WebSocket 연결 시 JWT는 **반드시 `Sec-WebSocket-Protocol` 헤더**로 전달해야 합니다.
+
+```javascript
+// ✅ 올바른 방법: Sec-WebSocket-Protocol 헤더 사용
+const ws = new WebSocket(
+  'wss://api.example.com/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
+
+// ❌ 지원 안 함: 쿼리 파라미터로 토큰 전달 (보안 위험!)
+// ws://host/v1/ws/timers?token=<JWT>
+```
+
+**쿼리 파라미터로 토큰을 전달하면 안 되는 이유:**
+- 서버 로그에 JWT 노출
+- 브라우저 히스토리에 JWT 저장
+- Referer 헤더를 통한 JWT 유출 가능
+- 프록시/게이트웨이 로그에 기록됨
+
+### 4. CORS 설정 필수 ⚠️
 
 WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확인하세요**:
 
@@ -856,19 +884,19 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
 
 > 💡 **핵심**: WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
 
-### 3. 멀티 플랫폼 동기화
+### 5. 멀티 플랫폼 동기화
 
 같은 사용자가 여러 기기에서 접속한 경우:
 - 한 기기에서 타이머를 일시정지하면 다른 기기에도 즉시 반영됩니다
 - **새 기기 연결 시 자동으로 활성 타이머가 전송됩니다** (수동 sync 불필요)
 - WebSocket 연결이 끊어진 기기는 재연결 시 자동 동기화로 상태를 복구합니다
 
-### 4. 친구 알림
+### 6. 친구 알림
 
 - 친구가 타이머를 시작/일시정지/재개/종료하면 `timer.friend_activity` 메시지를 받습니다
 - 알림은 WebSocket에 연결된 온라인 친구에게만 전송됩니다
 
-### 5. pause_history 활용
+### 7. pause_history 활용
 
 ```typescript
 // 총 작업 시간 계산
@@ -895,7 +923,7 @@ function getPauseCount(history: PauseEvent[]): number {
 }
 ```
 
-### 6. 연결 재시도
+### 8. 연결 재시도
 
 WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하세요:
 
@@ -903,7 +931,7 @@ WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하�
 const delay = Math.pow(2, attempt) * 1000;  // 2초, 4초, 8초, 16초...
 ```
 
-### 7. 타이머 상태 전이
+### 9. 타이머 상태 전이
 
 ```
            ┌──────────────────────────────────────┐
