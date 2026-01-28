@@ -357,58 +357,6 @@ class TimerService:
 
         return timer
 
-    def get_all_timers(
-            self,
-            status: Optional[list[str]] = None,
-            timer_type: Optional[str] = None,
-            start_date: Optional[datetime] = None,
-            end_date: Optional[datetime] = None,
-    ) -> list[TimerSession]:
-        """
-        사용자의 모든 타이머 조회 (필터링 옵션 지원)
-
-        :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
-        :param timer_type: 타입 필터 (independent, schedule, todo)
-        :param start_date: 시작 날짜 필터 (started_at 기준)
-        :param end_date: 종료 날짜 필터 (started_at 기준)
-        :return: 타이머 리스트
-        """
-        timers = crud.get_all_timers(
-            self.session,
-            self.owner_id,
-            status=status,
-            timer_type=timer_type,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
-
-        return timers
-
-    def get_user_active_timer(self) -> TimerSession | None:
-        """
-        사용자의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
-
-        여러 개가 있으면 가장 최근 것 반환
-
-        :return: 활성 타이머 또는 None
-        """
-        timer = crud.get_user_active_timer(self.session, self.owner_id)
-
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            # 경과 시간 실시간 계산
-            now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
-
-        return timer
-
     def pause_timer(self, timer_id: UUID) -> TimerSession:
         """
         타이머 일시정지
