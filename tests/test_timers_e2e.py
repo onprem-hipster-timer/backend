@@ -478,6 +478,77 @@ def test_list_timers_with_uppercase_status_filter_e2e(e2e_client):
 
 
 @pytest.mark.e2e
+def test_list_timers_with_mixed_case_status_filter_e2e(e2e_client):
+    """대소문자 혼합 status 필터로 타이머 목록 조회 E2E 테스트 (프론트엔드 호환성)"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "대소문자 혼합 status 필터 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+
+    # 2. RUNNING 타이머 생성
+    running_data = create_timer_via_websocket(
+        e2e_client,
+        schedule_id=schedule_id,
+        title="Running 타이머",
+        allocated_duration=1800,
+    )
+    running_id = running_data["id"]
+
+    # 3. PAUSED 타이머 생성
+    paused_data = create_timer_via_websocket(
+        e2e_client,
+        schedule_id=schedule_id,
+        title="Paused 타이머",
+        allocated_duration=1800,
+    )
+    paused_id = paused_data["id"]
+    pause_timer_via_websocket(e2e_client, paused_id)
+
+    # 4. COMPLETED 타이머 생성
+    completed_data = create_timer_via_websocket(
+        e2e_client,
+        schedule_id=schedule_id,
+        title="Completed 타이머",
+        allocated_duration=1800,
+    )
+    completed_id = completed_data["id"]
+    stop_timer_via_websocket(e2e_client, completed_id)
+
+    # 5. 대소문자 혼합 "Running"으로 조회
+    response = e2e_client.get("/v1/timers", params={"status": "Running"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert running_id in timer_ids
+    assert paused_id not in timer_ids
+    assert completed_id not in timer_ids
+
+    # 6. 대소문자 혼합 "Paused"로 조회
+    response = e2e_client.get("/v1/timers", params={"status": "Paused"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert paused_id in timer_ids
+    assert running_id not in timer_ids
+    assert completed_id not in timer_ids
+
+    # 7. 대소문자 혼합 "Completed"로 조회
+    response = e2e_client.get("/v1/timers", params={"status": "Completed"})
+    assert response.status_code == 200
+    timers = response.json()
+    timer_ids = [t["id"] for t in timers]
+    assert completed_id in timer_ids
+    assert running_id not in timer_ids
+    assert paused_id not in timer_ids
+
+
+@pytest.mark.e2e
 def test_list_timers_with_multiple_status_filter_e2e(e2e_client):
     """복수 status 필터로 타이머 목록 조회 E2E 테스트"""
     # 1. 일정 생성
@@ -613,6 +684,59 @@ def test_list_timers_with_type_filter_schedule_e2e(e2e_client):
     assert independent_id not in timer_ids
 
 
+@pytest.mark.e2e
+def test_list_timers_with_include_schedule_e2e(e2e_client):
+    """타이머 목록 조회 시 include_schedule 옵션 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "include_schedule 목록 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+    schedule_title = schedule_response.json()["title"]
+
+    # 2. Schedule에 연결된 타이머 생성 (WebSocket)
+    timer_data = create_timer_via_websocket(
+        e2e_client,
+        schedule_id=schedule_id,
+        title="include_schedule 테스트 타이머",
+        allocated_duration=1800,
+    )
+    timer_id = timer_data["id"]
+
+    # 3. include_schedule=True로 목록 조회
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"include_schedule": True}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+
+    # 해당 타이머 찾기
+    timer = next((t for t in timers if t["id"] == timer_id), None)
+    assert timer is not None
+    assert timer["schedule"] is not None
+    assert timer["schedule"]["id"] == schedule_id
+    assert timer["schedule"]["title"] == schedule_title
+
+    # 4. include_schedule=False로 목록 조회
+    response = e2e_client.get(
+        "/v1/timers",
+        params={"include_schedule": False}
+    )
+    assert response.status_code == 200
+    timers = response.json()
+
+    # 해당 타이머 찾기
+    timer = next((t for t in timers if t["id"] == timer_id), None)
+    assert timer is not None
+    assert timer["schedule"] is None
+
+
 # ============================================================
 # 활성 타이머 조회 E2E 테스트 (REST API)
 # ============================================================
@@ -706,6 +830,53 @@ def test_get_user_active_timer_not_found_e2e(e2e_client):
     # 3. 사용자 활성 타이머 조회 (404 반환)
     response = e2e_client.get("/v1/timers/active")
     assert response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_get_user_active_timer_with_include_schedule_e2e(e2e_client):
+    """활성 타이머 조회 시 include_schedule 옵션 E2E 테스트"""
+    # 1. 일정 생성
+    schedule_response = e2e_client.post(
+        "/v1/schedules",
+        json={
+            "title": "활성 타이머 include_schedule 테스트",
+            "start_time": "2024-01-01T10:00:00Z",
+            "end_time": "2024-01-01T12:00:00Z",
+        },
+    )
+    schedule_id = schedule_response.json()["id"]
+    schedule_title = schedule_response.json()["title"]
+
+    # 2. Schedule에 연결된 타이머 생성 (RUNNING 상태)
+    timer_data = create_timer_via_websocket(
+        e2e_client,
+        schedule_id=schedule_id,
+        title="활성 include_schedule 테스트 타이머",
+        allocated_duration=1800,
+    )
+    timer_id = timer_data["id"]
+
+    # 3. include_schedule=True로 활성 타이머 조회
+    response = e2e_client.get(
+        "/v1/timers/active",
+        params={"include_schedule": True}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == timer_id
+    assert data["schedule"] is not None
+    assert data["schedule"]["id"] == schedule_id
+    assert data["schedule"]["title"] == schedule_title
+
+    # 4. include_schedule=False로 활성 타이머 조회
+    response = e2e_client.get(
+        "/v1/timers/active",
+        params={"include_schedule": False}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == timer_id
+    assert data["schedule"] is None
 
 
 # ============================================================
