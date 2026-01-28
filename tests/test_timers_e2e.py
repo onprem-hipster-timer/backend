@@ -327,7 +327,7 @@ def test_list_timers_with_status_filter_e2e(e2e_client):
         ws.stop_timer(completed_id)
 
     # 5. RUNNING 상태만 조회
-    running_response = e2e_client.get("/v1/timers", params={"status": "running"})
+    running_response = e2e_client.get("/v1/timers", params={"status": "RUNNING"})
     assert running_response.status_code == 200
     running_timers = running_response.json()
     running_timer_ids = [t["id"] for t in running_timers]
@@ -336,14 +336,14 @@ def test_list_timers_with_status_filter_e2e(e2e_client):
     assert completed_id not in running_timer_ids
 
     # 6. PAUSED 상태만 조회
-    paused_response = e2e_client.get("/v1/timers", params={"status": "paused"})
+    paused_response = e2e_client.get("/v1/timers", params={"status": "PAUSED"})
     assert paused_response.status_code == 200
     paused_timers = paused_response.json()
     paused_timer_ids = [t["id"] for t in paused_timers]
     assert paused_id in paused_timer_ids
 
     # 7. COMPLETED 상태만 조회
-    completed_response = e2e_client.get("/v1/timers", params={"status": "completed"})
+    completed_response = e2e_client.get("/v1/timers", params={"status": "COMPLETED"})
     assert completed_response.status_code == 200
     completed_timers = completed_response.json()
     completed_timer_ids = [t["id"] for t in completed_timers]
@@ -492,7 +492,7 @@ def test_list_timers_with_multiple_status_filter_e2e(e2e_client):
         ws.stop_timer(completed_id)
 
     # 5. 복수 상태로 조회 (RUNNING, PAUSED)
-    response = e2e_client.get("/v1/timers", params=[("status", "running"), ("status", "paused")])
+    response = e2e_client.get("/v1/timers", params=[("status", "RUNNING"), ("status", "PAUSED")])
     assert response.status_code == 200
     timers = response.json()
     timer_ids = [t["id"] for t in timers]
@@ -667,7 +667,7 @@ def test_get_user_active_timer_e2e(e2e_client):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == timer_id
-    assert data["status"] == "running"
+    assert data["status"] == "RUNNING"
 
 
 @pytest.mark.e2e
@@ -699,7 +699,7 @@ def test_get_user_active_timer_paused_e2e(e2e_client):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == timer_id
-    assert data["status"] == "paused"
+    assert data["status"] == "PAUSED"
 
 
 @pytest.mark.e2e
@@ -883,7 +883,7 @@ def test_get_schedule_active_timer_e2e(e2e_client):
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == timer_id
-    assert data["status"] in ["running", "paused"]
+    assert data["status"] in ["RUNNING", "PAUSED"]
 
 
 @pytest.mark.e2e

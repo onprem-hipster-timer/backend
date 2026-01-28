@@ -183,8 +183,8 @@ async def list_timers(
     tz_obj = parse_timezone(tz) if tz else None
     result = []
 
-    # status 필터를 소문자로 변환 (API는 대문자, DB는 소문자 저장)
-    normalized_status = [s.lower() for s in status_filter] if status_filter else None
+    # status 필터를 대문자로 변환 (API는 대문자, DB도 대문자 저장)
+    normalized_status = [s.upper() for s in status_filter] if status_filter else None
 
     # 내 타이머 조회 (scope=mine 또는 scope=all)
     if scope in (ResourceScope.MINE, ResourceScope.ALL):

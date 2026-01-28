@@ -9,11 +9,11 @@ SCHEDULE_STATUS_CANCELLED = "cancelled"
 
 class TimerStatus(str, Enum):
     """타이머 상태"""
-    NOT_STARTED = "not_started"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+    NOT_STARTED = "NOT_STARTED"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class TagIncludeMode(str, Enum):

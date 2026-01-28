@@ -280,8 +280,8 @@ class TestTimerAuthentication:
             get_response = e2e_client.get(f"/v1/timers/{timer_id}")
             assert get_response.status_code == 200
             assert get_response.json()["schedule_id"] == schedule_id
-            assert get_response.json()["status"] == "running"
+            assert get_response.json()["status"] == "RUNNING"
 
             # 4. 타이머 일시정지 (WebSocket)
             pause_data = ws.pause_timer(timer_id)
-            assert pause_data.get("status") == "paused"
+            assert pause_data.get("status") == "PAUSED"

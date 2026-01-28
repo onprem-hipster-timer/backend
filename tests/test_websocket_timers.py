@@ -54,7 +54,7 @@ class TestWebSocketTimerOperations:
             timer = ws.create_timer(title="WebSocket 타이머", allocated_duration=1800)
             assert timer["title"] == "WebSocket 타이머"
             assert timer["allocated_duration"] == 1800
-            assert timer["status"] == "running"
+            assert timer["status"] == "RUNNING"
             assert "pause_history" in timer
 
     def test_pause_timer_via_websocket(self, e2e_client):
@@ -66,7 +66,7 @@ class TestWebSocketTimerOperations:
             timer_id = timer["id"]
 
             paused_timer = ws.pause_timer(timer_id)
-            assert paused_timer["status"] == "paused"
+            assert paused_timer["status"] == "PAUSED"
             assert paused_timer["paused_at"] is not None
             assert len(paused_timer["pause_history"]) >= 2  # start + pause
 
@@ -81,7 +81,7 @@ class TestWebSocketTimerOperations:
             ws.pause_timer(timer_id)
             resumed_timer = ws.resume_timer(timer_id)
 
-            assert resumed_timer["status"] == "running"
+            assert resumed_timer["status"] == "RUNNING"
             assert resumed_timer["paused_at"] is None
             assert len(resumed_timer["pause_history"]) >= 3  # start + pause + resume
 
@@ -95,7 +95,7 @@ class TestWebSocketTimerOperations:
 
             stopped_timer = ws.stop_timer(timer_id)
 
-            assert stopped_timer["status"] == "completed"
+            assert stopped_timer["status"] == "COMPLETED"
             assert stopped_timer["ended_at"] is not None
             assert len(stopped_timer["pause_history"]) >= 2  # start + stop
 
@@ -122,7 +122,7 @@ class TestWebSocketSync:
             response = websocket.receive_json()
 
             # 동기화 응답 또는 에러
-            assert response["type"] in ["timer.updated", "error"]
+            assert response["type"] in ["timer.sync_result", "error"]
 
 
 class TestWebSocketErrorHandling:
