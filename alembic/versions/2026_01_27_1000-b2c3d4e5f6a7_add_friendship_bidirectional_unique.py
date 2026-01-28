@@ -23,16 +23,16 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
-    
+
     # friendship 테이블이 존재하는지 확인
     tables = inspector.get_table_names()
     if 'friendship' not in tables:
         # 테이블이 없으면 이 마이그레이션을 건너뜀
         return
-    
+
     # 컬럼 목록 가져오기
     friendship_columns = [col['name'] for col in inspector.get_columns('friendship')]
-    
+
     # 1. pair_user_id_1, pair_user_id_2 컬럼 추가 (nullable로 시작)
     if 'pair_user_id_1' not in friendship_columns:
         op.add_column('friendship', sa.Column('pair_user_id_1', sa.String(), nullable=True))
@@ -58,7 +58,8 @@ def upgrade() -> None:
                                                             WHEN requester_id <= addressee_id THEN addressee_id
                                                             ELSE requester_id
                                            END
-                                   WHERE pair_user_id_1 IS NULL OR pair_user_id_2 IS NULL
+                                   WHERE pair_user_id_1 IS NULL
+                                      OR pair_user_id_2 IS NULL
                                    """))
 
     # 3. 중복 레코드 정리 (동일 페어가 여러 개 있으면 하나만 남김)
@@ -74,7 +75,8 @@ def upgrade() -> None:
             result = connection.execute(sa.text("""
                                                 SELECT pair_user_id_1, pair_user_id_2, COUNT(*) as cnt
                                                 FROM friendship
-                                                WHERE pair_user_id_1 IS NOT NULL AND pair_user_id_2 IS NOT NULL
+                                                WHERE pair_user_id_1 IS NOT NULL
+                                                  AND pair_user_id_2 IS NOT NULL
                                                 GROUP BY pair_user_id_1, pair_user_id_2
                                                 HAVING COUNT(*) > 1
                                                 """))
@@ -134,12 +136,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
-    
+
     # friendship 테이블이 존재하는지 확인
     tables = inspector.get_table_names()
     if 'friendship' not in tables:
         return
-    
+
     # 1. 유니크 제약 삭제
     try:
         constraints = [con['name'] for con in inspector.get_unique_constraints('friendship')]

@@ -71,14 +71,14 @@ class TimerService:
         """
         schedule_id = data.schedule_id
         todo_id = data.todo_id
-        
+
         # Schedule 존재 확인 및 자동 연결 (schedule_id가 있는 경우)
         schedule = None
         if schedule_id:
             schedule = schedule_crud.get_schedule(self.session, schedule_id, self.owner_id)
             if not schedule:
                 raise ScheduleNotFoundError()
-            
+
             # Schedule만 지정된 경우 → 연관된 source_todo 자동 연결
             if not todo_id and schedule.source_todo_id:
                 todo_id = schedule.source_todo_id
@@ -89,7 +89,7 @@ class TimerService:
             todo = todo_crud.get_todo(self.session, todo_id, self.owner_id)
             if not todo:
                 raise TodoNotFoundError()
-            
+
             # Todo만 지정된 경우 → 연관된 첫 번째 Schedule 자동 연결
             if not schedule_id and todo.schedules:
                 schedule_id = todo.schedules[0].id
@@ -537,7 +537,7 @@ class TimerService:
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
-        
+
         return list(timer.pause_history) if timer.pause_history else []
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
@@ -706,7 +706,6 @@ class TimerService:
             timer_read.visibility_level = visibility.level
 
         return timer_read
-
 
     def _get_timer_tags(
             self,

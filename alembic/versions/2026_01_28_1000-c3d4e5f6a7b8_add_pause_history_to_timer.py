@@ -35,10 +35,10 @@ def upgrade() -> None:
 
     # 현재 paused_at이 있는 PAUSED 상태의 타이머들 조회
     result = connection.execute(sa.text("""
-        SELECT id, paused_at, started_at, elapsed_time
-        FROM timersession
-        WHERE paused_at IS NOT NULL
-    """))
+                                        SELECT id, paused_at, started_at, elapsed_time
+                                        FROM timersession
+                                        WHERE paused_at IS NOT NULL
+                                        """))
 
     rows = result.fetchall()
 
@@ -67,10 +67,10 @@ def upgrade() -> None:
 
         # 업데이트
         connection.execute(sa.text("""
-            UPDATE timersession
-            SET pause_history = :history
-            WHERE id = :id
-        """), {"history": history_json, "id": timer_id})
+                                   UPDATE timersession
+                                   SET pause_history = :history
+                                   WHERE id = :id
+                                   """), {"history": history_json, "id": timer_id})
 
     # 3. server_default 제거 (마이그레이션 완료 후)
     # SQLite에서는 batch mode 필요

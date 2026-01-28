@@ -22,7 +22,7 @@ class TestWebSocketConnection:
             data = websocket.receive_json()
             assert data["type"] == "connected"
             assert "user_id" in data["payload"]
-            
+
             # 자동 동기화 메시지 확인 (활성 타이머 없으면 빈 목록)
             sync_data = websocket.receive_json()
             assert sync_data["type"] == "timer.sync_result"
@@ -37,7 +37,7 @@ class TestWebSocketConnection:
         with e2e_client.websocket_connect("/v1/ws/timers?timezone=Asia/Seoul") as websocket:
             data = websocket.receive_json()
             assert data["type"] == "connected"
-            
+
             # 자동 동기화 메시지 확인
             sync_data = websocket.receive_json()
             assert sync_data["type"] == "timer.sync_result"
@@ -196,7 +196,7 @@ class TestWebSocketMultipleConnections:
         with e2e_client.websocket_connect("/v1/ws/timers") as websocket1:
             data1 = websocket1.receive_json()
             assert data1["type"] == "connected"
-            
+
             # 자동 동기화 메시지
             sync1 = websocket1.receive_json()
             assert sync1["type"] == "timer.sync_result"
@@ -205,7 +205,7 @@ class TestWebSocketMultipleConnections:
         with e2e_client.websocket_connect("/v1/ws/timers") as websocket2:
             data2 = websocket2.receive_json()
             assert data2["type"] == "connected"
-            
+
             # 자동 동기화 메시지
             sync2 = websocket2.receive_json()
             assert sync2["type"] == "timer.sync_result"
@@ -228,7 +228,7 @@ class TestWebSocketAutoSync:
             # 연결 메시지
             connected2 = websocket2.receive_json()
             assert connected2["type"] == "connected"
-            
+
             # 자동 동기화 - 이번에는 1개 타이머 포함
             sync2 = websocket2.receive_json()
             assert sync2["type"] == "timer.sync_result"
@@ -262,7 +262,7 @@ class TestWebSocketAutoSync:
         with e2e_client.websocket_connect("/v1/ws/timers") as websocket2:
             websocket2.receive_json()  # connected
             sync = websocket2.receive_json()
-            
+
             assert sync["type"] == "timer.sync_result"
             assert sync["payload"]["count"] == 1  # PAUSED 타이머만
             assert sync["payload"]["timers"][0]["id"] == timer1_id

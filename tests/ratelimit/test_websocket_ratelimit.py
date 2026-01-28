@@ -4,17 +4,16 @@ WebSocket Rate Limit 테스트
 WebSocket 연결 및 메시지 레이트 리밋 테스트
 """
 import os
-import pytest
 from unittest.mock import patch, AsyncMock
+
+import pytest
 
 # 테스트 환경 설정
 os.environ["OIDC_ENABLED"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "true"
 os.environ["WS_RATE_LIMIT_ENABLED"] = "true"
 
-from app.core.auth import CurrentUser
 from app.ratelimit.websocket import (
-    WebSocketRateLimiter,
     get_ws_limiter,
     reset_ws_limiter,
     ws_rate_limit_guard,

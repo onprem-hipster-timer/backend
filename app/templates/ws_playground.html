@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>{{ title }}</title>
     <style>
         :root {
@@ -253,8 +253,12 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
         }
 
         /* Message Type Selector */
@@ -305,8 +309,14 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .message-item:last-child {
@@ -496,320 +506,321 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>
-                <span class="icon">🔌</span>
-                {{ title }}
-            </h1>
-            <span class="badge">WebSocket API</span>
-        </header>
+<div class="container">
+    <!-- Header -->
+    <header class="header">
+        <h1>
+            <span class="icon">🔌</span>
+            {{ title }}
+        </h1>
+        <span class="badge">WebSocket API</span>
+    </header>
 
-        <div class="layout">
-            <!-- Left Column -->
-            <div class="left-column">
-                <!-- Connection -->
-                <div class="card" style="margin-bottom: 24px;">
-                    <div class="card-header">
-                        <h2>🔗 Connection</h2>
-                        <div id="connection-status" class="status status-disconnected">
-                            <span class="status-dot"></span>
-                            <span class="status-text">Disconnected</span>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="connection-form">
-                            <div class="input-group">
-                                <label for="ws-url">WebSocket URL</label>
-                                <input type="text" id="ws-url" value="{{ ws_url }}" readonly>
-                            </div>
-                            <div class="input-group">
-                                <label for="jwt-token">JWT Token (Sec-WebSocket-Protocol, optional for dev mode)</label>
-                                <div class="input-row">
-                                    <input type="text" id="jwt-token" placeholder="Enter JWT token (sent via Sec-WebSocket-Protocol header)">
-                                </div>
-                                <small style="color: var(--text-secondary); font-size: 12px;">
-                                    🔐 토큰은 <code>Sec-WebSocket-Protocol</code> 헤더로 전달됩니다 (보안)
-                                </small>
-                            </div>
-                            <div class="input-group">
-                                <label for="timezone">Timezone (optional)</label>
-                                <div class="input-row">
-                                    <input type="text" id="timezone" placeholder="e.g., Asia/Seoul, +09:00, UTC">
-                                </div>
-                            </div>
-                            <div class="btn-group">
-                                <button id="connect-btn" class="btn btn-primary">
-                                    <span>⚡</span> Connect
-                                </button>
-                                <button id="disconnect-btn" class="btn btn-danger" disabled>
-                                    <span>✕</span> Disconnect
-                                </button>
-                            </div>
-                        </div>
+    <div class="layout">
+        <!-- Left Column -->
+        <div class="left-column">
+            <!-- Connection -->
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h2>🔗 Connection</h2>
+                    <div class="status status-disconnected" id="connection-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Disconnected</span>
                     </div>
                 </div>
-
-                <!-- Send Message -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>📤 Send Message</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="message-types">
-                            <button class="message-type-btn active" data-type="timer.create">timer.create</button>
-                            <button class="message-type-btn" data-type="timer.pause">timer.pause</button>
-                            <button class="message-type-btn" data-type="timer.resume">timer.resume</button>
-                            <button class="message-type-btn" data-type="timer.stop">timer.stop</button>
-                            <button class="message-type-btn" data-type="timer.sync">timer.sync</button>
+                <div class="card-body">
+                    <div class="connection-form">
+                        <div class="input-group">
+                            <label for="ws-url">WebSocket URL</label>
+                            <input id="ws-url" readonly type="text" value="{{ ws_url }}">
                         </div>
-                        <textarea id="message-input" placeholder="Enter JSON message..."></textarea>
-                        <div class="btn-group" style="margin-top: 16px;">
-                            <button id="send-btn" class="btn btn-primary" disabled>
-                                <span>📨</span> Send
+                        <div class="input-group">
+                            <label for="jwt-token">JWT Token (Sec-WebSocket-Protocol, optional for dev mode)</label>
+                            <div class="input-row">
+                                <input id="jwt-token" placeholder="Enter JWT token (sent via Sec-WebSocket-Protocol header)"
+                                       type="text">
+                            </div>
+                            <small style="color: var(--text-secondary); font-size: 12px;">
+                                🔐 토큰은 <code>Sec-WebSocket-Protocol</code> 헤더로 전달됩니다 (보안)
+                            </small>
+                        </div>
+                        <div class="input-group">
+                            <label for="timezone">Timezone (optional)</label>
+                            <div class="input-row">
+                                <input id="timezone" placeholder="e.g., Asia/Seoul, +09:00, UTC" type="text">
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary" id="connect-btn">
+                                <span>⚡</span> Connect
                             </button>
-                            <button id="format-btn" class="btn btn-secondary">
-                                <span>✨</span> Format JSON
+                            <button class="btn btn-danger" disabled id="disconnect-btn">
+                                <span>✕</span> Disconnect
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Column -->
-            <div class="right-column">
-                <!-- Messages -->
-                <div class="card" style="margin-bottom: 24px;">
-                    <div class="card-header">
-                        <h2>💬 Messages</h2>
-                        <button id="clear-btn" class="copy-btn">Clear</button>
+            <!-- Send Message -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>📤 Send Message</h2>
+                </div>
+                <div class="card-body">
+                    <div class="message-types">
+                        <button class="message-type-btn active" data-type="timer.create">timer.create</button>
+                        <button class="message-type-btn" data-type="timer.pause">timer.pause</button>
+                        <button class="message-type-btn" data-type="timer.resume">timer.resume</button>
+                        <button class="message-type-btn" data-type="timer.stop">timer.stop</button>
+                        <button class="message-type-btn" data-type="timer.sync">timer.sync</button>
                     </div>
-                    <div class="card-body" style="padding: 0;">
-                        <div id="messages" class="messages-container">
-                            <div class="empty-state">
-                                <div class="icon">📭</div>
-                                <div>No messages yet</div>
-                                <div style="font-size: 13px; margin-top: 8px;">Connect to start receiving messages</div>
-                            </div>
+                    <textarea id="message-input" placeholder="Enter JSON message..."></textarea>
+                    <div class="btn-group" style="margin-top: 16px;">
+                        <button class="btn btn-primary" disabled id="send-btn">
+                            <span>📨</span> Send
+                        </button>
+                        <button class="btn btn-secondary" id="format-btn">
+                            <span>✨</span> Format JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="right-column">
+            <!-- Messages -->
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h2>💬 Messages</h2>
+                    <button class="copy-btn" id="clear-btn">Clear</button>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <div class="messages-container" id="messages">
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <div>No messages yet</div>
+                            <div style="font-size: 13px; margin-top: 8px;">Connect to start receiving messages</div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Schema Reference -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>📖 Schema Reference</h2>
+            <!-- Schema Reference -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>📖 Schema Reference</h2>
+                </div>
+                <div class="card-body">
+                    <div class="schema-tabs">
+                        <button class="schema-tab active" data-schema="timer.create">timer.create</button>
+                        <button class="schema-tab" data-schema="timer.pause">timer.pause</button>
+                        <button class="schema-tab" data-schema="timer.resume">timer.resume</button>
+                        <button class="schema-tab" data-schema="timer.stop">timer.stop</button>
+                        <button class="schema-tab" data-schema="timer.sync">timer.sync</button>
                     </div>
-                    <div class="card-body">
-                        <div class="schema-tabs">
-                            <button class="schema-tab active" data-schema="timer.create">timer.create</button>
-                            <button class="schema-tab" data-schema="timer.pause">timer.pause</button>
-                            <button class="schema-tab" data-schema="timer.resume">timer.resume</button>
-                            <button class="schema-tab" data-schema="timer.stop">timer.stop</button>
-                            <button class="schema-tab" data-schema="timer.sync">timer.sync</button>
-                        </div>
 
-                        <!-- timer.create schema -->
-                        <div id="schema-timer.create" class="schema-content active">
-                            <div class="schema-field">
-                                <span class="field-name">allocated_duration</span>
-                                <span class="field-type">integer</span>
-                                <span class="field-required">required</span>
-                                <div class="field-description">할당 시간 (초 단위, 양수)</div>
-                            </div>
-                            <div class="schema-field">
-                                <span class="field-name">title</span>
-                                <span class="field-type">string | null</span>
-                                <div class="field-description">타이머 제목</div>
-                            </div>
-                            <div class="schema-field">
-                                <span class="field-name">description</span>
-                                <span class="field-type">string | null</span>
-                                <div class="field-description">타이머 설명</div>
-                            </div>
-                            <div class="schema-field">
-                                <span class="field-name">schedule_id</span>
-                                <span class="field-type">UUID | null</span>
-                                <div class="field-description">연결할 일정 ID</div>
-                            </div>
-                            <div class="schema-field">
-                                <span class="field-name">todo_id</span>
-                                <span class="field-type">UUID | null</span>
-                                <div class="field-description">연결할 할 일 ID</div>
-                            </div>
-                            <div class="schema-field">
-                                <span class="field-name">tag_ids</span>
-                                <span class="field-type">UUID[] | null</span>
-                                <div class="field-description">태그 ID 목록</div>
-                            </div>
+                    <!-- timer.create schema -->
+                    <div class="schema-content active" id="schema-timer.create">
+                        <div class="schema-field">
+                            <span class="field-name">allocated_duration</span>
+                            <span class="field-type">integer</span>
+                            <span class="field-required">required</span>
+                            <div class="field-description">할당 시간 (초 단위, 양수)</div>
                         </div>
-
-                        <!-- timer.pause/resume/stop schema -->
-                        <div id="schema-timer.pause" class="schema-content">
-                            <div class="schema-field">
-                                <span class="field-name">timer_id</span>
-                                <span class="field-type">UUID</span>
-                                <span class="field-required">required</span>
-                                <div class="field-description">타이머 ID</div>
-                            </div>
+                        <div class="schema-field">
+                            <span class="field-name">title</span>
+                            <span class="field-type">string | null</span>
+                            <div class="field-description">타이머 제목</div>
                         </div>
-
-                        <div id="schema-timer.resume" class="schema-content">
-                            <div class="schema-field">
-                                <span class="field-name">timer_id</span>
-                                <span class="field-type">UUID</span>
-                                <span class="field-required">required</span>
-                                <div class="field-description">타이머 ID</div>
-                            </div>
+                        <div class="schema-field">
+                            <span class="field-name">description</span>
+                            <span class="field-type">string | null</span>
+                            <div class="field-description">타이머 설명</div>
                         </div>
-
-                        <div id="schema-timer.stop" class="schema-content">
-                            <div class="schema-field">
-                                <span class="field-name">timer_id</span>
-                                <span class="field-type">UUID</span>
-                                <span class="field-required">required</span>
-                                <div class="field-description">타이머 ID</div>
-                            </div>
+                        <div class="schema-field">
+                            <span class="field-name">schedule_id</span>
+                            <span class="field-type">UUID | null</span>
+                            <div class="field-description">연결할 일정 ID</div>
                         </div>
+                        <div class="schema-field">
+                            <span class="field-name">todo_id</span>
+                            <span class="field-type">UUID | null</span>
+                            <div class="field-description">연결할 할 일 ID</div>
+                        </div>
+                        <div class="schema-field">
+                            <span class="field-name">tag_ids</span>
+                            <span class="field-type">UUID[] | null</span>
+                            <div class="field-description">태그 ID 목록</div>
+                        </div>
+                    </div>
 
-                        <!-- timer.sync schema -->
-                        <div id="schema-timer.sync" class="schema-content">
-                            <div class="schema-field">
-                                <span class="field-name">timer_id</span>
-                                <span class="field-type">UUID | null</span>
-                                <div class="field-description">동기화할 타이머 ID (null이면 활성 타이머 전체)</div>
-                            </div>
+                    <!-- timer.pause/resume/stop schema -->
+                    <div class="schema-content" id="schema-timer.pause">
+                        <div class="schema-field">
+                            <span class="field-name">timer_id</span>
+                            <span class="field-type">UUID</span>
+                            <span class="field-required">required</span>
+                            <div class="field-description">타이머 ID</div>
+                        </div>
+                    </div>
+
+                    <div class="schema-content" id="schema-timer.resume">
+                        <div class="schema-field">
+                            <span class="field-name">timer_id</span>
+                            <span class="field-type">UUID</span>
+                            <span class="field-required">required</span>
+                            <div class="field-description">타이머 ID</div>
+                        </div>
+                    </div>
+
+                    <div class="schema-content" id="schema-timer.stop">
+                        <div class="schema-field">
+                            <span class="field-name">timer_id</span>
+                            <span class="field-type">UUID</span>
+                            <span class="field-required">required</span>
+                            <div class="field-description">타이머 ID</div>
+                        </div>
+                    </div>
+
+                    <!-- timer.sync schema -->
+                    <div class="schema-content" id="schema-timer.sync">
+                        <div class="schema-field">
+                            <span class="field-name">timer_id</span>
+                            <span class="field-type">UUID | null</span>
+                            <div class="field-description">동기화할 타이머 ID (null이면 활성 타이머 전체)</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <script>
-        // WebSocket connection
-        let ws = null;
-        let messageHistory = [];
+<script>
+    // WebSocket connection
+    let ws = null;
+    let messageHistory = [];
 
-        // DOM elements
-        const wsUrlInput = document.getElementById('ws-url');
-        const jwtTokenInput = document.getElementById('jwt-token');
-        const connectBtn = document.getElementById('connect-btn');
-        const disconnectBtn = document.getElementById('disconnect-btn');
-        const sendBtn = document.getElementById('send-btn');
-        const formatBtn = document.getElementById('format-btn');
-        const clearBtn = document.getElementById('clear-btn');
-        const messageInput = document.getElementById('message-input');
-        const messagesContainer = document.getElementById('messages');
-        const connectionStatus = document.getElementById('connection-status');
+    // DOM elements
+    const wsUrlInput = document.getElementById('ws-url');
+    const jwtTokenInput = document.getElementById('jwt-token');
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const sendBtn = document.getElementById('send-btn');
+    const formatBtn = document.getElementById('format-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const messageInput = document.getElementById('message-input');
+    const messagesContainer = document.getElementById('messages');
+    const connectionStatus = document.getElementById('connection-status');
 
-        // Message templates
-        const messageTemplates = {
-            'timer.create': {
-                type: 'timer.create',
-                payload: {
-                    allocated_duration: 1800,
-                    title: 'Test Timer'
-                }
-            },
-            'timer.pause': {
-                type: 'timer.pause',
-                payload: {
-                    timer_id: '<timer-uuid>'
-                }
-            },
-            'timer.resume': {
-                type: 'timer.resume',
-                payload: {
-                    timer_id: '<timer-uuid>'
-                }
-            },
-            'timer.stop': {
-                type: 'timer.stop',
-                payload: {
-                    timer_id: '<timer-uuid>'
-                }
-            },
-            'timer.sync': {
-                type: 'timer.sync',
-                payload: {}
+    // Message templates
+    const messageTemplates = {
+        'timer.create': {
+            type: 'timer.create',
+            payload: {
+                allocated_duration: 1800,
+                title: 'Test Timer'
             }
-        };
-
-        // Initialize with default template
-        messageInput.value = JSON.stringify(messageTemplates['timer.create'], null, 2);
-
-        // Message type buttons
-        document.querySelectorAll('.message-type-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.message-type-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                const type = btn.dataset.type;
-                messageInput.value = JSON.stringify(messageTemplates[type], null, 2);
-            });
-        });
-
-        // Schema tabs
-        document.querySelectorAll('.schema-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.schema-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.schema-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(`schema-${tab.dataset.schema}`).classList.add('active');
-            });
-        });
-
-        // Format JSON
-        formatBtn.addEventListener('click', () => {
-            try {
-                const json = JSON.parse(messageInput.value);
-                messageInput.value = JSON.stringify(json, null, 2);
-            } catch (e) {
-                addMessage('error', 'Invalid JSON: ' + e.message, 'error');
+        },
+        'timer.pause': {
+            type: 'timer.pause',
+            payload: {
+                timer_id: '<timer-uuid>'
             }
-        });
+        },
+        'timer.resume': {
+            type: 'timer.resume',
+            payload: {
+                timer_id: '<timer-uuid>'
+            }
+        },
+        'timer.stop': {
+            type: 'timer.stop',
+            payload: {
+                timer_id: '<timer-uuid>'
+            }
+        },
+        'timer.sync': {
+            type: 'timer.sync',
+            payload: {}
+        }
+    };
 
-        // Clear messages
-        clearBtn.addEventListener('click', () => {
-            messageHistory = [];
-            messagesContainer.innerHTML = `
+    // Initialize with default template
+    messageInput.value = JSON.stringify(messageTemplates['timer.create'], null, 2);
+
+    // Message type buttons
+    document.querySelectorAll('.message-type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.message-type-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const type = btn.dataset.type;
+            messageInput.value = JSON.stringify(messageTemplates[type], null, 2);
+        });
+    });
+
+    // Schema tabs
+    document.querySelectorAll('.schema-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.schema-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.schema-content').forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(`schema-${tab.dataset.schema}`).classList.add('active');
+        });
+    });
+
+    // Format JSON
+    formatBtn.addEventListener('click', () => {
+        try {
+            const json = JSON.parse(messageInput.value);
+            messageInput.value = JSON.stringify(json, null, 2);
+        } catch (e) {
+            addMessage('error', 'Invalid JSON: ' + e.message, 'error');
+        }
+    });
+
+    // Clear messages
+    clearBtn.addEventListener('click', () => {
+        messageHistory = [];
+        messagesContainer.innerHTML = `
                 <div class="empty-state">
                     <div class="icon">📭</div>
                     <div>No messages yet</div>
                     <div style="font-size: 13px; margin-top: 8px;">Connect to start receiving messages</div>
                 </div>
             `;
-        });
+    });
 
-        // Connection status update
-        function updateStatus(status, text) {
-            connectionStatus.className = `status status-${status}`;
-            connectionStatus.querySelector('.status-text').textContent = text;
+    // Connection status update
+    function updateStatus(status, text) {
+        connectionStatus.className = `status status-${status}`;
+        connectionStatus.querySelector('.status-text').textContent = text;
+    }
+
+    // Add message to log
+    function addMessage(direction, data, type = null) {
+        // Remove empty state
+        const emptyState = messagesContainer.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+
+        const now = new Date().toLocaleTimeString('ko-KR', {hour12: false});
+        let msgType = type;
+
+        if (!msgType && typeof data === 'object') {
+            msgType = data.type || 'unknown';
         }
 
-        // Add message to log
-        function addMessage(direction, data, type = null) {
-            // Remove empty state
-            const emptyState = messagesContainer.querySelector('.empty-state');
-            if (emptyState) emptyState.remove();
+        const messageItem = document.createElement('div');
+        messageItem.className = 'message-item';
 
-            const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-            let msgType = type;
-            
-            if (!msgType && typeof data === 'object') {
-                msgType = data.type || 'unknown';
-            }
+        const dirClass = direction === 'incoming' ? 'incoming' : 'outgoing';
+        const dirIcon = direction === 'incoming' ? '←' : '→';
+        const typeClass = direction === 'incoming' ? 'server' : 'client';
 
-            const messageItem = document.createElement('div');
-            messageItem.className = 'message-item';
-            
-            const dirClass = direction === 'incoming' ? 'incoming' : 'outgoing';
-            const dirIcon = direction === 'incoming' ? '←' : '→';
-            const typeClass = direction === 'incoming' ? 'server' : 'client';
-            
-            if (type === 'error') {
-                messageItem.innerHTML = `
+        if (type === 'error') {
+            messageItem.innerHTML = `
                     <div class="message-header">
                         <span class="message-direction ${dirClass}">${dirIcon}</span>
                         <span class="message-time">${now}</span>
@@ -817,9 +828,9 @@
                     </div>
                     <div class="message-body">${data}</div>
                 `;
-            } else {
-                const bodyContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
-                messageItem.innerHTML = `
+        } else {
+            const bodyContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+            messageItem.innerHTML = `
                     <div class="message-header">
                         <span class="message-direction ${dirClass}">${dirIcon}</span>
                         <span class="message-time">${now}</span>
@@ -827,102 +838,102 @@
                     </div>
                     <div class="message-body">${bodyContent}</div>
                 `;
-            }
-
-            messagesContainer.insertBefore(messageItem, messagesContainer.firstChild);
-            messageHistory.unshift({ direction, data, time: now });
         }
 
-        // Connect
-        connectBtn.addEventListener('click', () => {
-            const baseUrl = window.location.origin.replace(/^http/, 'ws');
-            const wsPath = wsUrlInput.value;
-            const token = jwtTokenInput.value.trim();
-            const timezone = document.getElementById('timezone').value.trim();
-            
-            // timezone만 쿼리 파라미터로 전달
-            let wsUrl = `${baseUrl}${wsPath}`;
-            if (timezone) {
-                wsUrl += `?timezone=${encodeURIComponent(timezone)}`;
-            }
+        messagesContainer.insertBefore(messageItem, messagesContainer.firstChild);
+        messageHistory.unshift({direction, data, time: now});
+    }
 
-            updateStatus('connecting', 'Connecting...');
+    // Connect
+    connectBtn.addEventListener('click', () => {
+        const baseUrl = window.location.origin.replace(/^http/, 'ws');
+        const wsPath = wsUrlInput.value;
+        const token = jwtTokenInput.value.trim();
+        const timezone = document.getElementById('timezone').value.trim();
+
+        // timezone만 쿼리 파라미터로 전달
+        let wsUrl = `${baseUrl}${wsPath}`;
+        if (timezone) {
+            wsUrl += `?timezone=${encodeURIComponent(timezone)}`;
+        }
+
+        updateStatus('connecting', 'Connecting...');
+        connectBtn.disabled = true;
+
+        // 토큰은 Sec-WebSocket-Protocol 헤더로 전달 (보안)
+        const protocols = token ? [`authorization.bearer.${token}`] : [];
+        ws = new WebSocket(wsUrl, protocols);
+
+        ws.onopen = () => {
+            updateStatus('connected', 'Connected');
             connectBtn.disabled = true;
+            disconnectBtn.disabled = false;
+            sendBtn.disabled = false;
+            addMessage('system', 'WebSocket connected', 'system');
+        };
 
-            // 토큰은 Sec-WebSocket-Protocol 헤더로 전달 (보안)
-            const protocols = token ? [`authorization.bearer.${token}`] : [];
-            ws = new WebSocket(wsUrl, protocols);
-
-            ws.onopen = () => {
-                updateStatus('connected', 'Connected');
-                connectBtn.disabled = true;
-                disconnectBtn.disabled = false;
-                sendBtn.disabled = false;
-                addMessage('system', 'WebSocket connected', 'system');
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    addMessage('incoming', data);
-                    
-                    // Auto-fill timer_id for subsequent actions
-                    if (data.type === 'timer.created' && data.payload?.timer?.id) {
-                        const timerId = data.payload.timer.id;
-                        ['timer.pause', 'timer.resume', 'timer.stop'].forEach(type => {
-                            messageTemplates[type].payload.timer_id = timerId;
-                        });
-                    }
-                } catch (e) {
-                    addMessage('incoming', event.data);
-                }
-            };
-
-            ws.onerror = (error) => {
-                addMessage('error', 'WebSocket error occurred', 'error');
-            };
-
-            ws.onclose = (event) => {
-                updateStatus('disconnected', `Disconnected (${event.code})`);
-                connectBtn.disabled = false;
-                disconnectBtn.disabled = true;
-                sendBtn.disabled = true;
-                ws = null;
-                
-                let reason = event.reason || 'Connection closed';
-                addMessage('system', `WebSocket closed: ${reason}`, 'system');
-            };
-        });
-
-        // Disconnect
-        disconnectBtn.addEventListener('click', () => {
-            if (ws) {
-                ws.close();
-            }
-        });
-
-        // Send message
-        sendBtn.addEventListener('click', () => {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                addMessage('error', 'WebSocket is not connected', 'error');
-                return;
-            }
-
+        ws.onmessage = (event) => {
             try {
-                const message = JSON.parse(messageInput.value);
-                ws.send(JSON.stringify(message));
-                addMessage('outgoing', message);
-            } catch (e) {
-                addMessage('error', 'Invalid JSON: ' + e.message, 'error');
-            }
-        });
+                const data = JSON.parse(event.data);
+                addMessage('incoming', data);
 
-        // Send on Ctrl+Enter
-        messageInput.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                sendBtn.click();
+                // Auto-fill timer_id for subsequent actions
+                if (data.type === 'timer.created' && data.payload?.timer?.id) {
+                    const timerId = data.payload.timer.id;
+                    ['timer.pause', 'timer.resume', 'timer.stop'].forEach(type => {
+                        messageTemplates[type].payload.timer_id = timerId;
+                    });
+                }
+            } catch (e) {
+                addMessage('incoming', event.data);
             }
-        });
-    </script>
+        };
+
+        ws.onerror = (error) => {
+            addMessage('error', 'WebSocket error occurred', 'error');
+        };
+
+        ws.onclose = (event) => {
+            updateStatus('disconnected', `Disconnected (${event.code})`);
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            sendBtn.disabled = true;
+            ws = null;
+
+            let reason = event.reason || 'Connection closed';
+            addMessage('system', `WebSocket closed: ${reason}`, 'system');
+        };
+    });
+
+    // Disconnect
+    disconnectBtn.addEventListener('click', () => {
+        if (ws) {
+            ws.close();
+        }
+    });
+
+    // Send message
+    sendBtn.addEventListener('click', () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            addMessage('error', 'WebSocket is not connected', 'error');
+            return;
+        }
+
+        try {
+            const message = JSON.parse(messageInput.value);
+            ws.send(JSON.stringify(message));
+            addMessage('outgoing', message);
+        } catch (e) {
+            addMessage('error', 'Invalid JSON: ' + e.message, 'error');
+        }
+    });
+
+    // Send on Ctrl+Enter
+    messageInput.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') {
+            sendBtn.click();
+        }
+    });
+</script>
 </body>
 </html>

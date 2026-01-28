@@ -6,7 +6,6 @@ WebSocket 연결 관리자
 import asyncio
 import logging
 from typing import Optional
-from uuid import UUID
 
 from fastapi import WebSocket
 

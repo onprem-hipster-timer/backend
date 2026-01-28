@@ -27,7 +27,7 @@ def get_message_schemas() -> dict:
         TimerActionPayload,
         TimerSyncPayload,
     )
-    
+
     return {
         "timer.create": TimerCreatePayload.model_json_schema(),
         "timer.pause": TimerActionPayload.model_json_schema(),
@@ -56,10 +56,10 @@ async def ws_playground(request: Request):
             content="<h1>404 Not Found</h1><p>WebSocket Playground is disabled in production.</p>",
             status_code=404,
         )
-    
+
     # 메시지 스키마 추출
     message_schemas = get_message_schemas()
-    
+
     return templates.TemplateResponse(
         "ws_playground.html",
         {
@@ -86,5 +86,5 @@ async def ws_playground_schema():
     """
     if not settings.DOCS_ENABLED or settings.ENVIRONMENT == "production":
         return {"error": "Not available in production"}
-    
+
     return get_message_schemas()

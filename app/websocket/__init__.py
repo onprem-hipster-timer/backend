@@ -6,8 +6,8 @@ WebSocket 인프라 레이어 (공용)
 - 인증: auth.py
 - 공용 스키마: base.py
 """
-from app.websocket.manager import ConnectionManager, connection_manager
 from app.websocket.base import WSClientMessage, WSServerMessage, WSMessageType
+from app.websocket.manager import ConnectionManager, connection_manager
 
 __all__ = [
     "ConnectionManager",

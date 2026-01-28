@@ -601,17 +601,17 @@ class TimerWebSocketClient:
             ws.resume_timer(timer["id"])
             ws.stop_timer(timer["id"])
     """
-    
+
     def __init__(self, ws):
         self._ws = ws
-    
+
     def create_timer(
-        self,
-        schedule_id: str = None,
-        todo_id: str = None,
-        title: str = "테스트 타이머",
-        allocated_duration: int = 1800,
-        tag_ids: list = None,
+            self,
+            schedule_id: str = None,
+            todo_id: str = None,
+            title: str = "테스트 타이머",
+            allocated_duration: int = 1800,
+            tag_ids: list = None,
     ) -> dict:
         """
         타이머 생성
@@ -631,22 +631,22 @@ class TimerWebSocketClient:
                 "allocated_duration": allocated_duration,
             }
         }
-        
+
         if schedule_id:
             payload["payload"]["schedule_id"] = schedule_id
         if todo_id:
             payload["payload"]["todo_id"] = todo_id
         if tag_ids:
             payload["payload"]["tag_ids"] = tag_ids
-        
+
         self._ws.send_text(json.dumps(payload))
         response = self._ws.receive_json()
-        
+
         if response.get("type") == "error":
             raise Exception(f"Timer creation failed: {response.get('payload', {}).get('message', response)}")
-        
+
         return response.get("payload", {}).get("timer", response)
-    
+
     def pause_timer(self, timer_id: str) -> dict:
         """
         타이머 일시정지
@@ -658,11 +658,11 @@ class TimerWebSocketClient:
             "type": "timer.pause",
             "payload": {"timer_id": timer_id}
         }
-        
+
         self._ws.send_text(json.dumps(payload))
         response = self._ws.receive_json()
         return response.get("payload", {}).get("timer", response)
-    
+
     def resume_timer(self, timer_id: str) -> dict:
         """
         타이머 재개
@@ -674,11 +674,11 @@ class TimerWebSocketClient:
             "type": "timer.resume",
             "payload": {"timer_id": timer_id}
         }
-        
+
         self._ws.send_text(json.dumps(payload))
         response = self._ws.receive_json()
         return response.get("payload", {}).get("timer", response)
-    
+
     def stop_timer(self, timer_id: str) -> dict:
         """
         타이머 종료
@@ -690,7 +690,7 @@ class TimerWebSocketClient:
             "type": "timer.stop",
             "payload": {"timer_id": timer_id}
         }
-        
+
         self._ws.send_text(json.dumps(payload))
         response = self._ws.receive_json()
         return response.get("payload", {}).get("timer", response)
@@ -715,9 +715,9 @@ def timer_ws_client(http_client):
         # connected 메시지 수신
         connected_msg = ws.receive_json()
         assert connected_msg.get("type") == "connected", f"Expected 'connected', got: {connected_msg}"
-        
+
         # sync_result 메시지 수신 (자동 동기화)
         sync_msg = ws.receive_json()
         assert sync_msg.get("type") == "timer.sync_result", f"Expected 'timer.sync_result', got: {sync_msg}"
-        
+
         yield TimerWebSocketClient(ws)

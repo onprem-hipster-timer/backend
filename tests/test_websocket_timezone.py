@@ -20,11 +20,11 @@ class TestWebSocketTimezone:
 
         with timer_ws_client(e2e_client) as ws:
             timer = ws.create_timer(title="UTC 테스트", allocated_duration=1800)
-            
+
             # datetime 필드가 존재하고 문자열 형식인지 확인
             assert "started_at" in timer
             assert isinstance(timer["started_at"], str)
-            
+
             # ISO 8601 형식으로 파싱 가능한지 확인
             started_dt = datetime.fromisoformat(timer["started_at"].replace("Z", "+00:00"))
             assert started_dt is not None
@@ -41,14 +41,14 @@ class TestWebSocketTimezone:
                 "payload": {"title": "KST 테스트", "allocated_duration": 1800},
             })
             create_resp = websocket.receive_json()
-            
+
             assert create_resp["type"] == "timer.created"
             timer = create_resp["payload"]["timer"]
-            
+
             # datetime 필드 확인
             started_at_str = timer["started_at"]
             started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-            
+
             # UTC+09:00 타임존이 적용되었는지 확인
             assert started_dt.tzinfo is not None
             # KST는 UTC+9 (32400초)
@@ -66,11 +66,11 @@ class TestWebSocketTimezone:
                 "payload": {"title": "UTC+9 테스트", "allocated_duration": 1800},
             })
             create_resp = websocket.receive_json()
-            
+
             timer = create_resp["payload"]["timer"]
             started_at_str = timer["started_at"]
             started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-            
+
             # UTC+9 확인
             assert started_dt.utcoffset().total_seconds() == 32400
 
@@ -87,12 +87,12 @@ class TestWebSocketTimezone:
             })
             create_resp = websocket.receive_json()
             timer_id = create_resp["payload"]["timer"]["id"]
-            
+
             # pause_history 확인
             pause_history = create_resp["payload"]["timer"]["pause_history"]
             assert len(pause_history) == 1
             assert pause_history[0]["action"] == "start"
-            
+
             # pause_history의 타임스탬프도 KST로 변환되었는지 확인
             start_at_str = pause_history[0]["at"]
             start_dt = datetime.fromisoformat(start_at_str.replace("Z", "+00:00"))
@@ -105,10 +105,10 @@ class TestWebSocketTimezone:
                 "payload": {"timer_id": timer_id},
             })
             pause_resp = websocket.receive_json()
-            
+
             pause_history = pause_resp["payload"]["timer"]["pause_history"]
             assert len(pause_history) == 2
-            
+
             # 모든 타임스탬프가 KST인지 확인
             for event in pause_history:
                 event_dt = datetime.fromisoformat(event["at"].replace("Z", "+00:00"))
@@ -125,16 +125,16 @@ class TestWebSocketTimezone:
         # timezone=Asia/Seoul로 새 연결
         with e2e_client.websocket_connect("/v1/ws/timers?timezone=Asia/Seoul") as ws2:
             ws2.receive_json()  # connected
-            
+
             # 자동 동기화 메시지 확인
             sync_resp = ws2.receive_json()
             assert sync_resp["type"] == "timer.sync_result"
             assert sync_resp["payload"]["count"] == 1
-            
+
             timer = sync_resp["payload"]["timers"][0]
             started_at_str = timer["started_at"]
             started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-            
+
             # KST로 변환되었는지 확인
             assert started_dt.utcoffset().total_seconds() == 32400
 
@@ -144,7 +144,7 @@ class TestWebSocketTimezone:
             # 연결은 성공해야 함 (잘못된 timezone은 무시)
             connected = websocket.receive_json()
             assert connected["type"] == "connected"
-            
+
             sync = websocket.receive_json()
             assert sync["type"] == "timer.sync_result"
 
@@ -154,6 +154,6 @@ class TestWebSocketTimezone:
                 "payload": {"title": "Fallback 테스트", "allocated_duration": 1800},
             })
             create_resp = websocket.receive_json()
-            
+
             # 응답이 정상적으로 오는지 확인
             assert create_resp["type"] == "timer.created"

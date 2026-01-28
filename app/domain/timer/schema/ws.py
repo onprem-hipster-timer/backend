@@ -96,7 +96,7 @@ class TimerData(BaseModel):
         """
         if tz is None:
             return self
-        
+
         # datetime 필드 변환
         update_data = {}
         for field_name in ["started_at", "paused_at", "ended_at", "created_at", "updated_at"]:
@@ -104,7 +104,7 @@ class TimerData(BaseModel):
             if value is not None and isinstance(value, datetime):
                 naive_value = ensure_utc_naive(value)
                 update_data[field_name] = convert_utc_naive_to_timezone(naive_value, tz)
-        
+
         # pause_history의 타임스탬프 변환
         if self.pause_history:
             converted_history = []
@@ -121,7 +121,7 @@ class TimerData(BaseModel):
                     event_copy["at"] = converted_at.isoformat()
                 converted_history.append(event_copy)
             update_data["pause_history"] = converted_history
-        
+
         # model_copy를 사용하여 새 인스턴스 생성
         return self.model_copy(update=update_data)
 

@@ -56,7 +56,7 @@ class WebSocketRateLimiter:
         """
         config = get_ws_rate_limit_config()
         key = f"ws:connect:{user_id}"
-        
+
         return await self._storage.record_request(
             key=key,
             window_seconds=config.connect_window,
@@ -72,7 +72,7 @@ class WebSocketRateLimiter:
         """
         config = get_ws_rate_limit_config()
         key = f"ws:message:{user_id}"
-        
+
         return await self._storage.record_request(
             key=key,
             window_seconds=config.message_window,

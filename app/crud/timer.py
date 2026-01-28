@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlmodel import Session, select, and_, or_
+from sqlmodel import Session, select, and_
 
 from app.core.constants import TimerStatus
 from app.models.timer import TimerSession

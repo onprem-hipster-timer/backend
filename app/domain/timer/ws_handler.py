@@ -47,9 +47,9 @@ class TimerWSHandler:
         self.tz = tz  # 타임존 (timezone 객체, 문자열, 또는 None)
 
     async def dispatch(
-        self,
-        message: WSClientMessage,
-        websocket: WebSocket,
+            self,
+            message: WSClientMessage,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         메시지 타입별 핸들러 디스패치
@@ -76,9 +76,9 @@ class TimerWSHandler:
         )
 
     async def handle_create(
-        self,
-        payload: dict,
-        websocket: WebSocket,
+            self,
+            payload: dict,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 생성 이벤트 처리
@@ -133,9 +133,9 @@ class TimerWSHandler:
             )
 
     async def handle_pause(
-        self,
-        payload: dict,
-        websocket: WebSocket,
+            self,
+            payload: dict,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 일시정지 이벤트 처리
@@ -146,7 +146,7 @@ class TimerWSHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
-            
+
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.pause_timer(action_payload.timer_id)
 
@@ -182,9 +182,9 @@ class TimerWSHandler:
             )
 
     async def handle_resume(
-        self,
-        payload: dict,
-        websocket: WebSocket,
+            self,
+            payload: dict,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 재개 이벤트 처리
@@ -195,7 +195,7 @@ class TimerWSHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
-            
+
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.resume_timer(action_payload.timer_id)
 
@@ -231,9 +231,9 @@ class TimerWSHandler:
             )
 
     async def handle_stop(
-        self,
-        payload: dict,
-        websocket: WebSocket,
+            self,
+            payload: dict,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 종료 이벤트 처리
@@ -244,7 +244,7 @@ class TimerWSHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
-            
+
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.stop_timer(action_payload.timer_id)
 
@@ -280,9 +280,9 @@ class TimerWSHandler:
             )
 
     async def handle_sync(
-        self,
-        payload: dict,
-        websocket: WebSocket,
+            self,
+            payload: dict,
+            websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 동기화 요청 처리
@@ -347,10 +347,10 @@ class TimerWSHandler:
             )
 
     async def _notify_friends(
-        self,
-        action: TimerAction,
-        timer_id: UUID,
-        timer_title: Optional[str],
+            self,
+            action: TimerAction,
+            timer_id: UUID,
+            timer_title: Optional[str],
     ) -> None:
         """
         친구들에게 타이머 활동 알림

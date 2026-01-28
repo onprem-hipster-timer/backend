@@ -24,8 +24,8 @@ from app.core.constants import ResourceScope
 from app.crud import schedule as schedule_crud
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.schedule.service import ScheduleService
 from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import TimerRead
 from app.domain.timer.service import TimerService
 from app.domain.todo.schema.dto import (
@@ -61,13 +61,13 @@ def _get_related_schedule_reads(
     schedules = schedule_crud.get_schedules_by_source_todo_id(
         schedule_service.session, todo.id, schedule_owner_id
     )
-    
+
     schedule_reads = []
     for schedule in schedules:
         schedule_read = schedule_service.try_get_schedule_read(schedule.id)
         if schedule_read:
             schedule_reads.append(schedule_read)
-    
+
     return schedule_reads
 
 
@@ -85,9 +85,9 @@ async def create_todo(
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
-    
+
     todo = todo_service.create_todo(data)
-    
+
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
     return todo_service.to_read_dto(todo, schedules=schedule_reads)
@@ -206,9 +206,9 @@ async def read_todo(
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
-    
+
     todo, is_shared = todo_service.get_todo_with_access_check(todo_id)
-    
+
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=is_shared)
     return todo_service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
@@ -233,9 +233,9 @@ async def update_todo(
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
-    
+
     todo = todo_service.update_todo(todo_id, data)
-    
+
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
     return todo_service.to_read_dto(todo, schedules=schedule_reads)
@@ -277,7 +277,7 @@ async def get_todo_timers(
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
-    
+
     todo, is_shared = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)
@@ -325,7 +325,7 @@ async def get_todo_active_timer(
 
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
-    
+
     todo, is_shared = todo_service.get_todo_with_access_check(todo_id)
 
     timer_service = TimerService(session, current_user)

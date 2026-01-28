@@ -26,70 +26,70 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """status 값을 대문자로 변경"""
     connection = op.get_bind()
-    
+
     # SQLite와 PostgreSQL 모두 지원하는 UPPER 함수 사용
     # 각 상태 값을 개별적으로 업데이트
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'RUNNING'
-        WHERE status = 'running'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'RUNNING'
+                               WHERE status = 'running'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'PAUSED'
-        WHERE status = 'paused'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'PAUSED'
+                               WHERE status = 'paused'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'COMPLETED'
-        WHERE status = 'completed'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'COMPLETED'
+                               WHERE status = 'completed'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'CANCELLED'
-        WHERE status = 'cancelled'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'CANCELLED'
+                               WHERE status = 'cancelled'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'NOT_STARTED'
-        WHERE status = 'not_started'
-    """))
+                               UPDATE timersession
+                               SET status = 'NOT_STARTED'
+                               WHERE status = 'not_started'
+                               """))
 
 
 def downgrade() -> None:
     """status 값을 소문자로 되돌림"""
     connection = op.get_bind()
-    
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'running'
-        WHERE status = 'RUNNING'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'running'
+                               WHERE status = 'RUNNING'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'paused'
-        WHERE status = 'PAUSED'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'paused'
+                               WHERE status = 'PAUSED'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'completed'
-        WHERE status = 'COMPLETED'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'completed'
+                               WHERE status = 'COMPLETED'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'cancelled'
-        WHERE status = 'CANCELLED'
-    """))
-    
+                               UPDATE timersession
+                               SET status = 'cancelled'
+                               WHERE status = 'CANCELLED'
+                               """))
+
     connection.execute(sa.text("""
-        UPDATE timersession
-        SET status = 'not_started'
-        WHERE status = 'NOT_STARTED'
-    """))
+                               UPDATE timersession
+                               SET status = 'not_started'
+                               WHERE status = 'NOT_STARTED'
+                               """))

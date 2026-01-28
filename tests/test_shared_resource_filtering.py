@@ -7,7 +7,6 @@
 이슈: scope=shared 또는 scope=all 일 때, 공유된 리소스에 대해
 필터링 파라미터가 무시되어 내 리소스와 다르게 동작하는 문제가 있었습니다.
 """
-from uuid import uuid4
 
 import pytest
 
@@ -736,7 +735,6 @@ class TestRelationshipLazyLoadingProtection:
         포함되지 않아야 함
         """
         from app.domain.todo.service import TodoService
-        from app.domain.schedule.service import ScheduleService
         from app.domain.tag.service import TagService
         from app.domain.tag.schema.dto import TagGroupCreate
         from app.domain.todo.schema.dto import TodoCreate
@@ -1106,7 +1104,7 @@ class TestDomainServiceAuthorizationHelpers:
         user1_timer_service = TimerService(test_session, test_user)
         user1_schedule_service = ScheduleService(test_session, test_user)
         user1_todo_service = TodoService(test_session, test_user)
-        
+
         result = _build_timer_read_with_relations(
             timer,
             timer_service=user1_timer_service,
@@ -1142,7 +1140,7 @@ class TestDomainServiceAuthorizationHelpers:
 
         todo_service = TodoService(test_session, test_user)
         schedule_service = ScheduleService(test_session, test_user)
-        
+
         deadline = datetime.now(timezone.utc) + timedelta(days=1)
         todo = todo_service.create_todo(
             TodoCreate(

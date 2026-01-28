@@ -1,4 +1,4 @@
-"""add_friendship_and_visibility_tables
+﻿"""add_friendship_and_visibility_tables
 
 Revision ID: a1b2c3d4e5f6
 Revises: 62a5cb5aae21
@@ -57,7 +57,8 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint('id'),
         )
         op.create_index(op.f('ix_resource_visibility_id'), 'resource_visibility', ['id'], unique=False)
-        op.create_index(op.f('ix_resource_visibility_resource_id'), 'resource_visibility', ['resource_id'], unique=False)
+        op.create_index(op.f('ix_resource_visibility_resource_id'), 'resource_visibility', ['resource_id'],
+                        unique=False)
         op.create_index(op.f('ix_resource_visibility_owner_id'), 'resource_visibility', ['owner_id'], unique=False)
         op.create_index('ix_visibility_resource', 'resource_visibility', ['resource_type', 'resource_id'], unique=False)
         op.create_index('ix_visibility_owner_type', 'resource_visibility', ['owner_id', 'resource_type'], unique=False)
@@ -78,7 +79,8 @@ def upgrade() -> None:
                         unique=False)
         op.create_index(op.f('ix_visibility_allow_list_allowed_user_id'), 'visibility_allow_list', ['allowed_user_id'],
                         unique=False)
-        op.create_unique_constraint('uq_allow_list_entry', 'visibility_allow_list', ['visibility_id', 'allowed_user_id'])
+        op.create_unique_constraint('uq_allow_list_entry', 'visibility_allow_list',
+                                    ['visibility_id', 'allowed_user_id'])
 
 
 def downgrade() -> None:

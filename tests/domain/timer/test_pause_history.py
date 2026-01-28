@@ -3,9 +3,7 @@ Timer pause_history 테스트
 
 타이머의 일시정지/재개 이력이 올바르게 저장되는지 테스트합니다.
 """
-import pytest
 
-from app.core.constants import TimerStatus
 from app.domain.timer.schema.dto import TimerCreate
 from app.domain.timer.service import TimerService
 

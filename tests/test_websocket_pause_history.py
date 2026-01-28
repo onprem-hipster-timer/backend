@@ -4,8 +4,9 @@ WebSocket Timer pause_history 상세 테스트
 타이머의 pause_history 필드에 대한 상세 검증
 """
 import os
-import pytest
 from datetime import datetime
+
+import pytest
 
 # 테스트 환경 설정
 os.environ["OIDC_ENABLED"] = "false"
@@ -21,7 +22,7 @@ class TestWebSocketPauseHistory:
 
         with timer_ws_client(e2e_client) as ws:
             timer = ws.create_timer(title="히스토리 테스트", allocated_duration=1800)
-            
+
             # pause_history 검증
             assert "pause_history" in timer
             assert len(timer["pause_history"]) == 1
@@ -63,7 +64,7 @@ class TestWebSocketPauseHistory:
             stopped_timer = ws.stop_timer(timer_id)
             assert len(stopped_timer["pause_history"]) == 6
             assert stopped_timer["pause_history"][5]["action"] == "stop"
-            
+
             # 전체 히스토리 순서 검증
             expected_actions = ["start", "pause", "resume", "pause", "resume", "stop"]
             actual_actions = [h["action"] for h in stopped_timer["pause_history"]]
@@ -81,7 +82,7 @@ class TestWebSocketPauseHistory:
             # 일시정지
             paused_timer = ws.pause_timer(timer_id)
             history = paused_timer["pause_history"]
-            
+
             # 각 타임스탬프가 유효한 ISO 8601 형식인지 확인
             for entry in history:
                 assert "at" in entry
@@ -90,9 +91,9 @@ class TestWebSocketPauseHistory:
                     datetime.fromisoformat(entry["at"].replace("Z", "+00:00"))
                 except ValueError:
                     pytest.fail(f"Invalid timestamp format: {entry['at']}")
-            
+
             # 시간 순서 검증 (이전 < 다음)
             for i in range(len(history) - 1):
                 t1 = datetime.fromisoformat(history[i]["at"].replace("Z", "+00:00"))
-                t2 = datetime.fromisoformat(history[i+1]["at"].replace("Z", "+00:00"))
-                assert t1 <= t2, f"Timestamps out of order: {history[i]['at']} > {history[i+1]['at']}"
+                t2 = datetime.fromisoformat(history[i + 1]["at"].replace("Z", "+00:00"))
+                assert t1 <= t2, f"Timestamps out of order: {history[i]['at']} > {history[i + 1]['at']}"

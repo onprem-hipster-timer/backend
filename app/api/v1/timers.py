@@ -72,36 +72,36 @@ def _build_timer_read_with_relations(
     """
     from app.domain.visibility.exceptions import AccessDeniedError
     from app.domain.todo.exceptions import TodoNotFoundError
-    
+
     schedule_read = None
     todo_read = None
-    
+
     # Schedule 조회 (ScheduleService에서 권한 검증)
     if include_schedule and timer.schedule_id:
         schedule_read = schedule_service.try_get_schedule_read(timer.schedule_id)
-    
+
     # Todo 조회 (TodoService에서 권한 검증 + 연관 Schedule 조회)
     if include_todo and timer.todo_id:
         try:
             todo, todo_is_shared = todo_service.get_todo_with_access_check(timer.todo_id)
-            
+
             # Todo의 연관 Schedule 조회 (각 Schedule은 ScheduleService에서 권한 검증)
             schedule_owner_id = todo.owner_id if todo_is_shared else todo_service.owner_id
             schedules = schedule_crud.get_schedules_by_source_todo_id(
                 todo_service.session, todo.id, schedule_owner_id
             )
-            
+
             schedule_reads = []
             for schedule in schedules:
                 s_read = schedule_service.try_get_schedule_read(schedule.id)
                 if s_read:
                     schedule_reads.append(s_read)
-            
+
             todo_read = todo_service.to_read_dto(todo, is_shared=todo_is_shared, schedules=schedule_reads)
         except (TodoNotFoundError, AccessDeniedError):
             # 접근 불가한 Todo는 None으로 처리
             pass
-    
+
     return timer_service.to_read_dto(
         timer,
         is_shared=is_shared,
@@ -179,7 +179,7 @@ async def list_timers(
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
     todo_service = TodoService(session, current_user)
-    
+
     tz_obj = parse_timezone(tz) if tz else None
     result = []
 
@@ -266,7 +266,7 @@ async def get_user_active_timer(
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
     todo_service = TodoService(session, current_user)
-    
+
     timer = timer_service.get_user_active_timer()
 
     if not timer:
@@ -324,7 +324,7 @@ async def get_timer(
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
     todo_service = TodoService(session, current_user)
-    
+
     timer, is_shared = timer_service.get_timer_with_access_check(timer_id)
 
     # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
@@ -374,7 +374,7 @@ async def update_timer(
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
     todo_service = TodoService(session, current_user)
-    
+
     timer = timer_service.update_timer(timer_id, data)
 
     # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
