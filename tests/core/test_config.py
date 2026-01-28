@@ -38,12 +38,17 @@ class TestCORSSettings:
             os.environ.pop("CORS_ALLOW_HEADERS", None)
 
     def test_cors_origins_default(self):
-        """기본값은 모든 origin 허용"""
+        """기본값은 제한된 origin 허용"""
         os.environ.pop("CORS_ALLOWED_ORIGINS", None)
         settings = Settings()
 
-        assert settings.CORS_ALLOWED_ORIGINS == "*"
-        assert settings.cors_origins == ["*"]
+        assert settings.CORS_ALLOWED_ORIGINS == "http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000"
+        assert settings.cors_origins == ['http://localhost:3000',
+                                         'http://localhost:8000',
+                                         'http://127.0.0.1:3000',
+                                         'http://127.0.0.1:8000',
+                                         'ws://localhost:8000',
+                                         'ws://127.0.0.1:8000']
 
     def test_cors_origins_single_origin(self):
         """단일 origin 설정"""

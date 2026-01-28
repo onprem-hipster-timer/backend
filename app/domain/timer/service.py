@@ -71,14 +71,14 @@ class TimerService:
         """
         schedule_id = data.schedule_id
         todo_id = data.todo_id
-        
+
         # Schedule 존재 확인 및 자동 연결 (schedule_id가 있는 경우)
         schedule = None
         if schedule_id:
             schedule = schedule_crud.get_schedule(self.session, schedule_id, self.owner_id)
             if not schedule:
                 raise ScheduleNotFoundError()
-            
+
             # Schedule만 지정된 경우 → 연관된 source_todo 자동 연결
             if not todo_id and schedule.source_todo_id:
                 todo_id = schedule.source_todo_id
@@ -89,7 +89,7 @@ class TimerService:
             todo = todo_crud.get_todo(self.session, todo_id, self.owner_id)
             if not todo:
                 raise TodoNotFoundError()
-            
+
             # Todo만 지정된 경우 → 연관된 첫 번째 Schedule 자동 연결
             if not schedule_id and todo.schedules:
                 schedule_id = todo.schedules[0].id
@@ -105,6 +105,7 @@ class TimerService:
             "elapsed_time": 0,
             "status": TimerStatus.RUNNING.value,
             "started_at": now,
+            "pause_history": [{"action": "start", "at": now.isoformat()}],
         }
         timer = crud.create_timer(self.session, timer_data, self.owner_id)
 
@@ -356,58 +357,6 @@ class TimerService:
 
         return timer
 
-    def get_all_timers(
-            self,
-            status: Optional[list[str]] = None,
-            timer_type: Optional[str] = None,
-            start_date: Optional[datetime] = None,
-            end_date: Optional[datetime] = None,
-    ) -> list[TimerSession]:
-        """
-        사용자의 모든 타이머 조회 (필터링 옵션 지원)
-
-        :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
-        :param timer_type: 타입 필터 (independent, schedule, todo)
-        :param start_date: 시작 날짜 필터 (started_at 기준)
-        :param end_date: 종료 날짜 필터 (started_at 기준)
-        :return: 타이머 리스트
-        """
-        timers = crud.get_all_timers(
-            self.session,
-            self.owner_id,
-            status=status,
-            timer_type=timer_type,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
-
-        return timers
-
-    def get_user_active_timer(self) -> TimerSession | None:
-        """
-        사용자의 현재 활성 타이머 조회 (RUNNING 또는 PAUSED)
-
-        여러 개가 있으면 가장 최근 것 반환
-
-        :return: 활성 타이머 또는 None
-        """
-        timer = crud.get_user_active_timer(self.session, self.owner_id)
-
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            # 경과 시간 실시간 계산
-            now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
-
-        return timer
-
     def pause_timer(self, timer_id: UUID) -> TimerSession:
         """
         타이머 일시정지
@@ -442,6 +391,15 @@ class TimerService:
         timer.status = TimerStatus.PAUSED.value
         timer.paused_at = now
 
+        # pause_history에 pause 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "pause",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
@@ -475,6 +433,14 @@ class TimerService:
         timer.status = TimerStatus.RUNNING.value
         timer.started_at = now  # 재개 시간으로 재설정
         timer.paused_at = None
+
+        # pause_history에 resume 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "resume",
+            "at": now.isoformat(),
+        })
+        timer.pause_history = history
 
         self.session.flush()
         self.session.refresh(timer)
@@ -514,6 +480,15 @@ class TimerService:
         timer.status = TimerStatus.COMPLETED.value
         timer.ended_at = now
 
+        # pause_history에 stop 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "stop",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
@@ -538,9 +513,32 @@ class TimerService:
         timer.status = TimerStatus.CANCELLED.value
         timer.ended_at = now
 
+        # pause_history에 cancel 이벤트 추가
+        history = list(timer.pause_history) if timer.pause_history else []
+        history.append({
+            "action": "cancel",
+            "at": now.isoformat(),
+            "elapsed": timer.elapsed_time,
+        })
+        timer.pause_history = history
+
         self.session.flush()
         self.session.refresh(timer)
         return timer
+
+    def get_pause_history(self, timer_id: UUID) -> list[dict]:
+        """
+        타이머 일시정지/재개 이력 조회
+        
+        :param timer_id: 타이머 ID
+        :return: 이력 리스트
+        :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        """
+        timer = crud.get_timer(self.session, timer_id, self.owner_id)
+        if not timer:
+            raise TimerNotFoundError()
+
+        return list(timer.pause_history) if timer.pause_history else []
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
@@ -708,7 +706,6 @@ class TimerService:
             timer_read.visibility_level = visibility.level
 
         return timer_read
-
 
     def _get_timer_tags(
             self,

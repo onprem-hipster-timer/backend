@@ -3,6 +3,7 @@ import os
 # 테스트 환경 기본 설정 - 다른 모듈 임포트 전에 설정 필요!
 os.environ["OIDC_ENABLED"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리밋 테스트에서만 활성화
+os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
 import pytest
 import pytest_asyncio
@@ -405,6 +406,7 @@ def e2e_client():
     # (레이트 리밋 테스트에서 환경변수가 변경될 수 있음)
     os.environ["RATE_LIMIT_ENABLED"] = "false"
     os.environ["OIDC_ENABLED"] = "false"
+    os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
     from app.core.config import Settings
     import app.core.config as config_module
@@ -412,7 +414,9 @@ def e2e_client():
 
     # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
     from app.ratelimit.storage.memory import reset_storage
+    from app.ratelimit.websocket import reset_ws_limiter
     reset_storage()
+    reset_ws_limiter()  # WebSocket 리미터도 초기화
 
     test_engine = _create_test_engine()
 
@@ -461,13 +465,16 @@ def multi_user_e2e():
     # 환경변수 설정 및 settings 재로드
     os.environ["RATE_LIMIT_ENABLED"] = "false"
     os.environ["OIDC_ENABLED"] = "false"
+    os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
     from app.core.config import Settings
     import app.core.config as config_module
     config_module.settings = Settings()
 
     from app.ratelimit.storage.memory import reset_storage
+    from app.ratelimit.websocket import reset_ws_limiter
     reset_storage()
+    reset_ws_limiter()  # WebSocket 리미터도 초기화
 
     test_engine = _create_test_engine()
 
@@ -572,3 +579,145 @@ def multi_user_e2e():
         _session_manager.engine = original_engine
         SQLModel.metadata.drop_all(test_engine)
         test_engine.dispose()
+
+
+# ============ WebSocket 타이머 테스트 헬퍼 ============
+
+import json
+from contextlib import contextmanager
+
+
+class TimerWebSocketClient:
+    """
+    타이머 WebSocket 테스트용 클라이언트
+    
+    WebSocket 연결 후 connected + sync_result 메시지를 자동 처리하고,
+    타이머 작업을 수행할 수 있는 메서드를 제공합니다.
+    
+    사용법:
+        with timer_ws_client(e2e_client) as ws:
+            timer = ws.create_timer(schedule_id=schedule_id)
+            ws.pause_timer(timer["id"])
+            ws.resume_timer(timer["id"])
+            ws.stop_timer(timer["id"])
+    """
+
+    def __init__(self, ws):
+        self._ws = ws
+
+    def create_timer(
+            self,
+            schedule_id: str = None,
+            todo_id: str = None,
+            title: str = "테스트 타이머",
+            allocated_duration: int = 1800,
+            tag_ids: list = None,
+    ) -> dict:
+        """
+        타이머 생성
+        
+        :param schedule_id: 연결할 Schedule ID (선택)
+        :param todo_id: 연결할 Todo ID (선택)
+        :param title: 타이머 제목
+        :param allocated_duration: 할당 시간 (초)
+        :param tag_ids: 태그 ID 리스트 (선택)
+        :return: 생성된 타이머 데이터
+        :raises Exception: 타이머 생성 실패 시
+        """
+        payload = {
+            "type": "timer.create",
+            "payload": {
+                "title": title,
+                "allocated_duration": allocated_duration,
+            }
+        }
+
+        if schedule_id:
+            payload["payload"]["schedule_id"] = schedule_id
+        if todo_id:
+            payload["payload"]["todo_id"] = todo_id
+        if tag_ids:
+            payload["payload"]["tag_ids"] = tag_ids
+
+        self._ws.send_text(json.dumps(payload))
+        response = self._ws.receive_json()
+
+        if response.get("type") == "error":
+            raise Exception(f"Timer creation failed: {response.get('payload', {}).get('message', response)}")
+
+        return response.get("payload", {}).get("timer", response)
+
+    def pause_timer(self, timer_id: str) -> dict:
+        """
+        타이머 일시정지
+        
+        :param timer_id: 타이머 ID
+        :return: 업데이트된 타이머 데이터
+        """
+        payload = {
+            "type": "timer.pause",
+            "payload": {"timer_id": timer_id}
+        }
+
+        self._ws.send_text(json.dumps(payload))
+        response = self._ws.receive_json()
+        return response.get("payload", {}).get("timer", response)
+
+    def resume_timer(self, timer_id: str) -> dict:
+        """
+        타이머 재개
+        
+        :param timer_id: 타이머 ID
+        :return: 업데이트된 타이머 데이터
+        """
+        payload = {
+            "type": "timer.resume",
+            "payload": {"timer_id": timer_id}
+        }
+
+        self._ws.send_text(json.dumps(payload))
+        response = self._ws.receive_json()
+        return response.get("payload", {}).get("timer", response)
+
+    def stop_timer(self, timer_id: str) -> dict:
+        """
+        타이머 종료
+        
+        :param timer_id: 타이머 ID
+        :return: 업데이트된 타이머 데이터
+        """
+        payload = {
+            "type": "timer.stop",
+            "payload": {"timer_id": timer_id}
+        }
+
+        self._ws.send_text(json.dumps(payload))
+        response = self._ws.receive_json()
+        return response.get("payload", {}).get("timer", response)
+
+
+@contextmanager
+def timer_ws_client(http_client):
+    """
+    타이머 WebSocket 클라이언트 context manager
+    
+    WebSocket 연결 후 connected + sync_result 메시지를 자동 처리합니다.
+    
+    사용법:
+        with timer_ws_client(e2e_client) as ws:
+            timer = ws.create_timer(schedule_id=schedule_id)
+            ws.pause_timer(timer["id"])
+    
+    :param http_client: FastAPI TestClient
+    :yields: TimerWebSocketClient 인스턴스
+    """
+    with http_client.websocket_connect("/v1/ws/timers") as ws:
+        # connected 메시지 수신
+        connected_msg = ws.receive_json()
+        assert connected_msg.get("type") == "connected", f"Expected 'connected', got: {connected_msg}"
+
+        # sync_result 메시지 수신 (자동 동기화)
+        sync_msg = ws.receive_json()
+        assert sync_msg.get("type") == "timer.sync_result", f"Expected 'timer.sync_result', got: {sync_msg}"
+
+        yield TimerWebSocketClient(ws)

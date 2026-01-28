@@ -8,10 +8,10 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.crud import schedule as schedule_crud
 from app.domain.schedule.enums import ScheduleState
 from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
 from app.domain.tag.service import TagService
-from app.crud import schedule as schedule_crud
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate, TodoIncludeReason
@@ -1249,7 +1249,7 @@ def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, oth
     from app.domain.schedule.schema.dto import ScheduleRead
 
     tag_service = TagService(test_session, other_user)
-    
+
     # other_user의 태그 그룹 생성
     other_group = tag_service.create_tag_group(TagGroupCreate(
         name="Other User Group",
@@ -1275,7 +1275,7 @@ def test_to_read_dto_shared_todo_includes_schedules(test_session, test_user, oth
     assert len(schedules) == 1, "Todo의 Schedule이 생성되어야 함"
     schedule_id = schedules[0].id
 
-    #Schedule을 조회하고 DTO로 변환 후 주입
+    # Schedule을 조회하고 DTO로 변환 후 주입
     schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
 
     # test_user가 공유된 Todo를 to_read_dto로 변환 (is_shared=True)
@@ -1296,7 +1296,7 @@ def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group,
 
     service = TodoService(test_session, test_user)
     deadline = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
-    
+
     # deadline이 있는 Todo 생성 (Schedule 자동 생성됨)
     todo = service.create_todo(TodoCreate(
         title="My Todo with Schedule",
@@ -1312,7 +1312,7 @@ def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group,
     )
     assert len(schedules) == 1
 
-    #chedule을 조회하고 DTO로 변환 후 주입
+    # chedule을 조회하고 DTO로 변환 후 주입
     schedule_reads = [ScheduleRead.model_validate(s) for s in schedules]
 
     # is_shared=False로 to_read_dto 호출
@@ -1326,7 +1326,7 @@ def test_to_read_dto_own_todo_includes_schedules(test_session, sample_tag_group,
 def test_to_read_dto_shared_todo_without_schedule(test_session, test_user, other_user):
     """Schedule이 없는 공유된 Todo를 to_read_dto로 변환 테스트"""
     tag_service = TagService(test_session, other_user)
-    
+
     # other_user의 태그 그룹 생성
     other_group = tag_service.create_tag_group(TagGroupCreate(
         name="Other User Group",

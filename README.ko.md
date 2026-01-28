@@ -197,14 +197,12 @@ curl "http://localhost:2614/v1/schedules?start_date=2024-01-01T00:00:00Z&end_dat
 
 #### Timers
 
+**REST API (조회/수정/삭제만):**
+
 ```http
-POST   /v1/timers                # 타이머 생성 (자동 시작)
 GET    /v1/timers/{id}           # 타이머 조회
 PATCH  /v1/timers/{id}           # 타이머 수정
 DELETE /v1/timers/{id}           # 타이머 삭제
-PATCH  /v1/timers/{id}/pause     # 일시정지
-PATCH  /v1/timers/{id}/resume    # 재개
-POST   /v1/timers/{id}/stop      # 종료
 ```
 
 **Query Parameters:**
@@ -213,20 +211,23 @@ POST   /v1/timers/{id}/stop      # 종료
 | `include_schedule` | bool | 연결된 Schedule 포함 여부 |
 | `tag_include_mode` | string | `none`, `timer_only`, `inherit_from_schedule` |
 
-**Example:**
-```bash
-# 타이머 생성 (30분 할당)
-curl -X POST http://localhost:2614/v1/timers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schedule_id": "uuid-here",
-    "title": "집중 작업",
-    "allocated_duration": 1800
-  }'
+**WebSocket API (생성/제어):**
 
-# 타이머 일시정지
-curl -X PATCH http://localhost:2614/v1/timers/{id}/pause
+타이머 생성 및 제어 작업(생성, 일시정지, 재개, 종료)은 여러 기기와 공유 사용자 간 실시간 동기화를 위해 WebSocket으로 처리됩니다.
+
 ```
+WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers?token={jwt_token}
+```
+
+| 메시지 타입 | 설명 |
+|-------------|------|
+| `timer.create` | 새 타이머 생성 및 시작 |
+| `timer.pause` | 실행 중인 타이머 일시정지 |
+| `timer.resume` | 일시정지된 타이머 재개 |
+| `timer.stop` | 타이머 종료 및 완료 |
+| `timer.sync` | 서버에서 활성 타이머 동기화 |
+
+> 📖 **상세 가이드**: [FRONTEND_TIMER_GUIDE.md](FRONTEND_TIMER_GUIDE.md)
 
 #### Todos
 
@@ -307,12 +308,13 @@ hipster-timer-backend/
 ├── app/
 │   ├── api/
 │   │   └── v1/                    # API 라우터
-│   │       ├── schedules.py
-│   │       ├── timers.py
-│   │       ├── todos.py
-│   │       ├── tags.py
-│   │       ├── holidays.py
-│   │       └── graphql.py
+│   │       ├── schedules.py       # Schedule REST API
+│   │       ├── timers.py          # Timer REST API
+│   │       ├── timers_ws.py       # Timer WebSocket API
+│   │       ├── todos.py           # Todo REST API
+│   │       ├── tags.py            # Tag REST API
+│   │       ├── holidays.py        # Holiday REST API
+│   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # 핵심 설정
 │   │   ├── config.py              # 환경 변수 설정
 │   │   ├── logging.py             # 로깅 설정
@@ -325,6 +327,11 @@ hipster-timer-backend/
 │   │   │   ├── schema/            # DTO, Types
 │   │   │   └── exceptions.py      # 도메인 예외
 │   │   ├── timer/
+│   │   │   ├── service.py         # 비즈니스 로직
+│   │   │   ├── ws_handler.py      # WebSocket 핸들러
+│   │   │   └── schema/
+│   │   │       ├── dto.py         # REST DTO
+│   │   │       └── ws.py          # WebSocket 스키마
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
@@ -335,6 +342,10 @@ hipster-timer-backend/
 │   │   ├── todo.py
 │   │   └── tag.py
 │   ├── middleware/                # 미들웨어
+│   ├── websocket/                 # WebSocket 인프라 (공용)
+│   │   ├── base.py                # 공용 메시지 스키마
+│   │   ├── manager.py             # 연결 관리
+│   │   └── auth.py                # WebSocket 인증
 │   └── main.py                    # 앱 진입점
 ├── alembic/                       # DB 마이그레이션
 ├── tests/                         # 테스트
@@ -749,20 +760,34 @@ OIDC_AUDIENCE=my-frontend-app
 
 > 📖 **상세 가이드**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
 
+**HTTP Rate Limit:**
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `RATE_LIMIT_ENABLED` | Rate Limit 활성화 | `True` |
 | `RATE_LIMIT_DEFAULT_WINDOW` | 기본 윈도우 크기 (초) | `60` |
 | `RATE_LIMIT_DEFAULT_REQUESTS` | 윈도우당 최대 요청 수 | `60` |
 
+**WebSocket Rate Limit:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WS_RATE_LIMIT_ENABLED` | WebSocket Rate Limit 활성화 | `True` |
+| `WS_CONNECT_WINDOW` | 연결 제한 윈도우 (초) | `60` |
+| `WS_CONNECT_MAX` | 윈도우당 최대 연결 횟수 | `10` |
+| `WS_MESSAGE_WINDOW` | 메시지 제한 윈도우 (초) | `60` |
+| `WS_MESSAGE_MAX` | 윈도우당 최대 메시지 수 | `120` |
+
 **빠른 설정:**
 
 ```bash
 # 개발 환경 (Rate Limit 비활성화)
 RATE_LIMIT_ENABLED=false
+WS_RATE_LIMIT_ENABLED=false
 
 # 프로덕션 환경 (기본 설정)
 RATE_LIMIT_ENABLED=true
+WS_RATE_LIMIT_ENABLED=true
 ```
 
 #### 프록시 설정 (Cloudflare / Trusted Proxy)

@@ -1,16 +1,18 @@
 # Timer API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-23
+> **최종 업데이트**: 2026-01-28
+> **중요 변경**: 타이머 제어 작업이 WebSocket 기반으로 전환되었습니다.
 
 ## 목차
 
 1. [개요](#개요)
-2. [데이터 모델](#데이터-모델)
-3. [REST API](#rest-api)
-4. [양방향 등록 가이드](#양방향-등록-가이드)
-5. [TypeScript 타입 정의](#typescript-타입-정의)
-6. [사용 예시](#사용-예시)
-7. [주의사항](#주의사항)
+2. [아키텍처 변경 (2026-01-28)](#아키텍처-변경-2026-01-28)
+3. [데이터 모델](#데이터-모델)
+4. [WebSocket API](#websocket-api)
+5. [REST API (조회/삭제만)](#rest-api-조회삭제만)
+6. [TypeScript 타입 정의](#typescript-타입-정의)
+7. [사용 예시](#사용-예시)
+8. [주의사항](#주의사항)
 
 ---
 
@@ -26,24 +28,54 @@ Timer API는 **일정(Schedule)**, **할 일(Todo)**, 또는 **독립적으로**
 | **Schedule** | 캘린더 일정. 타이머를 통해 작업 시간 측정 가능. |
 | **Todo** | 할 일 항목. 타이머를 통해 작업 시간 측정 가능. |
 
-### Timer, Schedule, Todo의 관계
+---
+
+## 아키텍처 변경 (2026-01-28)
+
+### 변경 이유
+
+1. **일시정지 이력 추적**: 단일 `paused_at` 컬럼으로는 여러 번의 일시정지/재개 이력 저장 불가
+2. **멀티 플랫폼 동기화**: REST 폴링 방식으로는 실시간 동기화 어려움
+3. **친구 알림**: 친구의 타이머 활동을 실시간으로 알림
+
+### 새로운 아키텍처
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Timer 생성 방법 (양방향 등록)                                        │
+│  멀티 플랫폼 실시간 동기화                                            │
 │                                                                     │
-│  ┌──────────────┐        ┌──────────────┐        ┌──────────────┐  │
-│  │   Schedule   │←──────→│    Timer     │←──────→│     Todo     │  │
-│  │   (Optional) │        │              │        │   (Optional) │  │
-│  └──────────────┘        └──────────────┘        └──────────────┘  │
-│                                │                                    │
-│                                ↓                                    │
-│                     ┌──────────────────┐                            │
-│                     │   독립 타이머     │                            │
-│                     │  (둘 다 없음)     │                            │
-│                     └──────────────────┘                            │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐                        │
+│  │   Web    │   │  Mobile  │   │ Desktop  │                        │
+│  └────┬─────┘   └────┬─────┘   └────┬─────┘                        │
+│       │              │              │                               │
+│       └──────────────┼──────────────┘                               │
+│                      │                                              │
+│                      ▼                                              │
+│              ┌───────────────┐                                      │
+│              │   WebSocket   │                                      │
+│              │  /v1/ws/timers   │                                      │
+│              └───────┬───────┘                                      │
+│                      │                                              │
+│       ┌──────────────┼──────────────┐                               │
+│       ▼              ▼              ▼                               │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐                         │
+│  │ 내 기기  │   │ 다른 기기 │   │  친구    │                         │
+│  │ 동기화   │   │  동기화   │   │  알림    │                         │
+│  └─────────┘   └──────────┘   └──────────┘                         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### API 변경 요약
+
+| 작업 | 이전 (REST) | 현재 (WebSocket) |
+|------|-------------|------------------|
+| 타이머 생성 | `POST /v1/timers` | `timer.create` 메시지 |
+| 일시정지 | `PATCH /v1/timers/{id}/pause` | `timer.pause` 메시지 |
+| 재개 | `PATCH /v1/timers/{id}/resume` | `timer.resume` 메시지 |
+| 종료 | `POST /v1/timers/{id}/stop` | `timer.stop` 메시지 |
+| 조회 | `GET /v1/timers/*` | **유지** (REST) |
+| 삭제 | `DELETE /v1/timers/{id}` | **유지** (REST) |
+| 업데이트 | `PATCH /v1/timers/{id}` | **유지** (REST) |
 
 ---
 
@@ -62,13 +94,16 @@ interface Timer {
   elapsed_time: number;         // 경과 시간 (초 단위)
   status: TimerStatus;          // 상태
   started_at?: string;          // 시작 시간 (ISO 8601)
-  paused_at?: string;           // 일시정지 시간 (ISO 8601)
+  paused_at?: string;           // 마지막 일시정지 시간 (ISO 8601)
   ended_at?: string;            // 종료 시간 (ISO 8601)
+  pause_history: PauseEvent[];  // 일시정지/재개 이력 (NEW!)
   created_at: string;           // 생성 시간 (ISO 8601)
   updated_at: string;           // 수정 시간 (ISO 8601)
-  schedule?: Schedule;          // Schedule 정보 (include_schedule=true일 때)
-  todo?: Todo;                  // Todo 정보 (include_todo=true일 때)
+  schedule?: Schedule;          // Schedule 정보
+  todo?: Todo;                  // Todo 정보
   tags: Tag[];                  // 연결된 태그 목록
+  owner_id?: string;            // 소유자 ID
+  is_shared: boolean;           // 공유된 타이머인지
 }
 
 type TimerStatus = 
@@ -76,24 +111,303 @@ type TimerStatus =
   | "PAUSED"     // 일시정지
   | "COMPLETED"  // 완료
   | "CANCELLED"; // 취소됨
+
+interface PauseEvent {
+  action: "start" | "pause" | "resume" | "stop" | "cancel";
+  at: string;           // ISO 8601 시간
+  elapsed?: number;     // 경과 시간 (pause, stop 시)
+}
 ```
 
-### TimerCreate
+### pause_history 예시
 
-```typescript
-interface TimerCreate {
-  schedule_id?: string;         // Schedule ID (Optional)
-  todo_id?: string;             // Todo ID (Optional)
-  title?: string;               // 타이머 제목
-  description?: string;         // 타이머 설명
-  allocated_duration: number;   // 할당 시간 (초 단위, 양수 필수)
-  tag_ids?: string[];           // 태그 ID 리스트
+```json
+[
+  { "action": "start", "at": "2026-01-28T10:00:00Z" },
+  { "action": "pause", "at": "2026-01-28T10:30:00Z", "elapsed": 1800 },
+  { "action": "resume", "at": "2026-01-28T10:35:00Z" },
+  { "action": "pause", "at": "2026-01-28T10:50:00Z", "elapsed": 2700 },
+  { "action": "resume", "at": "2026-01-28T11:00:00Z" },
+  { "action": "stop", "at": "2026-01-28T11:30:00Z", "elapsed": 4500 }
+]
+```
+
+---
+
+## WebSocket API
+
+### 연결
+
+**중요: 보안상 JWT는 반드시 `Sec-WebSocket-Protocol` 헤더로 전달해야 합니다.**
+
+**개발 환경:**
+```javascript
+const ws = new WebSocket(
+  'ws://localhost:8000/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
+```
+
+**프로덕션 환경:**
+```javascript
+const ws = new WebSocket(
+  'wss://your-domain.com/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
+```
+
+**쿼리 파라미터:**
+- `timezone`: 타임존 (선택, 예: `UTC`, `+09:00`, `Asia/Seoul`)
+  - 지정하지 않으면 UTC naive datetime으로 반환
+  - 지정하면 모든 응답의 datetime 필드가 해당 타임존으로 변환됨
+
+**인증:**
+- `Sec-WebSocket-Protocol` 헤더: `authorization.bearer.<JWT_TOKEN>` (필수)
+- WebSocket 생성자의 두 번째 인자(subprotocols)로 전달
+
+### 연결 후 자동 동기화 (NEW!) 🔥
+
+**연결 즉시 활성 타이머가 자동으로 전송됩니다!**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    Client->>Server: WebSocket 연결
+    Server->>Client: 1. connected 메시지
+    Server->>Client: 2. timer.sync_result (자동 전송)
+    Note over Client: 즉시 타이머 상태 동기화 완료!
+```
+
+**특징:**
+- ✅ **자동 전송**: 연결 즉시 활성 타이머(RUNNING/PAUSED) 자동 수신
+- ✅ **빠른 초기화**: 별도 sync 요청 불필요
+- ✅ **멀티 디바이스**: 새 기기 연결 시 즉시 동기화
+
+### ⚠️ 중요: CORS 설정
+
+WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
+
+**개발 환경:**
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+```
+
+**프로덕션 환경:**
+```bash
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+```
+
+> 💡 **Tip**: `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
+
+### 연결 성공 응답
+
+**1. 연결 확인 메시지:**
+
+```json
+{
+  "type": "connected",
+  "payload": {
+    "user_id": "user-uuid",
+    "message": "Connected to timer WebSocket"
+  },
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+**2. 자동 동기화 메시지 (즉시 전송):**
+
+```json
+{
+  "type": "timer.sync_result",
+  "payload": {
+    "timers": [
+      {
+        "id": "timer-uuid",
+        "title": "작업 중인 타이머",
+        "status": "RUNNING",
+        "elapsed_time": 1234,
+        ...
+      }
+    ],
+    "count": 1
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+> **참고**: `timers` 배열이 비어있으면(`count: 0`) 활성 타이머가 없는 상태입니다.
+
+---
+
+### 클라이언트 → 서버 메시지
+
+#### 타이머 생성 (timer.create)
+
+```json
+{
+  "type": "timer.create",
+  "payload": {
+    "allocated_duration": 3600,
+    "title": "작업 타이머",
+    "description": "프로젝트 작업",
+    "schedule_id": "uuid-or-null",
+    "todo_id": "uuid-or-null",
+    "tag_ids": ["tag-uuid-1"]
+  }
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `allocated_duration` | number | ✅ | 할당 시간 (초 단위, 양수 필수) |
+| `title` | string | ❌ | 타이머 제목 |
+| `description` | string | ❌ | 타이머 설명 |
+| `schedule_id` | UUID | ❌ | Schedule ID |
+| `todo_id` | UUID | ❌ | Todo ID |
+| `tag_ids` | UUID[] | ❌ | 태그 ID 리스트 |
+
+#### 타이머 일시정지 (timer.pause)
+
+```json
+{
+  "type": "timer.pause",
+  "payload": {
+    "timer_id": "timer-uuid"
+  }
+}
+```
+
+#### 타이머 재개 (timer.resume)
+
+```json
+{
+  "type": "timer.resume",
+  "payload": {
+    "timer_id": "timer-uuid"
+  }
+}
+```
+
+#### 타이머 종료 (timer.stop)
+
+```json
+{
+  "type": "timer.stop",
+  "payload": {
+    "timer_id": "timer-uuid"
+  }
+}
+```
+
+#### 타이머 동기화 요청 (timer.sync)
+
+**수동 동기화가 필요한 경우에만 사용:**
+
+```json
+{
+  "type": "timer.sync",
+  "payload": {
+    "timer_id": "timer-uuid",  // 선택: 특정 타이머 조회
+    "scope": "active"           // 선택: "active" (기본값) | "all"
+  }
+}
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `timer_id` | UUID | - | 특정 타이머 ID (생략 시 목록 조회) |
+| `scope` | string | active | `active`: 활성 타이머만, `all`: 모든 타이머 |
+
+**응답:**
+
+- 단건 조회 (timer_id 지정): `timer.updated` 메시지
+- 목록 조회 (timer_id 생략): `timer.sync_result` 메시지
+
+> **💡 Tip**: 연결 시 자동 동기화가 되므로, 수동 sync는 **재연결 후 상태 확인**이 필요한 경우에만 사용하세요.
+
+---
+
+### 서버 → 클라이언트 메시지
+
+#### 타이머 생성됨 (timer.created)
+
+```json
+{
+  "type": "timer.created",
+  "payload": {
+    "timer": { /* Timer 객체 */ },
+    "action": "start"
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+#### 타이머 업데이트됨 (timer.updated)
+
+```json
+{
+  "type": "timer.updated",
+  "payload": {
+    "timer": { /* Timer 객체 */ },
+    "action": "pause"  // "pause" | "resume" | "stop" | "sync"
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:30:00Z"
+}
+```
+
+#### 타이머 동기화 결과 (timer.sync_result)
+
+```json
+{
+  "type": "timer.sync_result",
+  "payload": {
+    "timers": [ /* Timer 객체 배열 */ ],
+    "count": 2
+  },
+  "from_user": "user-uuid",
+  "timestamp": "2026-01-28T10:30:00Z"
+}
+```
+
+#### 친구 활동 알림 (timer.friend_activity)
+
+```json
+{
+  "type": "timer.friend_activity",
+  "payload": {
+    "friend_id": "friend-user-uuid",
+    "action": "start",
+    "timer_id": "timer-uuid",
+    "timer_title": "친구의 작업"
+  },
+  "from_user": "friend-user-uuid",
+  "timestamp": "2026-01-28T10:00:00Z"
+}
+```
+
+#### 에러 (error)
+
+```json
+{
+  "type": "error",
+  "payload": {
+    "code": "PAUSE_FAILED",
+    "message": "Cannot pause timer with status completed"
+  },
+  "timestamp": "2026-01-28T10:00:00Z"
 }
 ```
 
 ---
 
-## REST API
+## REST API (조회/삭제만)
+
+> **주의**: 타이머 생성, 일시정지, 재개, 종료는 WebSocket으로만 가능합니다.
 
 ### Base URL
 
@@ -101,66 +415,7 @@ interface TimerCreate {
 /v1
 ```
 
-### Timer API
-
-#### 타이머 생성 및 시작
-
-```http
-POST /v1/timers
-Content-Type: application/json
-
-{
-  "schedule_id": "uuid-or-null",
-  "todo_id": "uuid-or-null",
-  "title": "작업 타이머",
-  "description": "프로젝트 작업",
-  "allocated_duration": 3600,
-  "tag_ids": ["tag-uuid-1"]
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `schedule_id` | UUID | ❌ | Schedule ID (Optional) |
-| `todo_id` | UUID | ❌ | Todo ID (Optional) |
-| `title` | string | ❌ | 타이머 제목 |
-| `description` | string | ❌ | 타이머 설명 |
-| `allocated_duration` | number | ✅ | 할당 시간 (초 단위, 양수 필수) |
-| `tag_ids` | UUID[] | ❌ | 태그 ID 리스트 |
-
-**Query Parameters:**
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|---------|------|--------|------|
-| `include_schedule` | boolean | false | Schedule 정보 포함 여부 |
-| `include_todo` | boolean | false | Todo 정보 포함 여부 |
-| `tag_include_mode` | string | none | 태그 포함 모드 (none, timer_only, inherit_from_schedule) |
-| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
-
-**응답 (201 Created):**
-
-```json
-{
-  "id": "timer-uuid",
-  "schedule_id": "schedule-uuid",
-  "todo_id": null,
-  "title": "작업 타이머",
-  "description": "프로젝트 작업",
-  "allocated_duration": 3600,
-  "elapsed_time": 0,
-  "status": "RUNNING",
-  "started_at": "2024-01-15T10:00:00Z",
-  "paused_at": null,
-  "ended_at": null,
-  "created_at": "2024-01-15T10:00:00Z",
-  "updated_at": "2024-01-15T10:00:00Z",
-  "schedule": null,
-  "todo": null,
-  "tags": []
-}
-```
-
-#### 타이머 목록 조회
+### 타이머 목록 조회
 
 ```http
 GET /v1/timers
@@ -170,68 +425,31 @@ GET /v1/timers
 
 | 파라미터 | 타입 | 기본값 | 설명 |
 |---------|------|--------|------|
-| `status` | string[] | - | 상태 필터 (RUNNING, PAUSED, COMPLETED, CANCELLED) - 복수 선택 가능 |
-| `type` | string | - | 타입 필터: independent(독립 타이머), schedule(Schedule 연결), todo(Todo 연결) |
-| `start_date` | datetime | - | 시작 날짜 필터 (started_at 기준, ISO 8601 형식) |
-| `end_date` | datetime | - | 종료 날짜 필터 (started_at 기준, ISO 8601 형식) |
-| `include_schedule` | boolean | false | Schedule 정보 포함 여부 |
-| `include_todo` | boolean | false | Todo 정보 포함 여부 |
-| `tag_include_mode` | string | none | 태그 포함 모드 (none, timer_only, inherit_from_schedule) |
-| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
+| `scope` | string | mine | 조회 범위: mine, shared, all |
+| `status` | string[] | - | 상태 필터 (RUNNING, PAUSED, COMPLETED, CANCELLED) |
+| `type` | string | - | 타입 필터: independent, schedule, todo |
+| `start_date` | datetime | - | 시작 날짜 필터 |
+| `end_date` | datetime | - | 종료 날짜 필터 |
+| `include_schedule` | boolean | false | Schedule 정보 포함 |
+| `include_todo` | boolean | false | Todo 정보 포함 |
+| `tag_include_mode` | string | none | 태그 포함 모드 |
+| `timezone` | string | UTC | 타임존 |
 
-**사용 예시:**
-
-```typescript
-// 독립 타이머만 조회
-const independentTimers = await fetch('/v1/timers?type=independent');
-
-// 진행 중인 타이머 조회
-const runningTimers = await fetch('/v1/timers?status=RUNNING&status=PAUSED');
-
-// 완료된 타이머 히스토리 조회 (날짜 범위)
-const history = await fetch('/v1/timers?status=COMPLETED&start_date=2026-01-01T00:00:00Z');
-```
-
-#### 현재 활성 타이머 조회
+### 현재 활성 타이머 조회
 
 ```http
 GET /v1/timers/active
 ```
 
-사용자의 현재 활성 타이머(RUNNING 또는 PAUSED)를 조회합니다.
+활성 타이머가 없으면 **404 Not Found** 반환
 
-- 활성 타이머가 없으면 **404 Not Found** 반환
-- 여러 개가 있으면 가장 최근 것 반환
-
-**Query Parameters:**
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|---------|------|--------|------|
-| `include_schedule` | boolean | false | Schedule 정보 포함 여부 |
-| `include_todo` | boolean | false | Todo 정보 포함 여부 |
-| `tag_include_mode` | string | none | 태그 포함 모드 (none, timer_only, inherit_from_schedule) |
-| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
-
-**사용 예시:**
-
-```typescript
-// 앱 시작 시 활성 타이머 확인
-const response = await fetch('/v1/timers/active');
-if (response.ok) {
-  const activeTimer = await response.json();
-  console.log("진행 중인 타이머:", activeTimer.title);
-} else if (response.status === 404) {
-  console.log("활성 타이머 없음");
-}
-```
-
-#### 타이머 조회
+### 타이머 상세 조회
 
 ```http
 GET /v1/timers/{timer_id}
 ```
 
-#### 타이머 업데이트
+### 타이머 메타데이터 업데이트
 
 ```http
 PATCH /v1/timers/{timer_id}
@@ -240,209 +458,14 @@ Content-Type: application/json
 {
   "title": "업데이트된 제목",
   "description": "업데이트된 설명",
-  "todo_id": "uuid-or-null",
-  "schedule_id": "uuid-or-null"
+  "tag_ids": ["tag-uuid"]
 }
 ```
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|------|------|
-| `title` | string | ❌ | 타이머 제목 |
-| `description` | string | ❌ | 타이머 설명 |
-| `tag_ids` | UUID[] | ❌ | 태그 ID 리스트 |
-| `todo_id` | UUID \| null | ❌ | Todo 연결 변경 (null로 연결 해제) |
-| `schedule_id` | UUID \| null | ❌ | Schedule 연결 변경 (null로 연결 해제) |
-
-**필드 동작:**
-
-| 필드 값 | 동작 |
-|---------|------|
-| 필드 미전송 | 기존 값 유지 |
-| UUID 값 | 해당 ID로 연결 변경 |
-| `null` | 연결 해제 |
-
-**사용 예시:**
-
-```typescript
-// Todo 연결 추가
-await fetch(`/v1/timers/${timerId}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    todo_id: "550e8400-e29b-41d4-a716-446655440000"
-  })
-});
-
-// Todo 연결 해제
-await fetch(`/v1/timers/${timerId}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    todo_id: null
-  })
-});
-
-// Schedule과 Todo 동시 변경
-await fetch(`/v1/timers/${timerId}`, {
-  method: 'PATCH',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    schedule_id: "schedule-uuid",
-    todo_id: "todo-uuid"
-  })
-});
-```
-
-> ⚠️ **주의**: 업데이트 시에는 자동 연결 기능이 적용되지 않습니다 (생성 시와 다름).
-> `todo_id`만 변경해도 연관된 `schedule_id`가 자동으로 설정되지 않습니다.
-
-#### 타이머 일시정지
-
-```http
-PATCH /v1/timers/{timer_id}/pause
-```
-
-#### 타이머 재개
-
-```http
-PATCH /v1/timers/{timer_id}/resume
-```
-
-#### 타이머 종료
-
-```http
-POST /v1/timers/{timer_id}/stop
-```
-
-#### 타이머 삭제
+### 타이머 삭제
 
 ```http
 DELETE /v1/timers/{timer_id}
-```
-
----
-
-### Schedule 기반 타이머 엔드포인트
-
-#### Schedule의 모든 타이머 조회
-
-```http
-GET /v1/schedules/{schedule_id}/timers
-```
-
-#### Schedule의 활성 타이머 조회
-
-```http
-GET /v1/schedules/{schedule_id}/timers/active
-```
-
-활성 타이머가 없으면 404를 반환합니다.
-
----
-
-### Todo 기반 타이머 엔드포인트
-
-#### Todo의 모든 타이머 조회
-
-```http
-GET /v1/todos/{todo_id}/timers
-```
-
-**Query Parameters:**
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|---------|------|--------|------|
-| `include_todo` | boolean | false | Todo 정보 포함 여부 |
-| `timezone` | string | UTC | 타임존 (예: Asia/Seoul) |
-
-#### Todo의 활성 타이머 조회
-
-```http
-GET /v1/todos/{todo_id}/timers/active
-```
-
-활성 타이머가 없으면 404를 반환합니다.
-
----
-
-## 양방향 등록 가이드
-
-Timer는 Schedule, Todo, 또는 둘 다에 연결할 수 있습니다. 둘 다 없으면 독립 타이머가 됩니다.
-
-### 1. Schedule에서 타이머 생성
-
-```typescript
-// Schedule에 연결된 타이머 생성
-const response = await fetch('/v1/timers', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    schedule_id: scheduleId,     // Schedule ID 지정
-    allocated_duration: 3600,    // 1시간
-    title: "회의 준비"
-  })
-});
-
-const timer = await response.json();
-console.log(timer.schedule_id);  // scheduleId
-console.log(timer.todo_id);      // null
-```
-
-### 2. Todo에서 타이머 생성
-
-```typescript
-// Todo에 연결된 타이머 생성
-const response = await fetch('/v1/timers', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    todo_id: todoId,             // Todo ID 지정
-    allocated_duration: 1800,    // 30분
-    title: "Todo 작업"
-  })
-});
-
-const timer = await response.json();
-console.log(timer.schedule_id);  // null
-console.log(timer.todo_id);      // todoId
-```
-
-### 3. Schedule과 Todo 모두에 연결
-
-```typescript
-// Schedule과 Todo 모두에 연결된 타이머 생성
-const response = await fetch('/v1/timers', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    schedule_id: scheduleId,
-    todo_id: todoId,
-    allocated_duration: 3600,
-    title: "복합 작업"
-  })
-});
-
-const timer = await response.json();
-console.log(timer.schedule_id);  // scheduleId
-console.log(timer.todo_id);      // todoId
-```
-
-### 4. 독립 타이머 생성
-
-```typescript
-// 독립 타이머 생성 (Schedule, Todo 모두 없음)
-const response = await fetch('/v1/timers', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    allocated_duration: 600,     // 10분
-    title: "포모도로 타이머"
-  })
-});
-
-const timer = await response.json();
-console.log(timer.schedule_id);  // null
-console.log(timer.todo_id);      // null
 ```
 
 ---
@@ -455,10 +478,21 @@ console.log(timer.todo_id);      // null
 // ============================================================
 
 export type TimerStatus = "RUNNING" | "PAUSED" | "COMPLETED" | "CANCELLED";
+export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "sync";
+export type WSMessageType = 
+  | "timer.create" | "timer.pause" | "timer.resume" | "timer.stop" | "timer.sync"
+  | "timer.created" | "timer.updated" | "timer.deleted" | "timer.sync_result" | "timer.friend_activity"
+  | "connected" | "error";
 
 // ============================================================
 // Timer Types
 // ============================================================
+
+export interface PauseEvent {
+  action: TimerAction;
+  at: string;
+  elapsed?: number;
+}
 
 export interface Timer {
   id: string;
@@ -472,11 +506,14 @@ export interface Timer {
   started_at?: string;
   paused_at?: string;
   ended_at?: string;
+  pause_history: PauseEvent[];
   created_at: string;
   updated_at: string;
   schedule?: Schedule;
   todo?: Todo;
   tags: Tag[];
+  owner_id?: string;
+  is_shared: boolean;
 }
 
 export interface TimerCreate {
@@ -488,23 +525,42 @@ export interface TimerCreate {
   tag_ids?: string[];
 }
 
-export interface TimerUpdate {
-  title?: string;
-  description?: string;
-  tag_ids?: string[];
-  todo_id?: string | null;      // null로 연결 해제
-  schedule_id?: string | null;  // null로 연결 해제
+// ============================================================
+// WebSocket Messages
+// ============================================================
+
+export interface WSClientMessage {
+  type: WSMessageType;
+  payload: Record<string, unknown>;
 }
 
-// ============================================================
-// Query Parameters
-// ============================================================
+export interface WSServerMessage {
+  type: WSMessageType;
+  payload: Record<string, unknown>;
+  from_user?: string;
+  timestamp: string;
+}
 
-export interface TimerQueryParams {
-  include_schedule?: boolean;
-  include_todo?: boolean;
-  tag_include_mode?: 'none' | 'timer_only' | 'inherit_from_schedule';
-  timezone?: string;
+export interface TimerUpdatedPayload {
+  timer: Timer;
+  action: TimerAction;
+}
+
+export interface FriendActivityPayload {
+  friend_id: string;
+  action: TimerAction;
+  timer_id: string;
+  timer_title?: string;
+}
+
+export interface TimerSyncResultPayload {
+  timers: Timer[];
+  count: number;
+}
+
+export interface ErrorPayload {
+  code: string;
+  message: string;
 }
 ```
 
@@ -512,211 +568,264 @@ export interface TimerQueryParams {
 
 ## 사용 예시
 
-### 전체 워크플로우 예시
+### WebSocket 연결 및 타이머 제어
 
 ```typescript
-// 1. Todo에서 타이머 시작
-const startResponse = await fetch('/v1/timers', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    todo_id: todoId,
-    allocated_duration: 1800,  // 30분
-    title: "Todo 작업 시작"
-  })
-});
-const timer = await startResponse.json();
-console.log("타이머 시작:", timer.status);  // "RUNNING"
+class TimerWebSocket {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  
+  constructor(
+    private token: string,
+    private onMessage: (msg: WSServerMessage) => void,
+    private onError?: (error: Event) => void,
+    private timezone?: string,  // 타임존 (예: "Asia/Seoul", "+09:00")
+  ) {}
 
-// 2. 타이머 일시정지
-const pauseResponse = await fetch(`/v1/timers/${timer.id}/pause`, {
-  method: 'PATCH'
-});
-const pausedTimer = await pauseResponse.json();
-console.log("일시정지:", pausedTimer.status);  // "PAUSED"
-console.log("경과 시간:", pausedTimer.elapsed_time);  // 경과 시간 (초)
+  connect(): void {
+    // 환경에 따라 ws:// 또는 wss:// 사용
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host; // 또는 명시적으로 API 서버 주소 지정
+    
+    // timezone만 쿼리 파라미터로 (토큰은 헤더로)
+    const params = new URLSearchParams();
+    if (this.timezone) {
+      params.append('timezone', this.timezone);
+    }
+    const queryString = params.toString();
+    const wsUrl = `${protocol}//${host}/v1/ws/timers${queryString ? '?' + queryString : ''}`;
+    
+    // 🔐 토큰은 반드시 Sec-WebSocket-Protocol 헤더로 전달 (보안)
+    this.ws = new WebSocket(wsUrl, [
+      `authorization.bearer.${this.token}`
+    ]);
 
-// 3. 타이머 재개
-const resumeResponse = await fetch(`/v1/timers/${timer.id}/resume`, {
-  method: 'PATCH'
-});
-const resumedTimer = await resumeResponse.json();
-console.log("재개:", resumedTimer.status);  // "RUNNING"
+    this.ws.onopen = () => {
+      console.log('Timer WebSocket connected');
+      this.reconnectAttempts = 0;
+    };
 
-// 4. 타이머 종료
-const stopResponse = await fetch(`/v1/timers/${timer.id}/stop`, {
-  method: 'POST'
-});
-const stoppedTimer = await stopResponse.json();
-console.log("종료:", stoppedTimer.status);  // "COMPLETED"
-console.log("총 경과 시간:", stoppedTimer.elapsed_time);
+    this.ws.onmessage = (event) => {
+      const message: WSServerMessage = JSON.parse(event.data);
+      this.onMessage(message);
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      this.onError?.(error);
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket closed');
+      this.attemptReconnect();
+    };
+  }
+
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = Math.pow(2, this.reconnectAttempts) * 1000;
+      setTimeout(() => this.connect(), delay);
+    }
+  }
+
+  private send(message: WSClientMessage): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  createTimer(data: TimerCreate): void {
+    this.send({
+      type: 'timer.create',
+      payload: data,
+    });
+  }
+
+  pauseTimer(timerId: string): void {
+    this.send({
+      type: 'timer.pause',
+      payload: { timer_id: timerId },
+    });
+  }
+
+  resumeTimer(timerId: string): void {
+    this.send({
+      type: 'timer.resume',
+      payload: { timer_id: timerId },
+    });
+  }
+
+  stopTimer(timerId: string): void {
+    this.send({
+      type: 'timer.stop',
+      payload: { timer_id: timerId },
+    });
+  }
+
+  syncTimer(timerId?: string): void {
+    this.send({
+      type: 'timer.sync',
+      payload: timerId ? { timer_id: timerId } : {},
+    });
+  }
+
+  disconnect(): void {
+    this.ws?.close();
+    this.ws = null;
+  }
+}
 ```
 
 ### React Hook 예시
 
 ```typescript
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-// 타이머 상태 관리 훅
-function useTimer(timerId: string | null) {
-  const [timer, setTimer] = useState<Timer | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchTimer = useCallback(async () => {
-    if (!timerId) return;
-    
-    setLoading(true);
-    try {
-      const response = await fetch(`/v1/timers/${timerId}`);
-      if (!response.ok) throw new Error('Failed to fetch timer');
-      const data = await response.json();
-      setTimer(data);
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [timerId]);
-
-  const pause = useCallback(async () => {
-    if (!timerId) return;
-    const response = await fetch(`/v1/timers/${timerId}/pause`, {
-      method: 'PATCH'
-    });
-    if (response.ok) {
-      const updated = await response.json();
-      setTimer(updated);
-    }
-  }, [timerId]);
-
-  const resume = useCallback(async () => {
-    if (!timerId) return;
-    const response = await fetch(`/v1/timers/${timerId}/resume`, {
-      method: 'PATCH'
-    });
-    if (response.ok) {
-      const updated = await response.json();
-      setTimer(updated);
-    }
-  }, [timerId]);
-
-  const stop = useCallback(async () => {
-    if (!timerId) return;
-    const response = await fetch(`/v1/timers/${timerId}/stop`, {
-      method: 'POST'
-    });
-    if (response.ok) {
-      const updated = await response.json();
-      setTimer(updated);
-    }
-  }, [timerId]);
+function useTimerWebSocket(token: string, timezone?: string) {
+  const [activeTimers, setActiveTimers] = useState<Timer[]>([]);
+  const [friendActivity, setFriendActivity] = useState<FriendActivityPayload | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [synced, setSynced] = useState(false);  // 초기 동기화 완료 여부
+  const [error, setError] = useState<string | null>(null);
+  const wsRef = useRef<TimerWebSocket | null>(null);
 
   useEffect(() => {
-    fetchTimer();
-  }, [fetchTimer]);
-
-  return { timer, loading, error, pause, resume, stop, refetch: fetchTimer };
-}
-
-// 타이머 생성 훅
-function useCreateTimer() {
-  const [loading, setLoading] = useState(false);
-
-  const createTimer = async (data: TimerCreate): Promise<Timer> => {
-    setLoading(true);
-    try {
-      const response = await fetch('/v1/timers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to create timer');
-      }
-      
-      return await response.json();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return { createTimer, loading };
-}
-
-// Todo 타이머 조회 훅
-function useTodoTimers(todoId: string) {
-  const [timers, setTimers] = useState<Timer[]>([]);
-  const [activeTimer, setActiveTimer] = useState<Timer | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchTimers = async () => {
-      try {
-        // 모든 타이머 조회
-        const response = await fetch(`/v1/todos/${todoId}/timers`);
-        if (response.ok) {
-          const data = await response.json();
-          setTimers(data);
-        }
-
-        // 활성 타이머 조회
-        const activeResponse = await fetch(`/v1/todos/${todoId}/timers/active`);
-        if (activeResponse.ok) {
-          const activeData = await activeResponse.json();
-          setActiveTimer(activeData);
-        } else if (activeResponse.status === 404) {
-          setActiveTimer(null);
-        }
-      } finally {
-        setLoading(false);
+    const handleMessage = (msg: WSServerMessage) => {
+      switch (msg.type) {
+        case 'connected':
+          setConnected(true);
+          break;
+        case 'timer.sync_result':
+          // 자동 동기화 또는 수동 sync 응답
+          const syncPayload = msg.payload as TimerSyncResultPayload;
+          setActiveTimers(syncPayload.timers);
+          setSynced(true);
+          break;
+        case 'timer.created':
+        case 'timer.updated':
+          const payload = msg.payload as TimerUpdatedPayload;
+          // 활성 타이머 목록 업데이트
+          setActiveTimers(prev => {
+            const filtered = prev.filter(t => t.id !== payload.timer.id);
+            if (payload.timer.status === 'RUNNING' || payload.timer.status === 'PAUSED') {
+              return [...filtered, payload.timer];
+            }
+            return filtered;
+          });
+          break;
+        case 'timer.friend_activity':
+          setFriendActivity(msg.payload as FriendActivityPayload);
+          setTimeout(() => setFriendActivity(null), 3000);
+          break;
+        case 'error':
+          const errorPayload = msg.payload as ErrorPayload;
+          setError(errorPayload.message);
+          break;
       }
     };
 
-    fetchTimers();
-  }, [todoId]);
+    wsRef.current = new TimerWebSocket(token, handleMessage, undefined, timezone);
+    wsRef.current.connect();
 
-  return { timers, activeTimer, loading };
+    return () => {
+      wsRef.current?.disconnect();
+    };
+  }, [token, timezone]);
+
+  const createTimer = useCallback((data: TimerCreate) => {
+    wsRef.current?.createTimer(data);
+  }, []);
+
+  const pauseTimer = useCallback((timerId: string) => {
+    wsRef.current?.pauseTimer(timerId);
+  }, []);
+
+  const resumeTimer = useCallback((timerId: string) => {
+    wsRef.current?.resumeTimer(timerId);
+  }, []);
+
+  const stopTimer = useCallback((timerId: string) => {
+    wsRef.current?.stopTimer(timerId);
+  }, []);
+
+  const syncTimer = useCallback((scope: 'active' | 'all' = 'active') => {
+    wsRef.current?.send({
+      type: 'timer.sync',
+      payload: { scope },
+    });
+  }, []);
+
+  return {
+    activeTimers,  // 활성 타이머 목록
+    friendActivity,
+    connected,
+    synced,  // 초기 동기화 완료 여부
+    error,
+    createTimer,
+    pauseTimer,
+    resumeTimer,
+    stopTimer,
+    syncTimer,
+  };
 }
 
 // 사용 예시
-function TimerComponent({ todoId }: { todoId: string }) {
-  const { timers, activeTimer, loading } = useTodoTimers(todoId);
-  const { createTimer } = useCreateTimer();
+function TimerComponent() {
+  const {
+    activeTimers,
+    friendActivity,
+    connected,
+    synced,
+    createTimer,
+    pauseTimer,
+    resumeTimer,
+    stopTimer,
+  } = useTimerWebSocket(authToken, 'Asia/Seoul');  // 타임존 지정
 
-  const handleStartTimer = async () => {
-    const timer = await createTimer({
-      todo_id: todoId,
-      allocated_duration: 1800,  // 30분
-      title: "작업 타이머"
-    });
-    console.log("타이머 시작:", timer);
-  };
-
-  if (loading) return <div>로딩 중...</div>;
+  if (!connected) return <div>연결 중...</div>;
+  if (!synced) return <div>동기화 중...</div>;
 
   return (
     <div>
-      {activeTimer ? (
+      {friendActivity && (
+        <div className="notification">
+          친구 {friendActivity.friend_id}가 타이머를 {friendActivity.action}했습니다!
+        </div>
+      )}
+
+      {activeTimers.length > 0 ? (
         <div>
-          <h3>현재 타이머: {activeTimer.title}</h3>
-          <p>상태: {activeTimer.status}</p>
-          <p>경과: {Math.floor(activeTimer.elapsed_time / 60)}분</p>
+          <h3>활성 타이머 ({activeTimers.length}개)</h3>
+          {activeTimers.map(timer => (
+            <div key={timer.id}>
+              <h4>{timer.title || '타이머'}</h4>
+              <p>상태: {timer.status}</p>
+              <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
+              {/* datetime 필드는 이미 Asia/Seoul 타임존으로 변환됨 */}
+              <p>시작: {new Date(timer.started_at).toLocaleString('ko-KR')}</p>
+              
+              {timer.status === 'RUNNING' && (
+                <button onClick={() => pauseTimer(timer.id)}>일시정지</button>
+              )}
+              {timer.status === 'PAUSED' && (
+                <>
+                  <button onClick={() => resumeTimer(timer.id)}>재개</button>
+                  <button onClick={() => stopTimer(timer.id)}>종료</button>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
-        <button onClick={handleStartTimer}>타이머 시작</button>
+        <button onClick={() => createTimer({
+          allocated_duration: 1800,
+          title: '포모도로'
+        })}>
+          타이머 시작
+        </button>
       )}
-      
-      <h4>타이머 기록</h4>
-      <ul>
-        {timers.map(timer => (
-          <li key={timer.id}>
-            {timer.title} - {timer.status} ({Math.floor(timer.elapsed_time / 60)}분)
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -726,107 +835,103 @@ function TimerComponent({ todoId }: { todoId: string }) {
 
 ## 주의사항
 
-### 1. 자동 연결 기능 ✨
+### 1. WebSocket 연결 필수
 
-**백엔드가 자동으로 연관된 엔티티를 연결합니다!**
+타이머 제어 작업(생성, 일시정지, 재개, 종료)은 **WebSocket 연결이 필수**입니다.
+REST API로는 조회/삭제/메타데이터 업데이트만 가능합니다.
 
-| 입력 | 자동 처리 |
-|------|----------|
-| `schedule_id`만 지정 | 해당 Schedule의 `source_todo_id`가 있으면 `todo_id` 자동 설정 |
-| `todo_id`만 지정 | 해당 Todo에 연관된 Schedule이 있으면 `schedule_id` 자동 설정 |
+### 2. 🔐 보안: JWT 전달 방법
 
+**중요**: WebSocket 연결 시 JWT는 **반드시 `Sec-WebSocket-Protocol` 헤더**로 전달해야 합니다.
+
+```javascript
+// ✅ 올바른 방법: Sec-WebSocket-Protocol 헤더 사용
+const ws = new WebSocket(
+  'wss://api.example.com/v1/ws/timers?timezone=Asia/Seoul',
+  ['authorization.bearer.' + jwtToken]
+);
+
+// ❌ 지원 안 함: 쿼리 파라미터로 토큰 전달 (보안 위험!)
+// ws://host/v1/ws/timers?token=<JWT>
 ```
-사용자: Todo에서만 타이머 생성
-         ↓
-시스템: Todo의 연관 Schedule도 자동 연결
-         ↓
-결과: /todos/{id}/timers ✅ 보임
-      /schedules/{id}/timers ✅ 보임
+
+**쿼리 파라미터로 토큰을 전달하면 안 되는 이유:**
+- 서버 로그에 JWT 노출
+- 브라우저 히스토리에 JWT 저장
+- Referer 헤더를 통한 JWT 유출 가능
+- 프록시/게이트웨이 로그에 기록됨
+
+### 4. CORS 설정 필수 ⚠️
+
+WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확인하세요**:
+
+**문제 증상:**
+- WebSocket 연결 시 에러 코드 1006 (비정상 종료)
+- 브라우저 콘솔에 CORS 에러
+- 연결이 즉시 끊김
+
+**해결 방법:**
+
+백엔드 서버의 `.env` 파일 또는 환경변수에서 `CORS_ALLOWED_ORIGINS`를 설정하세요:
+
+```bash
+# 개발 환경
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+
+# 프로덕션 환경
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
 ```
 
-**예시:**
+> 💡 **핵심**: WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
+
+### 5. 멀티 플랫폼 동기화
+
+같은 사용자가 여러 기기에서 접속한 경우:
+- 한 기기에서 타이머를 일시정지하면 다른 기기에도 즉시 반영됩니다
+- **새 기기 연결 시 자동으로 활성 타이머가 전송됩니다** (수동 sync 불필요)
+- WebSocket 연결이 끊어진 기기는 재연결 시 자동 동기화로 상태를 복구합니다
+
+### 6. 친구 알림
+
+- 친구가 타이머를 시작/일시정지/재개/종료하면 `timer.friend_activity` 메시지를 받습니다
+- 알림은 WebSocket에 연결된 온라인 친구에게만 전송됩니다
+
+### 7. pause_history 활용
 
 ```typescript
-// Todo만 지정하여 타이머 생성
-const timer = await fetch('/v1/timers', {
-  method: 'POST',
-  body: JSON.stringify({
-    todo_id: todoId,              // Todo만 지정
-    allocated_duration: 3600
-  })
-}).then(r => r.json());
+// 총 작업 시간 계산
+function getTotalWorkTime(history: PauseEvent[]): number {
+  let totalWork = 0;
+  let lastStart: Date | null = null;
 
-// 결과: 연관된 Schedule이 자동 연결됨!
-console.log(timer.todo_id);      // todoId
-console.log(timer.schedule_id);  // 자동으로 연결된 Schedule ID
+  for (const event of history) {
+    if (event.action === 'start' || event.action === 'resume') {
+      lastStart = new Date(event.at);
+    } else if ((event.action === 'pause' || event.action === 'stop') && lastStart) {
+      const endTime = new Date(event.at);
+      totalWork += (endTime.getTime() - lastStart.getTime()) / 1000;
+      lastStart = null;
+    }
+  }
+
+  return totalWork;
+}
+
+// 일시정지 횟수 계산
+function getPauseCount(history: PauseEvent[]): number {
+  return history.filter(e => e.action === 'pause').length;
+}
 ```
 
-> 💡 **연관된 엔티티가 없으면 자동 연결되지 않습니다.**
-> - Schedule에 `source_todo_id`가 없으면 `todo_id`는 null
-> - Todo에 연관된 Schedule이 없으면 `schedule_id`는 null
-> - 명시적으로 둘 다 지정하면 자동 연결이 적용되지 않음
+### 8. 연결 재시도
 
-### 2. schedule_id, todo_id 모두 Optional
-
-타이머 생성 시 둘 다 없어도 됩니다 (독립 타이머).
+WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하세요:
 
 ```typescript
-// ✅ 모두 허용
-{ schedule_id: "...", allocated_duration: 3600 }  // Schedule 연결 (+ Todo 자동 연결)
-{ todo_id: "...", allocated_duration: 3600 }      // Todo 연결 (+ Schedule 자동 연결)
-{ schedule_id: "...", todo_id: "...", allocated_duration: 3600 }  // 둘 다 명시적 연결
-{ allocated_duration: 3600 }  // 독립 타이머
+const delay = Math.pow(2, attempt) * 1000;  // 2초, 4초, 8초, 16초...
 ```
 
-### 3. 존재하지 않는 ID 사용 시 에러
-
-```typescript
-// ❌ 존재하지 않는 schedule_id: 404 Schedule Not Found
-// ❌ 존재하지 않는 todo_id: 404 Todo Not Found
-```
-
-### 4. allocated_duration은 양수 필수
-
-```typescript
-// ❌ 에러: allocated_duration이 음수 또는 0
-{ allocated_duration: -100 }  // 422 Validation Error
-{ allocated_duration: 0 }     // 422 Validation Error
-
-// ✅ 올바른 사용
-{ allocated_duration: 60 }    // 최소 1초 이상
-```
-
-### 5. 태그 상속 모드
-
-`tag_include_mode` 파라미터로 태그 포함 방식을 제어할 수 있습니다:
-
-| 모드 | 설명 |
-|------|------|
-| `none` | 태그 포함하지 않음 (기본값) |
-| `timer_only` | 타이머에 직접 연결된 태그만 포함 |
-| `inherit_from_schedule` | 타이머 태그 + Schedule/Todo 태그 상속 |
-
-```typescript
-// 태그 상속 예시
-const response = await fetch('/v1/timers/uuid?tag_include_mode=inherit_from_schedule');
-```
-
-> 💡 `inherit_from_schedule` 모드에서:
-> - Schedule이 연결된 경우: 타이머 태그 + Schedule 태그
-> - Todo만 연결된 경우: 타이머 태그 + Todo 태그
-> - 둘 다 없는 경우: 타이머 태그만
-
-### 6. 날짜/시간 형식
-
-모든 datetime 필드는 **ISO 8601** 형식을 사용합니다.
-
-```typescript
-// ✅ 올바른 형식
-"2024-01-20T10:00:00Z"      // UTC
-"2024-01-20T19:00:00+09:00" // 타임존 포함
-```
-
-### 7. 타이머 상태 전이
+### 9. 타이머 상태 전이
 
 ```
            ┌──────────────────────────────────────┐
@@ -851,34 +956,34 @@ const response = await fetch('/v1/timers/uuid?tag_include_mode=inherit_from_sche
 
 ## API 요약
 
-### Timer API
+### WebSocket API
+
+| 방향 | 메시지 타입 | 설명 |
+|------|-------------|------|
+| → | `timer.create` | 타이머 생성 |
+| → | `timer.pause` | 타이머 일시정지 |
+| → | `timer.resume` | 타이머 재개 |
+| → | `timer.stop` | 타이머 종료 |
+| → | `timer.sync` | 타이머 동기화 요청 |
+| ← | `connected` | 연결 성공 |
+| ← | `timer.sync_result` | 타이머 목록 (자동/수동) |
+| ← | `timer.created` | 타이머 생성됨 |
+| ← | `timer.updated` | 타이머 업데이트됨 |
+| ← | `timer.friend_activity` | 친구 활동 알림 |
+| ← | `error` | 에러 |
+
+### REST API
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| POST | `/v1/timers` | 타이머 생성 및 시작 |
-| GET | `/v1/timers` | 타이머 목록 조회 (필터링 지원) |
+| GET | `/v1/timers` | 타이머 목록 조회 |
 | GET | `/v1/timers/active` | 현재 활성 타이머 조회 |
-| GET | `/v1/timers/{id}` | 타이머 조회 |
-| PATCH | `/v1/timers/{id}` | 타이머 업데이트 |
-| PATCH | `/v1/timers/{id}/pause` | 타이머 일시정지 |
-| PATCH | `/v1/timers/{id}/resume` | 타이머 재개 |
-| POST | `/v1/timers/{id}/stop` | 타이머 종료 |
+| GET | `/v1/timers/{id}` | 타이머 상세 조회 |
+| PATCH | `/v1/timers/{id}` | 타이머 메타데이터 업데이트 |
 | DELETE | `/v1/timers/{id}` | 타이머 삭제 |
-
-### Schedule 기반 타이머 API
-
-| Method | Endpoint | 설명 |
-|--------|----------|------|
-| GET | `/v1/schedules/{id}/timers` | Schedule의 모든 타이머 조회 |
-| GET | `/v1/schedules/{id}/timers/active` | Schedule의 활성 타이머 조회 |
-
-### Todo 기반 타이머 API
-
-| Method | Endpoint | 설명 |
-|--------|----------|------|
-| GET | `/v1/todos/{id}/timers` | Todo의 모든 타이머 조회 |
-| GET | `/v1/todos/{id}/timers/active` | Todo의 활성 타이머 조회 |
+| GET | `/v1/schedules/{id}/timers` | Schedule의 타이머 조회 |
+| GET | `/v1/todos/{id}/timers` | Todo의 타이머 조회 |
 
 ---
 
-이 가이드를 참고하여 프론트엔드에서 Timer 기능을 구현하세요!
+이 가이드를 참고하여 프론트엔드에서 WebSocket 기반 Timer 기능을 구현하세요!

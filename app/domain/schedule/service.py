@@ -169,7 +169,7 @@ class ScheduleService:
         :return: ScheduleRead DTO 또는 None (권한 없거나 리소스 없음)
         """
         from app.domain.visibility.exceptions import AccessDeniedError
-        
+
         try:
             schedule, is_shared = self.get_schedule_with_access_check(schedule_id)
             return self.to_read_dto(schedule, is_shared=is_shared)

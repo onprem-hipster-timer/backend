@@ -1460,7 +1460,6 @@ def test_update_timer_preserves_unset_fields(test_session, sample_schedule, samp
     assert updated_timer.todo_id == sample_todo.id
 
 
-
 # ============================================================
 # 공유 리소스 to_read_dto 테스트
 # ============================================================

@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
     RATE_LIMIT_DEFAULT_REQUESTS: int = 60  # 기본 최대 요청 수
 
+    # WebSocket Rate Limit 설정
+    WS_RATE_LIMIT_ENABLED: bool = True  # WebSocket 레이트 리밋 활성화
+    WS_CONNECT_WINDOW: int = 60  # 연결 제한 윈도우 (초)
+    WS_CONNECT_MAX: int = 10  # 윈도우 내 최대 연결 횟수
+    WS_MESSAGE_WINDOW: int = 60  # 메시지 제한 윈도우 (초)
+    WS_MESSAGE_MAX: int = 120  # 윈도우 내 최대 메시지 수
+
     # 프록시 설정
     PROXY_FORCE: bool = False  # 프록시/Cloudflare 경유 강제 (request.client.host 기준으로 프록시가 아니면 차단)
 
@@ -70,7 +77,7 @@ class Settings(BaseSettings):
     ORIGIN_VERIFY_SECRET: str = ""  # 프록시에서 설정한 비밀 키 (Cloudflare Transform Rules, Nginx 등)
 
     # CORS 설정
-    CORS_ALLOWED_ORIGINS: str = "*"  # 허용할 origin (콤마로 구분, 예: "http://localhost:3000,https://example.com")
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000"  # 허용할 origin (콤마로 구분, 예: "http://localhost:3000,https://example.com,wss://example.com")
     CORS_ALLOW_CREDENTIALS: bool = False  # 자격 증명(쿠키 등) 허용 여부 (origin이 "*"일 때는 False여야 함)
     CORS_ALLOW_METHODS: str = "*"  # 허용할 HTTP 메서드 (콤마로 구분, 예: "GET,POST,PUT,DELETE")
     CORS_ALLOW_HEADERS: str = "*"  # 허용할 헤더 (콤마로 구분)

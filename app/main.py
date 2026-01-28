@@ -156,7 +156,7 @@ app.add_middleware(RateLimitMiddleware)
 #    RateLimitMiddleware와 엔드포인트에서 중복 토큰 검증 없이 재사용
 app.add_middleware(AuthMiddleware)
 
-# API Router 등록 (REST + GraphQL 모두 포함)
+# API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)
 
 

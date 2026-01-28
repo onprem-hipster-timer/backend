@@ -248,7 +248,6 @@ class TodoService:
 
         return todo, True
 
-
     def get_shared_todos(self) -> list[Todo]:
         """
         공유된 Todo 조회 (타인 소유, 접근 권한 있는 것만)

@@ -1,6 +1,6 @@
 # Core Framework
 fastapi
-uvicorn
+uvicorn[standard]  # WebSocket 지원 포함
 starlette
 
 # Database
@@ -25,8 +25,14 @@ pydantic-settings
 # GraphQL
 strawberry-graphql
 
+# Templates
+jinja2
+
 # Utilities
 python-dateutil
 python-dotenv
 python-multipart
 cachetools
+
+#timezone
+tzdata

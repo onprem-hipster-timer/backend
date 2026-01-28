@@ -199,14 +199,12 @@ curl "http://localhost:2614/v1/schedules?start_date=2024-01-01T00:00:00Z&end_dat
 
 #### Timers
 
+**REST API (Read/Update/Delete only):**
+
 ```http
-POST   /v1/timers                # Create timer (auto-starts)
 GET    /v1/timers/{id}           # Get timer
 PATCH  /v1/timers/{id}           # Update timer
 DELETE /v1/timers/{id}           # Delete timer
-PATCH  /v1/timers/{id}/pause     # Pause timer
-PATCH  /v1/timers/{id}/resume    # Resume timer
-POST   /v1/timers/{id}/stop      # Stop timer
 ```
 
 **Query Parameters:**
@@ -216,21 +214,28 @@ POST   /v1/timers/{id}/stop      # Stop timer
 | `include_schedule` | bool | Include linked Schedule |
 | `tag_include_mode` | string | `none`, `timer_only`, `inherit_from_schedule` |
 
-**Example:**
+**WebSocket API (Create/Control):**
 
-```bash
-# Create timer (30 min allocation)
-curl -X POST http://localhost:2614/v1/timers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schedule_id": "uuid-here",
-    "title": "Focus Session",
-    "allocated_duration": 1800
-  }'
+Timer creation and control operations (create, pause, resume, stop) are handled via WebSocket for real-time synchronization across devices and shared users.
 
-# Pause timer
-curl -X PATCH http://localhost:2614/v1/timers/{id}/pause
 ```
+Development: ws://localhost:8000/v1/ws/timers?token={jwt_token}
+Production:  wss://your-domain.com/v1/ws/timers?token={jwt_token}
+```
+
+> ⚠️ **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
+> - Development: `ws://localhost:8000,ws://127.0.0.1:8000`
+> - Production: `wss://your-domain.com`
+
+| Message Type | Description |
+|--------------|-------------|
+| `timer.create` | Create and start a new timer |
+| `timer.pause` | Pause a running timer |
+| `timer.resume` | Resume a paused timer |
+| `timer.stop` | Stop and complete a timer |
+| `timer.sync` | Sync active timers from server |
+
+> 📖 **Detailed Guide**: [FRONTEND_TIMER_GUIDE.md](FRONTEND_TIMER_GUIDE.md)
 
 #### Todos
 
@@ -312,12 +317,13 @@ hipster-timer-backend/
 ├── app/
 │   ├── api/
 │   │   └── v1/                    # API routers
-│   │       ├── schedules.py
-│   │       ├── timers.py
-│   │       ├── todos.py
-│   │       ├── tags.py
-│   │       ├── holidays.py
-│   │       └── graphql.py
+│   │       ├── schedules.py       # Schedule REST API
+│   │       ├── timers.py          # Timer REST API
+│   │       ├── timers_ws.py       # Timer WebSocket API
+│   │       ├── todos.py           # Todo REST API
+│   │       ├── tags.py            # Tag REST API
+│   │       ├── holidays.py        # Holiday REST API
+│   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # Core configuration
 │   │   ├── config.py              # Environment settings
 │   │   ├── logging.py             # Logging setup
@@ -330,6 +336,11 @@ hipster-timer-backend/
 │   │   │   ├── schema/            # DTOs, Types
 │   │   │   └── exceptions.py      # Domain exceptions
 │   │   ├── timer/
+│   │   │   ├── service.py         # Business logic
+│   │   │   ├── ws_handler.py      # WebSocket handler
+│   │   │   └── schema/
+│   │   │       ├── dto.py         # REST DTOs
+│   │   │       └── ws.py          # WebSocket schemas
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
@@ -340,6 +351,10 @@ hipster-timer-backend/
 │   │   ├── todo.py
 │   │   └── tag.py
 │   ├── middleware/                # Middleware
+│   ├── websocket/                 # WebSocket infrastructure (shared)
+│   │   ├── base.py                # Common message schemas
+│   │   ├── manager.py             # Connection management
+│   │   └── auth.py                # WebSocket authentication
 │   └── main.py                    # App entrypoint
 ├── alembic/                       # DB migrations
 ├── tests/                         # Tests
@@ -755,20 +770,34 @@ OIDC_AUDIENCE=my-frontend-app
 
 > 📖 **Detailed Guide**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
 
+**HTTP Rate Limiting:**
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `RATE_LIMIT_ENABLED` | Enable rate limiting | `True` |
 | `RATE_LIMIT_DEFAULT_WINDOW` | Default window size (seconds) | `60` |
 | `RATE_LIMIT_DEFAULT_REQUESTS` | Default max requests per window | `60` |
 
+**WebSocket Rate Limiting:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WS_RATE_LIMIT_ENABLED` | Enable WebSocket rate limiting | `True` |
+| `WS_CONNECT_WINDOW` | Connection limit window (seconds) | `60` |
+| `WS_CONNECT_MAX` | Max connections per window | `10` |
+| `WS_MESSAGE_WINDOW` | Message limit window (seconds) | `60` |
+| `WS_MESSAGE_MAX` | Max messages per window | `120` |
+
 **Quick Setup:**
 
 ```bash
 # Development (disable rate limit)
 RATE_LIMIT_ENABLED=false
+WS_RATE_LIMIT_ENABLED=false
 
 # Production (default settings)
 RATE_LIMIT_ENABLED=true
+WS_RATE_LIMIT_ENABLED=true
 ```
 
 #### Proxy Settings (Cloudflare / Trusted Proxy)
@@ -857,7 +886,7 @@ This ensures that requests without the secret header will be rejected, even if a
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CORS_ALLOWED_ORIGINS` | Allowed origins (comma-separated) | `*` |
+| `CORS_ALLOWED_ORIGINS` | Allowed origins (comma-separated) | Development defaults |
 | `CORS_ALLOW_CREDENTIALS` | Allow credentials (cookies, etc.) | `False` |
 | `CORS_ALLOW_METHODS` | Allowed HTTP methods (comma-separated) | `*` |
 | `CORS_ALLOW_HEADERS` | Allowed headers (comma-separated) | `*` |
@@ -865,15 +894,19 @@ This ensures that requests without the secret header will be rejected, even if a
 > ⚠️ **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
 > To allow credentials, you must specify explicit origins.
 
+> ⚠️ **WebSocket Important**: WebSocket connections require their protocol to be in `CORS_ALLOWED_ORIGINS`:
+> - For `ws://` (unencrypted): Add `ws://localhost:8000,ws://127.0.0.1:8000`
+> - For `wss://` (encrypted): Add `wss://your-domain.com`
+
 **Quick Setup:**
 
 ```bash
-# Development (allow all origins)
-CORS_ALLOWED_ORIGINS=*
+# Development (HTTP + WebSocket)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
 CORS_ALLOW_CREDENTIALS=false
 
-# Production (specific domains only)
-CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+# Production (HTTPS + Secure WebSocket)
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
 CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=Authorization,Content-Type
