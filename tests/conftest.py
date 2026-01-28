@@ -3,6 +3,7 @@ import os
 # 테스트 환경 기본 설정 - 다른 모듈 임포트 전에 설정 필요!
 os.environ["OIDC_ENABLED"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리밋 테스트에서만 활성화
+os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
 import pytest
 import pytest_asyncio
@@ -405,6 +406,7 @@ def e2e_client():
     # (레이트 리밋 테스트에서 환경변수가 변경될 수 있음)
     os.environ["RATE_LIMIT_ENABLED"] = "false"
     os.environ["OIDC_ENABLED"] = "false"
+    os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
     from app.core.config import Settings
     import app.core.config as config_module
@@ -412,7 +414,9 @@ def e2e_client():
 
     # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
     from app.ratelimit.storage.memory import reset_storage
+    from app.ratelimit.websocket import reset_ws_limiter
     reset_storage()
+    reset_ws_limiter()  # WebSocket 리미터도 초기화
 
     test_engine = _create_test_engine()
 
@@ -461,13 +465,16 @@ def multi_user_e2e():
     # 환경변수 설정 및 settings 재로드
     os.environ["RATE_LIMIT_ENABLED"] = "false"
     os.environ["OIDC_ENABLED"] = "false"
+    os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
 
     from app.core.config import Settings
     import app.core.config as config_module
     config_module.settings = Settings()
 
     from app.ratelimit.storage.memory import reset_storage
+    from app.ratelimit.websocket import reset_ws_limiter
     reset_storage()
+    reset_ws_limiter()  # WebSocket 리미터도 초기화
 
     test_engine = _create_test_engine()
 
