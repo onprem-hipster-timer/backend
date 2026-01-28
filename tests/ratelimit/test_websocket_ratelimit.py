@@ -62,7 +62,7 @@ class TestWebSocketRateLimiter:
         result = await limiter.check_connection(user_id)
 
         assert result.allowed is False
-        assert result.current_count > config.connect_max
+        assert result.current_count == config.connect_max
 
     @pytest.mark.asyncio
     async def test_message_rate_limit_allowed(self):
