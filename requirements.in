@@ -1,6 +1,6 @@
 # Core Framework
 fastapi
-uvicorn
+uvicorn[standard]  # WebSocket 지원 포함
 starlette
 
 # Database

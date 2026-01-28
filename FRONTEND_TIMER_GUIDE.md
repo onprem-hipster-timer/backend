@@ -138,17 +138,39 @@ interface PauseEvent {
 
 ### 연결
 
+**개발 환경:**
 ```
-ws://your-server/v1/ws/timers?token=<JWT_TOKEN>
+ws://localhost:8000/v1/ws/timers?token=<JWT_TOKEN>
+```
+
+**프로덕션 환경:**
+```
+wss://your-domain.com/v1/ws/timers?token=<JWT_TOKEN>
 ```
 
 또는 Sec-WebSocket-Protocol 헤더 사용:
 
 ```javascript
-const ws = new WebSocket('ws://your-server/v1/ws/timers', [
+const ws = new WebSocket('ws://localhost:8000/v1/ws/timers', [
   `authorization.bearer.${jwtToken}`
 ]);
 ```
+
+### ⚠️ 중요: CORS 설정
+
+WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
+
+**개발 환경:**
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+```
+
+**프로덕션 환경:**
+```bash
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+```
+
+> 💡 **Tip**: `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
 
 ### 연결 성공 응답
 
@@ -472,7 +494,11 @@ class TimerWebSocket {
   ) {}
 
   connect(): void {
-    const wsUrl = `${WS_BASE_URL}/v1/ws/timers?token=${this.token}`;
+    // 환경에 따라 ws:// 또는 wss:// 사용
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host; // 또는 명시적으로 API 서버 주소 지정
+    const wsUrl = `${protocol}//${host}/v1/ws/timers?token=${this.token}`;
+    
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
@@ -689,18 +715,41 @@ function TimerComponent() {
 타이머 제어 작업(생성, 일시정지, 재개, 종료)은 **WebSocket 연결이 필수**입니다.
 REST API로는 조회/삭제/메타데이터 업데이트만 가능합니다.
 
-### 2. 멀티 플랫폼 동기화
+### 2. CORS 설정 필수 ⚠️
+
+WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확인하세요**:
+
+**문제 증상:**
+- WebSocket 연결 시 에러 코드 1006 (비정상 종료)
+- 브라우저 콘솔에 CORS 에러
+- 연결이 즉시 끊김
+
+**해결 방법:**
+
+백엔드 서버의 `.env` 파일 또는 환경변수에서 `CORS_ALLOWED_ORIGINS`를 설정하세요:
+
+```bash
+# 개발 환경
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+
+# 프로덕션 환경
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+```
+
+> 💡 **핵심**: WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
+
+### 3. 멀티 플랫폼 동기화
 
 같은 사용자가 여러 기기에서 접속한 경우:
 - 한 기기에서 타이머를 일시정지하면 다른 기기에도 즉시 반영됩니다
 - WebSocket 연결이 끊어진 기기는 재연결 시 `timer.sync`로 상태를 동기화하세요
 
-### 3. 친구 알림
+### 4. 친구 알림
 
 - 친구가 타이머를 시작/일시정지/재개/종료하면 `timer.friend_activity` 메시지를 받습니다
 - 알림은 WebSocket에 연결된 온라인 친구에게만 전송됩니다
 
-### 4. pause_history 활용
+### 5. pause_history 활용
 
 ```typescript
 // 총 작업 시간 계산
@@ -727,7 +776,7 @@ function getPauseCount(history: PauseEvent[]): number {
 }
 ```
 
-### 5. 연결 재시도
+### 6. 연결 재시도
 
 WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하세요:
 
@@ -735,7 +784,7 @@ WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하�
 const delay = Math.pow(2, attempt) * 1000;  // 2초, 4초, 8초, 16초...
 ```
 
-### 6. 타이머 상태 전이
+### 7. 타이머 상태 전이
 
 ```
            ┌──────────────────────────────────────┐

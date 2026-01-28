@@ -219,8 +219,13 @@ DELETE /v1/timers/{id}           # Delete timer
 Timer creation and control operations (create, pause, resume, stop) are handled via WebSocket for real-time synchronization across devices and shared users.
 
 ```
-WebSocket Endpoint: ws://localhost:2614/v1/ws/timers?token={jwt_token}
+Development: ws://localhost:8000/v1/ws/timers?token={jwt_token}
+Production:  wss://your-domain.com/v1/ws/timers?token={jwt_token}
 ```
+
+> ⚠️ **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
+> - Development: `ws://localhost:8000,ws://127.0.0.1:8000`
+> - Production: `wss://your-domain.com`
 
 | Message Type | Description |
 |--------------|-------------|
@@ -881,7 +886,7 @@ This ensures that requests without the secret header will be rejected, even if a
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CORS_ALLOWED_ORIGINS` | Allowed origins (comma-separated) | `*` |
+| `CORS_ALLOWED_ORIGINS` | Allowed origins (comma-separated) | Development defaults |
 | `CORS_ALLOW_CREDENTIALS` | Allow credentials (cookies, etc.) | `False` |
 | `CORS_ALLOW_METHODS` | Allowed HTTP methods (comma-separated) | `*` |
 | `CORS_ALLOW_HEADERS` | Allowed headers (comma-separated) | `*` |
@@ -889,15 +894,19 @@ This ensures that requests without the secret header will be rejected, even if a
 > ⚠️ **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
 > To allow credentials, you must specify explicit origins.
 
+> ⚠️ **WebSocket Important**: WebSocket connections require their protocol to be in `CORS_ALLOWED_ORIGINS`:
+> - For `ws://` (unencrypted): Add `ws://localhost:8000,ws://127.0.0.1:8000`
+> - For `wss://` (encrypted): Add `wss://your-domain.com`
+
 **Quick Setup:**
 
 ```bash
-# Development (allow all origins)
-CORS_ALLOWED_ORIGINS=*
+# Development (HTTP + WebSocket)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
 CORS_ALLOW_CREDENTIALS=false
 
-# Production (specific domains only)
-CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com
+# Production (HTTPS + Secure WebSocket)
+CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
 CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=Authorization,Content-Type
