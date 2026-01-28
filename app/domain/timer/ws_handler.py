@@ -40,10 +40,11 @@ class TimerWSHandler:
     Service 메서드 호출만 수행합니다.
     """
 
-    def __init__(self, session: Session, current_user: CurrentUser):
+    def __init__(self, session: Session, current_user: CurrentUser, tz=None):
         self.session = session
         self.current_user = current_user
         self.timer_service = TimerService(session, current_user)
+        self.tz = tz  # 타임존 (timezone 객체, 문자열, 또는 None)
 
     async def dispatch(
         self,
@@ -100,8 +101,10 @@ class TimerWSHandler:
             # 타이머 생성 (TimerService에서 pause_history 처리 포함)
             timer = self.timer_service.create_timer(timer_create)
 
-            # TimerData로 변환
+            # TimerData로 변환 및 타임존 적용
             timer_data = TimerData.model_validate(timer)
+            if self.tz:
+                timer_data = timer_data.to_timezone(self.tz)
 
             # 응답 메시지 생성
             response = WSServerMessage(
@@ -147,8 +150,10 @@ class TimerWSHandler:
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.pause_timer(action_payload.timer_id)
 
-            # TimerData로 변환
+            # TimerData로 변환 및 타임존 적용
             timer_data = TimerData.model_validate(timer)
+            if self.tz:
+                timer_data = timer_data.to_timezone(self.tz)
 
             # 응답 메시지 생성
             response = WSServerMessage(
@@ -194,8 +199,10 @@ class TimerWSHandler:
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.resume_timer(action_payload.timer_id)
 
-            # TimerData로 변환
+            # TimerData로 변환 및 타임존 적용
             timer_data = TimerData.model_validate(timer)
+            if self.tz:
+                timer_data = timer_data.to_timezone(self.tz)
 
             # 응답 메시지 생성
             response = WSServerMessage(
@@ -241,8 +248,10 @@ class TimerWSHandler:
             # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.stop_timer(action_payload.timer_id)
 
-            # TimerData로 변환
+            # TimerData로 변환 및 타임존 적용
             timer_data = TimerData.model_validate(timer)
+            if self.tz:
+                timer_data = timer_data.to_timezone(self.tz)
 
             # 응답 메시지 생성
             response = WSServerMessage(
@@ -293,6 +302,8 @@ class TimerWSHandler:
                 timer = self.timer_service.get_timer(UUID(timer_id))
                 if timer:
                     timer_data = TimerData.model_validate(timer)
+                    if self.tz:
+                        timer_data = timer_data.to_timezone(self.tz)
                     return WSServerMessage(
                         type=TimerWSMessageType.UPDATED.value,
                         payload={"timer": timer_data.model_dump(mode="json"), "action": "sync"},
@@ -311,7 +322,14 @@ class TimerWSHandler:
                 else:
                     timers = self.timer_service.get_all_timers()
 
-                timer_list = [TimerData.model_validate(t) for t in timers]
+                # 타임존 변환 적용
+                timer_list = []
+                for t in timers:
+                    timer_data = TimerData.model_validate(t)
+                    if self.tz:
+                        timer_data = timer_data.to_timezone(self.tz)
+                    timer_list.append(timer_data)
+
                 return WSServerMessage(
                     type=TimerWSMessageType.SYNC_RESULT.value,
                     payload={

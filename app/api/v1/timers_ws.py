@@ -27,7 +27,7 @@ async def timer_websocket(websocket: WebSocket):
     타이머 실시간 동기화 WebSocket 엔드포인트
 
     연결 방법:
-    1. 쿼리 파라미터: ws://host/ws/timers?token=<jwt>
+    1. 쿼리 파라미터: ws://host/ws/timers?token=<jwt>&timezone=Asia/Seoul
     2. Sec-WebSocket-Protocol: authorization.bearer.<jwt>
 
     메시지 프로토콜:
@@ -38,6 +38,7 @@ async def timer_websocket(websocket: WebSocket):
     - 타이머 생성/일시정지/재개/종료
     - 동일 사용자 멀티 기기 동기화
     - 친구에게 타이머 활동 알림
+    - 타임존 지원 (timezone 파라미터)
 
     Rate Limit:
     - 연결: WS_CONNECT_MAX 회/WS_CONNECT_WINDOW 초 (기본 10회/60초)
@@ -50,6 +51,18 @@ async def timer_websocket(websocket: WebSocket):
         logger.warning(f"WebSocket authentication failed: {e}")
         await websocket.close(code=4001, reason="Authentication failed")
         return
+
+    # 타임존 파라미터 추출
+    timezone_str = websocket.query_params.get("timezone")
+    tz_obj = None
+    if timezone_str:
+        try:
+            from app.domain.dateutil.service import parse_timezone
+            tz_obj = parse_timezone(timezone_str)
+            logger.info(f"WebSocket timezone set: {timezone_str} for user {current_user.sub}")
+        except Exception as e:
+            logger.warning(f"Invalid timezone parameter: {timezone_str}, error: {e}")
+            # 잘못된 타임존은 무시하고 UTC 사용
 
     # 연결 Rate Limit 체크 (인증 후, 연결 수락 전)
     allowed, error_message = await ws_rate_limit_guard(
@@ -89,7 +102,14 @@ async def timer_websocket(websocket: WebSocket):
             timer_service = TimerService(session, current_user)
             active_timers = timer_service.get_all_timers(status=["RUNNING", "PAUSED"])
 
-            timer_list = [TimerData.model_validate(t) for t in active_timers]
+            # 타임존 변환 적용
+            timer_list = []
+            for t in active_timers:
+                timer_data = TimerData.model_validate(t)
+                if tz_obj:
+                    timer_data = timer_data.to_timezone(tz_obj)
+                timer_list.append(timer_data)
+
             sync_msg = WSServerMessage(
                 type=TimerWSMessageType.SYNC_RESULT.value,
                 payload={
@@ -141,7 +161,7 @@ async def timer_websocket(websocket: WebSocket):
             # 타이머 도메인 핸들러로 디스패치
             with _session_manager.get_session() as session:
                 try:
-                    handler = TimerWSHandler(session, current_user)
+                    handler = TimerWSHandler(session, current_user, tz_obj)
                     response = await handler.dispatch(client_message, websocket)
 
                     if response:

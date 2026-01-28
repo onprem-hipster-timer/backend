@@ -140,18 +140,24 @@ interface PauseEvent {
 
 **개발 환경:**
 ```
-ws://localhost:8000/v1/ws/timers?token=<JWT_TOKEN>
+ws://localhost:8000/v1/ws/timers?token=<JWT_TOKEN>&timezone=Asia/Seoul
 ```
 
 **프로덕션 환경:**
 ```
-wss://your-domain.com/v1/ws/timers?token=<JWT_TOKEN>
+wss://your-domain.com/v1/ws/timers?token=<JWT_TOKEN>&timezone=Asia/Seoul
 ```
+
+**쿼리 파라미터:**
+- `token`: JWT 인증 토큰 (필수)
+- `timezone`: 타임존 (선택, 예: `UTC`, `+09:00`, `Asia/Seoul`)
+  - 지정하지 않으면 UTC naive datetime으로 반환
+  - 지정하면 모든 응답의 datetime 필드가 해당 타임존으로 변환됨
 
 또는 Sec-WebSocket-Protocol 헤더 사용:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/v1/ws/timers', [
+const ws = new WebSocket('ws://localhost:8000/v1/ws/timers?timezone=Asia/Seoul', [
   `authorization.bearer.${jwtToken}`
 ]);
 ```
@@ -571,13 +577,20 @@ class TimerWebSocket {
     private token: string,
     private onMessage: (msg: WSServerMessage) => void,
     private onError?: (error: Event) => void,
+    private timezone?: string,  // 타임존 (예: "Asia/Seoul", "+09:00")
   ) {}
 
   connect(): void {
     // 환경에 따라 ws:// 또는 wss:// 사용
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host; // 또는 명시적으로 API 서버 주소 지정
-    const wsUrl = `${protocol}//${host}/v1/ws/timers?token=${this.token}`;
+    
+    // 타임존 파라미터 추가
+    const params = new URLSearchParams({ token: this.token });
+    if (this.timezone) {
+      params.append('timezone', this.timezone);
+    }
+    const wsUrl = `${protocol}//${host}/v1/ws/timers?${params.toString()}`;
     
     this.ws = new WebSocket(wsUrl);
 
@@ -663,7 +676,7 @@ class TimerWebSocket {
 ```typescript
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-function useTimerWebSocket(token: string) {
+function useTimerWebSocket(token: string, timezone?: string) {
   const [activeTimers, setActiveTimers] = useState<Timer[]>([]);
   const [friendActivity, setFriendActivity] = useState<FriendActivityPayload | null>(null);
   const [connected, setConnected] = useState(false);
@@ -706,13 +719,13 @@ function useTimerWebSocket(token: string) {
       }
     };
 
-    wsRef.current = new TimerWebSocket(token, handleMessage);
+    wsRef.current = new TimerWebSocket(token, handleMessage, undefined, timezone);
     wsRef.current.connect();
 
     return () => {
       wsRef.current?.disconnect();
     };
-  }, [token]);
+  }, [token, timezone]);
 
   const createTimer = useCallback((data: TimerCreate) => {
     wsRef.current?.createTimer(data);
@@ -762,7 +775,7 @@ function TimerComponent() {
     pauseTimer,
     resumeTimer,
     stopTimer,
-  } = useTimerWebSocket(authToken);
+  } = useTimerWebSocket(authToken, 'Asia/Seoul');  // 타임존 지정
 
   if (!connected) return <div>연결 중...</div>;
   if (!synced) return <div>동기화 중...</div>;
@@ -783,6 +796,8 @@ function TimerComponent() {
               <h4>{timer.title || '타이머'}</h4>
               <p>상태: {timer.status}</p>
               <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
+              {/* datetime 필드는 이미 Asia/Seoul 타임존으로 변환됨 */}
+              <p>시작: {new Date(timer.started_at).toLocaleString('ko-KR')}</p>
               
               {timer.status === 'RUNNING' && (
                 <button onClick={() => pauseTimer(timer.id)}>일시정지</button>

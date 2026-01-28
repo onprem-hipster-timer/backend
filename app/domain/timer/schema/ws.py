@@ -3,12 +3,14 @@
 
 Timer 도메인 전용 WebSocket 메시지 구조 정의
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 
 
 class TimerWSMessageType(str, Enum):
@@ -85,6 +87,44 @@ class TimerData(BaseModel):
 
     class Config:
         from_attributes = True
+
+    def to_timezone(self, tz: timezone | str | None) -> "TimerData":
+        """
+        UTC naive datetime 필드를 지정된 타임존의 aware datetime으로 변환
+        
+        :param tz: 타임존 (timezone 객체, 문자열, 또는 None)
+        :return: 타임존이 변환된 새로운 TimerData 인스턴스
+        """
+        if tz is None:
+            return self
+        
+        # datetime 필드 변환
+        update_data = {}
+        for field_name in ["started_at", "paused_at", "ended_at", "created_at", "updated_at"]:
+            value = getattr(self, field_name, None)
+            if value is not None and isinstance(value, datetime):
+                naive_value = ensure_utc_naive(value)
+                update_data[field_name] = convert_utc_naive_to_timezone(naive_value, tz)
+        
+        # pause_history의 타임스탬프 변환
+        if self.pause_history:
+            converted_history = []
+            for event in self.pause_history:
+                event_copy = event.copy()
+                if "at" in event_copy and event_copy["at"]:
+                    # ISO 문자열을 datetime으로 파싱
+                    if isinstance(event_copy["at"], str):
+                        at_dt = datetime.fromisoformat(event_copy["at"].replace("Z", "+00:00"))
+                    else:
+                        at_dt = event_copy["at"]
+                    at_naive = ensure_utc_naive(at_dt)
+                    converted_at = convert_utc_naive_to_timezone(at_naive, tz)
+                    event_copy["at"] = converted_at.isoformat()
+                converted_history.append(event_copy)
+            update_data["pause_history"] = converted_history
+        
+        # model_copy를 사용하여 새 인스턴스 생성
+        return self.model_copy(update=update_data)
 
 
 class TimerUpdatedPayload(BaseModel):
