@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
-from app.websocket import websocket_router
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import setup_logging
@@ -157,12 +156,8 @@ app.add_middleware(RateLimitMiddleware)
 #    RateLimitMiddleware와 엔드포인트에서 중복 토큰 검증 없이 재사용
 app.add_middleware(AuthMiddleware)
 
-# API Router 등록 (REST + GraphQL 모두 포함)
+# API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)
-
-# WebSocket Router 등록 (타이머 실시간 동기화)
-app.include_router(websocket_router)
-logger.info("✅ WebSocket router registered at /ws/timers")
 
 
 # Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)

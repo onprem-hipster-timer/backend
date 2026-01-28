@@ -53,7 +53,7 @@ Timer API는 **일정(Schedule)**, **할 일(Todo)**, 또는 **독립적으로**
 │                      ▼                                              │
 │              ┌───────────────┐                                      │
 │              │   WebSocket   │                                      │
-│              │  /ws/timers   │                                      │
+│              │  /v1/ws/timers   │                                      │
 │              └───────┬───────┘                                      │
 │                      │                                              │
 │       ┌──────────────┼──────────────┐                               │
@@ -139,13 +139,13 @@ interface PauseEvent {
 ### 연결
 
 ```
-ws://your-server/ws/timers?token=<JWT_TOKEN>
+ws://your-server/v1/ws/timers?token=<JWT_TOKEN>
 ```
 
 또는 Sec-WebSocket-Protocol 헤더 사용:
 
 ```javascript
-const ws = new WebSocket('ws://your-server/ws/timers', [
+const ws = new WebSocket('ws://your-server/v1/ws/timers', [
   `authorization.bearer.${jwtToken}`
 ]);
 ```
@@ -472,7 +472,7 @@ class TimerWebSocket {
   ) {}
 
   connect(): void {
-    const wsUrl = `${WS_BASE_URL}/ws/timers?token=${this.token}`;
+    const wsUrl = `${WS_BASE_URL}/v1/ws/timers?token=${this.token}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {

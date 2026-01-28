@@ -1,10 +1,12 @@
 """
-WebSocket 타이머 이벤트 핸들러
+타이머 WebSocket 이벤트 핸들러
 
-타이머 생성, 일시정지, 재개, 종료 이벤트 처리
+Timer 도메인의 WebSocket 처리 로직
+- TimerService를 통해 비즈니스 로직 수행
+- 동일 사용자 멀티 디바이스 동기화
+- 친구에게 활동 알림
 """
 import logging
-from datetime import datetime, UTC
 from typing import Optional
 from uuid import UUID
 
@@ -12,28 +14,30 @@ from fastapi import WebSocket
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
-from app.core.constants import TimerStatus
 from app.crud import friendship as friendship_crud
 from app.domain.timer.schema.dto import TimerCreate
-from app.domain.timer.service import TimerService
-from app.websocket.manager import connection_manager
-from app.websocket.schemas import (
-    WSMessageType,
-    WSServerMessage,
+from app.domain.timer.schema.ws import (
+    TimerWSMessageType,
     TimerAction,
-    TimerData,
     TimerCreatePayload,
     TimerActionPayload,
+    TimerData,
 )
+from app.domain.timer.service import TimerService
+from app.websocket.base import WSClientMessage, WSServerMessage, WSMessageType
+from app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
 
 
-class TimerEventHandler:
+class TimerWSHandler:
     """
     타이머 WebSocket 이벤트 핸들러
 
     모든 타이머 이벤트를 처리하고 관련 사용자들에게 브로드캐스트합니다.
+    
+    Note: pause_history는 TimerService에서 처리하므로 핸들러에서는 
+    Service 메서드 호출만 수행합니다.
     """
 
     def __init__(self, session: Session, current_user: CurrentUser):
@@ -41,10 +45,39 @@ class TimerEventHandler:
         self.current_user = current_user
         self.timer_service = TimerService(session, current_user)
 
+    async def dispatch(
+        self,
+        message: WSClientMessage,
+        websocket: WebSocket,
+    ) -> Optional[WSServerMessage]:
+        """
+        메시지 타입별 핸들러 디스패치
+        
+        :param message: 클라이언트 메시지
+        :param websocket: 발신 WebSocket
+        :return: 응답 메시지
+        """
+        handlers = {
+            TimerWSMessageType.CREATE.value: self.handle_create,
+            TimerWSMessageType.PAUSE.value: self.handle_pause,
+            TimerWSMessageType.RESUME.value: self.handle_resume,
+            TimerWSMessageType.STOP.value: self.handle_stop,
+            TimerWSMessageType.SYNC.value: self.handle_sync,
+        }
+
+        handler = handlers.get(message.type)
+        if handler:
+            return await handler(message.payload, websocket)
+
+        return WSServerMessage(
+            type=WSMessageType.ERROR,
+            payload={"code": "UNKNOWN_TYPE", "message": f"Unknown message type: {message.type}"},
+        )
+
     async def handle_create(
-            self,
-            payload: dict,
-            websocket: WebSocket,
+        self,
+        payload: dict,
+        websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 생성 이벤트 처리
@@ -64,23 +97,15 @@ class TimerEventHandler:
                 tag_ids=create_payload.tag_ids,
             )
 
-            # 타이머 생성 (status=RUNNING, started_at=now)
+            # 타이머 생성 (TimerService에서 pause_history 처리 포함)
             timer = self.timer_service.create_timer(timer_create)
-
-            # pause_history에 start 이벤트 추가
-            now = datetime.now(UTC).replace(tzinfo=None)
-            timer.pause_history = [
-                {"action": "start", "at": now.isoformat()}
-            ]
-            self.session.flush()
-            self.session.refresh(timer)
 
             # TimerData로 변환
             timer_data = TimerData.model_validate(timer)
 
             # 응답 메시지 생성
             response = WSServerMessage(
-                type=WSMessageType.TIMER_CREATED,
+                type=TimerWSMessageType.CREATED.value,
                 payload={"timer": timer_data.model_dump(mode="json"), "action": TimerAction.START.value},
                 from_user=self.current_user.sub,
             )
@@ -105,9 +130,9 @@ class TimerEventHandler:
             )
 
     async def handle_pause(
-            self,
-            payload: dict,
-            websocket: WebSocket,
+        self,
+        payload: dict,
+        websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 일시정지 이벤트 처리
@@ -118,26 +143,16 @@ class TimerEventHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
+            
+            # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.pause_timer(action_payload.timer_id)
-
-            # pause_history에 pause 이벤트 추가
-            now = datetime.now(UTC).replace(tzinfo=None)
-            history = list(timer.pause_history) if timer.pause_history else []
-            history.append({
-                "action": "pause",
-                "at": now.isoformat(),
-                "elapsed": timer.elapsed_time,
-            })
-            timer.pause_history = history
-            self.session.flush()
-            self.session.refresh(timer)
 
             # TimerData로 변환
             timer_data = TimerData.model_validate(timer)
 
             # 응답 메시지 생성
             response = WSServerMessage(
-                type=WSMessageType.TIMER_UPDATED,
+                type=TimerWSMessageType.UPDATED.value,
                 payload={"timer": timer_data.model_dump(mode="json"), "action": TimerAction.PAUSE.value},
                 from_user=self.current_user.sub,
             )
@@ -162,9 +177,9 @@ class TimerEventHandler:
             )
 
     async def handle_resume(
-            self,
-            payload: dict,
-            websocket: WebSocket,
+        self,
+        payload: dict,
+        websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 재개 이벤트 처리
@@ -175,25 +190,16 @@ class TimerEventHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
+            
+            # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.resume_timer(action_payload.timer_id)
-
-            # pause_history에 resume 이벤트 추가
-            now = datetime.now(UTC).replace(tzinfo=None)
-            history = list(timer.pause_history) if timer.pause_history else []
-            history.append({
-                "action": "resume",
-                "at": now.isoformat(),
-            })
-            timer.pause_history = history
-            self.session.flush()
-            self.session.refresh(timer)
 
             # TimerData로 변환
             timer_data = TimerData.model_validate(timer)
 
             # 응답 메시지 생성
             response = WSServerMessage(
-                type=WSMessageType.TIMER_UPDATED,
+                type=TimerWSMessageType.UPDATED.value,
                 payload={"timer": timer_data.model_dump(mode="json"), "action": TimerAction.RESUME.value},
                 from_user=self.current_user.sub,
             )
@@ -218,9 +224,9 @@ class TimerEventHandler:
             )
 
     async def handle_stop(
-            self,
-            payload: dict,
-            websocket: WebSocket,
+        self,
+        payload: dict,
+        websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 종료 이벤트 처리
@@ -231,26 +237,16 @@ class TimerEventHandler:
         """
         try:
             action_payload = TimerActionPayload(**payload)
+            
+            # TimerService에서 pause_history 처리 포함
             timer = self.timer_service.stop_timer(action_payload.timer_id)
-
-            # pause_history에 stop 이벤트 추가
-            now = datetime.now(UTC).replace(tzinfo=None)
-            history = list(timer.pause_history) if timer.pause_history else []
-            history.append({
-                "action": "stop",
-                "at": now.isoformat(),
-                "elapsed": timer.elapsed_time,
-            })
-            timer.pause_history = history
-            self.session.flush()
-            self.session.refresh(timer)
 
             # TimerData로 변환
             timer_data = TimerData.model_validate(timer)
 
             # 응답 메시지 생성
             response = WSServerMessage(
-                type=WSMessageType.TIMER_UPDATED,
+                type=TimerWSMessageType.UPDATED.value,
                 payload={"timer": timer_data.model_dump(mode="json"), "action": TimerAction.STOP.value},
                 from_user=self.current_user.sub,
             )
@@ -275,9 +271,9 @@ class TimerEventHandler:
             )
 
     async def handle_sync(
-            self,
-            payload: dict,
-            websocket: WebSocket,
+        self,
+        payload: dict,
+        websocket: WebSocket,
     ) -> Optional[WSServerMessage]:
         """
         타이머 동기화 요청 처리
@@ -301,13 +297,13 @@ class TimerEventHandler:
             if timer:
                 timer_data = TimerData.model_validate(timer)
                 return WSServerMessage(
-                    type=WSMessageType.TIMER_UPDATED,
+                    type=TimerWSMessageType.UPDATED.value,
                     payload={"timer": timer_data.model_dump(mode="json"), "action": "sync"},
                     from_user=self.current_user.sub,
                 )
             else:
                 return WSServerMessage(
-                    type=WSMessageType.TIMER_UPDATED,
+                    type=TimerWSMessageType.UPDATED.value,
                     payload={"timer": None, "action": "sync"},
                     from_user=self.current_user.sub,
                 )
@@ -320,10 +316,10 @@ class TimerEventHandler:
             )
 
     async def _notify_friends(
-            self,
-            action: TimerAction,
-            timer_id: UUID,
-            timer_title: Optional[str],
+        self,
+        action: TimerAction,
+        timer_id: UUID,
+        timer_title: Optional[str],
     ) -> None:
         """
         친구들에게 타이머 활동 알림
@@ -344,7 +340,7 @@ class TimerEventHandler:
 
             # 알림 메시지 생성
             notification = WSServerMessage(
-                type=WSMessageType.TIMER_FRIEND_ACTIVITY,
+                type=TimerWSMessageType.FRIEND_ACTIVITY.value,
                 payload={
                     "friend_id": self.current_user.sub,
                     "action": action.value,

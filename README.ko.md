@@ -216,7 +216,7 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 타이머 생성 및 제어 작업(생성, 일시정지, 재개, 종료)은 여러 기기와 공유 사용자 간 실시간 동기화를 위해 WebSocket으로 처리됩니다.
 
 ```
-WebSocket 엔드포인트: ws://localhost:2614/ws/timers?token={jwt_token}
+WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers?token={jwt_token}
 ```
 
 | 메시지 타입 | 설명 |
@@ -308,12 +308,13 @@ hipster-timer-backend/
 ├── app/
 │   ├── api/
 │   │   └── v1/                    # API 라우터
-│   │       ├── schedules.py
-│   │       ├── timers.py
-│   │       ├── todos.py
-│   │       ├── tags.py
-│   │       ├── holidays.py
-│   │       └── graphql.py
+│   │       ├── schedules.py       # Schedule REST API
+│   │       ├── timers.py          # Timer REST API
+│   │       ├── timers_ws.py       # Timer WebSocket API
+│   │       ├── todos.py           # Todo REST API
+│   │       ├── tags.py            # Tag REST API
+│   │       ├── holidays.py        # Holiday REST API
+│   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # 핵심 설정
 │   │   ├── config.py              # 환경 변수 설정
 │   │   ├── logging.py             # 로깅 설정
@@ -326,6 +327,11 @@ hipster-timer-backend/
 │   │   │   ├── schema/            # DTO, Types
 │   │   │   └── exceptions.py      # 도메인 예외
 │   │   ├── timer/
+│   │   │   ├── service.py         # 비즈니스 로직
+│   │   │   ├── ws_handler.py      # WebSocket 핸들러
+│   │   │   └── schema/
+│   │   │       ├── dto.py         # REST DTO
+│   │   │       └── ws.py          # WebSocket 스키마
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
@@ -336,11 +342,9 @@ hipster-timer-backend/
 │   │   ├── todo.py
 │   │   └── tag.py
 │   ├── middleware/                # 미들웨어
-│   ├── websocket/                 # WebSocket 핸들러
-│   │   ├── router.py              # WebSocket 엔드포인트
+│   ├── websocket/                 # WebSocket 인프라 (공용)
+│   │   ├── base.py                # 공용 메시지 스키마
 │   │   ├── manager.py             # 연결 관리
-│   │   ├── handlers.py            # 이벤트 핸들러
-│   │   ├── schemas.py             # 메시지 스키마
 │   │   └── auth.py                # WebSocket 인증
 │   └── main.py                    # 앱 진입점
 ├── alembic/                       # DB 마이그레이션

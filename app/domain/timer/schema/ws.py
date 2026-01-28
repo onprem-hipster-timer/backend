@@ -1,7 +1,7 @@
 """
-WebSocket 메시지 스키마
+타이머 WebSocket 메시지 스키마
 
-클라이언트-서버 간 WebSocket 메시지 구조 정의
+Timer 도메인 전용 WebSocket 메시지 구조 정의
 """
 from datetime import datetime
 from enum import Enum
@@ -11,22 +11,20 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class WSMessageType(str, Enum):
-    """WebSocket 메시지 타입"""
+class TimerWSMessageType(str, Enum):
+    """타이머 WebSocket 메시지 타입"""
     # 클라이언트 -> 서버
-    TIMER_CREATE = "timer.create"
-    TIMER_PAUSE = "timer.pause"
-    TIMER_RESUME = "timer.resume"
-    TIMER_STOP = "timer.stop"
-    TIMER_SYNC = "timer.sync"  # 현재 상태 동기화 요청
+    CREATE = "timer.create"
+    PAUSE = "timer.pause"
+    RESUME = "timer.resume"
+    STOP = "timer.stop"
+    SYNC = "timer.sync"
 
     # 서버 -> 클라이언트
-    TIMER_UPDATED = "timer.updated"
-    TIMER_CREATED = "timer.created"
-    TIMER_DELETED = "timer.deleted"
-    TIMER_FRIEND_ACTIVITY = "timer.friend_activity"
-    ERROR = "error"
-    CONNECTED = "connected"
+    CREATED = "timer.created"
+    UPDATED = "timer.updated"
+    DELETED = "timer.deleted"
+    FRIEND_ACTIVITY = "timer.friend_activity"
 
 
 class TimerAction(str, Enum):
@@ -38,7 +36,7 @@ class TimerAction(str, Enum):
 
 
 # ============================================================
-# 클라이언트 -> 서버 메시지
+# 클라이언트 -> 서버 페이로드
 # ============================================================
 
 class TimerCreatePayload(BaseModel):
@@ -61,14 +59,8 @@ class TimerSyncPayload(BaseModel):
     timer_id: Optional[UUID] = None  # None이면 전체 활성 타이머 동기화
 
 
-class WSClientMessage(BaseModel):
-    """클라이언트 -> 서버 메시지"""
-    type: WSMessageType
-    payload: dict[str, Any] = {}
-
-
 # ============================================================
-# 서버 -> 클라이언트 메시지
+# 서버 -> 클라이언트 페이로드
 # ============================================================
 
 class TimerData(BaseModel):
@@ -105,22 +97,3 @@ class FriendActivityPayload(BaseModel):
     action: TimerAction
     timer_id: UUID
     timer_title: Optional[str] = None
-
-
-class ErrorPayload(BaseModel):
-    """에러 응답 페이로드"""
-    code: str
-    message: str
-    details: Optional[dict[str, Any]] = None
-
-
-class WSServerMessage(BaseModel):
-    """서버 -> 클라이언트 메시지"""
-    type: WSMessageType
-    payload: dict[str, Any] = {}
-    from_user: Optional[str] = None  # 메시지 발생 사용자 (동기화용)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-    def to_json(self) -> str:
-        """JSON 문자열로 변환"""
-        return self.model_dump_json()

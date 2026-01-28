@@ -10,7 +10,7 @@ from uuid import UUID
 
 from fastapi import WebSocket
 
-from app.websocket.schemas import WSServerMessage, WSMessageType
+from app.websocket.base import WSServerMessage
 
 logger = logging.getLogger(__name__)
 

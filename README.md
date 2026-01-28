@@ -219,7 +219,7 @@ DELETE /v1/timers/{id}           # Delete timer
 Timer creation and control operations (create, pause, resume, stop) are handled via WebSocket for real-time synchronization across devices and shared users.
 
 ```
-WebSocket Endpoint: ws://localhost:2614/ws/timers?token={jwt_token}
+WebSocket Endpoint: ws://localhost:2614/v1/ws/timers?token={jwt_token}
 ```
 
 | Message Type | Description |
@@ -312,12 +312,13 @@ hipster-timer-backend/
 ├── app/
 │   ├── api/
 │   │   └── v1/                    # API routers
-│   │       ├── schedules.py
-│   │       ├── timers.py
-│   │       ├── todos.py
-│   │       ├── tags.py
-│   │       ├── holidays.py
-│   │       └── graphql.py
+│   │       ├── schedules.py       # Schedule REST API
+│   │       ├── timers.py          # Timer REST API
+│   │       ├── timers_ws.py       # Timer WebSocket API
+│   │       ├── todos.py           # Todo REST API
+│   │       ├── tags.py            # Tag REST API
+│   │       ├── holidays.py        # Holiday REST API
+│   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # Core configuration
 │   │   ├── config.py              # Environment settings
 │   │   ├── logging.py             # Logging setup
@@ -330,6 +331,11 @@ hipster-timer-backend/
 │   │   │   ├── schema/            # DTOs, Types
 │   │   │   └── exceptions.py      # Domain exceptions
 │   │   ├── timer/
+│   │   │   ├── service.py         # Business logic
+│   │   │   ├── ws_handler.py      # WebSocket handler
+│   │   │   └── schema/
+│   │   │       ├── dto.py         # REST DTOs
+│   │   │       └── ws.py          # WebSocket schemas
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
@@ -340,11 +346,9 @@ hipster-timer-backend/
 │   │   ├── todo.py
 │   │   └── tag.py
 │   ├── middleware/                # Middleware
-│   ├── websocket/                 # WebSocket handlers
-│   │   ├── router.py              # WebSocket endpoint
+│   ├── websocket/                 # WebSocket infrastructure (shared)
+│   │   ├── base.py                # Common message schemas
 │   │   ├── manager.py             # Connection management
-│   │   ├── handlers.py            # Event handlers
-│   │   ├── schemas.py             # Message schemas
 │   │   └── auth.py                # WebSocket authentication
 │   └── main.py                    # App entrypoint
 ├── alembic/                       # DB migrations

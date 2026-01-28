@@ -47,7 +47,7 @@ def create_timer_via_websocket(
     if tag_ids:
         payload["payload"]["tag_ids"] = tag_ids
     
-    with client.websocket_connect("/ws/timers") as ws:
+    with client.websocket_connect("/v1/ws/timers") as ws:
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
         
@@ -66,7 +66,7 @@ def pause_timer_via_websocket(client, timer_id: str):
         "payload": {"timer_id": timer_id}
     }
     
-    with client.websocket_connect("/ws/timers") as ws:
+    with client.websocket_connect("/v1/ws/timers") as ws:
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
         return response.get("data", response)
@@ -79,7 +79,7 @@ def resume_timer_via_websocket(client, timer_id: str):
         "payload": {"timer_id": timer_id}
     }
     
-    with client.websocket_connect("/ws/timers") as ws:
+    with client.websocket_connect("/v1/ws/timers") as ws:
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
         return response.get("data", response)
@@ -92,7 +92,7 @@ def stop_timer_via_websocket(client, timer_id: str):
         "payload": {"timer_id": timer_id}
     }
     
-    with client.websocket_connect("/ws/timers") as ws:
+    with client.websocket_connect("/v1/ws/timers") as ws:
         ws.send_text(json.dumps(payload))
         response = ws.receive_json()
         return response.get("data", response)

@@ -68,7 +68,7 @@ class TestWebSocketConnection:
         """토큰 없이 연결 시 실패해야 함"""
         # OIDC가 비활성화되어 있으므로 토큰 없이도 연결 가능
         # (실제 환경에서는 토큰 필요)
-        with ws_client.websocket_connect("/ws/timers") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 성공 메시지 확인
             data = websocket.receive_json()
             assert data["type"] == "connected"
@@ -77,7 +77,7 @@ class TestWebSocketConnection:
     def test_websocket_connection_with_query_token(self, ws_client):
         """쿼리 파라미터 토큰으로 연결"""
         # OIDC 비활성화 상태에서 테스트
-        with ws_client.websocket_connect("/ws/timers?token=test-token") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers?token=test-token") as websocket:
             data = websocket.receive_json()
             assert data["type"] == "connected"
 
@@ -120,7 +120,7 @@ class TestWebSocketTimerOperations:
 
     def test_create_timer_via_websocket(self, ws_client_with_schedule):
         """WebSocket을 통한 타이머 생성"""
-        with ws_client_with_schedule.websocket_connect("/ws/timers") as websocket:
+        with ws_client_with_schedule.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             connected = websocket.receive_json()
             assert connected["type"] == "connected"
@@ -150,7 +150,7 @@ class TestWebSocketTimerOperations:
 
     def test_pause_timer_via_websocket(self, ws_client_with_schedule):
         """WebSocket을 통한 타이머 일시정지"""
-        with ws_client_with_schedule.websocket_connect("/ws/timers") as websocket:
+        with ws_client_with_schedule.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -182,8 +182,8 @@ class TestWebSocketTimerOperations:
             # 응답 수신
             response = websocket.receive_json()
 
-            assert response["type"] in ["timer.paused", "error"]
-            if response["type"] == "timer.paused":
+            assert response["type"] in ["timer.updated", "error"]
+            if response["type"] == "timer.updated":
                 timer_data = response["payload"]["timer"]
                 assert timer_data["status"] == "paused"
                 assert timer_data["paused_at"] is not None
@@ -191,7 +191,7 @@ class TestWebSocketTimerOperations:
 
     def test_resume_timer_via_websocket(self, ws_client_with_schedule):
         """WebSocket을 통한 타이머 재개"""
-        with ws_client_with_schedule.websocket_connect("/ws/timers") as websocket:
+        with ws_client_with_schedule.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -219,7 +219,7 @@ class TestWebSocketTimerOperations:
             websocket.send_json(pause_message)
             pause_response = websocket.receive_json()
 
-            if pause_response["type"] != "timer.paused":
+            if pause_response["type"] != "timer.updated":
                 pytest.skip("Timer pause failed")
 
             # 재개
@@ -230,8 +230,8 @@ class TestWebSocketTimerOperations:
             websocket.send_json(resume_message)
             response = websocket.receive_json()
 
-            assert response["type"] in ["timer.resumed", "error"]
-            if response["type"] == "timer.resumed":
+            assert response["type"] in ["timer.updated", "error"]
+            if response["type"] == "timer.updated":
                 timer_data = response["payload"]["timer"]
                 assert timer_data["status"] == "running"
                 assert timer_data["paused_at"] is None
@@ -239,7 +239,7 @@ class TestWebSocketTimerOperations:
 
     def test_stop_timer_via_websocket(self, ws_client_with_schedule):
         """WebSocket을 통한 타이머 종료"""
-        with ws_client_with_schedule.websocket_connect("/ws/timers") as websocket:
+        with ws_client_with_schedule.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -267,8 +267,8 @@ class TestWebSocketTimerOperations:
             websocket.send_json(stop_message)
             response = websocket.receive_json()
 
-            assert response["type"] in ["timer.stopped", "error"]
-            if response["type"] == "timer.stopped":
+            assert response["type"] in ["timer.updated", "error"]
+            if response["type"] == "timer.updated":
                 timer_data = response["payload"]["timer"]
                 assert timer_data["status"] == "completed"
                 assert timer_data["ended_at"] is not None
@@ -312,7 +312,7 @@ class TestWebSocketSync:
 
     def test_timer_sync_request(self, ws_client):
         """타이머 동기화 요청"""
-        with ws_client.websocket_connect("/ws/timers") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -327,7 +327,7 @@ class TestWebSocketSync:
             response = websocket.receive_json()
 
             # 동기화 응답 또는 에러
-            assert response["type"] in ["timer.synced", "error"]
+            assert response["type"] in ["timer.updated", "error"]
 
 
 class TestWebSocketErrorHandling:
@@ -367,7 +367,7 @@ class TestWebSocketErrorHandling:
 
     def test_invalid_message_format(self, ws_client):
         """잘못된 메시지 형식 처리"""
-        with ws_client.websocket_connect("/ws/timers") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -381,7 +381,7 @@ class TestWebSocketErrorHandling:
 
     def test_unknown_message_type(self, ws_client):
         """알 수 없는 메시지 타입 처리"""
-        with ws_client.websocket_connect("/ws/timers") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -395,11 +395,11 @@ class TestWebSocketErrorHandling:
             # 에러 응답 확인
             response = websocket.receive_json()
             assert response["type"] == "error"
-            assert response["payload"]["code"] == "UNKNOWN_MESSAGE_TYPE"
+            assert response["payload"]["code"] == "UNKNOWN_TYPE"
 
     def test_pause_nonexistent_timer(self, ws_client):
         """존재하지 않는 타이머 일시정지"""
-        with ws_client.websocket_connect("/ws/timers") as websocket:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket:
             # 연결 메시지 수신
             websocket.receive_json()
 
@@ -456,11 +456,11 @@ class TestWebSocketMultipleConnections:
         """동일 사용자의 다중 연결"""
         # FastAPI TestClient는 동시 WebSocket 연결을 지원하지 않으므로
         # 순차적으로 테스트
-        with ws_client.websocket_connect("/ws/timers") as websocket1:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket1:
             data1 = websocket1.receive_json()
             assert data1["type"] == "connected"
 
         # 두 번째 연결 (첫 번째 연결 종료 후)
-        with ws_client.websocket_connect("/ws/timers") as websocket2:
+        with ws_client.websocket_connect("/v1/ws/timers") as websocket2:
             data2 = websocket2.receive_json()
             assert data2["type"] == "connected"

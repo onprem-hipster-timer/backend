@@ -1,13 +1,18 @@
 """
 WebSocket 모듈
 
-타이머 실시간 동기화를 위한 WebSocket 인프라
+WebSocket 인프라 레이어 (공용)
+- ConnectionManager: 연결 관리
+- 인증: auth.py
+- 공용 스키마: base.py
 """
 from app.websocket.manager import ConnectionManager, connection_manager
-from app.websocket.router import router as websocket_router
+from app.websocket.base import WSClientMessage, WSServerMessage, WSMessageType
 
 __all__ = [
     "ConnectionManager",
     "connection_manager",
-    "websocket_router",
+    "WSClientMessage",
+    "WSServerMessage",
+    "WSMessageType",
 ]

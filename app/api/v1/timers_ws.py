@@ -1,34 +1,28 @@
 """
-WebSocket 라우터
+타이머 WebSocket 라우터
 
 타이머 실시간 동기화 WebSocket 엔드포인트
+- /ws/timers: 타이머 생성, 일시정지, 재개, 종료
 """
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlmodel import Session
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.db.session import get_db_transactional
+from app.db.session import _session_manager
+from app.domain.timer.ws_handler import TimerWSHandler
 from app.ratelimit.websocket import ws_rate_limit_guard
 from app.websocket.auth import authenticate_websocket, get_websocket_subprotocol
-from app.websocket.handlers import TimerEventHandler
+from app.websocket.base import WSClientMessage, WSServerMessage, WSMessageType
 from app.websocket.manager import connection_manager
-from app.websocket.schemas import (
-    WSMessageType,
-    WSServerMessage,
-    WSClientMessage,
-)
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["Timer WebSocket"])
 
 
 @router.websocket("/ws/timers")
-async def timer_websocket(
-        websocket: WebSocket,
-):
+async def timer_websocket(websocket: WebSocket):
     """
     타이머 실시간 동기화 WebSocket 엔드포인트
 
@@ -37,8 +31,8 @@ async def timer_websocket(
     2. Sec-WebSocket-Protocol: authorization.bearer.<jwt>
 
     메시지 프로토콜:
-    - 클라이언트 -> 서버: { "type": "timer.create|pause|resume|stop", "payload": {...} }
-    - 서버 -> 클라이언트: { "type": "timer.updated|created|error", "payload": {...} }
+    - 클라이언트 -> 서버: { "type": "timer.create|pause|resume|stop|sync", "payload": {...} }
+    - 서버 -> 클라이언트: { "type": "timer.created|updated|error", "payload": {...} }
 
     기능:
     - 타이머 생성/일시정지/재개/종료
@@ -120,50 +114,12 @@ async def timer_websocket(
                 await connection_manager.send_to_websocket(websocket, error_msg)
                 continue
 
-            # 메시지 타입별 처리
-            # 각 요청마다 새 세션 생성 (트랜잭션 관리)
-            from app.db.session import _session_manager
-
+            # 타이머 도메인 핸들러로 디스패치
             with _session_manager.get_session() as session:
                 try:
-                    handler = TimerEventHandler(session, current_user)
-                    response: WSServerMessage | None = None
+                    handler = TimerWSHandler(session, current_user)
+                    response = await handler.dispatch(client_message, websocket)
 
-                    if client_message.type == WSMessageType.TIMER_CREATE:
-                        response = await handler.handle_create(
-                            client_message.payload,
-                            websocket,
-                        )
-                    elif client_message.type == WSMessageType.TIMER_PAUSE:
-                        response = await handler.handle_pause(
-                            client_message.payload,
-                            websocket,
-                        )
-                    elif client_message.type == WSMessageType.TIMER_RESUME:
-                        response = await handler.handle_resume(
-                            client_message.payload,
-                            websocket,
-                        )
-                    elif client_message.type == WSMessageType.TIMER_STOP:
-                        response = await handler.handle_stop(
-                            client_message.payload,
-                            websocket,
-                        )
-                    elif client_message.type == WSMessageType.TIMER_SYNC:
-                        response = await handler.handle_sync(
-                            client_message.payload,
-                            websocket,
-                        )
-                    else:
-                        response = WSServerMessage(
-                            type=WSMessageType.ERROR,
-                            payload={
-                                "code": "UNKNOWN_MESSAGE_TYPE",
-                                "message": f"Unknown message type: {client_message.type}",
-                            },
-                        )
-
-                    # 응답 전송
                     if response:
                         await connection_manager.send_to_websocket(websocket, response)
 
