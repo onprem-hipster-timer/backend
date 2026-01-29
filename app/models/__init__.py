@@ -6,9 +6,11 @@ from app.models.schedule import Schedule, ScheduleException
 from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TodoTag
 from app.models.timer import TimerSession
 from app.models.todo import Todo
+from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 from app.models.visibility import (
     ResourceVisibility,
     VisibilityAllowList,
+    VisibilityAllowEmail,
     VisibilityLevel,
     ResourceType,
 )
@@ -23,11 +25,16 @@ __all__ = [
     "ScheduleExceptionTag",
     "TodoTag",
     "Todo",
+    # Meeting
+    "Meeting",
+    "MeetingParticipant",
+    "MeetingTimeSlot",
     # Friend & Visibility
     "Friendship",
     "FriendshipStatus",
     "ResourceVisibility",
     "VisibilityAllowList",
+    "VisibilityAllowEmail",
     "VisibilityLevel",
     "ResourceType",
 ]

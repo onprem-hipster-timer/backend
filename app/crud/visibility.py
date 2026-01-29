@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from app.models.visibility import (
     ResourceVisibility,
     VisibilityAllowList,
+    VisibilityAllowEmail,
     VisibilityLevel,
     ResourceType,
 )
@@ -215,6 +216,165 @@ def set_allow_list(
     for user_id in allowed_user_ids:
         entry = add_to_allow_list(session, visibility_id, user_id)
         entries.append(entry)
+
+    return entries
+
+
+# ============================================================
+# VisibilityAllowEmail CRUD
+# ============================================================
+
+def add_email_to_allow_list(
+        session: Session,
+        visibility_id: UUID,
+        email: str | None = None,
+        domain: str | None = None,
+) -> VisibilityAllowEmail:
+    """
+    이메일 허용 목록에 추가
+    
+    :param session: DB 세션
+    :param visibility_id: 가시성 설정 ID
+    :param email: 특정 이메일 주소 (예: user@company.com)
+    :param domain: 도메인 (예: company.com)
+    :return: 생성된 항목
+    :raises ValueError: email과 domain이 모두 None이거나 둘 다 설정된 경우
+    """
+    if email is None and domain is None:
+        raise ValueError("email 또는 domain 중 하나는 반드시 설정되어야 합니다")
+    if email is not None and domain is not None:
+        raise ValueError("email과 domain은 동시에 설정할 수 없습니다")
+    
+    entry = VisibilityAllowEmail(
+        visibility_id=visibility_id,
+        email=email,
+        domain=domain,
+    )
+    session.add(entry)
+    session.flush()
+    session.refresh(entry)
+    return entry
+
+
+def get_email_allow_list(
+        session: Session,
+        visibility_id: UUID,
+) -> list[VisibilityAllowEmail]:
+    """이메일 허용 목록 조회"""
+    statement = select(VisibilityAllowEmail).where(
+        VisibilityAllowEmail.visibility_id == visibility_id,
+    )
+    return list(session.exec(statement).all())
+
+
+def is_email_allowed(
+        session: Session,
+        visibility_id: UUID,
+        user_email: str,
+) -> bool:
+    """
+    사용자 이메일이 허용 목록에 있는지 확인
+    
+    :param session: DB 세션
+    :param visibility_id: 가시성 설정 ID
+    :param user_email: 확인할 사용자 이메일
+    :return: 허용 여부
+    """
+    if not user_email:
+        return False
+    
+    # 이메일에서 도메인 추출
+    email_domain = user_email.split("@")[-1] if "@" in user_email else None
+    
+    # 특정 이메일 매칭 확인
+    email_statement = select(VisibilityAllowEmail).where(
+        VisibilityAllowEmail.visibility_id == visibility_id,
+        VisibilityAllowEmail.email == user_email,
+    )
+    if session.exec(email_statement).first():
+        return True
+    
+    # 도메인 매칭 확인
+    if email_domain:
+        domain_statement = select(VisibilityAllowEmail).where(
+            VisibilityAllowEmail.visibility_id == visibility_id,
+            VisibilityAllowEmail.domain == email_domain,
+        )
+        if session.exec(domain_statement).first():
+            return True
+    
+    return False
+
+
+def remove_email_from_allow_list(
+        session: Session,
+        visibility_id: UUID,
+        email: str | None = None,
+        domain: str | None = None,
+) -> bool:
+    """
+    이메일 허용 목록에서 제거
+    
+    :param session: DB 세션
+    :param visibility_id: 가시성 설정 ID
+    :param email: 제거할 이메일 주소
+    :param domain: 제거할 도메인
+    :return: 제거 성공 여부
+    """
+    statement = select(VisibilityAllowEmail).where(
+        VisibilityAllowEmail.visibility_id == visibility_id,
+    )
+    if email is not None:
+        statement = statement.where(VisibilityAllowEmail.email == email)
+    if domain is not None:
+        statement = statement.where(VisibilityAllowEmail.domain == domain)
+    
+    entry = session.exec(statement).first()
+    if entry:
+        session.delete(entry)
+        session.flush()
+        return True
+    return False
+
+
+def clear_email_allow_list(session: Session, visibility_id: UUID) -> int:
+    """이메일 허용 목록 전체 삭제"""
+    entries = get_email_allow_list(session, visibility_id)
+    count = len(entries)
+    for entry in entries:
+        session.delete(entry)
+    session.flush()
+    return count
+
+
+def set_email_allow_list(
+        session: Session,
+        visibility_id: UUID,
+        allowed_emails: list[str] | None = None,
+        allowed_domains: list[str] | None = None,
+) -> list[VisibilityAllowEmail]:
+    """
+    이메일 허용 목록 전체 설정 (기존 목록 교체)
+    
+    :param session: DB 세션
+    :param visibility_id: 가시성 설정 ID
+    :param allowed_emails: 허용할 이메일 주소 목록
+    :param allowed_domains: 허용할 도메인 목록
+    :return: 생성된 항목 목록
+    """
+    # 기존 목록 삭제
+    clear_email_allow_list(session, visibility_id)
+
+    # 새 목록 추가
+    entries = []
+    if allowed_emails:
+        for email in allowed_emails:
+            entry = add_email_to_allow_list(session, visibility_id, email=email)
+            entries.append(entry)
+    if allowed_domains:
+        for domain in allowed_domains:
+            entry = add_email_to_allow_list(session, visibility_id, domain=domain)
+            entries.append(entry)
 
     return entries
 

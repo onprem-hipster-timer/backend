@@ -8,6 +8,7 @@ from app.api.v1.tags import router as tags_router
 from app.api.v1.timers import router as timers_router
 from app.api.v1.timers_ws import router as timers_ws_router
 from app.api.v1.todos import router as todos_router
+from app.api.v1.meetings import router as meetings_router
 from app.api.v1.ws_playground import router as ws_playground_router
 
 api_router = APIRouter()
@@ -18,6 +19,7 @@ api_router.include_router(timers_router, prefix="/v1")
 api_router.include_router(holidays_router, prefix="/v1")
 api_router.include_router(tags_router, prefix="/v1")
 api_router.include_router(todos_router, prefix="/v1")
+api_router.include_router(meetings_router, prefix="/v1")
 api_router.include_router(friends_router, prefix="/v1")
 
 # WebSocket API 등록

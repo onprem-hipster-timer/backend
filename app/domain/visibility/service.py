@@ -106,6 +106,14 @@ class VisibilityService:
             # AllowList에 있는지 확인
             return crud.is_user_in_allow_list(self.session, visibility.id, self.user_id)
 
+        if level == VisibilityLevel.ALLOWED_EMAILS:
+            # 현재 사용자의 이메일 확인 (OIDC 클레임에서 추출)
+            user_email = self.current_user.email
+            if not user_email:
+                return False
+            # 이메일 허용 목록 확인
+            return crud.is_email_allowed(self.session, visibility.id, user_email)
+
         # PRIVATE
         return False
 
@@ -136,6 +144,8 @@ class VisibilityService:
             resource_id: UUID,
             level: VisibilityLevel,
             allowed_user_ids: Optional[List[str]] = None,
+            allowed_emails: Optional[List[str]] = None,
+            allowed_domains: Optional[List[str]] = None,
     ) -> ResourceVisibility:
         """
         리소스 가시성 설정
@@ -143,7 +153,9 @@ class VisibilityService:
         :param resource_type: 리소스 타입
         :param resource_id: 리소스 ID
         :param level: 가시성 레벨
-        :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만)
+        :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만 사용)
+        :param allowed_emails: 허용할 이메일 주소 목록 (ALLOWED_EMAILS 레벨에서만 사용)
+        :param allowed_domains: 허용할 도메인 목록 (ALLOWED_EMAILS 레벨에서만 사용)
         :return: 생성/업데이트된 가시성 설정
         """
         # SELECTED_FRIENDS 레벨인 경우 검증
@@ -164,11 +176,30 @@ class VisibilityService:
         )
 
         # AllowList 설정 (SELECTED_FRIENDS 레벨인 경우)
-        if level == VisibilityLevel.SELECTED_FRIENDS and allowed_user_ids:
-            crud.set_allow_list(self.session, visibility.id, allowed_user_ids)
-        elif level != VisibilityLevel.SELECTED_FRIENDS:
-            # 다른 레벨로 변경된 경우 AllowList 삭제
+        if level == VisibilityLevel.SELECTED_FRIENDS:
+            if allowed_user_ids:
+                crud.set_allow_list(self.session, visibility.id, allowed_user_ids)
+            else:
+                crud.clear_allow_list(self.session, visibility.id)
+            # 이메일 허용 목록 삭제 (레벨 변경 시)
+            crud.clear_email_allow_list(self.session, visibility.id)
+        elif level == VisibilityLevel.ALLOWED_EMAILS:
+            # 이메일 허용 목록 설정
+            if allowed_emails or allowed_domains:
+                crud.set_email_allow_list(
+                    self.session,
+                    visibility.id,
+                    allowed_emails=allowed_emails,
+                    allowed_domains=allowed_domains,
+                )
+            else:
+                crud.clear_email_allow_list(self.session, visibility.id)
+            # 사용자 ID 허용 목록 삭제 (레벨 변경 시)
             crud.clear_allow_list(self.session, visibility.id)
+        else:
+            # 다른 레벨로 변경된 경우 모든 허용 목록 삭제
+            crud.clear_allow_list(self.session, visibility.id)
+            crud.clear_email_allow_list(self.session, visibility.id)
 
         return visibility
 
@@ -193,6 +224,11 @@ class VisibilityService:
 
         # AllowList 조회
         allowed_user_ids = crud.get_allowed_user_ids(self.session, visibility.id)
+        
+        # 이메일 허용 목록 조회
+        email_entries = crud.get_email_allow_list(self.session, visibility.id)
+        allowed_emails = [e.email for e in email_entries if e.email]
+        allowed_domains = [e.domain for e in email_entries if e.domain]
 
         return VisibilityRead(
             id=visibility.id,
@@ -201,6 +237,8 @@ class VisibilityService:
             owner_id=visibility.owner_id,
             level=visibility.level,
             allowed_user_ids=allowed_user_ids,
+            allowed_emails=allowed_emails,
+            allowed_domains=allowed_domains,
             created_at=visibility.created_at,
             updated_at=visibility.updated_at,
         )
@@ -360,6 +398,19 @@ class VisibilityService:
         for v_id in selected_friend_visibility_ids:
             allow_list_map[v_id] = set(crud.get_allowed_user_ids(self.session, v_id))
 
+        # 5-1. 이메일 허용 목록 일괄 조회 (ALLOWED_EMAILS인 경우만)
+        allowed_email_visibility_ids = [
+            v.id for v in visibilities
+            if v.level == VisibilityLevel.ALLOWED_EMAILS
+        ]
+        email_allow_list_map: dict[UUID, list] = {}  # {visibility_id: [email_entries]}
+        user_email = self.current_user.email
+        user_email_domain = user_email.split("@")[-1] if user_email and "@" in user_email else None
+        
+        for v_id in allowed_email_visibility_ids:
+            email_entries = crud.get_email_allow_list(self.session, v_id)
+            email_allow_list_map[v_id] = email_entries
+
         # 6. 배치 권한 체크
         accessible_resources = []
         for resource in resources:
@@ -394,6 +445,22 @@ class VisibilityService:
                 if owner_id in friend_ids:
                     allowed = allow_list_map.get(visibility.id, set())
                     if self.user_id in allowed:
+                        accessible_resources.append(resource)
+            elif level == VisibilityLevel.ALLOWED_EMAILS:
+                # 이메일 기반 접근 제어
+                if user_email:
+                    email_entries = email_allow_list_map.get(visibility.id, [])
+                    is_allowed = False
+                    for entry in email_entries:
+                        # 특정 이메일 매칭
+                        if entry.email and entry.email == user_email:
+                            is_allowed = True
+                            break
+                        # 도메인 매칭
+                        if entry.domain and user_email_domain and entry.domain == user_email_domain:
+                            is_allowed = True
+                            break
+                    if is_allowed:
                         accessible_resources.append(resource)
             # PRIVATE은 이미 get_shared_visibilities에서 제외됨
 
