@@ -11,6 +11,21 @@
 프로덕션: wss://your-domain.com/v1/ws/timers
 ```
 
+### 테스트 링크
+
+**자체 WebSocket Playground** (개발 모드 전용):
+
+- **WebSocket Playground**: [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground)
+
+브라우저에서 위 링크로 접속한 뒤 JWT를 입력하면 타이머 WebSocket API를 바로 테스트할 수 있습니다. (Swagger UI처럼 개발 환경에서만 활성화됩니다.)
+
+직접 연결할 때 사용할 주소:
+
+- **연결 URL**: `ws://localhost:2614/v1/ws/timers`
+- **쿼리 예시 (타임존)**: `ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul`
+
+Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat) 등으로 `Sec-WebSocket-Protocol` 헤더에 Bearer 토큰을 넣어 연결할 수도 있습니다. 동작 예제는 아래 [Example Usage](#example-usage)를 참고하세요.
+
 선택적 쿼리 매개변수:
 - `timezone`: 응답 타임스탬프의 타임존 (예: `Asia/Seoul`, `+09:00`)
 

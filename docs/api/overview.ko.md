@@ -92,8 +92,16 @@ CRUD 작업을 위한 전통적인 RESTful 엔드포인트:
 - **날짜**: ISO 8601 형식 (`2024-01-15T10:00:00Z`)
 - **UUID**: 표준 UUID v4 형식
 
-## 대화형 문서
+## 대화형 문서 (테스트 링크)
 
-- **Swagger UI**: `/docs` (개발 환경만)
-- **ReDoc**: `/redoc` (개발 환경만)
-- **GraphQL Playground**: `/v1/graphql` (개발 환경만)
+로컬 개발 서버 실행 시 아래 주소로 접속해 API를 테스트할 수 있습니다.
+
+| 항목 | 테스트 링크 (Development) |
+|------|---------------------------|
+| **Swagger UI** | [http://localhost:2614/docs](http://localhost:2614/docs) |
+| **ReDoc** | [http://localhost:2614/redoc](http://localhost:2614/redoc) |
+| **GraphQL Playground** | [http://localhost:2614/v1/graphql](http://localhost:2614/v1/graphql) |
+| **WebSocket Playground** | [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground) |
+| **WebSocket (타이머 엔드포인트)** | `ws://localhost:2614/v1/ws/timers` |
+
+> ⚠️ 위 링크는 개발 모드(`DOCS_ENABLED=true`)에서만 제공됩니다. WebSocket Playground는 JWT 입력 후 브라우저에서 바로 타이머 WebSocket API를 테스트할 수 있는 자체 제공 페이지입니다.

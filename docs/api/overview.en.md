@@ -92,8 +92,16 @@ Common HTTP status codes:
 - **Dates**: ISO 8601 format (`2024-01-15T10:00:00Z`)
 - **UUIDs**: Standard UUID v4 format
 
-## Interactive Documentation
+## Interactive Documentation (Test Links)
 
-- **Swagger UI**: `/docs` (development only)
-- **ReDoc**: `/redoc` (development only)
-- **GraphQL Playground**: `/v1/graphql` (development only)
+When running the local dev server, you can test the API at these URLs:
+
+| Item | Test Link (Development) |
+|------|--------------------------|
+| **Swagger UI** | [http://localhost:2614/docs](http://localhost:2614/docs) |
+| **ReDoc** | [http://localhost:2614/redoc](http://localhost:2614/redoc) |
+| **GraphQL Playground** | [http://localhost:2614/v1/graphql](http://localhost:2614/v1/graphql) |
+| **WebSocket Playground** | [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground) |
+| **WebSocket (Timer endpoint)** | `ws://localhost:2614/v1/ws/timers` |
+
+> ⚠️ These links are only available in development (`DOCS_ENABLED=true`). WebSocket Playground is a built-in page where you can test the Timer WebSocket API in the browser after entering your JWT.

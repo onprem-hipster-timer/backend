@@ -11,6 +11,21 @@ Development: ws://localhost:2614/v1/ws/timers
 Production:  wss://your-domain.com/v1/ws/timers
 ```
 
+### Test Links
+
+**WebSocket Playground** (development only):
+
+- **WebSocket Playground**: [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground)
+
+Open the link above in your browser and enter your JWT to test the Timer WebSocket API. (Enabled only in development, like Swagger UI.)
+
+For direct connection:
+
+- **Connection URL**: `ws://localhost:2614/v1/ws/timers`
+- **With timezone**: `ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul`
+
+You can also use [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat), etc., with Bearer token in the `Sec-WebSocket-Protocol` header. See [Example Usage](#example-usage) below.
+
 Optional query parameter:
 - `timezone`: Timezone for response timestamps (e.g., `Asia/Seoul`, `+09:00`)
 
