@@ -86,3 +86,5 @@ nav:
   - Development:
     - Rate Limiting: development/rate-limit.md
     - Testing: development/testing.md
+    - Python Version Testing: development/python-version-testing.md
+    - Docs Guide: development/docs-guide.md

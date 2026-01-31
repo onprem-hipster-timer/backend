@@ -1,4 +1,4 @@
-# Rate Limit 가이드
+    # Rate Limit 가이드
 
 이 문서는 백엔드 API의 Rate Limit(요청 제한) 시스템에 대한 가이드입니다.
 

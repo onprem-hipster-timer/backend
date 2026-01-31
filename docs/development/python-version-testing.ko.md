@@ -99,7 +99,7 @@ $DefaultVersions = @("3.16", "3.15", "3.14", "3.13", "3.12", "3.11")
 
 **Bash (`test-python-versions.sh`):**
 ```bash
-DEFAULT_VERSIONS=("3.16" "3.15" "3.14" "3.13" "3.12" "3.11")
+DEFAULT_VERSIONS=("3.16", "3.15", "3.14", "3.13", "3.12", "3.11")
 ```
 
 ### 3단계: 테스트 실행
@@ -127,7 +127,7 @@ $DefaultVersions = @("3.13", "3.12", "3.11")
 
 **Bash:**
 ```bash
-DEFAULT_VERSIONS=("3.13" "3.12" "3.11")
+DEFAULT_VERSIONS=("3.13", "3.12", "3.11")
 ```
 
 ### 3단계: README 업데이트

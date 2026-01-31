@@ -1,4 +1,4 @@
-# 🚀 프로덕션 배포 가이드
+# 프로덕션 배포 가이드
 
 Hipster Timer Backend를 프로덕션 환경에 배포하기 위한 권장 설정 가이드입니다.
 
@@ -12,6 +12,7 @@ Hipster Timer Backend를 프로덕션 환경에 배포하기 위한 권장 설�
 - [인증 설정 (OIDC)](#인증-설정-oidc)
 - [Rate Limiting](#rate-limiting)
 - [CORS 설정](#cors-설정)
+- [프록시 / Cloudflare를 통한 애플리케이션 수준 보호](#프록시--cloudflare를-통한-애플리케이션-수준-보호)
 - [Docker 배포](#docker-배포)
 - [보안 체크리스트](#보안-체크리스트)
 - [환경 변수 요약표](#환경-변수-요약표)
@@ -121,29 +122,6 @@ OIDC_ISSUER_URL=https://your-auth-provider.com/realms/your-realm
 OIDC_AUDIENCE=your-client-id
 ```
 
-### Provider별 설정 예시
-
-**Keycloak:**
-
-```bash
-OIDC_ISSUER_URL=https://keycloak.example.com/realms/myrealm
-OIDC_AUDIENCE=hipster-timer-frontend
-```
-
-**Auth0:**
-
-```bash
-OIDC_ISSUER_URL=https://your-tenant.auth0.com/
-OIDC_AUDIENCE=https://api.hipster-timer.com
-```
-
-**Google:**
-
-```bash
-OIDC_ISSUER_URL=https://accounts.google.com
-OIDC_AUDIENCE=your-google-client-id.apps.googleusercontent.com
-```
-
 ### JWKS 캐시 설정
 
 ```bash
@@ -200,7 +178,30 @@ CORS_ALLOW_HEADERS=Authorization,Content-Type
 
 > ⚠️ **주의**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 **함께 사용할 수 없습니다**. credentials를 허용하려면 반드시 특정 origin을 지정해야 합니다.
 
-> ⚠️ **WebSocket**: 타이머 등 실시간 기능이 WebSocket(`/v1/ws/timers`)을 사용합니다. WebSocket 연결이 동작하려면 `CORS_ALLOWED_ORIGINS`에 **반드시** WebSocket URL을 포함해야 합니다. 프로덕션에서는 **`wss://`(암호화)만 사용**하세요. `ws://`는 평문 전송이므로 프로덕션에서 사용 금지입니다.
+> ⚠️ **WebSocket**: 타이머 등 실시간 기능이 WebSocket(`/v1/ws/timers`)을 사용합니다. WebSocket 연결이 동작하려면 `CORS_ALLOWED_ORIGINS`에 **반드시** WebSocket URL을 포함해야 합니다. 프로덕션에서는 **`wss://`(암호화)만 사용**하세요. `ws://`는 평문 전송이므로 프로덕션에서 사용할  이유가 없습니다.
+
+---
+
+## 프록시 / Cloudflare를 통한 애플리케이션 수준 보호
+
+애플리케이션 앞단에 **리버스 프록시**(Nginx, HAProxy 등) 또는 **Cloudflare**를 두고, README의 [Proxy Settings (Cloudflare / Trusted Proxy)](https://github.com/onprem-hipster-timer/backend#proxy-settings-cloudflare--trusted-proxy) 옵션을 설정하면 **애플리케이션 수준**에서 추가 보호를 할 수 있습니다.
+
+### README에서 다루는 옵션 요약
+
+| 변수 | 설명 |
+|------|------|
+| `PROXY_FORCE` | 프록시 경유만 허용, 직접 접속 차단 |
+| `CF_ENABLED` | Cloudflare 프록시 모드 (실제 클라이언트 IP는 `CF-Connecting-IP` 사용) |
+| `TRUSTED_PROXY_IPS` | 신뢰할 프록시/로드밸런서 IP(CIDR 지원) |
+| `ORIGIN_VERIFY_HEADER` / `ORIGIN_VERIFY_SECRET` | 프록시가 붙이는 비밀 헤더로 오리진 검증 (선택) |
+
+### 이렇게 할 때 얻는 보호
+
+- **Rate Limiting**: 실제 클라이언트 IP 기준으로 제한이 적용되어, 프록시 IP 하나로 묶이지 않음.
+- **직접 접속 차단**: `PROXY_FORCE=true`로 두면 Cloudflare/신뢰 프록시를 거치지 않은 요청은 차단되어, 백엔드가 인터넷에 직접 노출되지 않음.
+- **오리진 검증**: `ORIGIN_VERIFY_*`로 프록시만 알고 있는 비밀 헤더를 검증하면, 프록시를 우회한 직접 요청을 애플리케이션에서 거부할 수 있음.
+
+Cloudflare 사용 시에는 `CF_ENABLED=true`, `PROXY_FORCE=true`를 권장하고, 로드밸런서 뒤에 둘 경우 해당 대역을 `TRUSTED_PROXY_IPS`에 포함시키세요. 자세한 설정과 주의사항은 저장소 루트의 **README.md** — **Configuration** > **Proxy Settings (Cloudflare / Trusted Proxy)** 를 참고하세요.
 
 ---
 

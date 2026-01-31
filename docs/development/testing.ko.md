@@ -1,274 +1,161 @@
-# Python 버전 호환성 테스트 가이드
+# pytest로 테스트 실행하기
 
-이 문서는 프로젝트의 Python 버전 호환성을 테스트하는 방법을 설명합니다.
+이 문서는 프로젝트 루트의 `tests/` 폴더를 이용해 **pytest**로 테스트를 실행하는 방법을 소개합니다.
 
-## 개요
+## 사전 요구사항
 
-프로젝트의 Python 버전 호환성을 Docker를 사용하여 격리된 환경에서 테스트할 수 있습니다.
-
-### 지원 버전
-
-| Python 버전 | 상태 | 서비스명 |
-|-------------|------|----------|
-| 3.15 | 최신 | `python315` |
-| 3.14 | 지원 | `python314` |
-| 3.13 | 기본 (프로덕션) | `python313` |
-| 3.12 | 지원 | `python312` |
-| 3.11 | 최소 지원 | `python311` |
+- Python 3.11 이상
+- 개발 의존성 설치: `pip install -r requirements-dev.txt`
 
 ---
 
-## 빠른 시작
+## 기본 명령어
 
-### 특정 버전 테스트
+### 전체 테스트 실행
 
-```powershell
-# Python 3.13 테스트
-docker compose -f docker-compose.python-matrix.yaml up --build python313 --abort-on-container-exit
-
-# Python 3.12 테스트
-docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort-on-container-exit
-
-# Python 3.11 테스트
-docker compose -f docker-compose.python-matrix.yaml up --build python311 --abort-on-container-exit
-
-# Python 3.10 테스트
-docker compose -f docker-compose.python-matrix.yaml up --build python310 --abort-on-container-exit
+```bash
+pytest
 ```
 
-### 전체 버전 테스트 (스크립트)
+- 기본: 상세 출력, 짧은 traceback, 첫 실패 시 중단
+- `tests/` 아래 모든 테스트 수집·실행
 
-```powershell
+### 출력 옵션
+
+```bash
+# 상세 출력 (-v)
+pytest -v
+
+# 짧은 traceback (기본 권장)
+pytest --tb=short
+
+# 첫 실패 시 중단
+pytest -x
+
+# 조합 예시
+pytest -v --tb=short -x
+```
+
+### 커버리지
+
+```bash
+# app 패키지 커버리지 + 터미널 요약
+pytest --cov=app --cov-report=term-missing
+
+# HTML 리포트 생성 (브라우저에서 확인)
+pytest --cov=app --cov-report=html
+```
+
+---
+
+## 디렉터리/파일 지정
+
+`tests/` 폴더 구조에 맞춰 특정 영역만 실행할 수 있습니다.
+
+### 특정 디렉터리
+
+```bash
+# 도메인 스케줄 테스트만
+pytest tests/domain/schedule/
+
+# 도메인 todo 테스트만
+pytest tests/domain/todo/
+
+# core (인증 등) 테스트만
+pytest tests/core/
+
+# ratelimit 테스트만
+pytest tests/ratelimit/
+```
+
+### 특정 파일
+
+```bash
+pytest tests/test_schedules_e2e.py
+pytest tests/domain/schedule/test_service.py
+```
+
+### 특정 함수/클래스
+
+```bash
+# 테스트 함수 이름으로 (부분 일치)
+pytest tests/domain/schedule/ -k "test_create"
+
+# 정확한 테스트 경로
+pytest tests/domain/schedule/test_service.py::test_create_schedule
+```
+
+---
+
+## 마커로 필터링
+
+`pytest.ini`에 등록된 마커를 사용해 테스트 유형별로 실행할 수 있습니다.
+
+| 마커 | 설명 | 해당 파일 예시 |
+|------|------|----------------|
+| `e2e` | End-to-end (전체 HTTP API 흐름) | `test_*_e2e.py` |
+| `integration` | 통합 테스트 (DB, 트랜잭션 등) | `test_*_integration.py` |
+| `ratelimit` | Rate limit 관련 테스트 | `tests/ratelimit/` |
+
+### E2E만 실행
+
+```bash
+pytest -m e2e
+```
+
+### 통합 테스트만 실행
+
+```bash
+pytest -m integration
+```
+
+### 특정 마커 제외
+
+```bash
+# e2e 제외 (단위·통합만)
+pytest -m "not e2e"
+
+# ratelimit 제외
+pytest -m "not ratelimit"
+```
+
+---
+
+## tests/ 폴더 구조
+
+| 경로 | 설명 |
+|------|------|
+| `tests/domain/` | 도메인 로직 단위 테스트 (schedule, timer, todo, tag, holiday 등) |
+| `tests/core/` | 인증, 설정 등 코어 테스트 |
+| `tests/ratelimit/` | Rate limit 미들웨어·스토리지 테스트 |
+| `tests/test_*_e2e.py` | REST/GraphQL/WebSocket E2E 테스트 |
+| `tests/test_*_integration.py` | DB 연동 통합 테스트 |
+| `tests/conftest.py` | 공통 fixture (DB 엔진, 세션, 테스트 유저 등) |
+
+---
+
+## PostgreSQL로 테스트
+
+기본은 SQLite 메모리 DB입니다. PostgreSQL로 실행하려면:
+
+```bash
+# 1. PostgreSQL 컨테이너 기동
+docker compose -f docker-compose.test.yaml up -d
+
+# 2. 환경 변수 설정 후 pytest
 # Windows PowerShell
-.\scripts\test-python-versions.ps1
+$env:TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb"
+pytest
 
-# 특정 버전만 테스트
-.\scripts\test-python-versions.ps1 3.12 3.13
-```
-
-```bash
 # Linux/macOS
-./scripts/test-python-versions.sh
+TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb" pytest
 
-# 특정 버전만 테스트
-./scripts/test-python-versions.sh 3.12 3.13
-```
-
-### PostgreSQL과 함께 테스트
-
-```powershell
-docker compose -f docker-compose.python-matrix.yaml --profile postgres up --build python313-postgres --abort-on-container-exit
+# 3. 정리
+docker compose -f docker-compose.test.yaml down -v
 ```
 
 ---
 
-## 새 Python 버전 추가하기
+## 관련 문서
 
-Python 3.14가 출시되었다고 가정하고, 테스트 매트릭스에 추가하는 방법입니다.
-
-### 1단계: docker-compose.python-matrix.yaml 수정
-
-`services` 섹션에 새 서비스를 추가합니다:
-
-```yaml
-  # ============================================
-  # Python 3.14
-  # ============================================
-  python314:
-    container_name: test-python314
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-      args:
-        PYTHON_VERSION: "3.14"
-    volumes:
-      - ./test-results:/app/test-results
-    environment:
-      <<: *test-environment
-    command: ["-v", "--tb=short", "-x"]
-```
-
-### 2단계: 테스트 스크립트 수정 (선택사항)
-
-`scripts/test-python-versions.ps1`과 `scripts/test-python-versions.sh`의 기본 버전 목록을 수정합니다:
-
-**PowerShell (`test-python-versions.ps1`):**
-```powershell
-$DefaultVersions = @("3.16", "3.15", "3.14", "3.13", "3.12", "3.11")
-```
-
-**Bash (`test-python-versions.sh`):**
-```bash
-DEFAULT_VERSIONS=("3.16" "3.15" "3.14" "3.13" "3.12" "3.11")
-```
-
-### 3단계: 테스트 실행
-
-```powershell
-docker compose -f docker-compose.python-matrix.yaml up --build python314 --abort-on-container-exit
-```
-
----
-
-## 오래된 버전 제거하기
-
-Python 3.10 지원을 종료한다고 가정합니다.
-
-### 1단계: docker-compose.python-matrix.yaml에서 서비스 제거
-
-`python310` 서비스 블록을 삭제합니다.
-
-### 2단계: 테스트 스크립트에서 제거
-
-**PowerShell:**
-```powershell
-$DefaultVersions = @("3.13", "3.12", "3.11")
-```
-
-**Bash:**
-```bash
-DEFAULT_VERSIONS=("3.13" "3.12" "3.11")
-```
-
-### 3단계: README 업데이트
-
-`README.md`와 `README.ko.md`의 Prerequisites 섹션을 업데이트합니다.
-
----
-
-## 파일 구조
-
-```
-├── Dockerfile.test                      # 테스트용 Docker 이미지
-├── docker-compose.python-matrix.yaml    # 버전 매트릭스 Compose
-├── scripts/
-│   ├── test-python-versions.ps1         # Windows 테스트 스크립트
-│   └── test-python-versions.sh          # Linux/macOS 테스트 스크립트
-└── test-results/                        # 테스트 결과 (gitignore됨)
-```
-
----
-
-## 테스트 옵션 커스터마이징
-
-### pytest 옵션 변경
-
-`docker-compose.python-matrix.yaml`의 `command`를 수정합니다:
-
-```yaml
-# 기본 (상세 출력, 짧은 traceback, 첫 실패시 중단)
-command: ["-v", "--tb=short", "-x"]
-
-# 커버리지 포함
-command: ["-v", "--cov=app", "--cov-report=term-missing"]
-
-# 특정 테스트만 실행
-command: ["-v", "tests/domain/schedule/"]
-
-# 마커로 필터링
-command: ["-v", "-m", "not slow"]
-```
-
-### 환경 변수 변경
-
-`x-test-environment` 앵커를 수정합니다:
-
-```yaml
-x-test-environment: &test-environment
-  DATABASE_URL: "sqlite+aiosqlite:///:memory:"
-  OIDC_ENABLED: "false"
-  RATE_LIMIT_ENABLED: "false"
-  LOG_LEVEL: "DEBUG"  # 추가
-```
-
----
-
-## 정리
-
-테스트 후 리소스를 정리합니다:
-
-```powershell
-# 컨테이너만 정리
-docker compose -f docker-compose.python-matrix.yaml down
-
-# 컨테이너 + 볼륨 정리
-docker compose -f docker-compose.python-matrix.yaml down -v
-
-# 컨테이너 + 볼륨 + 이미지 정리
-docker compose -f docker-compose.python-matrix.yaml down -v --rmi local
-```
-
----
-
-## 문제 해결
-
-### 빌드 실패: 패키지 설치 오류
-
-특정 Python 버전에서 패키지가 호환되지 않을 수 있습니다:
-
-1. 에러 메시지에서 문제 패키지 확인
-2. `requirements.in`에서 버전 제약 조정
-3. `pip-compile`로 재생성
-
-```powershell
-# 예: Python 3.10에서 특정 패키지 버전 필요
-# requirements.in에 버전 제약 추가
-# some-package>=1.0,<2.0; python_version < "3.11"
-```
-
-### 테스트 실패: 버전별 차이
-
-Python 버전 간 동작 차이가 있을 수 있습니다:
-
-- `typing` 모듈 변경사항
-- 새로운 문법 지원
-- 표준 라이브러리 변경
-
-코드에서 버전별 분기가 필요할 수 있습니다:
-
-```python
-import sys
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
-```
-
-### Docker 빌드 캐시 문제
-
-캐시를 무시하고 새로 빌드:
-
-```powershell
-docker compose -f docker-compose.python-matrix.yaml build --no-cache python313
-```
-
----
-
-## CI/CD 통합 (GitHub Actions 예시)
-
-```yaml
-name: Python Compatibility
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Build and test
-        run: |
-          docker compose -f docker-compose.python-matrix.yaml \
-            up --build python${{ matrix.python-version | replace('.', '') }} \
-            --abort-on-container-exit
-      
-      - name: Cleanup
-        if: always()
-        run: docker compose -f docker-compose.python-matrix.yaml down -v
-```
+- [Python 버전 호환성 테스트](python-version-testing.ko.md) — Docker로 여러 Python 버전에서 테스트하는 방법
