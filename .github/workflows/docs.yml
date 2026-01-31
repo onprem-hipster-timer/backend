@@ -47,7 +47,7 @@ jobs:
           os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
           from app.main import app
           import json
-          with open('docs/openapi.json', 'w') as f:
+          with open('docs/api/openapi.json', 'w') as f:
               json.dump(app.openapi(), f, indent=2)
           "
 
