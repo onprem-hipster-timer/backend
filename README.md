@@ -12,6 +12,7 @@
 [![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
+[![Docs](https://img.shields.io/badge/Docs-Online-009688?style=flat-square&logo=readme&logoColor=white)](https://onprem-hipster-timer.github.io/backend/)
 
 [Features](#features) •
 [Quick Start](#quick-start) •
@@ -20,6 +21,8 @@
 [Testing](#testing) •
 [Configuration](#configuration) •
 [For Developers](#for-developers)
+
+**📚 [Official Documentation](https://onprem-hipster-timer.github.io/backend/)**
 
 **🌐 [한국어](README.ko.md)**
 
