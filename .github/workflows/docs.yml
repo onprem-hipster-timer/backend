@@ -36,7 +36,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs mkdocs-material mkdocs-render-swagger-plugin mkdocs-static-i18n mkdocs-include-markdown-plugin
+          pip install mkdocs mkdocs-material mkdocs-swagger-ui-tag mkdocs-static-i18n mkdocs-include-markdown-plugin
           pip install -r requirements.txt
 
       - name: Generate OpenAPI JSON

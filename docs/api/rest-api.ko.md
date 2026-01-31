@@ -1,8 +1,8 @@
 # REST API 레퍼런스
 
-전체 API 스펙을 Redoc 형식으로 확인할 수 있습니다.
+전체 API 스펙을 Swagger UI 형식으로 확인할 수 있습니다.
 
-!!swagger openapi.json!!
+<swagger-ui src="openapi.json"/>
 
 ## 주요 엔드포인트
 

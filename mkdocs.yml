@@ -33,7 +33,8 @@ plugins:
   - search:
       lang: en
   - include-markdown
-  - render_swagger  # i18n 전에 실행되어야 openapi.json 상대 경로를 올바르게 해석
+  - swagger-ui-tag:
+      syntaxHighlightTheme: "monokai"  # 다크 모드에 어울리는 테마
   - i18n:
       docs_structure: suffix
       fallback_to_default: true
