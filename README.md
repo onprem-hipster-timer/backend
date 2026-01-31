@@ -35,7 +35,7 @@
 
 **Hipster Timer Backend** is an all-in-one backend API for personal productivity management. It provides schedule management, pomodoro-style timers, hierarchical todo lists, and a flexible tag system through a unified API.
 
-> 💡 **Note**: This project is designed for production use, backed by 400+ tests.
+> 💡 **Note**: This project is designed for production use, backed by 700+ tests.
 
 ### Why Hipster Timer?
 
