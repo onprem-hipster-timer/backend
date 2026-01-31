@@ -371,61 +371,160 @@ hipster-timer-backend/
 ### Data Model
 
 ```mermaid
-erDiagram
-    TagGroup ||--o{ Tag : contains
-    TagGroup ||--o{ Todo : "groups"
-    
-    Todo ||--o{ Todo : "parent-child"
-    Todo ||--o{ Schedule : "creates (deadline)"
-    Todo }o--o{ Tag : "tagged"
-    
-    Schedule ||--o{ TimerSession : has
-    Schedule ||--o{ ScheduleException : "exceptions"
-    Schedule }o--o{ Tag : "tagged"
-    
-    TimerSession }o--o{ Tag : "tagged"
-
-    TagGroup {
-        uuid id PK
-        string name
-        string color
-        boolean is_todo_group
+classDiagram
+    direction BT
+    class friendship {
+        datetime created_at
+        datetime updated_at
+        varchar requester_id
+        varchar addressee_id
+        varchar(8) status
+        varchar blocked_by
+        char(32) id
     }
-    
-    Tag {
-        uuid id PK
-        uuid group_id FK
-        string name
-        string color
+    class holiday_hashes {
+        datetime created_at
+        datetime updated_at
+        integer year
+        varchar(64) hash_value
+        char(32) id
     }
-    
-    Schedule {
-        uuid id PK
-        string title
+    class holidays {
+        datetime created_at
+        datetime updated_at
+        datetime start_date
+        datetime end_date
+        varchar dateName
+        boolean isHoliday
+        varchar(20) dateKind
+        char(32) id
+    }
+    class resource_visibility {
+        datetime created_at
+        datetime updated_at
+        varchar(8) resource_type
+        char(32) resource_id
+        varchar owner_id
+        varchar(8) level
+        char(32) id
+    }
+    class schedule {
+        datetime created_at
+        datetime updated_at
+        varchar title
+        varchar description
         datetime start_time
         datetime end_time
-        string recurrence_rule
+        varchar recurrence_rule
         datetime recurrence_end
-        uuid source_todo_id FK
-        enum state
+        char(32) parent_id
+        char(32) tag_group_id
+        char(32) source_todo_id
+        varchar(9) state
+        varchar owner_id
+        char(32) id
     }
-    
-    Todo {
-        uuid id PK
-        uuid tag_group_id FK
-        uuid parent_id FK
-        string title
+    class schedule_exception_tag {
+        char(32) schedule_exception_id
+        char(32) tag_id
+    }
+    class schedule_tag {
+        char(32) schedule_id
+        char(32) tag_id
+    }
+    class scheduleexception {
+        datetime created_at
+        datetime updated_at
+        char(32) parent_id
+        datetime exception_date
+        boolean is_deleted
+        varchar title
+        varchar description
+        datetime start_time
+        datetime end_time
+        varchar owner_id
+        char(32) id
+    }
+    class tag {
+        datetime created_at
+        datetime updated_at
+        varchar name
+        varchar color
+        varchar description
+        char(32) group_id
+        varchar owner_id
+        char(32) id
+    }
+    class tag_group {
+        datetime created_at
+        datetime updated_at
+        varchar name
+        varchar color
+        varchar description
+        json goal_ratios
+        boolean is_todo_group
+        varchar owner_id
+        char(32) id
+    }
+    class timer_tag {
+        char(32) timer_id
+        char(32) tag_id
+    }
+    class timersession {
+        datetime created_at
+        datetime updated_at
+        char(32) schedule_id
+        varchar title
+        varchar description
+        integer allocated_duration
+        integer elapsed_time
+        varchar status
+        datetime started_at
+        datetime paused_at
+        datetime ended_at
+        varchar owner_id
+        char(32) todo_id
+        char(32) id
+    }
+    class todo {
+        datetime created_at
+        datetime updated_at
+        varchar title
+        varchar description
         datetime deadline
-        enum status
+        char(32) tag_group_id
+        char(32) parent_id
+        varchar(11) status
+        varchar owner_id
+        char(32) id
     }
-    
-    TimerSession {
-        uuid id PK
-        uuid schedule_id FK
-        int allocated_duration
-        int elapsed_time
-        enum status
+    class todo_tag {
+        char(32) todo_id
+        char(32) tag_id
     }
+    class visibility_allow_list {
+        char(32) visibility_id
+        varchar allowed_user_id
+        char(32) id
+    }
+
+    schedule --> tag_group : tag_group_id
+    schedule --> todo : source_todo_id
+    schedule_exception_tag --> scheduleexception : schedule_exception_id
+    schedule_exception_tag --> tag : tag_id
+    schedule_tag --> schedule : schedule_id
+    schedule_tag --> tag : tag_id
+    scheduleexception --> schedule : parent_id
+    tag --> tag_group : group_id
+    timer_tag --> tag : tag_id
+    timer_tag --> timersession : timer_id
+    timersession --> schedule : schedule_id
+    timersession --> todo : todo_id
+    todo --> tag_group : tag_group_id
+    todo --> todo : parent_id
+    todo_tag --> tag : tag_id
+    todo_tag --> todo : todo_id
+    visibility_allow_list --> resource_visibility : visibility_id
 ```
 
 ### Tech Stack
