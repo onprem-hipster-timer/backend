@@ -4,7 +4,7 @@ Meeting Service
 일정 조율 서비스 비즈니스 로직
 """
 from datetime import date, time, timedelta
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 
 from sqlmodel import Session
@@ -16,7 +16,6 @@ from app.domain.meeting.exceptions import (
     MeetingNotFoundError,
     MeetingParticipantNotFoundError,
 )
-from app.domain.visibility.exceptions import AccessDeniedError
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -28,7 +27,8 @@ from app.domain.meeting.schema.dto import (
     AvailabilityRead,
     MeetingResultRead,
 )
-from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.enums import ResourceType
+from app.domain.visibility.exceptions import AccessDeniedError
 from app.domain.visibility.service import VisibilityService
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 
@@ -430,7 +430,7 @@ class MeetingService:
         :return: 시간 슬롯 리스트
         """
         time_slots = []
-        
+
         # time 객체를 분 단위로 변환하여 계산
         start_minutes = start_time.hour * 60 + start_time.minute
         end_minutes = end_time.hour * 60 + end_time.minute

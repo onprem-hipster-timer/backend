@@ -244,7 +244,7 @@ def add_email_to_allow_list(
         raise ValueError("email 또는 domain 중 하나는 반드시 설정되어야 합니다")
     if email is not None and domain is not None:
         raise ValueError("email과 domain은 동시에 설정할 수 없습니다")
-    
+
     entry = VisibilityAllowEmail(
         visibility_id=visibility_id,
         email=email,
@@ -282,10 +282,10 @@ def is_email_allowed(
     """
     if not user_email:
         return False
-    
+
     # 이메일에서 도메인 추출
     email_domain = user_email.split("@")[-1] if "@" in user_email else None
-    
+
     # 특정 이메일 매칭 확인
     email_statement = select(VisibilityAllowEmail).where(
         VisibilityAllowEmail.visibility_id == visibility_id,
@@ -293,7 +293,7 @@ def is_email_allowed(
     )
     if session.exec(email_statement).first():
         return True
-    
+
     # 도메인 매칭 확인
     if email_domain:
         domain_statement = select(VisibilityAllowEmail).where(
@@ -302,7 +302,7 @@ def is_email_allowed(
         )
         if session.exec(domain_statement).first():
             return True
-    
+
     return False
 
 
@@ -328,7 +328,7 @@ def remove_email_from_allow_list(
         statement = statement.where(VisibilityAllowEmail.email == email)
     if domain is not None:
         statement = statement.where(VisibilityAllowEmail.domain == domain)
-    
+
     entry = session.exec(statement).first()
     if entry:
         session.delete(entry)

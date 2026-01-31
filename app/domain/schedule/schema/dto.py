@@ -15,7 +15,6 @@ from pydantic import ConfigDict, field_validator
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.enums import ScheduleState
-from app.domain.tag.schema.dto import TagRead
 from app.models.visibility import VisibilityLevel
 from app.utils.validators import validate_time_order
 

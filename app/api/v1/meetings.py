@@ -47,7 +47,7 @@ async def create_meeting(
     service = MeetingService(session, current_user)
     meeting = service.create_meeting(data)
     meeting_read = service.to_read_dto(meeting, is_shared=False)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return meeting_read.to_timezone(tz_obj)
@@ -70,7 +70,7 @@ async def read_meetings(
     """
     service = MeetingService(session, current_user)
     meetings = service.get_all_meetings()
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return [service.to_read_dto(m, is_shared=False).to_timezone(tz_obj) for m in meetings]
@@ -103,11 +103,11 @@ async def read_meeting(
             status_code=401,
             detail="Authentication required"
         )
-    
+
     service = MeetingService(session, current_user)
     meeting, is_shared = service.get_meeting_with_access_check(meeting_id)
     meeting_read = service.to_read_dto(meeting, is_shared=is_shared)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return meeting_read.to_timezone(tz_obj)
@@ -133,7 +133,7 @@ async def update_meeting(
     service = MeetingService(session, current_user)
     meeting = service.update_meeting(meeting_id, data)
     meeting_read = service.to_read_dto(meeting, is_shared=False)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return meeting_read.to_timezone(tz_obj)
@@ -175,7 +175,7 @@ async def create_participant(
     service = MeetingService(session, current_user)
     participant = service.create_participant(meeting_id, data)
     participant_read = ParticipantRead.model_validate(participant)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     return participant_read.to_timezone(tz_obj)
@@ -223,10 +223,10 @@ async def get_availability(
     if not current_user:
         from app.core.auth import get_current_user as require_auth
         current_user = await require_auth(None, None)
-    
+
     service = MeetingService(session, current_user)
     availability = service.get_availability(meeting_id)
-    
+
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
     if tz_obj:
@@ -241,7 +241,7 @@ async def get_availability(
                 )
             )
         return converted_availability
-    
+
     return availability
 
 
@@ -265,10 +265,10 @@ async def get_meeting_result(
     if not current_user:
         from app.core.auth import get_current_user as require_auth
         current_user = await require_auth(None, None)
-    
+
     service = MeetingService(session, current_user)
     result = service.get_meeting_result(meeting_id)
-    
+
     # 타임존 변환 (MeetingRead의 datetime 필드만 변환)
     tz_obj = parse_timezone(tz) if tz else None
     if tz_obj:
@@ -277,5 +277,5 @@ async def get_meeting_result(
             meeting=converted_meeting,
             availability_grid=result.availability_grid,
         )
-    
+
     return result

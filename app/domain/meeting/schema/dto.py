@@ -137,14 +137,14 @@ class MeetingRead(CustomModel):
         """
         if tz is None:
             return self
-        
+
         # datetime 필드만 타임존 변환
         update_data = {}
         for field_name in ["created_at", "updated_at"]:
             value = getattr(self, field_name, None)
             if value is not None and isinstance(value, datetime):
                 update_data[field_name] = convert_utc_naive_to_timezone(value, tz)
-        
+
         # model_construct 사용 (변환된 aware datetime이 validator를 통과하지 못하므로)
         data = self.model_dump()
         data.update(update_data)
@@ -175,12 +175,12 @@ class ParticipantRead(CustomModel):
         """
         if tz is None:
             return self
-        
+
         # datetime 필드만 타임존 변환
         update_data = {}
         if self.created_at is not None:
             update_data["created_at"] = convert_utc_naive_to_timezone(self.created_at, tz)
-        
+
         # model_construct 사용
         data = self.model_dump()
         data.update(update_data)

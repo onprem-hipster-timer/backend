@@ -224,7 +224,7 @@ class VisibilityService:
 
         # AllowList 조회
         allowed_user_ids = crud.get_allowed_user_ids(self.session, visibility.id)
-        
+
         # 이메일 허용 목록 조회
         email_entries = crud.get_email_allow_list(self.session, visibility.id)
         allowed_emails = [e.email for e in email_entries if e.email]
@@ -406,7 +406,7 @@ class VisibilityService:
         email_allow_list_map: dict[UUID, list] = {}  # {visibility_id: [email_entries]}
         user_email = self.current_user.email
         user_email_domain = user_email.split("@")[-1] if user_email and "@" in user_email else None
-        
+
         for v_id in allowed_email_visibility_ids:
             email_entries = crud.get_email_allow_list(self.session, v_id)
             email_allow_list_map[v_id] = email_entries
