@@ -1,6 +1,6 @@
 # Visibility (가시성) API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-28
+> **최종 업데이트**: 2026-01-29
 
 ## 목차
 
@@ -18,7 +18,7 @@
 
 ## 개요
 
-Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo)의 **공유 범위**를 제어합니다.
+Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 **공유 범위**를 제어합니다.
 
 ### 지원 리소스
 
@@ -27,6 +27,7 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo)의 **공유 
 | **Schedule** | 일정 |
 | **Timer** | 타이머 |
 | **Todo** | 할 일 |
+| **Meeting** | 일정 조율 |
 
 ### 가시성 레벨
 
@@ -49,11 +50,18 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo)의 **공유 
 │  └────────────┘                                                    │
 │        │                                                           │
 │        ↓ 확장                                                       │
+│  ┌──────────────────┐                                              │
+│  │  ALLOWED_EMAILS  │──→ 허용된 이메일/도메인만 접근 가능 (비친구 포함) │
+│  └──────────────────┘                                              │
+│        │                                                           │
+│        ↓ 확장                                                       │
 │  ┌────────────┐                                                    │
 │  │  PUBLIC    │──→ 모든 사용자 접근 가능                             │
 │  └────────────┘                                                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+> **참고**: `ALLOWED_EMAILS`는 친구 관계와 무관하게 이메일 또는 도메인 기반으로 접근을 허용합니다.
 
 ### 접근 제어 규칙
 
@@ -69,6 +77,7 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo)의 **공유 
 │     - PUBLIC ────────────→ ✅ 접근 가능                              │
 │     - FRIENDS ───────────→ 친구인가? → ✅ 접근 가능 / ❌ 접근 불가     │
 │     - SELECTED ──────────→ AllowList에 있는가? → ✅/❌               │
+│     - ALLOWED_EMAILS ────→ 이메일/도메인이 허용됐는가? → ✅/❌         │
 │     - PRIVATE ───────────→ ❌ 접근 불가                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -81,10 +90,11 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo)의 **공유 
 
 ```typescript
 type VisibilityLevel = 
-  | "private"   // 본인만 (기본값)
-  | "friends"   // 모든 친구
-  | "selected"  // 선택한 친구만 (AllowList)
-  | "public";   // 전체 공개
+  | "private"         // 본인만 (기본값)
+  | "friends"         // 모든 친구
+  | "selected"        // 선택한 친구만 (AllowList)
+  | "allowed_emails"  // 허용된 이메일/도메인만 (비친구 포함)
+  | "public";         // 전체 공개
 ```
 
 ### ResourceType (리소스 타입)
@@ -93,7 +103,8 @@ type VisibilityLevel =
 type ResourceType = 
   | "schedule"
   | "timer"
-  | "todo";
+  | "todo"
+  | "meeting";
 ```
 
 ### VisibilitySettings (가시성 설정 - 입력용)
@@ -102,6 +113,8 @@ type ResourceType =
 interface VisibilitySettings {
   level: VisibilityLevel;
   allowed_user_ids?: string[];  // "selected" 레벨에서만 사용
+  allowed_emails?: string[];    // "allowed_emails" 레벨에서만 사용
+  allowed_domains?: string[];   // "allowed_emails" 레벨에서만 사용
 }
 ```
 
@@ -114,7 +127,9 @@ interface VisibilityRead {
   resource_id: string;          // UUID
   owner_id: string;             // 소유자 ID
   level: VisibilityLevel;
-  allowed_user_ids: string[];   // AllowList 사용자 목록
+  allowed_user_ids: string[];   // AllowList 사용자 목록 (SELECTED)
+  allowed_emails: string[];     // 허용된 이메일 목록 (ALLOWED_EMAILS)
+  allowed_domains: string[];    // 허용된 도메인 목록 (ALLOWED_EMAILS)
   created_at: string;           // ISO 8601
   updated_at: string;           // ISO 8601
 }
@@ -184,6 +199,28 @@ interface ResourceWithVisibility {
   }
 }
 ```
+
+#### 예시: Meeting 생성 (이메일/도메인 기반 접근 허용)
+
+**POST /api/v1/meetings**
+
+```json
+{
+  "title": "프로젝트 회의 일정 조율",
+  "start_date": "2024-02-01",
+  "end_date": "2024-02-07",
+  "available_days": [0, 2, 4],
+  "start_time": "09:00:00",
+  "end_time": "18:00:00",
+  "visibility": {
+    "level": "allowed_emails",
+    "allowed_emails": ["external@partner.com", "consultant@vendor.net"],
+    "allowed_domains": ["company.com"]
+  }
+}
+```
+
+> **참고**: `allowed_emails` 레벨은 친구 관계 없이 특정 이메일 주소 또는 도메인의 사용자에게 접근을 허용합니다. 회사 외부 인원과의 협업에 유용합니다.
 
 ### 리소스 수정 시 가시성 변경
 
@@ -278,16 +315,18 @@ interface ResourceWithVisibility {
 ```typescript
 // ===== 가시성 타입 =====
 
-type VisibilityLevel = "private" | "friends" | "selected" | "public";
+type VisibilityLevel = "private" | "friends" | "selected" | "allowed_emails" | "public";
 
-type ResourceType = "schedule" | "timer" | "todo";
+type ResourceType = "schedule" | "timer" | "todo" | "meeting";
 
 type ResourceScope = "mine" | "shared" | "all";
 
 // 가시성 설정 (생성/수정 시 사용)
 interface VisibilitySettings {
   level: VisibilityLevel;
-  allowed_user_ids?: string[];
+  allowed_user_ids?: string[];   // "selected" 레벨에서만
+  allowed_emails?: string[];     // "allowed_emails" 레벨에서만
+  allowed_domains?: string[];    // "allowed_emails" 레벨에서만
 }
 
 // 가시성 조회 결과
@@ -298,6 +337,8 @@ interface VisibilityRead {
   owner_id: string;
   level: VisibilityLevel;
   allowed_user_ids: string[];
+  allowed_emails: string[];      // 허용된 이메일 목록
+  allowed_domains: string[];     // 허용된 도메인 목록
   created_at: string;
   updated_at: string;
 }
@@ -399,6 +440,7 @@ const VISIBILITY_LABELS: Record<VisibilityLevel, string> = {
   private: "비공개",
   friends: "친구 공개",
   selected: "일부 친구 공개",
+  allowed_emails: "이메일 허용",
   public: "전체 공개",
 };
 
@@ -407,6 +449,7 @@ const VISIBILITY_ICONS: Record<VisibilityLevel, string> = {
   private: "🔒",
   friends: "👥",
   selected: "👤",
+  allowed_emails: "📧",
   public: "🌐",
 };
 ```
@@ -419,19 +462,23 @@ const VISIBILITY_ICONS: Record<VisibilityLevel, string> = {
 
 ```typescript
 // 가시성 선택 드롭다운
-async function VisibilitySelector({
+function VisibilitySelector({
   value,
   onChange,
   friends,
+  showEmailOption = false,  // Meeting 등에서 이메일 옵션 표시
 }: {
   value: VisibilitySettings;
   onChange: (settings: VisibilitySettings) => void;
   friends: Friend[];
+  showEmailOption?: boolean;
 }) {
   const handleLevelChange = (level: VisibilityLevel) => {
     onChange({
       level,
       allowed_user_ids: level === "selected" ? [] : undefined,
+      allowed_emails: level === "allowed_emails" ? [] : undefined,
+      allowed_domains: level === "allowed_emails" ? [] : undefined,
     });
   };
 
@@ -442,12 +489,23 @@ async function VisibilitySelector({
     });
   };
 
+  const handleAllowedEmailsChange = (emails: string[], domains: string[]) => {
+    onChange({
+      level: "allowed_emails",
+      allowed_emails: emails,
+      allowed_domains: domains,
+    });
+  };
+
   return (
     <div>
       <select value={value.level} onChange={(e) => handleLevelChange(e.target.value)}>
         <option value="private">🔒 비공개</option>
         <option value="friends">👥 모든 친구</option>
         <option value="selected">👤 일부 친구</option>
+        {showEmailOption && (
+          <option value="allowed_emails">📧 이메일/도메인 허용</option>
+        )}
         <option value="public">🌐 전체 공개</option>
       </select>
 
@@ -458,6 +516,46 @@ async function VisibilitySelector({
           onChange={handleAllowedUsersChange}
         />
       )}
+
+      {value.level === "allowed_emails" && (
+        <EmailDomainInput
+          emails={value.allowed_emails || []}
+          domains={value.allowed_domains || []}
+          onChange={handleAllowedEmailsChange}
+        />
+      )}
+    </div>
+  );
+}
+
+// 이메일/도메인 입력 컴포넌트 예시
+function EmailDomainInput({
+  emails,
+  domains,
+  onChange,
+}: {
+  emails: string[];
+  domains: string[];
+  onChange: (emails: string[], domains: string[]) => void;
+}) {
+  return (
+    <div>
+      <div>
+        <label>허용할 이메일 주소</label>
+        <TagInput
+          values={emails}
+          onChange={(newEmails) => onChange(newEmails, domains)}
+          placeholder="user@example.com"
+        />
+      </div>
+      <div>
+        <label>허용할 도메인 (해당 도메인의 모든 이메일 허용)</label>
+        <TagInput
+          values={domains}
+          onChange={(newDomains) => onChange(emails, newDomains)}
+          placeholder="company.com"
+        />
+      </div>
     </div>
   );
 }
@@ -626,6 +724,7 @@ function ScheduleItem({
 | `private` | 🔒 | 자물쇠 - 비공개 |
 | `friends` | 👥 | 사람들 - 친구 공개 |
 | `selected` | 👤 | 한 사람 - 선택한 친구 |
+| `allowed_emails` | 📧 | 이메일 - 허용된 이메일/도메인 |
 | `public` | 🌐 | 지구본 - 전체 공개 |
 
 ### 가시성 선택 UI 권장사항
@@ -674,6 +773,15 @@ function ScheduleItem({
 - `allowed_user_ids`에 포함된 사용자는 모두 **친구**여야 합니다.
 - 친구가 아닌 사용자를 포함하면 `400 Bad Request` 에러가 발생합니다.
 - 친구 관계가 삭제되면 해당 친구는 AllowList에서 자동으로 접근 권한을 잃습니다.
+
+### 2-1. ALLOWED_EMAILS 레벨 특징
+
+- **친구 관계와 무관**하게 이메일 또는 도메인 기반으로 접근을 허용합니다.
+- 외부 협력사, 파트너 등 친구가 아닌 사용자와 공유할 때 유용합니다.
+- `allowed_emails`: 특정 이메일 주소만 허용 (예: `["alice@partner.com"]`)
+- `allowed_domains`: 해당 도메인의 모든 이메일 허용 (예: `["company.com"]` → `anyone@company.com` 허용)
+- 서브도메인은 **정확히 매칭**되어야 합니다 (`sub.example.com` ≠ `example.com`)
+- 허용 목록이 비어있으면 아무도 접근할 수 없습니다 (소유자 제외)
 
 ### 3. 차단 시 접근 제한
 
@@ -782,3 +890,4 @@ async function updateScheduleVisibility(id: string, visibility: VisibilitySettin
 - [Schedule API 가이드](./FRONTEND_SCHEDULE_GUIDE.md) - 일정 관리
 - [Timer API 가이드](./FRONTEND_TIMER_GUIDE.md) - 타이머 관리
 - [Todo API 가이드](./FRONTEND_TODO_GUIDE.md) - 할 일 관리
+- [Meeting API 가이드](./FRONTEND_MEETING_GUIDE.md) - 일정 조율 (ALLOWED_EMAILS 레벨 주 사용처)

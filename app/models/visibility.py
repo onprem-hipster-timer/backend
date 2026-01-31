@@ -18,6 +18,7 @@ class VisibilityLevel(str, Enum):
     PRIVATE = "private"  # 본인만 (기본값)
     FRIENDS = "friends"  # 모든 친구
     SELECTED_FRIENDS = "selected"  # 선택한 친구만
+    ALLOWED_EMAILS = "allowed_emails"  # 허용된 이메일/도메인만
     PUBLIC = "public"  # 전체 공개
 
 
@@ -26,6 +27,7 @@ class ResourceType(str, Enum):
     SCHEDULE = "schedule"
     TIMER = "timer"
     TODO = "todo"
+    MEETING = "meeting"
 
 
 class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
@@ -97,4 +99,38 @@ class VisibilityAllowList(UUIDBase, table=True):
     __table_args__ = (
         # 동일한 visibility에 대해 사용자 중복 방지
         UniqueConstraint("visibility_id", "allowed_user_id", name="uq_allow_list_entry"),
+    )
+
+
+class VisibilityAllowEmail(UUIDBase, table=True):
+    """
+    가시성 이메일 허용 목록 (ALLOWED_EMAILS 레벨용)
+    
+    특정 리소스에 대해 접근을 허용할 이메일/도메인 목록
+    - email: 특정 이메일 주소 (예: user@company.com)
+    - domain: 도메인 (예: company.com) - 해당 도메인의 모든 이메일 허용
+    - email과 domain 중 하나만 설정 가능 (둘 다 NULL이면 안 됨)
+    """
+    __tablename__ = "visibility_allow_email"
+
+    # 가시성 설정 참조
+    visibility_id: UUID = Field(
+        sa_column=Column(
+            ForeignKey("resource_visibility.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    # 특정 이메일 주소 (예: user@company.com)
+    email: str | None = Field(default=None, index=True)
+
+    # 도메인 (예: company.com) - 해당 도메인의 모든 이메일 허용
+    domain: str | None = Field(default=None, index=True)
+
+    __table_args__ = (
+        # email 또는 domain 중 하나는 반드시 설정되어야 함
+        # 동일한 visibility에 대해 (email, domain) 조합 중복 방지
+        UniqueConstraint("visibility_id", "email", "domain", name="uq_allow_email_entry"),
+        Index("ix_allow_email_domain", "domain"),
     )

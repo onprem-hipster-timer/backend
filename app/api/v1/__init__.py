@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.friends import router as friends_router
 from app.api.v1.graphql import create_graphql_router
 from app.api.v1.holidays import router as holidays_router
+from app.api.v1.meetings import router as meetings_router
 from app.api.v1.schedules import router as schedules_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.timers import router as timers_router
@@ -18,6 +19,7 @@ api_router.include_router(timers_router, prefix="/v1")
 api_router.include_router(holidays_router, prefix="/v1")
 api_router.include_router(tags_router, prefix="/v1")
 api_router.include_router(todos_router, prefix="/v1")
+api_router.include_router(meetings_router, prefix="/v1")
 api_router.include_router(friends_router, prefix="/v1")
 
 # WebSocket API 등록

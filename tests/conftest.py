@@ -459,7 +459,7 @@ def multi_user_e2e():
     """
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.core.auth import get_current_user
+    from app.core.auth import get_current_user, get_optional_current_user
     from app.db.session import _session_manager
 
     # 환경변수 설정 및 settings 재로드
@@ -490,16 +490,18 @@ def multi_user_e2e():
         각 요청 전에 올바른 사용자 override를 설정합니다.
         """
 
-        def __init__(self, client: TestClient, user: CurrentUser, app_ref, get_current_user_ref):
+        def __init__(self, client: TestClient, user: CurrentUser, app_ref, get_current_user_ref, get_optional_current_user_ref):
             self._client = client
             self._user = user
             self._app = app_ref
             self._get_current_user = get_current_user_ref
+            self._get_optional_current_user = get_optional_current_user_ref
 
         def _set_user_override(self):
             """요청 전에 현재 사용자로 override 설정"""
             user = self._user
             self._app.dependency_overrides[self._get_current_user] = lambda: user
+            self._app.dependency_overrides[self._get_optional_current_user] = lambda: user
 
         def get(self, *args, **kwargs):
             self._set_user_override()
@@ -550,7 +552,8 @@ def multi_user_e2e():
                 self._client,
                 self._users[user_id],
                 app,
-                get_current_user
+                get_current_user,
+                get_optional_current_user
             )
 
         def get_user(self, user_id: str) -> CurrentUser:
@@ -569,6 +572,10 @@ def multi_user_e2e():
                 app.dependency_overrides[get_current_user] = self._original_dependency
             elif get_current_user in app.dependency_overrides:
                 del app.dependency_overrides[get_current_user]
+            
+            # get_optional_current_user override도 정리
+            if get_optional_current_user in app.dependency_overrides:
+                del app.dependency_overrides[get_optional_current_user]
 
     multi_client = MultiUserTestClient()
 

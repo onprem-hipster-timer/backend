@@ -17,6 +17,8 @@ class VisibilityUpdate(CustomModel):
     """가시성 설정 업데이트 DTO"""
     level: VisibilityLevel
     allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
+    allowed_emails: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
+    allowed_domains: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
 
 
 class VisibilityRead(CustomModel):
@@ -29,6 +31,8 @@ class VisibilityRead(CustomModel):
     owner_id: str
     level: VisibilityLevel
     allowed_user_ids: List[str] = []  # AllowList에서 조회
+    allowed_emails: List[str] = []  # 이메일 허용 목록에서 조회
+    allowed_domains: List[str] = []  # 도메인 허용 목록에서 조회
     created_at: datetime
     updated_at: datetime
 
