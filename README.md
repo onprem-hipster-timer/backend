@@ -27,6 +27,8 @@
 
 ---
 
+<!-- docs:start -->
+
 <a id="overview"></a>
 
 ## 📖 Overview
@@ -219,12 +221,17 @@ DELETE /v1/timers/{id}           # Delete timer
 Timer creation and control operations (create, pause, resume, stop) are handled via WebSocket for real-time synchronization across devices and shared users.
 
 ```
-Development: ws://localhost:8000/v1/ws/timers?token={jwt_token}
-Production:  wss://your-domain.com/v1/ws/timers?token={jwt_token}
+Development: ws://localhost:2614/v1/ws/timers
+Production:  wss://your-domain.com/v1/ws/timers
+```
+
+**Authentication**: Use `Sec-WebSocket-Protocol` header (NOT query parameter for security):
+```javascript
+new WebSocket(url, [`authorization.bearer.${token}`])
 ```
 
 > ⚠️ **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
-> - Development: `ws://localhost:8000,ws://127.0.0.1:8000`
+> - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
 > - Production: `wss://your-domain.com`
 
 | Message Type | Description |
@@ -235,7 +242,7 @@ Production:  wss://your-domain.com/v1/ws/timers?token={jwt_token}
 | `timer.stop` | Stop and complete a timer |
 | `timer.sync` | Sync active timers from server |
 
-> 📖 **Detailed Guide**: [FRONTEND_TIMER_GUIDE.md](FRONTEND_TIMER_GUIDE.md)
+> 📖 **Detailed Guide**: [Timer Guide](docs/guides/timer.md)
 
 #### Todos
 
@@ -744,7 +751,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 #### Authentication (OIDC)
 
-> 📖 **Detailed Guide**: [FRONTEND_AUTH_GUIDE.md](FRONTEND_AUTH_GUIDE.md)
+> 📖 **Detailed Guide**: [Authentication Guide](docs/guides/auth.md)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -1081,6 +1088,8 @@ pip-sync requirements.txt
 - **GraphQL + REST Coexistence**: `app/api/v1/graphql.py` — Strawberry and FastAPI integration
 
 ---
+
+<!-- docs:end -->
 
 ## 📄 License
 

@@ -1,4 +1,4 @@
-<!-- # 🚀 Production Deployment Guide <작성중>
+# 🚀 프로덕션 배포 가이드
 
 Hipster Timer Backend를 프로덕션 환경에 배포하기 위한 권장 설정 가이드입니다.
 
@@ -151,7 +151,7 @@ OIDC_AUDIENCE=your-google-client-id.apps.googleusercontent.com
 OIDC_JWKS_CACHE_TTL_SECONDS=3600
 ```
 
-> 📖 **상세 가이드**: [인증 가이드](docs/guides/auth.md)
+> 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 
 ---
 
@@ -173,7 +173,7 @@ RATE_LIMIT_DEFAULT_REQUESTS=60  # 윈도우당 최대 60 요청
 | API 중심 서비스 | 60 | 120 |
 | 제한적 공개 API | 60 | 30 |
 
-> 📖 **상세 가이드**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+> 📖 **상세 가이드**: [Rate Limiting Guide](../development/rate-limit.ko.md)
 
 ---
 
@@ -394,6 +394,5 @@ LOG_LEVEL=WARNING
 
 ## 관련 문서
 
-- [인증 가이드](docs/guides/auth.md) - 프론트엔드 인증 통합 가이드
-- [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md) - Rate Limiting 상세 가이드
-- [README.md](README.md) - 전체 프로젝트 문서 -->
+- [Authentication Guide](../guides/auth.ko.md) - 프론트엔드 인증 통합 가이드
+- [Rate Limiting Guide](../development/rate-limit.ko.md) - Rate Limiting 상세 가이드

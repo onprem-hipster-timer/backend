@@ -29,7 +29,7 @@ Hipster Timer Backend를 프로덕션 환경에 배포하기 위한 권장 설�
 | API 문서 | 활성화 | **비활성화** |
 | 디버그 모드 | 활성화 | **비활성화** |
 | CORS | 모든 origin 허용 | **특정 도메인만 허용** |
-| WebSocket | `ws://` (로컬 개발용) | **`wss://` 필수** (암호화) |
+| WebSocket | `ws://` (local dev only) | **`wss://` required** (encrypted) |
 
 ---
 
@@ -151,7 +151,7 @@ OIDC_AUDIENCE=your-google-client-id.apps.googleusercontent.com
 OIDC_JWKS_CACHE_TTL_SECONDS=3600
 ```
 
-> 📖 **상세 가이드**: [인증 가이드](docs/guides/auth.md)
+> 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 
 ---
 
@@ -173,7 +173,7 @@ RATE_LIMIT_DEFAULT_REQUESTS=60  # 윈도우당 최대 60 요청
 | API 중심 서비스 | 60 | 120 |
 | 제한적 공개 API | 60 | 30 |
 
-> 📖 **상세 가이드**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+> 📖 **상세 가이드**: [Rate Limiting Guide](../development/rate-limit.en.md)
 
 ---
 
@@ -185,7 +185,7 @@ RATE_LIMIT_DEFAULT_REQUESTS=60  # 윈도우당 최대 60 요청
 
 ```bash
 # 허용할 도메인 + WebSocket origin (콤마로 구분)
-# HTTPS + wss:// 필수 (ws://는 프로덕션에서 사용 금지)
+# HTTPS + wss:// required (ws:// is prohibited in production)
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://www.example.com,wss://api.example.com
 
 # 자격 증명(쿠키, Authorization 헤더) 허용
@@ -375,7 +375,7 @@ OIDC_ENABLED=true
 OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
 OIDC_AUDIENCE=hipster-timer-frontend
 
-# CORS (HTTP/HTTPS + WebSocket wss:// 필수)
+# CORS (HTTP/HTTPS + WebSocket wss:// required)
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://www.example.com,wss://api.example.com
 CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
@@ -394,6 +394,5 @@ LOG_LEVEL=WARNING
 
 ## 관련 문서
 
-- [인증 가이드](docs/guides/auth.md) - 프론트엔드 인증 통합 가이드
-- [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md) - Rate Limiting 상세 가이드
-- [README.md](README.md) - 전체 프로젝트 문서 -->
+- [Authentication Guide](../guides/auth.ko.md) - 프론트엔드 인증 통합 가이드
+- [Rate Limiting Guide](../development/rate-limit.en.md) - Rate Limiting 상세 가이드

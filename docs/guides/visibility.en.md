@@ -2,20 +2,6 @@
 
 > **최종 업데이트**: 2026-01-29
 
-## 목차
-
-1. [개요](#개요)
-2. [데이터 모델](#데이터-모델)
-3. [가시성 설정 방법](#가시성-설정-방법)
-4. [공유 리소스 조회](#공유-리소스-조회)
-5. [TypeScript 타입 정의](#typescript-타입-정의)
-6. [사용 예시](#사용-예시)
-7. [UI/UX 가이드라인](#uiux-가이드라인)
-8. [주의사항](#주의사항)
-9. [에러 처리](#에러-처리)
-
----
-
 ## 개요
 
 Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 **공유 범위**를 제어합니다.
@@ -31,55 +17,53 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 
 
 ### 가시성 레벨
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Visibility Levels (접근 범위)                                       │
-│                                                                     │
-│  ┌────────────┐                                                    │
-│  │  PRIVATE   │──→ 본인만 접근 가능 (기본값)                         │
-│  └────────────┘                                                    │
-│        │                                                           │
-│        ↓ 확장                                                       │
-│  ┌────────────┐                                                    │
-│  │  SELECTED  │──→ 선택한 친구만 접근 가능 (AllowList 기반)          │
-│  └────────────┘                                                    │
-│        │                                                           │
-│        ↓ 확장                                                       │
-│  ┌────────────┐                                                    │
-│  │  FRIENDS   │──→ 모든 친구 접근 가능                               │
-│  └────────────┘                                                    │
-│        │                                                           │
-│        ↓ 확장                                                       │
-│  ┌──────────────────┐                                              │
-│  │  ALLOWED_EMAILS  │──→ 허용된 이메일/도메인만 접근 가능 (비친구 포함) │
-│  └──────────────────┘                                              │
-│        │                                                           │
-│        ↓ 확장                                                       │
-│  ┌────────────┐                                                    │
-│  │  PUBLIC    │──→ 모든 사용자 접근 가능                             │
-│  └────────────┘                                                    │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| 레벨 | 설명 |
+|------|------|
+| `PRIVATE` | 본인만 접근 가능 (기본값) |
+| `SELECTED` | 선택한 친구만 접근 가능 (AllowList 기반) |
+| `FRIENDS` | 모든 친구 접근 가능 |
+| `ALLOWED_EMAILS` | 허용된 이메일/도메인만 접근 가능 (비친구 포함) |
+| `PUBLIC` | 모든 사용자 접근 가능 |
 
 > **참고**: `ALLOWED_EMAILS`는 친구 관계와 무관하게 이메일 또는 도메인 기반으로 접근을 허용합니다.
 
 ### 접근 제어 규칙
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  접근 권한 결정 흐름                                                  │
-│                                                                     │
-│  1. 소유자인가? ──────────→ ✅ 항상 접근 가능                         │
-│           ↓ 아니오                                                  │
-│  2. 차단 관계인가? ────────→ ❌ 접근 불가 (양방향 체크)                 │
-│           ↓ 아니오                                                  │
-│  3. 가시성 레벨 확인:                                                │
-│     - PUBLIC ────────────→ ✅ 접근 가능                              │
-│     - FRIENDS ───────────→ 친구인가? → ✅ 접근 가능 / ❌ 접근 불가     │
-│     - SELECTED ──────────→ AllowList에 있는가? → ✅/❌               │
-│     - ALLOWED_EMAILS ────→ 이메일/도메인이 허용됐는가? → ✅/❌         │
-│     - PRIVATE ───────────→ ❌ 접근 불가                              │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    %% 스타일 정의
+    classDef allow fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724;
+    classDef deny fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef decision fill:#fff3cd,stroke:#ffc107,stroke-width:2px;
+    classDef process fill:#fff,stroke:#333;
+
+    Start([접근 요청]) --> Owner{소유자?}:::decision
+    
+    %% 1단계: 소유자/차단 여부 (빠른 결정)
+    Owner -- 예 --> Allow1([접근 허용]):::allow
+    Owner -- 아니오 --> Blocked{차단 여부}:::decision
+    
+    Blocked -- 예 --> Deny1([접근 불가]):::deny
+    Blocked -- 아니오 --> Level{가시성 레벨}:::decision
+
+    %% 2단계: 레벨별 상세 로직
+    Level -->|PUBLIC| Allow2([접근 허용]):::allow
+    Level -->|PRIVATE| Deny2([접근 불가]):::deny
+    
+    %% 조건부 분기 그룹
+    subgraph 상세조건 [조건 확인]
+        direction TB
+        Level -->|FRIENDS| F{친구인가?}:::decision
+        Level -->|SELECTED| L{AllowList?}:::decision
+        Level -->|EMAILS| E{이메일 허용?}:::decision
+    end
+
+    %% 상세 조건 결과
+    F & L & E -->|예| Allow3([접근 허용]):::allow
+    F & L & E -->|아니오| Deny3([접근 불가]):::deny
+
+    %% 링크 스타일 조정 (직각으로 꺾어 깔끔하게)
+    linkStyle default interpolate monotoneY
 ```
 
 ---
@@ -886,8 +870,8 @@ async function updateScheduleVisibility(id: string, visibility: VisibilitySettin
 
 ## 관련 문서
 
-- [Friend API 가이드](./FRONTEND_FRIEND_GUIDE.md) - 친구 관계 관리
-- [Schedule API 가이드](./FRONTEND_SCHEDULE_GUIDE.md) - 일정 관리
-- [Timer API 가이드](./FRONTEND_TIMER_GUIDE.md) - 타이머 관리
-- [Todo API 가이드](./FRONTEND_TODO_GUIDE.md) - 할 일 관리
-- [Meeting API 가이드](./FRONTEND_MEETING_GUIDE.md) - 일정 조율 (ALLOWED_EMAILS 레벨 주 사용처)
+- [Friend API 가이드](./friend.ko.md) - 친구 관계 관리
+- [Schedule API 가이드](./schedule.ko.md) - 일정 관리
+- [Timer API 가이드](./timer.ko.md) - 타이머 관리
+- [Todo API 가이드](./todo.ko.md) - 할 일 관리
+- [Meeting API 가이드](./meeting.ko.md) - 일정 조율 (ALLOWED_EMAILS 레벨 주 사용처)
