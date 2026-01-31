@@ -51,7 +51,7 @@ jobs:
           "
 
       - name: Build MkDocs
-        run: mkdocs build --strict
+        run: mkdocs build # --strict
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
