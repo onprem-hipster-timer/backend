@@ -33,6 +33,7 @@ plugins:
   - search:
       lang: en
   - include-markdown
+  - render_swagger  # i18n 전에 실행되어야 openapi.json 상대 경로를 올바르게 해석
   - i18n:
       docs_structure: suffix
       fallback_to_default: true
@@ -44,7 +45,6 @@ plugins:
         - locale: en
           name: English
           build: true
-  - render_swagger
 
 markdown_extensions:
   - pymdownx.highlight:
