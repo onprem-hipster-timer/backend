@@ -380,160 +380,93 @@ hipster-timer-backend/
 ### Data Model
 
 ```mermaid
-classDiagram
-    direction BT
-    class friendship {
-        datetime created_at
-        datetime updated_at
-        varchar requester_id
-        varchar addressee_id
-        varchar(8) status
-        varchar blocked_by
-        char(32) id
-    }
-    class holiday_hashes {
-        datetime created_at
-        datetime updated_at
-        integer year
-        varchar(64) hash_value
-        char(32) id
-    }
-    class holidays {
-        datetime created_at
-        datetime updated_at
-        datetime start_date
-        datetime end_date
-        varchar dateName
-        boolean isHoliday
-        varchar(20) dateKind
-        char(32) id
-    }
-    class resource_visibility {
-        datetime created_at
-        datetime updated_at
-        varchar(8) resource_type
-        char(32) resource_id
-        varchar owner_id
-        varchar(8) level
-        char(32) id
-    }
-    class schedule {
-        datetime created_at
-        datetime updated_at
-        varchar title
-        varchar description
+erDiagram
+    %% ---------------------------------------------------------
+    %% 1. Core Domains (Schedule & Todo)
+    %% ---------------------------------------------------------
+    SCHEDULE {
+        string title
         datetime start_time
         datetime end_time
-        varchar recurrence_rule
-        datetime recurrence_end
-        char(32) parent_id
-        char(32) tag_group_id
-        char(32) source_todo_id
-        varchar(9) state
-        varchar owner_id
-        char(32) id
-    }
-    class schedule_exception_tag {
-        char(32) schedule_exception_id
-        char(32) tag_id
-    }
-    class schedule_tag {
-        char(32) schedule_id
-        char(32) tag_id
-    }
-    class scheduleexception {
-        datetime created_at
-        datetime updated_at
-        char(32) parent_id
-        datetime exception_date
-        boolean is_deleted
-        varchar title
-        varchar description
-        datetime start_time
-        datetime end_time
-        varchar owner_id
-        char(32) id
-    }
-    class tag {
-        datetime created_at
-        datetime updated_at
-        varchar name
-        varchar color
-        varchar description
-        char(32) group_id
-        varchar owner_id
-        char(32) id
-    }
-    class tag_group {
-        datetime created_at
-        datetime updated_at
-        varchar name
-        varchar color
-        varchar description
-        json goal_ratios
-        boolean is_todo_group
-        varchar owner_id
-        char(32) id
-    }
-    class timer_tag {
-        char(32) timer_id
-        char(32) tag_id
-    }
-    class timersession {
-        datetime created_at
-        datetime updated_at
-        char(32) schedule_id
-        varchar title
-        varchar description
-        integer allocated_duration
-        integer elapsed_time
-        varchar status
-        datetime started_at
-        datetime paused_at
-        datetime ended_at
-        varchar owner_id
-        char(32) todo_id
-        char(32) id
-    }
-    class todo {
-        datetime created_at
-        datetime updated_at
-        varchar title
-        varchar description
-        datetime deadline
-        char(32) tag_group_id
-        char(32) parent_id
-        varchar(11) status
-        varchar owner_id
-        char(32) id
-    }
-    class todo_tag {
-        char(32) todo_id
-        char(32) tag_id
-    }
-    class visibility_allow_list {
-        char(32) visibility_id
-        varchar allowed_user_id
-        char(32) id
+        string recurrence_rule
+        string state
     }
 
-    schedule --> tag_group : tag_group_id
-    schedule --> todo : source_todo_id
-    schedule_exception_tag --> scheduleexception : schedule_exception_id
-    schedule_exception_tag --> tag : tag_id
-    schedule_tag --> schedule : schedule_id
-    schedule_tag --> tag : tag_id
-    scheduleexception --> schedule : parent_id
-    tag --> tag_group : group_id
-    timer_tag --> tag : tag_id
-    timer_tag --> timersession : timer_id
-    timersession --> schedule : schedule_id
-    timersession --> todo : todo_id
-    todo --> tag_group : tag_group_id
-    todo --> todo : parent_id
-    todo_tag --> tag : tag_id
-    todo_tag --> todo : todo_id
-    visibility_allow_list --> resource_visibility : visibility_id
+    TODO {
+        string title
+        datetime deadline
+        string status
+        boolean is_finished
+    }
+
+    SCHEDULE_EXCEPTION {
+        datetime exception_date
+        string title
+        datetime start_time
+    }
+
+    %% ---------------------------------------------------------
+    %% 2. Time Tracking
+    %% ---------------------------------------------------------
+    TIMER_SESSION {
+        int allocated_duration
+        int elapsed_time
+        string status
+        datetime started_at
+        datetime ended_at
+    }
+
+    %% ---------------------------------------------------------
+    %% 3. Categorization
+    %% ---------------------------------------------------------
+    TAG_GROUP {
+        string name
+        string color
+        json goal_ratios
+    }
+
+    TAG {
+        string name
+        string color
+        string description
+    }
+
+    %% ---------------------------------------------------------
+    %% 4. Social & System
+    %% ---------------------------------------------------------
+    FRIENDSHIP {
+        id requester_id
+        id addressee_id
+        string status
+    }
+
+    RESOURCE_VISIBILITY {
+        string resource_type
+        string level
+        string owner_id
+    }
+
+    %% ---------------------------------------------------------
+    %% Relationships
+    %% ---------------------------------------------------------
+    
+    %% Categorization Relations
+    TAG_GROUP ||--|{ TAG : "contains"
+    TAG }o--o{ SCHEDULE : "labels"
+    TAG }o--o{ TODO : "labels"
+    TAG }o--o{ TIMER_SESSION : "labels"
+
+    %% Core Relations
+    SCHEDULE ||--o{ SCHEDULE_EXCEPTION : "has"
+    TODO |o--o{ SCHEDULE : "generates"
+    TODO |o--o{ TODO : "sub-task of"
+
+    %% Timer Relations
+    SCHEDULE ||--o{ TIMER_SESSION : "tracked by"
+    TODO ||--o{ TIMER_SESSION : "tracked by"
+
+    %% Social & Visibility
+    RESOURCE_VISIBILITY ||--o{ VISIBILITY_ALLOW_LIST : "permits"
 ```
 
 ### Tech Stack
