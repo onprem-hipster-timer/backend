@@ -202,5 +202,6 @@ class TimerUpdate(CustomModel):
 
 # Forward reference 해결
 # TodoRead를 런타임에 import하여 forward reference 해결
+from app.domain.todo.schema.dto import TodoRead
 
-TimerRead.model_rebuild()
+TimerRead.model_rebuild(_types_namespace={"TodoRead": TodoRead})

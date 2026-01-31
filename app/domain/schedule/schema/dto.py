@@ -140,5 +140,6 @@ class ScheduleUpdate(CustomModel):
 
 
 # Forward reference 해결 (TagRead 임포트)
+from app.domain.tag.schema.dto import TagRead
 
-ScheduleRead.model_rebuild()
+ScheduleRead.model_rebuild(_types_namespace={"TagRead": TagRead})
