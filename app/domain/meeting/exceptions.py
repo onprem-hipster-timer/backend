@@ -14,12 +14,6 @@ class MeetingNotFoundError(DomainException):
     detail = "Meeting not found"
 
 
-class MeetingAccessDeniedError(DomainException):
-    """일정 조율 접근 권한 없음"""
-    status_code = status.HTTP_403_FORBIDDEN
-    detail = "Access denied to meeting"
-
-
 class MeetingParticipantNotFoundError(DomainException):
     """참여자를 찾을 수 없음"""
     status_code = status.HTTP_404_NOT_FOUND
