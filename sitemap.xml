@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/api/graphql/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/graphql/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/graphql/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/api/overview/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/overview/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/overview/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/api/rest-api/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/rest-api/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/rest-api/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/api/websocket/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/websocket/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/websocket/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/deployment/docker/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/deployment/docker/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/deployment/docker/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/deployment/production/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/deployment/production/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/deployment/production/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/development/docs-guide/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/docs-guide/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/docs-guide/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/development/python-version-testing/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/python-version-testing/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/python-version-testing/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/development/rate-limit/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/rate-limit/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/rate-limit/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/development/testing/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/testing/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/testing/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/getting-started/configuration/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/getting-started/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/getting-started/configuration/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/getting-started/installation/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/getting-started/installation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/getting-started/installation/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/auth/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/auth/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/auth/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/friend/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/friend/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/friend/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/meeting/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/meeting/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/meeting/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/schedule/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/schedule/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/schedule/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/timer/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/timer/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/timer/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/todo/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/todo/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/todo/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/guides/visibility/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/visibility/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/visibility/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/api/graphql/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/graphql/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/graphql/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/api/overview/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/overview/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/overview/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/api/rest-api/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/rest-api/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/rest-api/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/api/websocket/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/api/websocket/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/api/websocket/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/deployment/docker/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/deployment/docker/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/deployment/docker/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/deployment/production/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/deployment/production/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/deployment/production/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/development/docs-guide/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/docs-guide/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/docs-guide/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/development/python-version-testing/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/python-version-testing/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/python-version-testing/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/development/rate-limit/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/rate-limit/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/rate-limit/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/development/testing/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/development/testing/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/development/testing/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/getting-started/configuration/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/getting-started/configuration/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/getting-started/configuration/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/getting-started/installation/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/getting-started/installation/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/getting-started/installation/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/auth/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/auth/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/auth/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/friend/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/friend/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/friend/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/meeting/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/meeting/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/meeting/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/schedule/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/schedule/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/schedule/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/timer/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/timer/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/timer/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/todo/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/todo/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/todo/"/>
+    </url>
+    <url>
+        <loc>https://onprem-hipster-timer.github.io/backend/en/guides/visibility/</loc>
+        <lastmod>2026-01-31</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://onprem-hipster-timer.github.io/backend/en/guides/visibility/"/>
+        <xhtml:link rel="alternate" hreflang="ko" href="https://onprem-hipster-timer.github.io/backend/guides/visibility/"/>
+    </url>
+</urlset>
