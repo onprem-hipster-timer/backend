@@ -48,6 +48,9 @@
 - 🏷️ **통합 태그 시스템**: 일정, 타이머, 할일을 태그로 연결하고 필터링
 - 🌏 **타임존 지원**: KST ↔ UTC 변환, 다양한 타임존 포맷 지원
 - 📡 **듀얼 API**: REST와 GraphQL 중 선호하는 방식으로 사용
+- 👥 **친구 관계**: 요청/수락 워크플로우로 사용자 간 친구 맺기 — Visibility와 연동해 리소스 공유
+- 🔒 **리소스 공개 범위(Visibility)**: Schedule, Timer, Todo, Meeting별로 PRIVATE ~ PUBLIC·선택 친구·이메일 허용 등 세밀한 공유 제어
+- 📅 **일정 조율(Meeting)**: 여러 참여자가 가능 시간을 입력하면 공통 가능 시간대를 조회해 회의 일정 조율
 
 ---
 
@@ -100,6 +103,34 @@
 |------|------|
 | **API 연동** | 한국천문연구원 공공데이터 API |
 | **백그라운드 동기화** | 앱 시작 시 자동으로 공휴일 데이터 갱신 |
+
+### 👥 Friend (친구)
+
+| 기능 | 설명 |
+|------|------|
+| **친구 요청/수락/거절** | 요청·수락·거절 워크플로우로 친구 관계 생성 |
+| **양방향 고유** | (A,B)와 (B,A) 동시 존재 방지, 한 쌍당 하나의 Friendship |
+| **차단** | blocked 상태로 요청자/수신자 차단 처리 |
+| **목록 조회** | 친구 목록, 받은/보낸 요청 목록 API |
+
+### 📅 Meeting (일정 조율)
+
+| 기능 | 설명 |
+|------|------|
+| **일정 조율 생성** | 기간·가능 요일·시간 범위·슬롯 단위 설정 |
+| **참여자 등록** | 공유 링크로 접근, 표시 이름 입력 |
+| **가능 시간 입력** | 참여자별 시간 슬롯 선택 |
+| **공통 시간대 조회** | 시간대별 가능 인원 수, 겹치는 구간 조회 |
+| **접근 권한** | public / allowed_emails / private |
+
+### 🔒 Visibility (가시성)
+
+| 기능 | 설명 |
+|------|------|
+| **리소스별 공개 범위** | Schedule, Timer, Todo, Meeting에 적용 |
+| **레벨** | PRIVATE, FRIENDS, SELECTED_FRIENDS, ALLOWED_EMAILS, PUBLIC |
+| **AllowList** | SELECTED_FRIENDS 시 접근 허용 친구 목록 |
+| **AllowEmail** | ALLOWED_EMAILS 시 이메일/도메인 기반 허용 |
 
 ---
 
@@ -160,135 +191,17 @@ docker compose up
 
 ### REST API Endpoints
 
-모든 엔드포인트는 `/v1` prefix를 사용합니다.
+모든 엔드포인트는 `/v1` prefix를 사용합니다. 전체 API 스펙(Schedules, Timers, Todos, Tags, Holidays, Friends, Meetings)은 공식 문서에서 확인하세요.
 
-#### Schedules
+> 📖 **REST API 레퍼런스**: [https://onprem-hipster-timer.github.io/backend/api/rest-api](https://onprem-hipster-timer.github.io/backend/api/rest-api)
 
-```http
-GET    /v1/schedules                    # 날짜 범위로 일정 조회
-POST   /v1/schedules                    # 새 일정 생성
-GET    /v1/schedules/{id}               # 특정 일정 조회
-PATCH  /v1/schedules/{id}               # 일정 수정
-DELETE /v1/schedules/{id}               # 일정 삭제
-GET    /v1/schedules/{id}/timers        # 일정의 타이머 목록
-GET    /v1/schedules/{id}/timers/active # 활성 타이머 조회
-```
-
-**Query Parameters:**
-| 파라미터 | 타입 | 설명 |
-|----------|------|------|
-| `start_date` | datetime | 조회 시작일 (필수) |
-| `end_date` | datetime | 조회 종료일 (필수) |
-| `timezone` | string | 타임존 (예: `Asia/Seoul`, `+09:00`) |
-| `tag_ids` | UUID[] | 태그 ID 필터 (AND 조건) |
-| `group_ids` | UUID[] | 태그 그룹 ID 필터 |
-
-**Example:**
-```bash
-# 일정 생성
-curl -X POST http://localhost:2614/v1/schedules \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "주간 회의",
-    "start_time": "2024-01-01T10:00:00Z",
-    "end_time": "2024-01-01T12:00:00Z",
-    "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO",
-    "recurrence_end": "2024-03-31T23:59:59Z"
-  }'
-
-# 날짜 범위로 조회 (타임존 적용)
-curl "http://localhost:2614/v1/schedules?start_date=2024-01-01T00:00:00Z&end_date=2024-01-31T23:59:59Z&timezone=Asia/Seoul"
-```
-
-#### Timers
-
-**REST API (조회/수정/삭제만):**
-
-```http
-GET    /v1/timers/{id}           # 타이머 조회
-PATCH  /v1/timers/{id}           # 타이머 수정
-DELETE /v1/timers/{id}           # 타이머 삭제
-```
-
-**Query Parameters:**
-| 파라미터 | 타입 | 설명 |
-|----------|------|------|
-| `include_schedule` | bool | 연결된 Schedule 포함 여부 |
-| `tag_include_mode` | string | `none`, `timer_only`, `inherit_from_schedule` |
-
-**WebSocket API (생성/제어):**
-
-타이머 생성 및 제어 작업(생성, 일시정지, 재개, 종료)은 여러 기기와 공유 사용자 간 실시간 동기화를 위해 WebSocket으로 처리됩니다.
-
-```
-WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers
-```
-
-**인증**: 보안상 쿼리 파라미터 대신 `Sec-WebSocket-Protocol` 헤더 사용:
-```javascript
-new WebSocket(url, [`authorization.bearer.${token}`])
-```
-
-| 메시지 타입 | 설명 |
-|-------------|------|
-| `timer.create` | 새 타이머 생성 및 시작 |
-| `timer.pause` | 실행 중인 타이머 일시정지 |
-| `timer.resume` | 일시정지된 타이머 재개 |
-| `timer.stop` | 타이머 종료 및 완료 |
-| `timer.sync` | 서버에서 활성 타이머 동기화 |
-
-> 📖 **상세 가이드**: [Timer 가이드](docs/guides/timer.md)
-
-#### Todos
-
-```http
-GET    /v1/todos          # Todo 목록 조회
-POST   /v1/todos          # Todo 생성
-GET    /v1/todos/{id}     # 특정 Todo 조회
-PATCH  /v1/todos/{id}     # Todo 수정
-DELETE /v1/todos/{id}     # Todo 삭제
-GET    /v1/todos/stats    # 통계 조회
-```
-
-**Example:**
-```bash
-# 마감 시간이 있는 Todo 생성 (Schedule 자동 생성)
-curl -X POST http://localhost:2614/v1/todos \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "보고서 작성",
-    "tag_group_id": "group-uuid",
-    "deadline": "2024-01-15T18:00:00Z"
-  }'
-
-# 하위 Todo 생성
-curl -X POST http://localhost:2614/v1/todos \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "자료 수집",
-    "tag_group_id": "group-uuid",
-    "parent_id": "parent-todo-uuid"
-  }'
-```
-
-#### Tags
-
-```http
-GET    /v1/tags/groups           # 태그 그룹 목록
-POST   /v1/tags/groups           # 태그 그룹 생성
-GET    /v1/tags/groups/{id}      # 특정 그룹 조회
-PATCH  /v1/tags/groups/{id}      # 그룹 수정
-DELETE /v1/tags/groups/{id}      # 그룹 삭제
-GET    /v1/tags                  # 태그 목록
-POST   /v1/tags                  # 태그 생성
-DELETE /v1/tags/{id}             # 태그 삭제
-```
-
-#### Holidays
-
-```http
-GET    /v1/holidays              # 공휴일 목록 조회
-```
+각 도메인별 상세 가이드:
+- [Schedule 가이드](https://onprem-hipster-timer.github.io/backend/guides/schedule/)
+- [Timer 가이드](https://onprem-hipster-timer.github.io/backend/guides/timer/)
+- [Todo 가이드](https://onprem-hipster-timer.github.io/backend/guides/todo/)
+- [Friend 가이드](https://onprem-hipster-timer.github.io/backend/guides/friend/)
+- [Visibility 가이드](https://onprem-hipster-timer.github.io/backend/guides/visibility/)
+- [Meeting 가이드](https://onprem-hipster-timer.github.io/backend/guides/meeting/)
 
 ### GraphQL API
 
@@ -324,6 +237,8 @@ hipster-timer-backend/
 │   │       ├── todos.py           # Todo REST API
 │   │       ├── tags.py            # Tag REST API
 │   │       ├── holidays.py        # Holiday REST API
+│   │       ├── friends.py         # Friend REST API
+│   │       ├── meetings.py        # Meeting REST API
 │   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # 핵심 설정
 │   │   ├── config.py              # 환경 변수 설정
@@ -345,6 +260,9 @@ hipster-timer-backend/
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
+│   │   ├── friend/                # 친구 관계 (service, schema, exceptions)
+│   │   ├── meeting/               # 일정 조율 (service, schema)
+│   │   ├── visibility/            # 리소스 공개 범위 (service, schema)
 │   │   └── dateutil/              # 날짜/타임존 유틸리티
 │   ├── models/                    # SQLModel 엔티티
 │   │   ├── schedule.py
@@ -441,6 +359,27 @@ erDiagram
     }
 
     %% ---------------------------------------------------------
+    %% 5. Meeting (일정 조율)
+    %% ---------------------------------------------------------
+    MEETING {
+        string title
+        date start_date
+        date end_date
+        string access_level
+    }
+
+    MEETING_PARTICIPANT {
+        string display_name
+        uuid meeting_id
+    }
+
+    MEETING_TIME_SLOT {
+        date slot_date
+        string start_time
+        string end_time
+    }
+
+    %% ---------------------------------------------------------
     %% Relationships
     %% ---------------------------------------------------------
     
@@ -461,6 +400,10 @@ erDiagram
 
     %% Social & Visibility
     RESOURCE_VISIBILITY ||--o{ VISIBILITY_ALLOW_LIST : "permits"
+
+    %% Meeting
+    MEETING ||--o{ MEETING_PARTICIPANT : "has"
+    MEETING_PARTICIPANT ||--o{ MEETING_TIME_SLOT : "selects"
 ```
 
 ### Tech Stack
@@ -560,6 +503,8 @@ docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort
 | **E2E** | `tests/test_*_e2e.py` | HTTP API 전체 흐름 테스트 |
 
 ### Coverage Report
+
+아래는 커버리지 리포트의 일부(대표 샘플)입니다. `app/api/v1/friends.py`, `app/api/v1/meetings.py`, `app/domain/friend/`, `app/domain/meeting/`, `app/domain/visibility/` 등 추가 도메인 모듈도 테스트 대상에 포함됩니다. 전체 결과는 `pytest --cov=app --cov-report=term-missing`로 확인할 수 있습니다.
 
 ```
 Name                                                Stmts   Miss  Cover   Missing
@@ -1108,6 +1053,9 @@ pip-sync requirements.txt
 - **계층형 데이터**: `app/domain/todo/` — 순환 참조 검증, 조상 자동 포함
 - **타임존 처리**: `app/domain/dateutil/` — KST/UTC 변환 유틸리티
 - **GraphQL + REST 공존**: `app/api/v1/graphql.py` — Strawberry와 FastAPI 통합
+- **친구 관계**: `app/domain/friend/` — 요청/수락 워크플로우, 양방향 유일 제약
+- **일정 조율**: `app/domain/meeting/` — 기간·요일·슬롯·참여자, 공통 가능 시간대 조회
+- **리소스 공개 범위**: `app/domain/visibility/` — AllowList/AllowEmail, 리소스별 레벨 제어
 
 ---
 

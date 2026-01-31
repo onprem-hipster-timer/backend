@@ -48,6 +48,9 @@
 - 🏷️ **Unified Tag System**: Connect and filter schedules, timers, and todos with tags
 - 🌏 **Timezone Support**: KST ↔ UTC conversion with various timezone formats
 - 📡 **Dual API**: Use REST or GraphQL based on your preference
+- 👥 **Friends**: Request/accept workflow for user friendships — integrates with Visibility for resource sharing
+- 🔒 **Visibility**: Fine-grained sharing for Schedule, Timer, Todo, Meeting — PRIVATE to PUBLIC, selected friends, allowed emails
+- 📅 **Meeting**: Poll for common availability — participants submit slots, API returns overlapping times
 
 ---
 
@@ -100,6 +103,34 @@
 |---------|-------------|
 | **API Integration** | Korea Astronomy and Space Science Institute public API |
 | **Background Sync** | Auto-refresh holiday data on app startup |
+
+### 👥 Friend
+
+| Feature | Description |
+|---------|-------------|
+| **Request/Accept/Reject** | Workflow to create friendships via request and accept/reject |
+| **Bidirectional Uniqueness** | One Friendship per (A,B) pair; (B,A) prevented |
+| **Block** | Block requester or addressee via blocked status |
+| **List APIs** | Friends list, received/sent request lists |
+
+### 📅 Meeting
+
+| Feature | Description |
+|---------|-------------|
+| **Create Poll** | Set date range, available weekdays, time range, slot duration |
+| **Participants** | Join via share link, set display name |
+| **Availability** | Each participant selects time slots |
+| **Common Slots** | API returns overlapping slots and counts per slot |
+| **Access** | public / allowed_emails / private |
+
+### 🔒 Visibility
+
+| Feature | Description |
+|---------|-------------|
+| **Per-Resource** | Applied to Schedule, Timer, Todo, Meeting |
+| **Levels** | PRIVATE, FRIENDS, SELECTED_FRIENDS, ALLOWED_EMAILS, PUBLIC |
+| **AllowList** | Allowed friends when level is SELECTED_FRIENDS |
+| **AllowEmail** | Allowed emails/domains when level is ALLOWED_EMAILS |
 
 ---
 
@@ -160,144 +191,17 @@ Once the server starts:
 
 ### REST API Endpoints
 
-All endpoints use the `/v1` prefix.
+All endpoints use the `/v1` prefix. For the complete API spec (Schedules, Timers, Todos, Tags, Holidays, Friends, Meetings), see the official documentation.
 
-#### Schedules
+> 📖 **REST API Reference**: [https://onprem-hipster-timer.github.io/backend/api/rest-api](https://onprem-hipster-timer.github.io/backend/api/rest-api)
 
-```http
-GET    /v1/schedules                    # Get schedules by date range
-POST   /v1/schedules                    # Create new schedule
-GET    /v1/schedules/{id}               # Get specific schedule
-PATCH  /v1/schedules/{id}               # Update schedule
-DELETE /v1/schedules/{id}               # Delete schedule
-GET    /v1/schedules/{id}/timers        # Get timers for schedule
-GET    /v1/schedules/{id}/timers/active # Get active timer
-```
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `start_date` | datetime | Start date (required) |
-| `end_date` | datetime | End date (required) |
-| `timezone` | string | Timezone (e.g., `Asia/Seoul`, `+09:00`) |
-| `tag_ids` | UUID[] | Tag ID filter (AND condition) |
-| `group_ids` | UUID[] | Tag group ID filter |
-
-**Example:**
-
-```bash
-# Create schedule
-curl -X POST http://localhost:2614/v1/schedules \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Weekly Meeting",
-    "start_time": "2024-01-01T10:00:00Z",
-    "end_time": "2024-01-01T12:00:00Z",
-    "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO",
-    "recurrence_end": "2024-03-31T23:59:59Z"
-  }'
-
-# Query by date range (with timezone)
-curl "http://localhost:2614/v1/schedules?start_date=2024-01-01T00:00:00Z&end_date=2024-01-31T23:59:59Z&timezone=Asia/Seoul"
-```
-
-#### Timers
-
-**REST API (Read/Update/Delete only):**
-
-```http
-GET    /v1/timers/{id}           # Get timer
-PATCH  /v1/timers/{id}           # Update timer
-DELETE /v1/timers/{id}           # Delete timer
-```
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `include_schedule` | bool | Include linked Schedule |
-| `tag_include_mode` | string | `none`, `timer_only`, `inherit_from_schedule` |
-
-**WebSocket API (Create/Control):**
-
-Timer creation and control operations (create, pause, resume, stop) are handled via WebSocket for real-time synchronization across devices and shared users.
-
-```
-Development: ws://localhost:2614/v1/ws/timers
-Production:  wss://your-domain.com/v1/ws/timers
-```
-
-**Authentication**: Use `Sec-WebSocket-Protocol` header (NOT query parameter for security):
-```javascript
-new WebSocket(url, [`authorization.bearer.${token}`])
-```
-
-> ⚠️ **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
-> - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
-> - Production: `wss://your-domain.com`
-
-| Message Type | Description |
-|--------------|-------------|
-| `timer.create` | Create and start a new timer |
-| `timer.pause` | Pause a running timer |
-| `timer.resume` | Resume a paused timer |
-| `timer.stop` | Stop and complete a timer |
-| `timer.sync` | Sync active timers from server |
-
-> 📖 **Detailed Guide**: [Timer Guide](docs/guides/timer.md)
-
-#### Todos
-
-```http
-GET    /v1/todos          # List todos
-POST   /v1/todos          # Create todo
-GET    /v1/todos/{id}     # Get specific todo
-PATCH  /v1/todos/{id}     # Update todo
-DELETE /v1/todos/{id}     # Delete todo
-GET    /v1/todos/stats    # Get statistics
-```
-
-**Example:**
-
-```bash
-# Create todo with deadline (auto-creates Schedule)
-curl -X POST http://localhost:2614/v1/todos \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Write Report",
-    "tag_group_id": "group-uuid",
-    "deadline": "2024-01-15T18:00:00Z"
-  }'
-
-# Create child todo
-curl -X POST http://localhost:2614/v1/todos \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Gather Materials",
-    "tag_group_id": "group-uuid",
-    "parent_id": "parent-todo-uuid"
-  }'
-```
-
-#### Tags
-
-```http
-GET    /v1/tags/groups           # List tag groups
-POST   /v1/tags/groups           # Create tag group
-GET    /v1/tags/groups/{id}      # Get specific group
-PATCH  /v1/tags/groups/{id}      # Update group
-DELETE /v1/tags/groups/{id}      # Delete group
-GET    /v1/tags                  # List tags
-POST   /v1/tags                  # Create tag
-DELETE /v1/tags/{id}             # Delete tag
-```
-
-#### Holidays
-
-```http
-GET    /v1/holidays              # List holidays
-```
+Detailed guides for each domain:
+- [Schedule Guide](https://onprem-hipster-timer.github.io/backend/guides/schedule/)
+- [Timer Guide](https://onprem-hipster-timer.github.io/backend/guides/timer/)
+- [Todo Guide](https://onprem-hipster-timer.github.io/backend/guides/todo/)
+- [Friend Guide](https://onprem-hipster-timer.github.io/backend/guides/friend/)
+- [Visibility Guide](https://onprem-hipster-timer.github.io/backend/guides/visibility/)
+- [Meeting Guide](https://onprem-hipster-timer.github.io/backend/guides/meeting/)
 
 ### GraphQL API
 
@@ -333,6 +237,8 @@ hipster-timer-backend/
 │   │       ├── todos.py           # Todo REST API
 │   │       ├── tags.py            # Tag REST API
 │   │       ├── holidays.py        # Holiday REST API
+│   │       ├── friends.py         # Friend REST API
+│   │       ├── meetings.py        # Meeting REST API
 │   │       └── graphql.py         # GraphQL API
 │   ├── core/                      # Core configuration
 │   │   ├── config.py              # Environment settings
@@ -354,6 +260,9 @@ hipster-timer-backend/
 │   │   ├── todo/
 │   │   ├── tag/
 │   │   ├── holiday/
+│   │   ├── friend/                # Friends (service, schema, exceptions)
+│   │   ├── meeting/               # Meeting polls (service, schema)
+│   │   ├── visibility/            # Resource visibility (service, schema)
 │   │   └── dateutil/              # Date/timezone utilities
 │   ├── models/                    # SQLModel entities
 │   │   ├── schedule.py
@@ -450,6 +359,27 @@ erDiagram
     }
 
     %% ---------------------------------------------------------
+    %% 5. Meeting (Meeting Poll)
+    %% ---------------------------------------------------------
+    MEETING {
+        string title
+        date start_date
+        date end_date
+        string access_level
+    }
+
+    MEETING_PARTICIPANT {
+        string display_name
+        uuid meeting_id
+    }
+
+    MEETING_TIME_SLOT {
+        date slot_date
+        string start_time
+        string end_time
+    }
+
+    %% ---------------------------------------------------------
     %% Relationships
     %% ---------------------------------------------------------
     
@@ -470,6 +400,10 @@ erDiagram
 
     %% Social & Visibility
     RESOURCE_VISIBILITY ||--o{ VISIBILITY_ALLOW_LIST : "permits"
+
+    %% Meeting
+    MEETING ||--o{ MEETING_PARTICIPANT : "has"
+    MEETING_PARTICIPANT ||--o{ MEETING_TIME_SLOT : "selects"
 ```
 
 ### Tech Stack
@@ -570,6 +504,8 @@ docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort
 | **E2E** | `tests/test_*_e2e.py` | Full HTTP API flow tests |
 
 ### Coverage Report
+
+The table below is a representative sample of the coverage report. Additional domain modules such as `app/api/v1/friends.py`, `app/api/v1/meetings.py`, `app/domain/friend/`, `app/domain/meeting/`, and `app/domain/visibility/` are also covered. Run `pytest --cov=app --cov-report=term-missing` for the full output.
 
 ```
 Name                                                Stmts   Miss  Cover   Missing
@@ -1121,6 +1057,9 @@ pip-sync requirements.txt
 - **Hierarchical Data**: `app/domain/todo/` — Cycle detection, automatic ancestor inclusion
 - **Timezone Handling**: `app/domain/dateutil/` — KST/UTC conversion utilities
 - **GraphQL + REST Coexistence**: `app/api/v1/graphql.py` — Strawberry and FastAPI integration
+- **Friends**: `app/domain/friend/` — Request/accept workflow, bidirectional uniqueness
+- **Meeting Polls**: `app/domain/meeting/` — Date range, weekdays, slots, participants, common availability
+- **Visibility**: `app/domain/visibility/` — AllowList/AllowEmail, per-resource level control
 
 ---
 
