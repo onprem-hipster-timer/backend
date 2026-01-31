@@ -27,6 +27,8 @@
 
 ---
 
+<!-- docs:start -->
+
 <a id="overview"></a>
 
 ## 📖 Overview
@@ -216,7 +218,12 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 타이머 생성 및 제어 작업(생성, 일시정지, 재개, 종료)은 여러 기기와 공유 사용자 간 실시간 동기화를 위해 WebSocket으로 처리됩니다.
 
 ```
-WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers?token={jwt_token}
+WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers
+```
+
+**인증**: 보안상 쿼리 파라미터 대신 `Sec-WebSocket-Protocol` 헤더 사용:
+```javascript
+new WebSocket(url, [`authorization.bearer.${token}`])
 ```
 
 | 메시지 타입 | 설명 |
@@ -227,7 +234,7 @@ WebSocket 엔드포인트: ws://localhost:2614/v1/ws/timers?token={jwt_token}
 | `timer.stop` | 타이머 종료 및 완료 |
 | `timer.sync` | 서버에서 활성 타이머 동기화 |
 
-> 📖 **상세 가이드**: [FRONTEND_TIMER_GUIDE.md](FRONTEND_TIMER_GUIDE.md)
+> 📖 **상세 가이드**: [Timer 가이드](docs/guides/timer.md)
 
 #### Todos
 
@@ -734,7 +741,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 #### 인증 (OIDC)
 
-> 📖 **상세 가이드**: [FRONTEND_AUTH_GUIDE.md](FRONTEND_AUTH_GUIDE.md)
+> 📖 **상세 가이드**: [인증 가이드](docs/guides/auth.md)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -1068,6 +1075,8 @@ pip-sync requirements.txt
 - **GraphQL + REST 공존**: `app/api/v1/graphql.py` — Strawberry와 FastAPI 통합
 
 ---
+
+<!-- docs:end -->
 
 ## 📄 License
 

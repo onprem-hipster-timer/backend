@@ -2,18 +2,6 @@
 
 > **최종 업데이트**: 2026-01-11
 
-## 목차
-
-1. [개요](#개요)
-2. [데이터 모델](#데이터-모델)
-3. [REST API](#rest-api)
-4. [GraphQL API](#graphql-api)
-5. [주요 기능](#주요-기능)
-6. [TypeScript 타입 정의](#typescript-타입-정의)
-7. [사용 예시](#사용-예시)
-
----
-
 ## 개요
 
 이 API는 **Todo**, **Schedule**, **Tag**를 관리하는 기능을 제공합니다.
@@ -29,23 +17,25 @@
 
 ### Todo와 Schedule의 관계
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Todo                                                   │
-│  ├── title: "회의 준비"                                   │
-│  ├── deadline: "2024-01-20T10:00:00Z"  ←─┐              │
-│  ├── tag_group_id: "업무" (필수)           │              │
-│  └── tags: ["중요", "회의"]               │              │
-│                                          │              │
-│  ↓ deadline이 있으면 자동 생성             │              │
-│                                          │              │
-│  Schedule                                │              │
-│  ├── title: "회의 준비"                   │              │
-│  ├── start_time: "2024-01-20T10:00:00Z" ─┘              │
-│  ├── end_time: "2024-01-20T11:00:00Z"                   │
-│  ├── source_todo_id: (Todo의 ID)                        │
-│  └── tags: ["중요", "회의"]  ← Todo의 태그가 복사됨        │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Todo
+        T1["title: 회의 준비"]
+        T2["deadline: 2024-01-20T10:00:00Z"]
+        T3["tag_group_id: 업무 (필수)"]
+        T4["tags: [중요, 회의]"]
+    end
+
+    subgraph Schedule["Schedule (자동 생성)"]
+        S1["title: 회의 준비"]
+        S2["start_time: 2024-01-20T10:00:00Z"]
+        S3["end_time: 2024-01-20T11:00:00Z"]
+        S4["source_todo_id: Todo의 ID"]
+        S5["tags: [중요, 회의]"]
+    end
+
+    T2 -->|"deadline이 있으면<br/>자동 생성"| S2
+    T4 -.->|"태그 복사"| S5
 ```
 
 ---

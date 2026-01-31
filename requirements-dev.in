@@ -10,3 +10,10 @@ coverage
 
 # Development Tools
 pip-tools
+
+# Documentation
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
+mkdocs-render-swagger-plugin>=0.1.0
+mkdocs-static-i18n[material]>=1.0.0
+mkdocs-include-markdown-plugin>=7.0.0

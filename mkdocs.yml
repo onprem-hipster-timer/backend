@@ -1,0 +1,90 @@
+site_name: Hipster Timer Backend
+site_url: https://onprem-hipster-timer.github.io/backend/
+site_description: All-in-one productivity backend API
+
+repo_name: backend
+repo_url: https://github.com/onprem-hipster-timer/backend
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: 다크 모드로 전환
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: 라이트 모드로 전환
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search:
+      lang: en
+  - include-markdown
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      languages:
+        - locale: ko
+          name: 한국어
+          default: true
+          build: true
+        - locale: en
+          name: English
+          build: true
+  - render_swagger
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+  - API Reference:
+    - Overview: api/overview.md
+    - REST API: api/rest-api.md
+    - GraphQL: api/graphql.md
+    - WebSocket: api/websocket.md
+  - Guides:
+    - Authentication: guides/auth.md
+    - Schedule: guides/schedule.md
+    - Timer: guides/timer.md
+    - Todo: guides/todo.md
+    - Friend: guides/friend.md
+    - Visibility: guides/visibility.md
+    - Meeting: guides/meeting.md
+  - Deployment:
+    - Docker: deployment/docker.md
+    - Production: deployment/production.md
+  - Development:
+    - Rate Limiting: development/rate-limit.md
+    - Testing: development/testing.md
+    - Python Version Testing: development/python-version-testing.md
+    - Docs Guide: development/docs-guide.md

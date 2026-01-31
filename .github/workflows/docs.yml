@@ -1,0 +1,47 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'app/**'  # OpenAPI 스펙 변경 감지
+      - 'README.md'  # 홈페이지 동기화
+      - 'README.ko.md'  # 홈페이지 동기화
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          pip install mkdocs mkdocs-material mkdocs-render-swagger-plugin mkdocs-static-i18n mkdocs-include-markdown-plugin
+          pip install -r requirements.txt
+
+      - name: Generate OpenAPI JSON
+        run: |
+          python -c "
+          import os
+          os.environ['OIDC_ENABLED'] = 'false'
+          os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+          from app.main import app
+          import json
+          with open('docs/openapi.json', 'w') as f:
+              json.dump(app.openapi(), f, indent=2)
+          "
+
+      - name: Deploy to GitHub Pages
+        run: mkdocs gh-deploy --force

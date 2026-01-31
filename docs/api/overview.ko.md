@@ -1,0 +1,99 @@
+# API 개요
+
+Hipster Timer Backend는 세 가지 유형의 API를 제공합니다:
+
+1. **REST API** - 전통적인 HTTP 엔드포인트
+2. **GraphQL API** - 유연한 쿼리 언어
+3. **WebSocket API** - 실시간 통신
+
+## 기본 URL
+
+모든 API는 `/v1` 접두사로 제공됩니다:
+
+- **개발**: `http://localhost:2614/v1`
+- **프로덕션**: `https://your-domain.com/v1`
+
+## 인증
+
+모든 API 엔드포인트(헬스체크 제외)는 OIDC Bearer 토큰 인증이 필요합니다:
+
+```
+Authorization: Bearer <access_token>
+```
+
+> 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
+
+## API 유형
+
+### REST API
+
+CRUD 작업을 위한 전통적인 RESTful 엔드포인트:
+
+- **일정**: `/v1/schedules`
+- **타이머**: `/v1/timers`
+- **투두**: `/v1/todos`
+- **태그**: `/v1/tags`
+- **공휴일**: `/v1/holidays`
+
+> 📖 **상세 가이드**: [REST API 레퍼런스](rest-api.ko.md)
+
+### GraphQL API
+
+효율적인 데이터 조회를 위한 유연한 쿼리 언어:
+
+- **엔드포인트**: `/v1/graphql`
+- **플레이그라운드**: `/v1/graphql` (개발 환경만)
+
+> 📖 **상세 가이드**: [GraphQL 가이드](graphql.ko.md)
+
+### WebSocket API
+
+타이머 제어를 위한 실시간 통신:
+
+- **엔드포인트**: `/v1/ws/timers`
+- **프로토콜**: JSON 메시지를 사용하는 WebSocket
+
+> 📖 **상세 가이드**: [WebSocket 가이드](websocket.ko.md)
+
+## Rate Limiting
+
+모든 API는 Rate Limiting이 적용됩니다:
+
+- **기본값**: 사용자당 60초에 60회 요청
+- **헤더**: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+> 📖 **상세 가이드**: [Rate Limiting 가이드](../development/rate-limit.ko.md)
+
+## 에러 처리
+
+모든 API는 일관된 에러 응답을 반환합니다:
+
+```json
+{
+  "detail": "Error message here"
+}
+```
+
+일반적인 HTTP 상태 코드:
+
+- `200` - 성공
+- `201` - 생성됨
+- `400` - 잘못된 요청
+- `401` - 인증 필요
+- `403` - 권한 없음
+- `404` - 찾을 수 없음
+- `429` - 요청 한도 초과
+- `500` - 서버 내부 오류
+
+## 데이터 형식
+
+- **요청**: JSON (`Content-Type: application/json`)
+- **응답**: JSON (`Content-Type: application/json`)
+- **날짜**: ISO 8601 형식 (`2024-01-15T10:00:00Z`)
+- **UUID**: 표준 UUID v4 형식
+
+## 대화형 문서
+
+- **Swagger UI**: `/docs` (개발 환경만)
+- **ReDoc**: `/redoc` (개발 환경만)
+- **GraphQL Playground**: `/v1/graphql` (개발 환경만)
