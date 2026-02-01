@@ -33,6 +33,11 @@ docs/
 - **The default language is Korean (`ko`)**.
 - If an English file (`.en.md`) doesn't exist, the Korean document will be displayed at the English path (`fallback_to_default: true`).
 
+### Authoritative Language
+
+!!! important "Authoritative source"
+    **In case of discrepancies in translation, the Korean version is the authoritative source.**
+
 ---
 
 ## Writing New Documentation

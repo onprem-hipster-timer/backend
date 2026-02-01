@@ -33,6 +33,12 @@ docs/
 - **기본 언어는 한국어(`ko`)**입니다.
 - 영어(`.en.md`)가 없으면 해당 페이지는 한국어 문서가 영어 경로에서도 표시됩니다 (`fallback_to_default: true`).
 
+### 번역 기준
+
+!!! important "기준 언어"
+    **번역에 문제가 있을 경우 한국어 자료를 메인(기준)으로 삼습니다.**  
+    In case of discrepancies in translation, the **Korean version is the authoritative source.**
+
 ---
 
 ## 새 문서 작성하기

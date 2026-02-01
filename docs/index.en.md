@@ -9,6 +9,9 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 
+!!! note "Documentation language"
+    In case of discrepancies in translation, the **Korean version is the authoritative source.**
+
 {%
    include-markdown "../README.md"
    start="<!-- docs:start -->"

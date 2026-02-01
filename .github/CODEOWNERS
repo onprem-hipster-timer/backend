@@ -1,0 +1,109 @@
+# CODEOWNERS - 코드 영역별 리뷰어 지정
+#
+# 이 파일은 PR 생성 시 자동으로 리뷰어를 할당합니다.
+# 패턴 매칭은 위에서 아래로, 마지막 매칭이 우선합니다.
+#
+# 문법: <pattern> <owner> [<owner>...]
+# - @username: GitHub 사용자
+# - @org/team: GitHub 팀
+#
+# 참고: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ============================================================================
+# 전체 코드베이스 기본 소유자
+# ============================================================================
+*                               @jjh4450
+
+# ============================================================================
+# 도메인별 소유자
+# ============================================================================
+
+# Schedule 도메인
+app/domain/schedule/            @jjh4450
+app/api/v1/schedules.py         @jjh4450
+app/models/schedule.py          @jjh4450
+tests/domain/schedule/          @jjh4450
+
+# Timer 도메인
+app/domain/timer/               @jjh4450
+app/api/v1/timers*.py           @jjh4450
+app/models/timer.py             @jjh4450
+tests/domain/timer/             @jjh4450
+
+# Todo 도메인
+app/domain/todo/                @jjh4450
+app/api/v1/todos.py             @jjh4450
+app/models/todo.py              @jjh4450
+tests/domain/todo/              @jjh4450
+
+# Tag 도메인
+app/domain/tag/                 @jjh4450
+app/api/v1/tags.py              @jjh4450
+app/models/tag.py               @jjh4450
+tests/domain/tag/               @jjh4450
+
+# Friend 도메인
+app/domain/friend/              @jjh4450
+app/api/v1/friends.py           @jjh4450
+app/models/friendship.py        @jjh4450
+tests/domain/friend/            @jjh4450
+
+# Meeting 도메인
+app/domain/meeting/             @jjh4450
+app/api/v1/meetings.py          @jjh4450
+app/models/meeting.py           @jjh4450
+tests/domain/meeting/           @jjh4450
+
+# Visibility 도메인
+app/domain/visibility/          @jjh4450
+app/models/visibility.py        @jjh4450
+tests/domain/visibility/        @jjh4450
+
+# Holiday 도메인
+app/domain/holiday/             @jjh4450
+app/api/v1/holidays.py          @jjh4450
+tests/domain/holiday/           @jjh4450
+
+# ============================================================================
+# 핵심 인프라
+# ============================================================================
+
+# 인증 & 보안
+app/core/auth.py                @jjh4450
+app/ratelimit/                  @jjh4450
+tests/core/test_auth.py         @jjh4450
+tests/ratelimit/                @jjh4450
+
+# 데이터베이스
+app/db/                         @jjh4450
+alembic/                        @jjh4450
+
+# WebSocket
+app/websocket/                  @jjh4450
+
+# GraphQL
+app/api/v1/graphql.py           @jjh4450
+app/domain/schedule/schema/query.py @jjh4450
+
+# ============================================================================
+# 설정 & 인프라
+# ============================================================================
+
+# Docker
+Dockerfile*                     @jjh4450
+compose*.yaml                   @jjh4450
+docker-compose*.yaml            @jjh4450
+
+# CI/CD
+.github/workflows/              @jjh4450
+
+# 의존성
+requirements*.txt               @jjh4450
+requirements*.in                @jjh4450
+
+# ============================================================================
+# 문서
+# ============================================================================
+docs/                           @jjh4450
+*.md                            @jjh4450
+mkdocs.yml                      @jjh4450

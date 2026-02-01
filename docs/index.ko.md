@@ -9,6 +9,10 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supported-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
 
+!!! note "문서 언어"
+    번역에 문제가 있을 경우 **한국어 자료를 메인(기준)으로 삼습니다.**  
+    In case of discrepancies in translation, the **Korean version is the authoritative source.**
+
 {%
    include-markdown "../README.ko.md"
    start="<!-- docs:start -->"

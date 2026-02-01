@@ -1,0 +1,17 @@
+# Issue Template Configuration
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+
+blank_issues_enabled: true
+
+contact_links:
+  - name: Discussions (질문 & 토론)
+    url: https://github.com/onprem-hipster-timer/backend/discussions
+    about: |
+      질문이나 아이디어가 있으시면 Discussions를 이용해 주세요.
+      For questions and ideas, please use Discussions.
+
+  - name: Security Vulnerabilities (보안 취약점)
+    url: https://github.com/onprem-hipster-timer/backend/security/advisories/new
+    about: |
+      보안 취약점은 공개 이슈로 신고하지 마세요. Security Advisory를 사용해 주세요.
+      Do NOT report security issues publicly. Use Security Advisory instead.
