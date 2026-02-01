@@ -1067,6 +1067,8 @@ pip-sync requirements.txt
 
 This project is licensed under the Mozilla Public License 2.0.
 
+> **Note**: 이 소프트웨어의 모든 버전(과거 커밋 및 릴리스 포함)은 MPL 2.0으로 라이센싱됩니다.
+
 ---
 
 <div align="center">

@@ -1071,6 +1071,8 @@ pip-sync requirements.txt
 
 This project is licensed under the Mozilla Public License 2.0.
 
+> **Note**: All versions of this software, including historical commits and releases, are licensed under MPL 2.0.
+
 ---
 
 <div align="center">
