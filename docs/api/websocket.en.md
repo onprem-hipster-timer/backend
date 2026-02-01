@@ -223,7 +223,7 @@ WebSocket connections and messages are subject to rate limiting:
 - **Connection**: 10 connections per 60 seconds
 - **Messages**: 120 messages per 60 seconds
 
-> 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.en.md)
+> 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.md)
 
 ## Reconnection
 

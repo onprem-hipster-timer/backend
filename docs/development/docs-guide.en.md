@@ -228,7 +228,7 @@ mkdocs serve
 **Links within the same language** (recommended):
 
 ```markdown
-See the [Authentication Guide](../guides/auth.en.md) for details.
+See the [Authentication Guide](../guides/auth.md) for details.
 ```
 
 **External links**:

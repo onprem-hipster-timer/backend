@@ -62,7 +62,7 @@ All APIs are subject to rate limiting:
 - **Default**: 60 requests per 60 seconds per user
 - **Headers**: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 
-> 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.en.md)
+> 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.md)
 
 ## Error Handling
 

@@ -746,7 +746,7 @@ OIDC_AUDIENCE=my-frontend-app
 
 #### Rate Limiting
 
-> 📖 **Detailed Guide**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+> 📖 **Detailed Guide**: [Rate Limiting Guide](https://onprem-hipster-timer.github.io/backend/development/rate-limit/)
 
 **HTTP Rate Limiting:**
 

@@ -173,7 +173,7 @@ RATE_LIMIT_DEFAULT_REQUESTS=60  # 윈도우당 최대 60 요청
 | API 중심 서비스 | 60 | 120 |
 | 제한적 공개 API | 60 | 30 |
 
-> 📖 **상세 가이드**: [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md)
+> 📖 **상세 가이드**: [Rate Limiting 가이드](https://onprem-hipster-timer.github.io/backend/development/rate-limit/)
 
 ---
 
@@ -395,5 +395,5 @@ LOG_LEVEL=WARNING
 ## 관련 문서
 
 - [인증 가이드](docs/guides/auth.md) - 프론트엔드 인증 통합 가이드
-- [RATE_LIMIT_GUIDE.md](RATE_LIMIT_GUIDE.md) - Rate Limiting 상세 가이드
+- [Rate Limiting 가이드](https://onprem-hipster-timer.github.io/backend/development/rate-limit/) - Rate Limiting 상세 가이드
 - [README.md](README.md) - 전체 프로젝트 문서 -->

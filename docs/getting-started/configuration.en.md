@@ -133,4 +133,4 @@ LOG_LEVEL=INFO
 
 ## Production Configuration
 
-For production deployment, see the [Production Guide](../deployment/production.en.md).
+For production deployment, see the [Production Guide](../deployment/production.md).
