@@ -31,7 +31,8 @@ Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.co
 
 ### 인증
 
-> ⚠️ **보안**: 로그 노출 위험으로 인해 쿼리 매개변수를 통한 인증은 지원하지 않습니다.
+!!! warning "주의"
+    **보안**: 로그 노출 위험으로 인해 쿼리 매개변수를 통한 인증은 지원하지 않습니다.
 
 인증은 `Sec-WebSocket-Protocol` 헤더를 통해 수행됩니다:
 
@@ -41,9 +42,10 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 서버는 WebSocket 핸드셰이크를 완료하기 위해 응답에 동일한 서브프로토콜을 반환합니다.
 
-> ⚠️ **중요**: WebSocket 연결이 작동하려면 `CORS_ALLOWED_ORIGINS`에 WebSocket URL을 추가해야 합니다:
-> - 개발: `ws://localhost:2614,ws://127.0.0.1:2614`
-> - 프로덕션: `wss://your-domain.com`
+!!! warning "주의"
+    **중요**: WebSocket 연결이 작동하려면 `CORS_ALLOWED_ORIGINS`에 WebSocket URL을 추가해야 합니다:
+    - 개발: `ws://localhost:2614,ws://127.0.0.1:2614`
+    - 프로덕션: `wss://your-domain.com`
 
 ## 메시지 유형
 

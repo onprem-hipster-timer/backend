@@ -104,4 +104,5 @@ When running the local dev server, you can test the API at these URLs:
 | **WebSocket Playground** | [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground) |
 | **WebSocket (Timer endpoint)** | `ws://localhost:2614/v1/ws/timers` |
 
-> ⚠️ These links are only available in development (`DOCS_ENABLED=true`). WebSocket Playground is a built-in page where you can test the Timer WebSocket API in the browser after entering your JWT.
+!!! warning "Warning"
+    These links are only available in development (`DOCS_ENABLED=true`). WebSocket Playground is a built-in page where you can test the Timer WebSocket API in the browser after entering your JWT.

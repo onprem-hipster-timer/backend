@@ -12,13 +12,14 @@
 |------|------|--------|
 | `ENVIRONMENT` | 런타임 환경 (`development`, `staging`, `production`) | `development` |
 
-> ⚠️ **프로덕션 모드**: `ENVIRONMENT=production`일 때 다음 설정이 자동 적용됩니다:
-> - `DEBUG` → `False`
-> - `OPENAPI_URL` → `""` (비활성화)
-> - `DOCS_URL` → `""` (비활성화)
-> - `REDOC_URL` → `""` (비활성화)
-> - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
-> - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
+!!! warning "주의"
+    **프로덕션 모드**: `ENVIRONMENT=production`일 때 다음 설정이 자동 적용됩니다:
+    - `DEBUG` → `False`
+    - `OPENAPI_URL` → `""` (비활성화)
+    - `DOCS_URL` → `""` (비활성화)
+    - `REDOC_URL` → `""` (비활성화)
+    - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
+    - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
 
 ## 핵심 설정
 
@@ -108,7 +109,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `CORS_ALLOW_METHODS` | 허용 HTTP 메서드 (쉼표 구분) | `*` |
 | `CORS_ALLOW_HEADERS` | 허용 헤더 (쉼표 구분) | `*` |
 
-> ⚠️ **참고**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 함께 사용할 수 없습니다.
+!!! warning "주의"
+    **참고**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 함께 사용할 수 없습니다.
 
 ## .env 파일 예시
 

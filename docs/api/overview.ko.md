@@ -104,4 +104,5 @@ CRUD 작업을 위한 전통적인 RESTful 엔드포인트:
 | **WebSocket Playground** | [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground) |
 | **WebSocket (타이머 엔드포인트)** | `ws://localhost:2614/v1/ws/timers` |
 
-> ⚠️ 위 링크는 개발 모드(`DOCS_ENABLED=true`)에서만 제공됩니다. WebSocket Playground는 JWT 입력 후 브라우저에서 바로 타이머 WebSocket API를 테스트할 수 있는 자체 제공 페이지입니다.
+!!! warning "주의"
+    위 링크는 개발 모드(`DOCS_ENABLED=true`)에서만 제공됩니다. WebSocket Playground는 JWT 입력 후 브라우저에서 바로 타이머 WebSocket API를 테스트할 수 있는 자체 제공 페이지입니다.

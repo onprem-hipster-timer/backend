@@ -55,7 +55,8 @@ ENVIRONMENT=production
 | `GRAPHQL_ENABLE_PLAYGROUND` | `False` | GraphQL Sandbox 비활성화 |
 | `GRAPHQL_ENABLE_INTROSPECTION` | `False` | GraphQL Introspection 비활성화 |
 
-> ⚠️ 이 설정들은 `ENVIRONMENT=production`일 때 자동으로 적용되며, 개별적으로 다른 값을 설정해도 무시됩니다.
+!!! warning "주의"
+    이 설정들은 `ENVIRONMENT=production`일 때 자동으로 적용되며, 개별적으로 다른 값을 설정해도 무시됩니다.
 
 ### API 문서 수동 비활성화
 
@@ -176,9 +177,11 @@ CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=Authorization,Content-Type
 ```
 
-> ⚠️ **주의**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 **함께 사용할 수 없습니다**. credentials를 허용하려면 반드시 특정 origin을 지정해야 합니다.
+!!! warning "주의"
+    **CORS**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 **함께 사용할 수 없습니다**. credentials를 허용하려면 반드시 특정 origin을 지정해야 합니다.
 
-> ⚠️ **WebSocket**: 타이머 등 실시간 기능이 WebSocket(`/v1/ws/timers`)을 사용합니다. WebSocket 연결이 동작하려면 `CORS_ALLOWED_ORIGINS`에 **반드시** WebSocket URL을 포함해야 합니다. 프로덕션에서는 **`wss://`(암호화)만 사용**하세요. `ws://`는 평문 전송이므로 프로덕션에서 사용할  이유가 없습니다.
+!!! warning "주의"
+    **WebSocket**: 타이머 등 실시간 기능이 WebSocket(`/v1/ws/timers`)을 사용합니다. WebSocket 연결이 동작하려면 `CORS_ALLOWED_ORIGINS`에 **반드시** WebSocket URL을 포함해야 합니다. 프로덕션에서는 **`wss://`(암호화)만 사용**하세요. `ws://`는 평문 전송이므로 프로덕션에서 사용할 이유가 없습니다.
 
 ---
 

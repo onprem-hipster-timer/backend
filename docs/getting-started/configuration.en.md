@@ -12,13 +12,14 @@ Configuration is done via `.env` file or environment variables.
 |----------|-------------|---------|
 | `ENVIRONMENT` | Runtime environment (`development`, `staging`, `production`) | `development` |
 
-> ⚠️ **Production Mode**: When `ENVIRONMENT=production`, the following settings are automatically applied:
-> - `DEBUG` → `False`
-> - `OPENAPI_URL` → `""` (disabled)
-> - `DOCS_URL` → `""` (disabled)
-> - `REDOC_URL` → `""` (disabled)
-> - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
-> - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
+!!! warning "Warning"
+    **Production Mode**: When `ENVIRONMENT=production`, the following settings are automatically applied:
+    - `DEBUG` → `False`
+    - `OPENAPI_URL` → `""` (disabled)
+    - `DOCS_URL` → `""` (disabled)
+    - `REDOC_URL` → `""` (disabled)
+    - `GRAPHQL_ENABLE_PLAYGROUND` → `False`
+    - `GRAPHQL_ENABLE_INTROSPECTION` → `False`
 
 ## Core Settings
 
@@ -108,7 +109,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `CORS_ALLOW_METHODS` | Allowed HTTP methods (comma-separated) | `*` |
 | `CORS_ALLOW_HEADERS` | Allowed headers (comma-separated) | `*` |
 
-> ⚠️ **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
+!!! warning "Warning"
+    **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
 
 ## Example .env File
 

@@ -114,7 +114,8 @@ $env:RATE_LIMIT_ENABLED="false"; uvicorn app.main:app --reload
 - X-RateLimit-* 응답 헤더가 추가되지 않습니다
 - 로그에 Rate Limit 관련 메시지가 출력되지 않습니다
 
-> **주의**: 프로덕션 환경에서는 반드시 `RATE_LIMIT_ENABLED=true`로 설정하세요!
+!!! warning "주의"
+    프로덕션 환경에서는 반드시 `RATE_LIMIT_ENABLED=true`로 설정하세요!
 
 ---
 
@@ -124,8 +125,8 @@ $env:RATE_LIMIT_ENABLED="false"; uvicorn app.main:app --reload
 
 ### 보안 경고
 
-> **⚠️ 중요**: 프록시 헤더(`X-Forwarded-For`, `CF-Connecting-IP`)는 클라이언트가 조작할 수 있습니다.  
-> 반드시 신뢰할 수 있는 프록시에서 온 요청에서만 이 헤더를 사용해야 합니다.
+!!! warning "주의"
+    **중요**: 프록시 헤더(`X-Forwarded-For`, `CF-Connecting-IP`)는 클라이언트가 조작할 수 있습니다. 반드시 신뢰할 수 있는 프록시에서 온 요청에서만 이 헤더를 사용해야 합니다.
 
 ### Cloudflare 환경 (권장)
 
@@ -569,7 +570,8 @@ class TimerWebSocket {
 WS_RATE_LIMIT_ENABLED=false
 ```
 
-> **주의**: 프로덕션 환경에서는 반드시 활성화하세요!
+!!! warning "주의"
+    프로덕션 환경에서는 반드시 활성화하세요!
 
 ---
 

@@ -244,14 +244,16 @@ Content-Type: application/json
 }
 ```
 
-> ⚠️ **deadline 변경 시 동작:**
-> - deadline 추가: 새 Schedule 생성 (태그도 복사)
-> - deadline 변경: 기존 Schedule 시간 업데이트
-> - deadline 제거 (null): 기존 Schedule 삭제
+!!! warning "주의"
+    **deadline 변경 시 동작:**
+    - deadline 추가: 새 Schedule 생성 (태그도 복사)
+    - deadline 변경: 기존 Schedule 시간 업데이트
+    - deadline 제거 (null): 기존 Schedule 삭제
 
-> ⚠️ **tag_ids 변경 시 동작:**
-> - Todo의 태그 업데이트
-> - 연결된 Schedule의 태그도 함께 동기화
+!!! warning "주의"
+    **tag_ids 변경 시 동작:**
+    - Todo의 태그 업데이트
+    - 연결된 Schedule의 태그도 함께 동기화
 
 #### Todo 삭제
 
@@ -259,10 +261,11 @@ Content-Type: application/json
 DELETE /v1/todos/{todo_id}
 ```
 
-> ⚠️ **삭제 동작:**
-> - 삭제된 Todo에 연결된 Schedule은 함께 삭제됩니다.
-> - **자식 Todo는 삭제되지 않고 루트로 승격됩니다** (parent_id가 NULL로 변경)
-> - 자식 Todo에 연결된 Schedule은 그대로 유지됩니다.
+!!! warning "주의"
+    **삭제 동작:**
+    - 삭제된 Todo에 연결된 Schedule은 함께 삭제됩니다.
+    - **자식 Todo는 삭제되지 않고 루트로 승격됩니다** (parent_id가 NULL로 변경)
+    - 자식 Todo에 연결된 Schedule은 그대로 유지됩니다.
 
 #### Todo 통계 조회
 
@@ -320,7 +323,8 @@ PATCH /v1/tags/groups/{group_id}
 DELETE /v1/tags/groups/{group_id}
 ```
 
-> ⚠️ CASCADE 삭제: 그룹에 속한 모든 태그도 함께 삭제됩니다.
+!!! warning "주의"
+    **CASCADE 삭제**: 그룹에 속한 모든 태그도 함께 삭제됩니다.
 
 ---
 
@@ -578,7 +582,8 @@ const todo = await response.json();
 // - status: SCHEDULED
 ```
 
-> ⚠️ **제약사항**: 이미 Todo와 연결된 Schedule에서는 다시 Todo를 생성할 수 없습니다 (400 에러).
+!!! warning "주의"
+    **제약사항**: 이미 Todo와 연결된 Schedule에서는 다시 Todo를 생성할 수 없습니다 (400 에러).
 
 ### 5. 캘린더 태그 필터링
 

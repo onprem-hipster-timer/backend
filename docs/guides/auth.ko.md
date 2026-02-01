@@ -92,7 +92,8 @@ $env:OIDC_ENABLED="false"; uvicorn app.main:app --reload
 }
 ```
 
-> **주의**: 프로덕션 환경에서는 반드시 `OIDC_ENABLED=true`로 설정하세요!
+!!! warning "주의"
+    프로덕션 환경에서는 반드시 `OIDC_ENABLED=true`로 설정하세요!
 
 ### 테스트 환경
 
@@ -397,7 +398,8 @@ OIDC_ISSUER_URL=https://your-tenant.auth0.com/
 OIDC_AUDIENCE=https://your-api-identifier
 ```
 
-> **주의**: Auth0의 Issuer URL은 끝에 `/`가 포함되어야 합니다.
+!!! warning "주의"
+    Auth0의 Issuer URL은 끝에 `/`가 포함되어야 합니다.
 
 **Auth0 Dashboard 설정:**
 1. Application 생성 (Single Page Application)

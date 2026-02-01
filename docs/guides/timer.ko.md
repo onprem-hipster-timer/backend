@@ -170,7 +170,7 @@ sequenceDiagram
 - ✅ **빠른 초기화**: 별도 sync 요청 불필요
 - ✅ **멀티 디바이스**: 새 기기 연결 시 즉시 동기화
 
-### ⚠️ 중요: CORS 설정
+### 중요: CORS 설정
 
 WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
 
@@ -393,7 +393,8 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.examp
 
 ## REST API (조회/삭제만)
 
-> **주의**: 타이머 생성, 일시정지, 재개, 종료는 WebSocket으로만 가능합니다.
+!!! warning "주의"
+    타이머 생성, 일시정지, 재개, 종료는 WebSocket으로만 가능합니다.
 
 ### Base URL
 
@@ -847,7 +848,7 @@ const ws = new WebSocket(
 - Referer 헤더를 통한 JWT 유출 가능
 - 프록시/게이트웨이 로그에 기록됨
 
-### 4. CORS 설정 필수 ⚠️
+### 4. CORS 설정 필수
 
 WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확인하세요**:
 

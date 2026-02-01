@@ -31,7 +31,8 @@ Optional query parameter:
 
 ### Authentication
 
-> ⚠️ **Security**: Authentication via query parameter is NOT supported due to log exposure risks.
+!!! warning "Warning"
+    **Security**: Authentication via query parameter is NOT supported due to log exposure risks.
 
 Authentication is done via `Sec-WebSocket-Protocol` header:
 
@@ -41,9 +42,10 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 The server will echo back the same subprotocol in the response to complete the WebSocket handshake.
 
-> ⚠️ **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
-> - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
-> - Production: `wss://your-domain.com`
+!!! warning "Warning"
+    **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
+    - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
+    - Production: `wss://your-domain.com`
 
 ## Message Types
 

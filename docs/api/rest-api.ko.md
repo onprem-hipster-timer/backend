@@ -26,7 +26,8 @@ PATCH  /v1/timers/{id}           # 타이머 수정
 DELETE /v1/timers/{id}           # 타이머 삭제
 ```
 
-> ⚠️ **참고**: 타이머 생성 및 제어(생성, 일시정지, 재개, 중지)는 WebSocket API를 통해 처리됩니다.
+!!! warning "주의"
+    **참고**: 타이머 생성 및 제어(생성, 일시정지, 재개, 중지)는 WebSocket API를 통해 처리됩니다.
 
 ### 투두 (Todos)
 

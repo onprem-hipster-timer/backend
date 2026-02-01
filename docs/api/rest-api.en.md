@@ -26,7 +26,8 @@ PATCH  /v1/timers/{id}           # Update timer
 DELETE /v1/timers/{id}           # Delete timer
 ```
 
-> ⚠️ **Note**: Timer creation and control (create, pause, resume, stop) are handled via WebSocket API.
+!!! warning "Warning"
+    **Note**: Timer creation and control (create, pause, resume, stop) are handled via WebSocket API.
 
 ### Todos
 
