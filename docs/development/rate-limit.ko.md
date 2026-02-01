@@ -100,13 +100,15 @@ RATE_LIMIT_ENABLED=false
 
 #### 방법 2: 환경변수 직접 지정
 
-```bash
-# Linux/Mac
-RATE_LIMIT_ENABLED=false uvicorn app.main:app --reload
+=== "Linux/Mac"
+    ```bash
+    RATE_LIMIT_ENABLED=false uvicorn app.main:app --reload
+    ```
 
-# Windows (PowerShell)
-$env:RATE_LIMIT_ENABLED="false"; uvicorn app.main:app --reload
-```
+=== "Windows (PowerShell)"
+    ```powershell
+    $env:RATE_LIMIT_ENABLED="false"; uvicorn app.main:app --reload
+    ```
 
 ### 비활성화 시 동작
 

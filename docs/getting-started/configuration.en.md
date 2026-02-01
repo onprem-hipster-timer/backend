@@ -110,7 +110,10 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `CORS_ALLOW_HEADERS` | Allowed headers (comma-separated) | `*` |
 
 !!! warning "Warning"
-    **Note**: `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
+    `CORS_ALLOWED_ORIGINS="*"` and `CORS_ALLOW_CREDENTIALS=true` cannot be used together.
+
+!!! tip "Tip"
+    When using WebSocket, include `ws://` or `wss://` URLs in `CORS_ALLOWED_ORIGINS`.
 
 ## Example .env File
 

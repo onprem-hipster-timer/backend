@@ -110,7 +110,10 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `CORS_ALLOW_HEADERS` | 허용 헤더 (쉼표 구분) | `*` |
 
 !!! warning "주의"
-    **참고**: `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 함께 사용할 수 없습니다.
+    `CORS_ALLOWED_ORIGINS="*"`와 `CORS_ALLOW_CREDENTIALS=true`는 함께 사용할 수 없습니다.
+
+!!! tip "팁"
+    WebSocket을 사용하는 경우 `CORS_ALLOWED_ORIGINS`에 `ws://` 또는 `wss://` URL을 반드시 포함하세요.
 
 ## .env 파일 예시
 

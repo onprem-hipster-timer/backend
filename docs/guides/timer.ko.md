@@ -174,17 +174,18 @@ sequenceDiagram
 
 WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
 
-**개발 환경:**
-```bash
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
-```
+=== "개발 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+    ```
 
-**프로덕션 환경:**
-```bash
-CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
-```
+=== "프로덕션 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+    ```
 
-> 💡 **Tip**: `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
+!!! tip "팁"
+    `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
 
 ### 연결 성공 응답
 
@@ -861,15 +862,18 @@ WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확�
 
 백엔드 서버의 `.env` 파일 또는 환경변수에서 `CORS_ALLOWED_ORIGINS`를 설정하세요:
 
-```bash
-# 개발 환경
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+=== "개발 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+    ```
 
-# 프로덕션 환경
-CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
-```
+=== "프로덕션 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+    ```
 
-> 💡 **핵심**: WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
+!!! tip "팁"
+    WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
 
 ### 5. 멀티 플랫폼 동기화
 
