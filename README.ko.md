@@ -193,15 +193,15 @@ docker compose up
 
 모든 엔드포인트는 `/v1` prefix를 사용합니다. 전체 API 스펙(Schedules, Timers, Todos, Tags, Holidays, Friends, Meetings)은 공식 문서에서 확인하세요.
 
-> 📖 **REST API 레퍼런스**: [https://onprem-hipster-timer.github.io/backend/api/rest-api](https://onprem-hipster-timer.github.io/backend/api/rest-api)
+> 📖 **REST API 레퍼런스**: [REST API](docs/api/rest-api.ko.md)
 
 각 도메인별 상세 가이드:
-- [Schedule 가이드](https://onprem-hipster-timer.github.io/backend/guides/schedule/)
-- [Timer 가이드](https://onprem-hipster-timer.github.io/backend/guides/timer/)
-- [Todo 가이드](https://onprem-hipster-timer.github.io/backend/guides/todo/)
-- [Friend 가이드](https://onprem-hipster-timer.github.io/backend/guides/friend/)
-- [Visibility 가이드](https://onprem-hipster-timer.github.io/backend/guides/visibility/)
-- [Meeting 가이드](https://onprem-hipster-timer.github.io/backend/guides/meeting/)
+- [Schedule 가이드](docs/guides/schedule.ko.md)
+- [Timer 가이드](docs/guides/timer.ko.md)
+- [Todo 가이드](docs/guides/todo.ko.md)
+- [Friend 가이드](docs/guides/friend.ko.md)
+- [Visibility 가이드](docs/guides/visibility.ko.md)
+- [Meeting 가이드](docs/guides/meeting.ko.md)
 
 ### GraphQL API
 
@@ -473,7 +473,7 @@ docker compose -f docker-compose.test.yaml down -v
 
 ### Python 버전 호환성 테스트
 
-> **상세 가이드**: [PYTHON_VERSION_TEST_GUIDE.md](PYTHON_VERSION_TEST_GUIDE.md)
+> **상세 가이드**: [Python 버전 호환성 테스트](docs/development/python-version-testing.ko.md)
 
 Docker를 사용하여 여러 Python 버전에서 테스트를 실행할 수 있습니다:
 
@@ -721,7 +721,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 #### 인증 (OIDC)
 
-> 📖 **상세 가이드**: [인증 가이드](docs/guides/auth.md)
+> 📖 **상세 가이드**: [인증 가이드](docs/guides/auth.ko.md)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -745,7 +745,7 @@ OIDC_AUDIENCE=my-frontend-app
 
 #### Rate Limit (요청 제한)
 
-> 📖 **상세 가이드**: [Rate Limiting 가이드](https://onprem-hipster-timer.github.io/backend/development/rate-limit/)
+> 📖 **상세 가이드**: [Rate Limiting 가이드](docs/development/rate-limit.ko.md)
 
 **HTTP Rate Limit:**
 
@@ -885,6 +885,8 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=Authorization,Content-Type
 ```
+
+> **프로덕션 배포**: [프로덕션 가이드](docs/deployment/production.ko.md)를 참조하세요.
 
 ### Database Migration
 

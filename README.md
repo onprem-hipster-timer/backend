@@ -193,15 +193,15 @@ Once the server starts:
 
 All endpoints use the `/v1` prefix. For the complete API spec (Schedules, Timers, Todos, Tags, Holidays, Friends, Meetings), see the official documentation.
 
-> 📖 **REST API Reference**: [https://onprem-hipster-timer.github.io/backend/api/rest-api](https://onprem-hipster-timer.github.io/backend/api/rest-api)
+> 📖 **REST API Reference**: [REST API](docs/api/rest-api.ko.md)
 
 Detailed guides for each domain:
-- [Schedule Guide](https://onprem-hipster-timer.github.io/backend/guides/schedule/)
-- [Timer Guide](https://onprem-hipster-timer.github.io/backend/guides/timer/)
-- [Todo Guide](https://onprem-hipster-timer.github.io/backend/guides/todo/)
-- [Friend Guide](https://onprem-hipster-timer.github.io/backend/guides/friend/)
-- [Visibility Guide](https://onprem-hipster-timer.github.io/backend/guides/visibility/)
-- [Meeting Guide](https://onprem-hipster-timer.github.io/backend/guides/meeting/)
+- [Schedule Guide](docs/guides/schedule.ko.md)
+- [Timer Guide](docs/guides/timer.ko.md)
+- [Todo Guide](docs/guides/todo.ko.md)
+- [Friend Guide](docs/guides/friend.ko.md)
+- [Visibility Guide](docs/guides/visibility.ko.md)
+- [Meeting Guide](docs/guides/meeting.ko.md)
 
 ### GraphQL API
 
@@ -473,7 +473,7 @@ docker compose -f docker-compose.test.yaml down -v
 
 ### Python Version Compatibility Testing
 
-> **Detailed Guide**: [PYTHON_VERSION_TEST_GUIDE.md](PYTHON_VERSION_TEST_GUIDE.md)
+> **Detailed Guide**: [Python Version Testing](docs/development/python-version-testing.ko.md)
 
 Test across multiple Python versions using Docker:
 
@@ -722,7 +722,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 #### Authentication (OIDC)
 
-> 📖 **Detailed Guide**: [Authentication Guide](docs/guides/auth.md)
+> 📖 **Detailed Guide**: [Authentication Guide](docs/guides/auth.ko.md)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -746,7 +746,7 @@ OIDC_AUDIENCE=my-frontend-app
 
 #### Rate Limiting
 
-> 📖 **Detailed Guide**: [Rate Limiting Guide](https://onprem-hipster-timer.github.io/backend/development/rate-limit/)
+> 📖 **Detailed Guide**: [Rate Limiting Guide](docs/development/rate-limit.ko.md)
 
 **HTTP Rate Limiting:**
 
@@ -889,6 +889,8 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 CORS_ALLOW_HEADERS=Authorization,Content-Type
 ```
+
+> **Production deployment**: See the [Production Guide](docs/deployment/production.ko.md).
 
 ### Database Migration
 
