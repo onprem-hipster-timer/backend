@@ -38,14 +38,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
 
-# Switch to the non-privileged user to run the application.
-USER appuser
+# gosu: nologin 쉘 계정에서도 안전하게 권한 전환
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 
 # Copy the source code into the container.
 COPY . .
 
+# SQLite 볼륨(/app/data) 권한을 위한 엔트리포인트 (root로 실행 후 appuser로 전환)
+RUN chmod +x /app/scripts/docker-entrypoint.sh
+
 # Expose the port that the application listens on.
 EXPOSE 2614
 
-# Run the application.
+# 엔트리포인트: /app/data 소유권 설정 후 비권한 사용자로 앱 실행
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "2614"]

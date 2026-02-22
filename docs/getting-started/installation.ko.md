@@ -127,6 +127,9 @@ uvicorn app.main:app --port 8000 --reload
 - PostgreSQL 사용 시 데이터베이스 서버 실행 확인
 - 데이터베이스 권한 확인
 
+**Docker: `unable to open database file`**
+- 공식 이미지는 엔트리포인트에서 `-v hipster-timer-data:/app/data` 볼륨에 쓰기 권한을 부여합니다. 위의 `docker run` 예시대로 `-v hipster-timer-data:/app/data`와 `DATABASE_URL=sqlite:///./data/schedule.db`를 사용하면 됩니다. 이전에 실패한 컨테이너를 삭제한 뒤 이미지를 다시 받고 실행해 보세요.
+
 **모듈을 찾을 수 없음**
 ```bash
 # 의존성 재설치

@@ -127,6 +127,9 @@ uvicorn app.main:app --port 8000 --reload
 - Ensure database server is running (for PostgreSQL)
 - Verify database permissions
 
+**Docker: `unable to open database file`**
+- The official image entrypoint fixes write permissions on the `-v hipster-timer-data:/app/data` volume. Use the exact `docker run` example above with `-v hipster-timer-data:/app/data` and `DATABASE_URL=sqlite:///./data/schedule.db`. Remove any previously failed container, pull the image again, and run.
+
 **Module Not Found**
 ```bash
 # Reinstall dependencies
