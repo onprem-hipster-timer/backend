@@ -1556,3 +1556,262 @@ def test_to_read_dto_shared_timer_includes_todo(test_session, test_user, other_u
     assert dto.todo.id == todo.id
     assert dto.is_shared is True
     assert dto.owner_id == other_user.sub
+
+
+# ============================================================
+# elapsed_time 누적 회귀 테스트 (반복 pause/resume 버그 방지)
+# ============================================================
+
+class TestElapsedTimeAccumulation:
+    """
+    반복적인 pause/resume 시 elapsed_time이 올바르게 누적되는지 검증.
+
+    과거 버그: pause_timer에서 elapsed_time = now - started_at으로 덮어써서
+    이전 세그먼트의 누적 시간이 소실되었음.
+    올바른 동작: elapsed_time += (now - started_at)
+    """
+
+    def test_pause_resume_pause_accumulates_elapsed(self, test_session, test_user):
+        """pause → resume → pause 시 elapsed_time이 누적되어야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="누적 테스트",
+                allocated_duration=3600,
+            ))
+            test_session.flush()
+
+        # 1차 pause: 60초 경과
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=60)
+
+            paused = service.pause_timer(timer.id)
+            assert paused.elapsed_time == 60
+
+        # resume
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=65)
+
+            resumed = service.resume_timer(timer.id)
+            assert resumed.elapsed_time == 60  # pause 중에는 시간 증가 없음
+
+        # 2차 pause: 추가 30초 경과 (총 90초)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=95)
+
+            paused2 = service.pause_timer(timer.id)
+            assert paused2.elapsed_time == 90
+
+    def test_three_cycles_accumulates_correctly(self, test_session, test_user):
+        """3회 pause/resume 사이클에서 시간이 정확히 누적되어야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="3사이클 테스트",
+                allocated_duration=7200,
+            ))
+            test_session.flush()
+
+        segments = [
+            # (pause_at_offset, resume_at_offset, expected_elapsed_after_pause)
+            (100, 120, 100),    # 1차: 100초 실행
+            (220, 230, 200),    # 2차: 추가 100초 (resume 120 → pause 220)
+            (330, None, 300),   # 3차: 추가 100초 (resume 230 → pause 330)
+        ]
+
+        for pause_offset, resume_offset, expected_elapsed in segments:
+            with patch("app.domain.timer.service.datetime") as mock_dt:
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                mock_dt.now = lambda tz=None: base_time + timedelta(seconds=pause_offset)
+
+                paused = service.pause_timer(timer.id)
+                assert paused.elapsed_time == expected_elapsed, (
+                    f"pause at +{pause_offset}s: expected {expected_elapsed}, got {paused.elapsed_time}"
+                )
+
+            if resume_offset is not None:
+                with patch("app.domain.timer.service.datetime") as mock_dt:
+                    mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                    mock_dt.now = lambda tz=None: base_time + timedelta(seconds=resume_offset)
+
+                    service.resume_timer(timer.id)
+
+    def test_stop_after_multiple_pauses_accumulates(self, test_session, test_user):
+        """여러 번 pause/resume 후 stop 시 총 경과 시간이 정확해야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="stop 누적 테스트",
+                allocated_duration=3600,
+            ))
+            test_session.flush()
+
+        # 1차: 60초 실행 후 pause
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=60)
+            service.pause_timer(timer.id)
+
+        # 5초 쉬고 resume
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=65)
+            service.resume_timer(timer.id)
+
+        # 2차: 40초 더 실행 후 stop (총 실행 시간: 60 + 40 = 100)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=105)
+
+            stopped = service.stop_timer(timer.id)
+            assert stopped.elapsed_time == 100
+            assert stopped.status == "COMPLETED"
+
+    def test_stop_from_paused_preserves_accumulated(self, test_session, test_user):
+        """PAUSED 상태에서 stop 시 누적된 시간이 보존되어야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="paused stop 테스트",
+                allocated_duration=3600,
+            ))
+            test_session.flush()
+
+        # 50초 실행 후 pause
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=50)
+            service.pause_timer(timer.id)
+
+        # resume 후 70초 실행 후 pause (총 120초)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=55)
+            service.resume_timer(timer.id)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=125)
+            service.pause_timer(timer.id)
+
+        # PAUSED 상태에서 바로 stop (시간 추가 없어야 함)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=200)
+
+            stopped = service.stop_timer(timer.id)
+            assert stopped.elapsed_time == 120  # pause 중이므로 추가 없음
+
+    def test_get_timer_running_after_resume_accumulates(self, test_session, test_user):
+        """resume 후 get_timer 조회 시 누적 + 현재 세그먼트가 반환되어야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="조회 누적 테스트",
+                allocated_duration=3600,
+            ))
+            test_session.flush()
+
+        # 60초 실행 후 pause
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=60)
+            service.pause_timer(timer.id)
+
+        # resume
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=70)
+            service.resume_timer(timer.id)
+
+        # 20초 후 조회 → 누적 60 + 현재 세그먼트 20 = 80
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=90)
+
+            retrieved = service.get_timer(timer.id)
+            assert retrieved.elapsed_time == 80
+
+    def test_pause_history_elapsed_matches_elapsed_time(self, test_session, test_user):
+        """pause_history의 elapsed 값이 해당 시점의 elapsed_time과 일치해야 함"""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+
+        service = TimerService(test_session, test_user)
+        base_time = datetime(2026, 1, 1, 0, 0, 0)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time
+
+            timer = service.create_timer(TimerCreate(
+                title="이력 검증",
+                allocated_duration=3600,
+            ))
+            test_session.flush()
+
+        # 1차 pause (30초)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=30)
+            service.pause_timer(timer.id)
+
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=35)
+            service.resume_timer(timer.id)
+
+        # 2차 pause (추가 45초, 총 75초)
+        with patch("app.domain.timer.service.datetime") as mock_dt:
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mock_dt.now = lambda tz=None: base_time + timedelta(seconds=80)
+            paused2 = service.pause_timer(timer.id)
+
+        history = paused2.pause_history
+        pause_events = [e for e in history if e["action"] == "pause"]
+
+        assert pause_events[0]["elapsed"] == 30
+        assert pause_events[1]["elapsed"] == 75

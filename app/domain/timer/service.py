@@ -51,6 +51,12 @@ class TimerService:
         self.current_user = current_user
         self.owner_id = current_user.sub
 
+    @staticmethod
+    def _add_running_segment_to_elapsed(timer: TimerSession, now: datetime) -> None:
+        """RUNNING 타이머의 현재 세그먼트(started_at ~ now)를 elapsed_time에 누적. started_at 있을 때만 호출."""
+        current_segment = int((now - timer.started_at).total_seconds())
+        timer.elapsed_time += max(0, current_segment)
+
     def create_timer(self, data: TimerCreate) -> TimerSession:
         """
         타이머 생성 및 시작
@@ -143,11 +149,9 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # RUNNING 상태인 경우 경과 시간 실시간 계산
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -168,11 +172,9 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # RUNNING 상태인 경우 경과 시간 실시간 계산
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         # 본인 소유인 경우
         if timer.owner_id == self.owner_id:
@@ -226,12 +228,10 @@ class TimerService:
             get_resource_id=lambda t: t.id,
         )
 
-        # 4. RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in accessible_timers:
             if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
+                self._add_running_segment_to_elapsed(timer, now)
 
         return accessible_timers
 
@@ -244,12 +244,10 @@ class TimerService:
         """
         timers = crud.get_timers_by_schedule(self.session, schedule_id, self.owner_id)
 
-        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
             if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
+                self._add_running_segment_to_elapsed(timer, now)
 
         return timers
 
@@ -263,10 +261,8 @@ class TimerService:
         timer = crud.get_active_timer(self.session, schedule_id, self.owner_id)
 
         if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            # 경과 시간 실시간 계산
             now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -279,12 +275,10 @@ class TimerService:
         """
         timers = crud.get_timers_by_todo(self.session, todo_id, self.owner_id)
 
-        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
             if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
+                self._add_running_segment_to_elapsed(timer, now)
 
         return timers
 
@@ -298,10 +292,8 @@ class TimerService:
         timer = crud.get_active_timer_by_todo(self.session, todo_id, self.owner_id)
 
         if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            # 경과 시간 실시간 계산
             now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -330,12 +322,10 @@ class TimerService:
             end_date=end_date,
         )
 
-        # RUNNING 상태인 타이머들의 경과 시간 실시간 계산
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
             if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                elapsed_since_start = int((now - timer.started_at).total_seconds())
-                timer.elapsed_time = max(0, elapsed_since_start)
+                self._add_running_segment_to_elapsed(timer, now)
 
         return timers
 
@@ -350,10 +340,8 @@ class TimerService:
         timer = crud.get_user_active_timer(self.session, self.owner_id)
 
         if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            # 경과 시간 실시간 계산
             now = ensure_utc_naive(datetime.now(UTC))
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -381,11 +369,9 @@ class TimerService:
                 detail=f"Cannot pause timer with status {timer.status}"
             )
 
-        # 경과 시간 계산 및 저장
         now = ensure_utc_naive(datetime.now(UTC))
         if timer.started_at:
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         # 상태 변경
         timer.status = TimerStatus.PAUSED.value
@@ -470,11 +456,9 @@ class TimerService:
                 detail=f"Cannot stop timer with status {timer.status}"
             )
 
-        # 경과 시간 최종 계산
         now = ensure_utc_naive(datetime.now(UTC))
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            elapsed_since_start = int((now - timer.started_at).total_seconds())
-            timer.elapsed_time = max(0, elapsed_since_start)
+            self._add_running_segment_to_elapsed(timer, now)
 
         # 상태 변경
         timer.status = TimerStatus.COMPLETED.value
