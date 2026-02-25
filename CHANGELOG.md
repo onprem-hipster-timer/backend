@@ -11,6 +11,15 @@ _No unreleased changes._
 
 ---
 
+## [v2026.02.23-e582adc] - 2026-02-23
+
+### Fixed
+
+- **TimerService elapsed time calculation** (`e582adc`): Fixed incorrect accumulation of elapsed time during pause/resume cycles. Refactored to use a dedicated method and added tests for pause/resume cycles.
+- **Upgrade notice**: Patches before `2026.02.23-e582adc` contain the above bug. **Upgrade to `2026.02.23-e582adc` or later is recommended.**
+
+---
+
 ## [v2026.01.30] - 2026-01-30
 
 ### Added
@@ -118,5 +127,6 @@ _No unreleased changes._
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.01.30...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...HEAD
+[v2026.02.23-e582adc]: https://github.com/onprem-hipster-timer/backend/compare/v2026.01.30...v2026.02.23-e582adc
 [v2026.01.30]: https://github.com/onprem-hipster-timer/backend/releases/tag/v2026.01.30
