@@ -135,7 +135,6 @@ class TagGroup(UUIDBase, TimestampMixin, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True)
     )  # 태그별 목표 비율 (예: {"tag_id": 0.3})
-    is_todo_group: bool = Field(default=False)  # Todo 그룹 여부
 
     # Relationship (일대다)
     tags: List["Tag"] = Relationship(

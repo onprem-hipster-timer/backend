@@ -268,7 +268,6 @@ def sample_tag_group(test_session, test_user):
         name="테스트 그룹",
         color="#FF5733",
         description="테스트 태그 그룹",
-        is_todo_group=True,
     )
 
     service = TagService(test_session, test_user)

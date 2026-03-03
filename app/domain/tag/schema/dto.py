@@ -26,7 +26,6 @@ class TagGroupCreate(CustomModel):
     color: str  # 예: "#FF5733"
     description: Optional[str] = None
     goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
-    is_todo_group: bool = False  # Todo 그룹 여부
 
     @field_validator("color")
     @classmethod
@@ -44,7 +43,6 @@ class TagGroupRead(CustomModel):
     color: str
     description: Optional[str] = None
     goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
-    is_todo_group: bool  # Todo 그룹 여부
     created_at: datetime
     updated_at: datetime
 
@@ -60,7 +58,6 @@ class TagGroupUpdate(CustomModel):
     color: Optional[str] = None
     description: Optional[str] = None
     goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
-    is_todo_group: Optional[bool] = None  # Todo 그룹 여부
 
     @field_validator("color")
     @classmethod
