@@ -11,6 +11,26 @@ _No unreleased changes._
 
 ---
 
+## [v2026.03.04-d027c48] - 2026-03-04
+
+### Changed
+
+- **Meeting result availability grid structure** (`d027c48`): Changed `availability_grid` response from a nested map (`Map<date, Map<time, count>>`) to a typed array grouped by date (`List[AvailabilityDateGroup]`). Improves type safety and eliminates `additionalProperties` in OpenAPI schema.
+  - **Breaking change**: Clients consuming `GET /v1/meetings/{id}/result` must update their parsing logic.
+  - Before: `{ "2024-02-01": { "09:00": 1 } }`
+  - After: `[{ "date": "2024-02-01", "slots": [{ "time": "09:00", "count": 1 }] }]`
+
+---
+
+## [v2026.03.03-5609ccd] - 2026-03-03
+
+### Removed
+
+- **`TagGroup.is_todo_group` field** (`5609ccd`): Removed unused boolean flag from `TagGroup` model, DTOs, and database schema. The field had no business logic enforcing it and was only referenced in a one-time migration script.
+  - **Breaking change**: `is_todo_group` field is no longer present in `TagGroup` API responses.
+
+---
+
 ## [v2026.02.23-e582adc] - 2026-02-23
 
 ### Fixed
