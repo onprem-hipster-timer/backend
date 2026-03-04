@@ -93,27 +93,36 @@ interface TimeSlot {
 
 ```typescript
 // 결과 조회 시 반환되는 그리드 형식
-interface AvailabilityGrid {
-  [date: string]: {              // 날짜 (YYYY-MM-DD)
-    [time: string]: number;      // 시간 (HH:MM) -> 가능한 인원 수
-  };
+interface AvailabilityTimeSlot {
+  time: string;   // 시간 (HH:MM)
+  count: number;  // 가능한 인원 수
+}
+
+interface AvailabilityDateGroup {
+  date: string;                  // 날짜 (YYYY-MM-DD)
+  slots: AvailabilityTimeSlot[];
 }
 
 // 예시
-const grid: AvailabilityGrid = {
-  "2024-02-02": {
-    "09:00": 3,
-    "09:30": 3,
-    "10:00": 2,
-    "10:30": 1,
-    "11:00": 0,
+const grid: AvailabilityDateGroup[] = [
+  {
+    date: "2024-02-02",
+    slots: [
+      { time: "09:00", count: 3 },
+      { time: "09:30", count: 3 },
+      { time: "10:00", count: 2 },
+      { time: "10:30", count: 1 },
+      { time: "11:00", count: 0 },
+    ],
   },
-  "2024-02-05": {
-    "09:00": 2,
-    "09:30": 2,
-    // ...
+  {
+    date: "2024-02-05",
+    slots: [
+      { time: "09:00", count: 2 },
+      { time: "09:30", count: 2 },
+    ],
   },
-};
+];
 ```
 
 ---
@@ -311,7 +320,7 @@ interface AvailabilityRead {
 // Response
 interface MeetingResult {
   meeting: Meeting;
-  availability_grid: AvailabilityGrid;
+  availability_grid: AvailabilityDateGroup[];
 }
 ```
 
@@ -329,23 +338,29 @@ interface MeetingResult {
     "end_time": "18:00:00",
     "time_slot_minutes": 30
   },
-  "availability_grid": {
-    "2024-02-02": {
-      "09:00": 3,
-      "09:30": 3,
-      "10:00": 2,
-      "10:30": 2,
-      "11:00": 1,
-      "11:30": 0,
-      "12:00": 0
+  "availability_grid": [
+    {
+      "date": "2024-02-02",
+      "slots": [
+        { "time": "09:00", "count": 3 },
+        { "time": "09:30", "count": 3 },
+        { "time": "10:00", "count": 2 },
+        { "time": "10:30", "count": 2 },
+        { "time": "11:00", "count": 1 },
+        { "time": "11:30", "count": 0 },
+        { "time": "12:00", "count": 0 }
+      ]
     },
-    "2024-02-05": {
-      "09:00": 2,
-      "09:30": 2,
-      "10:00": 3,
-      "10:30": 3
+    {
+      "date": "2024-02-05",
+      "slots": [
+        { "time": "09:00", "count": 2 },
+        { "time": "09:30", "count": 2 },
+        { "time": "10:00", "count": 3 },
+        { "time": "10:30", "count": 3 }
+      ]
     }
-  }
+  ]
 }
 ```
 
@@ -452,10 +467,14 @@ interface TimeSlotCreate {
 }
 
 // ===== 결과 타입 =====
-interface AvailabilityGrid {
-  [date: string]: {
-    [time: string]: number;
-  };
+interface AvailabilityTimeSlot {
+  time: string;   // "HH:MM"
+  count: number;
+}
+
+interface AvailabilityDateGroup {
+  date: string;  // "YYYY-MM-DD"
+  slots: AvailabilityTimeSlot[];
 }
 
 interface AvailabilityRead {
@@ -465,7 +484,7 @@ interface AvailabilityRead {
 
 interface MeetingResult {
   meeting: Meeting;
-  availability_grid: AvailabilityGrid;
+  availability_grid: AvailabilityDateGroup[];
 }
 ```
 
@@ -568,17 +587,17 @@ async function getMeetingResult(meetingId: string): Promise<MeetingResult> {
 const result = await getMeetingResult(meeting.id);
 
 // 가장 많은 사람이 가능한 시간대 찾기
-function findBestSlots(grid: AvailabilityGrid, minParticipants: number = 1) {
+function findBestSlots(grid: AvailabilityDateGroup[], minParticipants: number = 1) {
   const slots: { date: string; time: string; count: number }[] = [];
-  
-  for (const [date, times] of Object.entries(grid)) {
-    for (const [time, count] of Object.entries(times)) {
-      if (count >= minParticipants) {
-        slots.push({ date, time, count });
+
+  for (const group of grid) {
+    for (const slot of group.slots) {
+      if (slot.count >= minParticipants) {
+        slots.push({ date: group.date, time: slot.time, count: slot.count });
       }
     }
   }
-  
+
   return slots.sort((a, b) => b.count - a.count);
 }
 

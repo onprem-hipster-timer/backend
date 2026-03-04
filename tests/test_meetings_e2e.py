@@ -405,17 +405,20 @@ def test_get_meeting_result_e2e(e2e_client):
 
     assert data["meeting"]["id"] == meeting_id
     assert "availability_grid" in data
-    assert "2024-02-02" in data["availability_grid"]
+
+    date_group = next((g for g in data["availability_grid"] if g["date"] == "2024-02-02"), None)
+    assert date_group is not None
+
+    slots = {s["time"]: s["count"] for s in date_group["slots"]}
 
     # 10:00-12:00 구간은 두 명 모두 가능 (count=2)
-    date_grid = data["availability_grid"]["2024-02-02"]
-    assert date_grid.get("10:00", 0) == 2
-    assert date_grid.get("11:00", 0) == 2
-    assert date_grid.get("11:30", 0) == 2
+    assert slots.get("10:00", 0) == 2
+    assert slots.get("11:00", 0) == 2
+    assert slots.get("11:30", 0) == 2
 
     # 9:00-10:00 구간은 참여자1만 가능 (count=1)
-    assert date_grid.get("09:00", 0) == 1
-    assert date_grid.get("09:30", 0) == 1
+    assert slots.get("09:00", 0) == 1
+    assert slots.get("09:30", 0) == 1
 
 
 @pytest.mark.e2e

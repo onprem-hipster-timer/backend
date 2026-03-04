@@ -423,17 +423,20 @@ class TestMeetingResult:
         result = service.get_meeting_result(sample_meeting.id)
 
         assert result.meeting.id == sample_meeting.id
-        assert "2024-02-02" in result.availability_grid
+
+        date_group = next((g for g in result.availability_grid if g.date == "2024-02-02"), None)
+        assert date_group is not None
+
+        slots = {s.time: s.count for s in date_group.slots}
 
         # 10:00-12:00 구간은 두 명 모두 가능 (count=2)
-        date_grid = result.availability_grid["2024-02-02"]
-        assert date_grid.get("10:00", 0) == 2
-        assert date_grid.get("11:00", 0) == 2
-        assert date_grid.get("11:30", 0) == 2
+        assert slots.get("10:00", 0) == 2
+        assert slots.get("11:00", 0) == 2
+        assert slots.get("11:30", 0) == 2
 
         # 9:00-10:00 구간은 참여자1만 가능 (count=1)
-        assert date_grid.get("09:00", 0) == 1
-        assert date_grid.get("09:30", 0) == 1
+        assert slots.get("09:00", 0) == 1
+        assert slots.get("09:30", 0) == 1
 
     def test_generate_available_dates(self, test_session, test_user):
         """요일 기반 날짜 생성 테스트"""

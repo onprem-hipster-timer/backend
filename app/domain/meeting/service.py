@@ -25,6 +25,8 @@ from app.domain.meeting.schema.dto import (
     TimeSlotCreate,
     TimeSlotRead,
     AvailabilityRead,
+    AvailabilityTimeSlot,
+    AvailabilityDateGroup,
     MeetingResultRead,
 )
 from app.domain.visibility.enums import ResourceType
@@ -350,15 +352,15 @@ class MeetingService:
 
         # 모든 참여자의 시간 슬롯 조회
         participants = crud.get_participants(self.session, meeting_id)
-        availability_grid: dict[str, dict[str, int]] = {}
+        counts: dict[str, dict[str, int]] = {}
 
         # 그리드 초기화
         for date_obj in available_dates:
             date_str = date_obj.isoformat()
-            availability_grid[date_str] = {}
+            counts[date_str] = {}
             for time_slot in time_slots:
                 time_str = time_slot.strftime("%H:%M")
-                availability_grid[date_str][time_str] = 0
+                counts[date_str][time_str] = 0
 
         # 각 참여자의 시간 슬롯 집계
         for participant in participants:
@@ -368,18 +370,28 @@ class MeetingService:
             )
 
             for slot in participant_slots:
-                # 슬롯이 포함하는 모든 시간 슬롯에 카운트 증가
                 slot_start = slot.start_time
                 slot_end = slot.end_time
                 date_str = slot.slot_date.isoformat()
 
-                if date_str not in availability_grid:
+                if date_str not in counts:
                     continue
 
                 for time_slot in time_slots:
                     if slot_start <= time_slot < slot_end:
                         time_str = time_slot.strftime("%H:%M")
-                        availability_grid[date_str][time_str] += 1
+                        counts[date_str][time_str] += 1
+
+        availability_grid = [
+            AvailabilityDateGroup(
+                date=date_str,
+                slots=[
+                    AvailabilityTimeSlot(time=time_str, count=count)
+                    for time_str, count in time_map.items()
+                ],
+            )
+            for date_str, time_map in counts.items()
+        ]
 
         return MeetingResultRead(
             meeting=MeetingRead.model_validate(meeting),
