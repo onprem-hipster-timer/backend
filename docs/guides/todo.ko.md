@@ -100,7 +100,6 @@ interface TagGroup {
   color: string;                     // 색상 코드 (#RRGGBB)
   description?: string;              // 설명 (선택)
   goal_ratios?: Record<string, number>; // 태그별 목표 비율 (선택)
-  is_todo_group: boolean;            // Todo 그룹 여부
   created_at: string;
   updated_at: string;
   tags: Tag[];                       // 그룹에 속한 태그 목록
@@ -300,8 +299,7 @@ Content-Type: application/json
 {
   "name": "업무",
   "color": "#FF5733",
-  "description": "업무 관련 항목",
-  "is_todo_group": true
+  "description": "업무 관련 항목"
 }
 ```
 
@@ -643,7 +641,6 @@ export interface TagGroup {
   color: string;
   description?: string;
   goal_ratios?: Record<string, number>;
-  is_todo_group: boolean;
   created_at: string;
   updated_at: string;
   tags: Tag[];
@@ -653,7 +650,6 @@ export interface TagGroupCreate {
   name: string;
   color: string;
   description?: string;
-  is_todo_group?: boolean;
 }
 
 export interface TagCreate {
@@ -790,8 +786,7 @@ const groupResponse = await fetch('/v1/tags/groups', {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     name: "업무",
-    color: "#4A90D9",
-    is_todo_group: true
+    color: "#4A90D9"
   })
 });
 const group = await groupResponse.json();
