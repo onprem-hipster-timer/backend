@@ -220,9 +220,19 @@ class AvailabilityRead(CustomModel):
     time_slots: List[TimeSlotRead]
 
 
+class AvailabilityTimeSlot(CustomModel):
+    """시간 슬롯별 가용 인원 DTO"""
+    time: str   # "HH:MM" 형식
+    count: int  # 해당 시간대에 가능한 참여자 수
+
+
+class AvailabilityDateGroup(CustomModel):
+    """날짜별 가용 시간 그룹 DTO"""
+    date: str                           # "YYYY-MM-DD" 형식
+    slots: List[AvailabilityTimeSlot]
+
+
 class MeetingResultRead(CustomModel):
     """공통 가능 시간 분석 결과 DTO"""
     meeting: MeetingRead
-    availability_grid: dict[str, dict[str, int]]  # {date: {time: count}}
-    # date는 "YYYY-MM-DD" 형식, time은 "HH:MM" 형식
-    # count는 해당 시간대에 가능한 참여자 수
+    availability_grid: List[AvailabilityDateGroup]
