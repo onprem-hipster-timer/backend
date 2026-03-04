@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    version=settings.APP_VERSION if settings.ENVIRONMENT != "production" else None,
     lifespan=lifespan,
     # API 문서 설정 (빈 문자열이면 비활성화 - FastAPI 공식 문서 권장 방식)
     openapi_url=settings.OPENAPI_URL or None,
@@ -175,11 +175,8 @@ async def health_check():
     로드밸런서, Kubernetes, ECS 등에서 사용하는 health check 엔드포인트.
     인증 없이 접근 가능합니다.
     """
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
-        }
-    )
+    content: dict = {"status": "healthy"}
+    if settings.ENVIRONMENT != "production":
+        content["version"] = settings.APP_VERSION
+        content["environment"] = settings.ENVIRONMENT
+    return JSONResponse(status_code=200, content=content)
