@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.03.05-6194559] - 2026-03-05
+
 ### Added
 
 - **Automated versioning and release pipeline**: Merging to `main` now automatically generates a CalVer tag (`v{YYYY}.{MM}.{DD}-{SHORT_HASH}`), builds and pushes the Docker image, updates this CHANGELOG, and creates a GitHub Release.
