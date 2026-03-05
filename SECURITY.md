@@ -72,6 +72,32 @@ When deploying Hipster Timer Backend:
 - Use strong, unique passwords
 - Enable connection encryption (SSL/TLS)
 
+## Disclaimer of Liability
+
+### Software Provided "As Is"
+
+This software is licensed under the [Mozilla Public License 2.0 (MPL 2.0)](https://www.mozilla.org/en-US/MPL/2.0/). As stated in the license, the software is provided **"as is"**, without warranty of any kind, either expressed, implied, or statutory. The entire risk as to the quality, performance, and security of the software is with you.
+
+### Modifications and Derivative Works
+
+If you modify, adapt, or create derivative works based on this software in accordance with the MPL 2.0 license terms:
+
+- **You assume full responsibility** for any issues, vulnerabilities, or damages arising from your modifications.
+- The original project maintainers and contributors bear **no liability** for defects, security vulnerabilities, or any other problems introduced by your changes.
+- You must clearly indicate that you have modified the original software, and you must not misrepresent the origin of the software.
+
+### Hosting and Infrastructure
+
+The project maintainers are **independent from any service provider** that hosts or operates an instance of this software.
+
+- **Infrastructure security** — including but not limited to server configuration, network security, access controls, data backups, and compliance with applicable laws — is the **sole responsibility of the hosting provider / operator**.
+- The project maintainers provide no guarantee regarding the security, availability, or reliability of any third-party hosted instance.
+- Any data breach, service disruption, or security incident caused by infrastructure misconfiguration or operational negligence is **not the responsibility of the project maintainers**.
+
+### No Professional Advice
+
+Nothing in this software or its documentation constitutes legal, security, or professional advice. Users and operators should consult qualified professionals for their specific deployment and compliance requirements.
+
 ---
 
 # 보안 정책
@@ -145,6 +171,32 @@ Hipster Timer Backend 배포 시:
 - 데이터베이스 포트를 공개 인터넷에 노출하지 않음
 - 강력하고 고유한 비밀번호 사용
 - 연결 암호화 활성화 (SSL/TLS)
+
+## 면책 조항
+
+### 소프트웨어 "있는 그대로" 제공
+
+본 소프트웨어는 [Mozilla Public License 2.0 (MPL 2.0)](https://www.mozilla.org/en-US/MPL/2.0/) 하에 라이선스됩니다. 라이선스에 명시된 바와 같이, 소프트웨어는 명시적이든 묵시적이든 어떠한 종류의 보증 없이 **"있는 그대로"** 제공됩니다. 소프트웨어의 품질, 성능 및 보안에 대한 모든 위험은 사용자가 부담합니다.
+
+### 수정 및 파생 저작물
+
+MPL 2.0 라이선스 조건에 따라 본 소프트웨어를 수정, 개조하거나 파생 저작물을 생성하는 경우:
+
+- 수정으로 인해 발생하는 모든 문제, 취약점 또는 손해에 대해 **수정자가 전적으로 책임**을 집니다.
+- 원본 프로젝트 관리자 및 기여자는 수정으로 인해 발생하는 결함, 보안 취약점, 기타 문제에 대해 **어떠한 책임도 지지 않습니다**.
+- 원본 소프트웨어를 수정했음을 명확히 표시해야 하며, 소프트웨어의 출처를 허위로 표시해서는 안 됩니다.
+
+### 호스팅 및 인프라
+
+프로젝트 관리자는 본 소프트웨어를 호스팅하거나 운영하는 **서비스 제공자와 독립적**입니다.
+
+- 서버 구성, 네트워크 보안, 접근 제어, 데이터 백업, 관련 법규 준수를 포함하되 이에 국한되지 않는 **인프라 보안**은 **호스팅 제공자 / 운영자의 전적인 책임**입니다.
+- 프로젝트 관리자는 제3자가 호스팅하는 인스턴스의 보안, 가용성 또는 신뢰성에 대해 어떠한 보증도 하지 않습니다.
+- 인프라 설정 오류 또는 운영상 과실로 인한 데이터 유출, 서비스 중단, 보안 사고는 **프로젝트 관리자의 책임이 아닙니다**.
+
+### 전문적 조언 아님
+
+본 소프트웨어 및 관련 문서의 어떤 내용도 법률적, 보안 또는 전문적 조언을 구성하지 않습니다. 사용자 및 운영자는 각자의 배포 및 규정 준수 요건에 대해 전문가와 상담해야 합니다.
 
 ---
 
