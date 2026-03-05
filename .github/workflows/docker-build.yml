@@ -74,6 +74,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
@@ -89,6 +91,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Update CHANGELOG [Unreleased] to actual version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          TODAY=$(date +'%Y-%m-%d')
+          # [Unreleased] 섹션이 실제 내용을 가지고 있을 때만 치환
+          if grep -q "^## \[Unreleased\]" CHANGELOG.md && \
+             ! grep -q "_No unreleased changes._" CHANGELOG.md; then
+            sed -i "s/^## \[Unreleased\]/## [${VERSION}] - ${TODAY}/" CHANGELOG.md
+            # 새로운 [Unreleased] 섹션을 상단에 추가
+            sed -i "/^## \[${VERSION}\]/i ## [Unreleased]\n\n_No unreleased changes._\n\n---\n" CHANGELOG.md
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "chore: update CHANGELOG for ${VERSION}"
+            git push
+          fi
 
       - name: Create GitHub Release
         env:

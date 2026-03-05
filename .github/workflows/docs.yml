@@ -41,10 +41,12 @@ jobs:
 
       - name: Generate OpenAPI JSON
         run: |
+          VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
           python -c "
           import os
           os.environ['OIDC_ENABLED'] = 'false'
           os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+          os.environ['APP_VERSION'] = '$VERSION'
           from app.main import app
           import json
           with open('docs/api/openapi.json', 'w') as f:

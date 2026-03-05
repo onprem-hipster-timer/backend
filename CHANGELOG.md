@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Automated versioning and release pipeline**: Merging to `main` now automatically generates a CalVer tag (`v{YYYY}.{MM}.{DD}-{SHORT_HASH}`), builds and pushes the Docker image, updates this CHANGELOG, and creates a GitHub Release.
+- **License and liability notice in `/health`**: The health check response now includes AGPL-3.0 license notice and infrastructure liability disclaimer.
+
+### Changed
+
+- **Production information hardening**: `/health` no longer exposes `version` or `environment` fields in production environments.
 
 ---
 

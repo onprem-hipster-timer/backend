@@ -127,7 +127,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    version=settings.APP_VERSION if settings.ENVIRONMENT != "production" else None,
     lifespan=lifespan,
     # API 문서 설정 (빈 문자열이면 비활성화 - FastAPI 공식 문서 권장 방식)
     openapi_url=settings.OPENAPI_URL or None,
@@ -168,18 +168,30 @@ app.include_router(api_router)
 
 # Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)
 @app.get("/health", tags=["Health"])
-async def health_check():
-    """
-    애플리케이션 상태 확인
-    
-    로드밸런서, Kubernetes, ECS 등에서 사용하는 health check 엔드포인트.
-    인증 없이 접근 가능합니다.
-    """
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
-        }
-    )
+def health_check():
+    content: dict = {
+        "status": "healthy",
+
+        "license_notice": (
+            "This project is an open-source software derived from "
+            "https://github.com/onprem-hipster-timer/backend and is licensed under "
+            "the Mozilla Public License Version 2.0 (MPL 2.0). "
+            "Any violation of the license terms may result in severe legal consequences. "
+            "DO NOT REMOVE OR ALTER THIS NOTICE."
+        ),
+
+        "source_origin": "https://github.com/onprem-hipster-timer/backend",
+
+        "󠁔󠁨󠁩󠁳󠀠󠁰󠁲󠁯󠁪󠁥󠁣󠁴󠀠󠁩󠁳󠀠󠁡󠁮󠀠󠁯󠁰󠁥󠁮󠀭󠁳󠁯󠁵󠁲󠁣󠁥󠀠󠁳󠁯󠁦󠁴󠁷󠁡󠁲󠁥󠀠󠁤󠁥󠁲󠁩󠁶󠁥󠁤󠀠󠁦󠁲󠁯󠁭󠀠󠁨󠁴󠁴󠁰󠁳󠀺󠀯󠀯󠁧󠁩󠁴󠁨󠁵󠁢󠀮󠁣󠁯󠁭󠀯󠁯󠁮󠁰󠁲󠁥󠁭󠀭󠁨󠁩󠁰󠁳󠁴󠁥󠁲󠀭󠁴󠁩󠁭󠁥󠁲󠀯󠁢󠁡󠁣󠁫󠁥󠁮󠁤󠀠󠁡󠁮󠁤󠀠󠁩󠁳󠀠󠁬󠁩󠁣󠁥󠁮󠁳󠁥󠁤󠀠󠁵󠁮󠁤󠁥󠁲󠀠󠁴󠁨󠁥󠀠󠁍󠁯󠁺󠁩󠁬󠁬󠁡󠀠󠁐󠁵󠁢󠁬󠁩󠁣󠀠󠁌󠁩󠁣󠁥󠁮󠁳󠁥󠀠󠁖󠁥󠁲󠁳󠁩󠁯󠁮󠀠󠀲󠀮󠀰󠀠󠀨󠁍󠁐󠁌󠀠󠀲󠀮󠀰󠀩󠀮󠀠󠁁󠁮󠁹󠀠󠁶󠁩󠁯󠁬󠁡󠁴󠁩󠁯󠁮󠀠󠁯󠁦󠀠󠁴󠁨󠁥󠀠󠁬󠁩󠁣󠁥󠁮󠁳󠁥󠀠󠁴󠁥󠁲󠁭󠁳󠀠󠁭󠁡󠁹󠀠󠁲󠁥󠁳󠁵󠁬󠁴󠀠󠁩󠁮󠀠󠁳󠁥󠁶󠁥󠁲󠁥󠀠󠁬󠁥󠁧󠁡󠁬󠀠󠁣󠁯󠁮󠁳󠁥󠁱󠁵󠁥󠁮󠁣󠁥󠁳󠀮󠀠󠁄󠁏󠀠󠁎󠁏󠁔󠀠󠁒󠁅󠁍󠁏󠁖󠁅󠀠󠁏󠁒󠀠󠁁󠁌󠁔󠁅󠁒󠀠󠁔󠁈󠁉󠁓󠀠󠁎󠁏󠁔󠁉󠁃󠁅󠀮security_notice": (
+            "The project maintainers are independent from the service provider hosting this instance. "
+            "Infrastructure security and configuration are the sole responsibility of the hosting provider. "
+            "For software-specific security policies and vulnerability reporting, please strictly follow: "
+            "https://github.com/onprem-hipster-timer/backend?tab=security-ov-file"
+        )
+    }
+
+    if settings.ENVIRONMENT != "production":
+        content["version"] = settings.APP_VERSION
+        content["environment"] = settings.ENVIRONMENT
+
+    return JSONResponse(status_code=200, content=content)

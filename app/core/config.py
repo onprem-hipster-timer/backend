@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # 애플리케이션
     APP_NAME: str = "onperm-hipster-timer-backend"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "dev"
     DEBUG: bool = True
 
     # 데이터베이스

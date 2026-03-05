@@ -11,6 +11,7 @@ Thank you for your interest in contributing to Hipster Timer Backend. This docum
 - [Coding Standards](#coding-standards)
 - [Commit Guidelines](#commit-guidelines)
 - [Pull Request Process](#pull-request-process)
+- [Versioning and Releases](#versioning-and-releases)
 - [Review Process](#review-process)
 
 ---
@@ -249,6 +250,64 @@ Use the PR template. Include:
 - Keep PRs focused and reasonably sized
 - Large changes should be split into logical, reviewable chunks
 - If a PR grows too large, discuss splitting it
+
+---
+
+## Versioning and Releases
+
+### Version Format
+
+This project uses **Calendar Versioning (CalVer)** with git hash:
+
+```
+v{YYYY}.{MM}.{DD}-{SHORT_GIT_HASH}
+```
+
+Example: `v2026.03.04-d027c48`
+
+### How It Works
+
+Versioning is **fully automated** via CI/CD. When a PR is merged to `main`:
+
+1. GitHub Actions generates the version from the merge date and commit hash
+2. Docker image is built and tagged with the version
+3. `[Unreleased]` section in CHANGELOG.md is replaced with the actual version
+4. A GitHub Release is created automatically
+
+**Contributors should never manually set or bump version numbers.**
+
+### What Contributors Should Do
+
+When your PR includes user-facing changes, update `CHANGELOG.md` under the `[Unreleased]` section:
+
+```markdown
+## [Unreleased]
+
+### Added
+- **New feature description** (`scope`): Details of what was added
+
+### Fixed
+- **Bug description** (`scope`): What was fixed and why
+```
+
+Use the appropriate category: Added, Changed, Deprecated, Removed, Fixed, or Security.
+
+If `[Unreleased]` shows `_No unreleased changes._`, replace it with your entry:
+
+```markdown
+## [Unreleased]
+
+### Added
+- **Meeting invite link expiry** (`meeting`): Added configurable expiry for shared meeting links
+```
+
+The CI pipeline will handle converting `[Unreleased]` to the actual version on release.
+
+### What NOT to Do
+
+- Do **not** create version tags manually
+- Do **not** edit version entries below `[Unreleased]` (those are already released)
+- Do **not** modify `APP_VERSION` in `.env` or `config.py` — it's injected at build time
 
 ---
 
