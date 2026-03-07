@@ -100,11 +100,12 @@ async def timer_websocket(websocket: WebSocket):
     # 활성 타이머 자동 동기화 (항상 수행)
     with _session_manager.get_session() as session:
         try:
+            from app.core.constants import TimerStatus
             from app.domain.timer.service import TimerService
             from app.domain.timer.schema.ws import TimerData, TimerWSMessageType
 
             timer_service = TimerService(session, current_user)
-            active_timers = timer_service.get_all_timers(status=["RUNNING", "PAUSED"])
+            active_timers = timer_service.get_all_timers(status=[TimerStatus.RUNNING.value, TimerStatus.PAUSED.value])
 
             # 타임존 변환 적용
             timer_list = []

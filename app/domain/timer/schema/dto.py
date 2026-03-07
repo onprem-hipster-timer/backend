@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
-from app.core.constants import TagIncludeMode
+from app.core.constants import TagIncludeMode, TimerStatus
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead, VisibilitySettings
 from app.domain.tag.schema.dto import TagRead
@@ -60,7 +60,7 @@ class TimerRead(CustomModel):
     description: Optional[str] = None
     allocated_duration: int
     elapsed_time: int
-    status: str  # TimerStatus enum 값
+    status: TimerStatus  # TimerStatus enum 값
     started_at: Optional[datetime] = None
     paused_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
