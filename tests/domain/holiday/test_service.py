@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.domain.holiday.model import HolidayModel, HolidayHashModel
+from app.models.holiday import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import HolidayItem
 from app.domain.holiday.service import HolidayService, HolidayReadService
 

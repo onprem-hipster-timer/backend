@@ -6,7 +6,7 @@ from app.domain.holiday.exceptions import (
     HolidayApiKeyError,
     HolidayApiResponseError,
 )
-from app.domain.holiday.model import HolidayModel, HolidayHashModel
+from app.models.holiday import HolidayModel, HolidayHashModel
 from app.domain.holiday.schema.dto import (
     HolidayItem,
     HolidayApiItem,

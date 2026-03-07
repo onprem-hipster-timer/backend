@@ -10,7 +10,7 @@ from sqlmodel import Field, Column, String, UniqueConstraint
 from app.models.base import UUIDBase, TimestampMixin
 
 
-class HolidayModel(UUIDBase, TimestampMixin, table=True):
+class HolidayModel(UUIDBase, table=True):
     """공휴일 정보 테이블"""
     __tablename__ = "holidays"
 

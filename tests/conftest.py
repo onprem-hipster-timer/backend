@@ -142,7 +142,7 @@ async def test_async_engine():
         )
 
         # 테스트용 테이블 생성
-        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -170,7 +170,7 @@ async def test_async_engine():
             cursor.close()
 
         # 테스트용 테이블 생성
-        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
