@@ -70,7 +70,7 @@ def update_meeting(
         data: MeetingUpdate,
 ) -> Meeting:
     """일정 조율 업데이트"""
-    update_dict = data.model_dump(exclude_unset=True, exclude={'visibility'})
+    update_dict = data.model_dump(exclude_unset=True)
 
     for key, value in update_dict.items():
         setattr(meeting, key, value)

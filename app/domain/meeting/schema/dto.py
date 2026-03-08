@@ -14,14 +14,6 @@ from app.domain.dateutil.service import convert_utc_naive_to_timezone
 from app.models.visibility import VisibilityLevel
 
 
-class VisibilitySettings(CustomModel):
-    """가시성 설정 DTO"""
-    level: VisibilityLevel = VisibilityLevel.PUBLIC
-    allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
-    allowed_emails: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
-    allowed_domains: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
-
-
 class MeetingCreate(CustomModel):
     """일정 조율 생성 DTO"""
     title: str
@@ -32,7 +24,6 @@ class MeetingCreate(CustomModel):
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("available_days")
     @classmethod
@@ -83,7 +74,6 @@ class MeetingUpdate(CustomModel):
     start_time: Optional[time] = None
     end_time: Optional[time] = None
     time_slot_minutes: Optional[int] = None
-    visibility: Optional[VisibilitySettings] = None
 
     @field_validator("available_days")
     @classmethod

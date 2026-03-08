@@ -55,19 +55,6 @@ class MeetingService:
         :return: 생성된 일정 조율
         """
         meeting = crud.create_meeting(self.session, data, self.owner_id)
-
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.MEETING,
-                resource_id=meeting.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-                allowed_emails=data.visibility.allowed_emails,
-                allowed_domains=data.visibility.allowed_domains,
-            )
-
         return meeting
 
     def get_meeting(self, meeting_id: UUID) -> Meeting:
@@ -134,28 +121,7 @@ class MeetingService:
         if not meeting:
             raise MeetingNotFoundError()
 
-        # 설정된 필드만 가져오기 (exclude_unset=True)
-        update_dict = data.model_dump(exclude_unset=True)
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        visibility_updated = 'visibility' in update_dict
-        if visibility_updated and update_dict['visibility']:
-            visibility_data = update_dict['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.MEETING,
-                resource_id=meeting.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-                allowed_emails=visibility_data.allowed_emails,
-                allowed_domains=visibility_data.allowed_domains,
-            )
-            del update_dict['visibility']  # CRUD에 전달하지 않음
-
-        # 변환된 dict로 MeetingUpdate 재생성
-        update_data = MeetingUpdate(**update_dict)
-
-        updated_meeting = crud.update_meeting(self.session, meeting, update_data)
+        updated_meeting = crud.update_meeting(self.session, meeting, data)
         return updated_meeting
 
     def delete_meeting(self, meeting_id: UUID) -> None:

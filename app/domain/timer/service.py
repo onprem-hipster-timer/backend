@@ -115,16 +115,6 @@ class TimerService:
         }
         timer = crud.create_timer(self.session, timer_data, self.owner_id)
 
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TIMER,
-                resource_id=timer.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
-
         # 태그 설정
         if data.tag_ids:
             tag_service = TagService(self.session, self.current_user)
@@ -577,18 +567,6 @@ class TimerService:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
             del update_data['tag_ids']  # CRUD에 전달하지 않음
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        if 'visibility' in update_data and update_data['visibility']:
-            visibility_data = update_data['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TIMER,
-                resource_id=timer.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_data['visibility']  # CRUD에 전달하지 않음
 
         # 나머지 필드 업데이트 (None이 아닌 경우에만)
         for field, value in update_data.items():

@@ -15,7 +15,7 @@ from pydantic import ConfigDict, field_validator
 from app.core.base_model import CustomModel
 from app.core.constants import TagIncludeMode, TimerStatus
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
-from app.domain.schedule.schema.dto import ScheduleRead, VisibilitySettings
+from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
 from app.models.visibility import VisibilityLevel
 
@@ -38,7 +38,6 @@ class TimerCreate(CustomModel):
     description: Optional[str] = None
     allocated_duration: int  # 할당 시간 (초 단위)
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("allocated_duration")
     @classmethod
@@ -197,7 +196,6 @@ class TimerUpdate(CustomModel):
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
     todo_id: Optional[UUID] = None  # Todo 연결 변경 (null로 연결 해제)
     schedule_id: Optional[UUID] = None  # Schedule 연결 변경 (null로 연결 해제)
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
 
 # Forward reference 해결

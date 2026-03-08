@@ -176,16 +176,6 @@ class TodoService:
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
 
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TODO,
-                resource_id=todo.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
-
         # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
             from datetime import timedelta
@@ -496,18 +486,6 @@ class TodoService:
                     schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
                     schedule_service.update_schedule(schedule.id, schedule_update)
             del update_dict['tag_ids']
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        if 'visibility' in update_dict and update_dict['visibility']:
-            visibility_data = update_dict['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TODO,
-                resource_id=todo.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_dict['visibility']
 
         # 나머지 필드 업데이트
         for key, value in update_dict.items():

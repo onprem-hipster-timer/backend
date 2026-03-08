@@ -79,16 +79,6 @@ class ScheduleService:
 
         schedule = crud.create_schedule(self.session, data, self.owner_id)
 
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=schedule.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
-
         # 태그 설정
         if data.tag_ids:
             from app.domain.tag.service import TagService
@@ -483,19 +473,6 @@ class ScheduleService:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
             del update_dict['tag_ids']  # CRUD에 전달하지 않음
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        visibility_updated = 'visibility' in update_dict
-        if visibility_updated and update_dict['visibility']:
-            visibility_data = update_dict['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=schedule.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_dict['visibility']  # CRUD에 전달하지 않음
 
         # 변환된 dict로 ScheduleUpdate 재생성
         update_data = ScheduleUpdate(**update_dict)
@@ -934,32 +911,6 @@ class ScheduleService:
             self.session, ResourceType.SCHEDULE, schedule_id
         )
         return visibility.level if visibility else None
-
-    def set_schedule_visibility(
-            self,
-            schedule_id: UUID,
-            level: VisibilityLevel,
-            allowed_user_ids: Optional[List[str]] = None,
-    ) -> None:
-        """
-        일정 가시성 설정
-        
-        :param schedule_id: 일정 ID
-        :param level: 가시성 레벨
-        :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만)
-        """
-        # 일정 존재 확인
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
-
-        visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.set_visibility(
-            resource_type=ResourceType.SCHEDULE,
-            resource_id=schedule_id,
-            level=level,
-            allowed_user_ids=allowed_user_ids,
-        )
 
     def to_read_dto(
             self,

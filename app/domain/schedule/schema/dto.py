@@ -27,12 +27,6 @@ class CreateTodoOptions(CustomModel):
     tag_group_id: UUID  # Todo가 속할 그룹 (필수)
 
 
-class VisibilitySettings(CustomModel):
-    """가시성 설정 DTO"""
-    level: VisibilityLevel = VisibilityLevel.PRIVATE
-    allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
-
-
 class ScheduleCreate(CustomModel):
     """일정 생성 DTO"""
     title: str
@@ -46,7 +40,6 @@ class ScheduleCreate(CustomModel):
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -125,7 +118,6 @@ class ScheduleUpdate(CustomModel):
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = None  # 상태
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
