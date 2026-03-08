@@ -53,7 +53,7 @@ def get_all_tag_groups(session: Session, owner_id: str) -> List[TagGroup]:
 
 def update_tag_group(session: Session, tag_group: TagGroup, data: TagGroupUpdate) -> TagGroup:
     """태그 그룹 업데이트"""
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     tag_group.apply_update(update_data)
     session.flush()
     session.refresh(tag_group)
@@ -126,7 +126,7 @@ def get_tag_by_name_in_group(session: Session, group_id: UUID, name: str, owner_
 
 def update_tag(session: Session, tag: Tag, data: TagUpdate) -> Tag:
     """태그 업데이트"""
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     tag.apply_update(update_data)
     session.flush()
     session.refresh(tag)

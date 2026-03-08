@@ -443,8 +443,8 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # 설정된 필드만 가져오기 (exclude_unset=True)
-        update_dict = data.model_dump(exclude_unset=True)
+        # 설정된 필드만 가져오기 (MISSING 필드는 자동 제외)
+        update_dict = data.model_dump()
 
         # datetime 필드 추출 (DTO에서 이미 UTC naive로 변환됨)
         start_time_utc = update_dict.get('start_time', schedule.start_time)
@@ -537,8 +537,8 @@ class ScheduleService:
             self.session, parent_id, instance_start_utc, self.owner_id
         )
 
-        # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨)
-        update_dict = data.model_dump(exclude_unset=True)
+        # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨, MISSING 필드는 자동 제외)
+        update_dict = data.model_dump()
 
         # 태그 ID 추출 (별도 처리)
         tag_ids = update_dict.pop('tag_ids', None)

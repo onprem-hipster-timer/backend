@@ -70,7 +70,7 @@ def update_meeting(
         data: MeetingUpdate,
 ) -> Meeting:
     """일정 조율 업데이트"""
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     meeting.apply_update(update_data)
     session.flush()
     session.refresh(meeting)

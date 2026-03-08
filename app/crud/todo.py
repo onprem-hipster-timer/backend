@@ -174,7 +174,7 @@ def update_todo(session: Session, todo: Todo, data: TodoUpdate) -> Todo:
     """
     Todo 필드 업데이트
     """
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     todo.apply_update(update_data)
     session.flush()
     session.refresh(todo)

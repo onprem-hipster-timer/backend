@@ -12,6 +12,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from pydantic import ConfigDict
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.schedule.schema.dto import ScheduleRead
@@ -60,13 +61,13 @@ class TodoRead(CustomModel):
 
 class TodoUpdate(CustomModel):
     """Todo 업데이트 DTO"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    tag_group_id: Optional[UUID] = None  # 소속 그룹 변경
-    tag_ids: Optional[List[UUID]] = None  # 태그는 선택
-    deadline: Optional[datetime] = None  # 마감기간 변경
-    parent_id: Optional[UUID] = None  # 부모 Todo 변경
-    status: Optional[TodoStatus] = None  # 상태 변경
+    title: str | None = MISSING
+    description: str | None = MISSING
+    tag_group_id: UUID | None = MISSING  # 소속 그룹 변경
+    tag_ids: list[UUID] | None = MISSING  # 태그는 선택
+    deadline: datetime | None = MISSING  # 마감기간 변경
+    parent_id: UUID | None = MISSING  # 부모 Todo 변경
+    status: TodoStatus | None = MISSING  # 상태 변경
 
 
 class TagStat(CustomModel):

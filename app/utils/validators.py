@@ -9,7 +9,7 @@ def validate_time_order(start_time: datetime | None, end_time: datetime | None):
     :param end_time: 종료 날짜
     :raises ValueError: end_time <= start_time인 경우
     """
-    if start_time is not None and end_time is not None:
+    if isinstance(start_time, datetime) and isinstance(end_time, datetime):
         if end_time <= start_time:
             raise ValueError("end_time must be after start_time")
 

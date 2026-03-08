@@ -536,8 +536,8 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # exclude_unset=True: 요청에 포함되지 않은 필드는 제외
-        update_data = data.model_dump(exclude_unset=True)
+        # MISSING 필드는 자동 제외
+        update_data = data.model_dump()
 
         # 서비스에서 수동 처리할 컬럼 추적
         exclude_fields = []

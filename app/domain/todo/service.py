@@ -416,7 +416,7 @@ class TodoService:
         todo = self.get_todo(todo_id)
 
         # 업데이트 데이터 준비
-        update_dict = data.model_dump(exclude_unset=True)
+        update_dict = data.model_dump()
 
         # parent_id 변경 시 검증
         if 'parent_id' in update_dict:

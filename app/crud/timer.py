@@ -183,7 +183,7 @@ def update_timer(
     """
     TimerSession 필드 업데이트
     """
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     timer.apply_update(update_data, exclude=exclude)
     session.flush()
     session.refresh(timer)

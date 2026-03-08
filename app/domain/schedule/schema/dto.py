@@ -11,6 +11,7 @@ from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
@@ -108,16 +109,16 @@ class ScheduleRead(CustomModel):
 
 class ScheduleUpdate(CustomModel):
     """일정 업데이트 DTO"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
-    recurrence_end: Optional[datetime] = None  # 반복 종료일
-    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
-    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
-    state: Optional[ScheduleState] = None  # 상태
+    title: str | None = MISSING
+    description: str | None = MISSING
+    start_time: datetime | None = MISSING
+    end_time: datetime | None = MISSING
+    recurrence_rule: str | None = MISSING  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
+    recurrence_end: datetime | None = MISSING  # 반복 종료일
+    tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
+    tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
+    source_todo_id: UUID | None = MISSING  # Todo에서 생성된 Schedule 추적
+    state: ScheduleState | None = MISSING  # 상태
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

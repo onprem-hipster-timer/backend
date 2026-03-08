@@ -115,7 +115,7 @@ def update_schedule(
     FastAPI Best Practices:
     - commit은 get_db_transactional이 처리
     """
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump()
     schedule.apply_update(update_data)
     session.flush()
     session.refresh(schedule)

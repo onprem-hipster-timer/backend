@@ -8,6 +8,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone
@@ -66,14 +67,14 @@ class MeetingCreate(CustomModel):
 
 class MeetingUpdate(CustomModel):
     """일정 조율 업데이트 DTO"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    available_days: Optional[List[int]] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
-    time_slot_minutes: Optional[int] = None
+    title: str | None = MISSING
+    description: str | None = MISSING
+    start_date: date | None = MISSING
+    end_date: date | None = MISSING
+    available_days: list[int] | None = MISSING
+    start_time: time | None = MISSING
+    end_time: time | None = MISSING
+    time_slot_minutes: int | None = MISSING
 
     @field_validator("available_days")
     @classmethod

@@ -11,6 +11,7 @@ from typing import Optional, List, TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.core.constants import TagIncludeMode, TimerStatus
@@ -183,19 +184,19 @@ class TimerRead(CustomModel):
 
 class TimerUpdate(CustomModel):
     """타이머 업데이트 DTO
-    
+
     todo_id, schedule_id 필드 동작:
-    - 필드가 요청에 포함되지 않음 (undefined): 기존 값 유지
+    - 필드가 요청에 포함되지 않음 (MISSING): 기존 값 유지
     - 필드가 UUID 값: 해당 ID로 연결 변경
     - 필드가 null: 연결 해제
-    
+
     Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
     """
-    title: Optional[str] = None
-    description: Optional[str] = None
-    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    todo_id: Optional[UUID] = None  # Todo 연결 변경 (null로 연결 해제)
-    schedule_id: Optional[UUID] = None  # Schedule 연결 변경 (null로 연결 해제)
+    title: str | None = MISSING
+    description: str | None = MISSING
+    tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
+    todo_id: UUID | None = MISSING  # Todo 연결 변경 (null로 연결 해제)
+    schedule_id: UUID | None = MISSING  # Schedule 연결 변경 (null로 연결 해제)
 
 
 # Forward reference 해결
