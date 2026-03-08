@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **Centralized Visibility API controller**: Extracted visibility management from each domain (Schedule, Timer, Todo, Meeting) into a dedicated `/v1/visibility/{resource_type}/{resource_id}` endpoint with `PUT`/`GET`/`DELETE` operations.
+  - **Breaking change**: `visibility` field removed from all Create/Update DTOs. Clients must set visibility via a separate `PUT /v1/visibility/{type}/{id}` call after resource creation.
 
 ---
 
