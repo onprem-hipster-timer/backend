@@ -1,17 +1,17 @@
 """
 Visibility - Schedule 도메인 E2E 테스트
 
-스케줄 가시성 설정 및 접근 제어 통합 테스트
+스케줄 접근권한 설정 및 접근 제어 통합 테스트
 """
 import pytest
 
 
 @pytest.mark.e2e
 def test_set_and_get_visibility_schedule(e2e_client):
-    """스케줄 가시성 설정 및 조회 E2E 테스트"""
+    """스케줄 접근권한 설정 및 조회 E2E 테스트"""
     schedule_id = e2e_client.post(
         "/v1/schedules",
-        json={"title": "가시성 테스트 일정", "start_time": "2024-01-01T10:00:00Z", "end_time": "2024-01-01T12:00:00Z"},
+        json={"title": "접근권한 테스트 일정", "start_time": "2024-01-01T10:00:00Z", "end_time": "2024-01-01T12:00:00Z"},
     ).json()["id"]
 
     vis_response = e2e_client.put(
@@ -31,7 +31,7 @@ def test_set_and_get_visibility_schedule(e2e_client):
 
 @pytest.mark.e2e
 def test_set_visibility_allowed_emails_schedule(e2e_client):
-    """스케줄 ALLOWED_EMAILS 가시성 - 이메일/도메인 목록 포함 E2E 테스트"""
+    """스케줄 ALLOWED_EMAILS 접근권한 - 이메일/도메인 목록 포함 E2E 테스트"""
     schedule_id = e2e_client.post(
         "/v1/schedules",
         json={"title": "이메일 공개 일정", "start_time": "2024-01-01T10:00:00Z", "end_time": "2024-01-01T12:00:00Z"},

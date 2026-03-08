@@ -1,8 +1,8 @@
 """
 ResourceVisibility 모델
 
-리소스(Schedule, Timer, Todo)의 가시성을 관리합니다.
-다형성 패턴을 사용하여 모든 리소스 타입에 동일한 가시성 로직을 적용합니다.
+리소스(Schedule, Timer, Todo)의 접근권한을 관리합니다.
+다형성 패턴을 사용하여 모든 리소스 타입에 동일한 접근권한 로직을 적용합니다.
 """
 from enum import Enum
 from uuid import UUID
@@ -14,7 +14,7 @@ from app.models.base import UUIDBase, TimestampMixin
 
 
 class VisibilityLevel(str, Enum):
-    """가시성 레벨"""
+    """접근권한 레벨"""
     PRIVATE = "private"  # 본인만 (기본값)
     FRIENDS = "friends"  # 모든 친구
     SELECTED_FRIENDS = "selected"  # 선택한 친구만
@@ -32,12 +32,12 @@ class ResourceType(str, Enum):
 
 class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
     """
-    리소스 가시성 설정
+    리소스 접근권한 설정
     
     - resource_type: 리소스 종류 (schedule, timer, todo)
     - resource_id: 리소스 UUID
     - owner_id: 리소스 소유자 ID
-    - level: 가시성 레벨
+    - level: 접근권한 레벨
     
     Note: 레코드가 없으면 PRIVATE으로 간주
     """
@@ -57,7 +57,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
     # 소유자 ID (OIDC sub claim)
     owner_id: str = Field(index=True)
 
-    # 가시성 레벨
+    # 접근권한 레벨
     level: VisibilityLevel = Field(
         default=VisibilityLevel.PRIVATE,
         sa_column=Column(
@@ -68,7 +68,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
     )
 
     __table_args__ = (
-        # 리소스별 하나의 가시성 설정만 허용
+        # 리소스별 하나의 접근권한 설정만 허용
         UniqueConstraint("resource_type", "resource_id", name="uq_resource_visibility"),
         # 쿼리 최적화
         Index("ix_visibility_resource", "resource_type", "resource_id"),
@@ -78,13 +78,13 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
 
 class VisibilityAllowList(UUIDBase, table=True):
     """
-    가시성 허용 목록 (SELECTED_FRIENDS 레벨용)
+    접근권한 허용 목록 (SELECTED_FRIENDS 레벨용)
     
     특정 리소스에 대해 접근을 허용할 사용자 목록
     """
     __tablename__ = "visibility_allow_list"
 
-    # 가시성 설정 참조
+    # 접근권한 설정 참조
     visibility_id: UUID = Field(
         sa_column=Column(
             ForeignKey("resource_visibility.id", ondelete="CASCADE"),
@@ -104,7 +104,7 @@ class VisibilityAllowList(UUIDBase, table=True):
 
 class VisibilityAllowEmail(UUIDBase, table=True):
     """
-    가시성 이메일 허용 목록 (ALLOWED_EMAILS 레벨용)
+    접근권한 이메일 허용 목록 (ALLOWED_EMAILS 레벨용)
     
     특정 리소스에 대해 접근을 허용할 이메일/도메인 목록
     - email: 특정 이메일 주소 (예: user@company.com)
@@ -113,7 +113,7 @@ class VisibilityAllowEmail(UUIDBase, table=True):
     """
     __tablename__ = "visibility_allow_email"
 
-    # 가시성 설정 참조
+    # 접근권한 설정 참조
     visibility_id: UUID = Field(
         sa_column=Column(
             ForeignKey("resource_visibility.id", ondelete="CASCADE"),

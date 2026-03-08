@@ -135,7 +135,7 @@ class MeetingService:
         if not meeting:
             raise MeetingNotFoundError()
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.MEETING, meeting_id
         )
@@ -430,17 +430,17 @@ class MeetingService:
             is_shared: bool = False,
     ) -> MeetingRead:
         """
-        Meeting을 MeetingRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Meeting을 MeetingRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         :param meeting: Meeting 모델
         :param is_shared: 공유된 리소스인지 여부
-        :return: MeetingRead DTO (가시성 정보 포함)
+        :return: MeetingRead DTO (접근권한 정보 포함)
         """
         meeting_read = MeetingRead.model_validate(meeting)
         meeting_read.owner_id = meeting.owner_id
         meeting_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.MEETING, meeting.id
         )

@@ -1,19 +1,19 @@
-# Visibility (가시성) API 가이드 (프론트엔드 개발자용)
+# Visibility (접근권한) API 가이드 (프론트엔드 개발자용)
 
 > **최종 업데이트**: 2026-03-08
 
 ## 개요
 
-Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 **공유 범위**를 제어합니다.
+Visibility(접근권한) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 **공유 범위**를 제어합니다.
 
 !!! warning "Breaking Change — 중앙 집중형 Visibility API"
-    **`v2026.03.08`부터 가시성 설정 방식이 변경되었습니다.**
+    **`v2026.03.08`부터 접근권한 설정 방식이 변경되었습니다.**
 
     - **이전**: 리소스 생성/수정 시 `visibility` 필드를 함께 전달
     - **현재**: 독립된 **`/v1/visibility/{resource_type}/{resource_id}`** 엔드포인트를 통해 별도 관리
 
     리소스의 Create/Update DTO에서 `visibility` 필드가 **완전히 제거**되었습니다.
-    가시성은 리소스 생성 후 별도 API를 호출하여 설정합니다.
+    접근권한은 리소스 생성 후 별도 API를 호출하여 설정합니다.
 
     ```diff
     # Before (제거됨)
@@ -39,7 +39,7 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 
 
     **분리 후 장점:**
 
-    1. **단일 책임 원칙(SRP)**: 가시성 로직이 하나의 컨트롤러에서 일관되게 관리됨
+    1. **단일 책임 원칙(SRP)**: 접근권한 로직이 하나의 컨트롤러에서 일관되게 관리됨
     2. **도메인 독립성**: 각 도메인 서비스가 visibility를 알 필요 없이 핵심 로직에만 집중
     3. **API 일관성**: 모든 리소스 타입에 대해 동일한 `PUT/GET/DELETE` 패턴 적용
     4. **유지보수성**: visibility 로직 변경 시 단일 지점만 수정
@@ -53,7 +53,7 @@ Visibility(가시성) 시스템은 리소스(Schedule, Timer, Todo, Meeting)의 
 | **Todo** | `todo` |
 | **Meeting** | `meeting` |
 
-### 가시성 레벨
+### 접근권한 레벨
 
 | 레벨 | 설명 |
 |------|------|
@@ -77,7 +77,7 @@ flowchart TD
     Owner -- 예 --> Allow1([접근 허용]):::allow
     Owner -- 아니오 --> Blocked{차단 여부}:::decision
     Blocked -- 예 --> Deny1([접근 불가]):::deny
-    Blocked -- 아니오 --> Level{가시성 레벨}:::decision
+    Blocked -- 아니오 --> Level{접근권한 레벨}:::decision
 
     Level -->|PUBLIC| Allow2([접근 허용]):::allow
     Level -->|PRIVATE| Deny2([접근 불가]):::deny
@@ -101,16 +101,16 @@ flowchart TD
 ### 엔드포인트 요약
 
 ```http
-PUT    /v1/visibility/{resource_type}/{resource_id}   # 가시성 설정/변경
-GET    /v1/visibility/{resource_type}/{resource_id}   # 가시성 조회
-DELETE /v1/visibility/{resource_type}/{resource_id}   # 가시성 삭제 (PRIVATE 복귀)
+PUT    /v1/visibility/{resource_type}/{resource_id}   # 접근권한 설정/변경
+GET    /v1/visibility/{resource_type}/{resource_id}   # 접근권한 조회
+DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRIVATE 복귀)
 ```
 
 !!! info "소유권 검증"
     모든 Visibility API는 **리소스 소유자만** 호출할 수 있습니다.
     소유자가 아닌 사용자가 호출하면 `403 Forbidden`이 반환됩니다.
 
-### PUT — 가시성 설정/변경
+### PUT — 접근권한 설정/변경
 
 **`PUT /v1/visibility/{resource_type}/{resource_id}`**
 
@@ -161,18 +161,18 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 가시성 삭제 (PRIVAT
 }
 ```
 
-### GET — 가시성 조회
+### GET — 접근권한 조회
 
 **`GET /v1/visibility/{resource_type}/{resource_id}`**
 
-- `200 OK`: 가시성 설정 반환
-- `404 Not Found`: 가시성이 설정되지 않은 경우 (PRIVATE 기본값)
+- `200 OK`: 접근권한 설정 반환
+- `404 Not Found`: 접근권한이 설정되지 않은 경우 (PRIVATE 기본값)
 
-### DELETE — 가시성 삭제
+### DELETE — 접근권한 삭제
 
 **`DELETE /v1/visibility/{resource_type}/{resource_id}`**
 
-가시성 설정을 삭제하여 **PRIVATE**(기본값)으로 복귀시킵니다.
+접근권한 설정을 삭제하여 **PRIVATE**(기본값)으로 복귀시킵니다.
 
 - `200 OK`: `{ "ok": true }`
 
@@ -180,7 +180,7 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 가시성 삭제 (PRIVAT
 
 ## 데이터 모델
 
-### VisibilityLevel (가시성 레벨)
+### VisibilityLevel (접근권한 레벨)
 
 ```typescript
 type VisibilityLevel =
@@ -201,7 +201,7 @@ type ResourceType =
   | "meeting";
 ```
 
-### VisibilityUpdate (가시성 설정 - 입력용)
+### VisibilityUpdate (접근권한 설정 - 입력용)
 
 ```typescript
 interface VisibilityUpdate {
@@ -212,7 +212,7 @@ interface VisibilityUpdate {
 }
 ```
 
-### VisibilityRead (가시성 조회 결과)
+### VisibilityRead (접근권한 조회 결과)
 
 ```typescript
 interface VisibilityRead {
@@ -230,14 +230,14 @@ interface VisibilityRead {
 
 ### 공유된 리소스 응답 필드
 
-모든 리소스(Schedule, Timer, Todo) 조회 시 가시성 관련 필드가 포함됩니다:
+모든 리소스(Schedule, Timer, Todo) 조회 시 접근권한 관련 필드가 포함됩니다:
 
 ```typescript
 interface ResourceWithVisibility {
   // ... 기본 리소스 필드 ...
 
   owner_id?: string;                // 소유자 ID (공유된 리소스일 때)
-  visibility_level?: VisibilityLevel;  // 가시성 레벨
+  visibility_level?: VisibilityLevel;  // 접근권한 레벨
   is_shared: boolean;               // 공유된 리소스인지 (타인 소유)
 }
 ```
@@ -246,12 +246,12 @@ interface ResourceWithVisibility {
 
 ## 사용 흐름
 
-### 리소스 생성 후 가시성 설정
+### 리소스 생성 후 접근권한 설정
 
 !!! note "2단계 흐름"
-    리소스 생성과 가시성 설정은 **별도 요청**으로 처리합니다.
+    리소스 생성과 접근권한 설정은 **별도 요청**으로 처리합니다.
 
-#### 예시: Schedule 생성 + 가시성 설정
+#### 예시: Schedule 생성 + 접근권한 설정
 
 **1단계: Schedule 생성**
 
@@ -266,7 +266,7 @@ POST /v1/schedules
 }
 ```
 
-**2단계: 가시성 설정**
+**2단계: 접근권한 설정**
 
 ```http
 PUT /v1/visibility/schedule/{schedule_id}
@@ -295,7 +295,7 @@ POST /v1/meetings
 }
 ```
 
-**2단계: 가시성 설정**
+**2단계: 접근권한 설정**
 
 ```http
 PUT /v1/visibility/meeting/{meeting_id}
@@ -308,7 +308,66 @@ PUT /v1/visibility/meeting/{meeting_id}
 }
 ```
 
-### 가시성 변경
+#### 예시: Timer 생성 + 접근권한 설정 (WebSocket → REST)
+
+!!! info "Timer는 WebSocket으로 생성됩니다"
+    Timer는 REST가 아닌 **WebSocket**으로 생성되며, WS 페이로드에는 `visibility` 필드가 없습니다.
+    접근권한을 설정하려면 WS 응답에서 `timer.id`를 받은 후 **별도의 REST 호출**이 필요합니다.
+
+**1단계: Timer 생성 (WebSocket)**
+
+```json
+// → 서버로 전송
+{
+  "type": "timer.create",
+  "payload": {
+    "title": "집중 모드",
+    "allocated_duration": 3600
+  }
+}
+
+// ← 서버 응답 (timer.created)
+{
+  "type": "timer.created",
+  "payload": {
+    "timer": {
+      "id": "timer-uuid",
+      "title": "집중 모드",
+      "status": "RUNNING",
+      ...
+    }
+  }
+}
+```
+
+**2단계: 접근권한 설정 (REST)**
+
+```http
+PUT /v1/visibility/timer/{timer-uuid}
+```
+```json
+{
+  "level": "friends"
+}
+```
+
+??? tip "권장: Lazy Visibility 패턴"
+    Timer는 **개인 집중 도구**이므로 기본값 `PRIVATE`이 자연스럽습니다.
+    생성 시점에 visibility를 즉시 설정하기보다, 사용자가 **"공유" 버튼을 누를 때**만
+    `PUT /v1/visibility/timer/{id}`를 호출하는 **Lazy 방식**을 권장합니다.
+
+    ```
+    Timer 생성 (WS)  →  기본 PRIVATE으로 사용
+                         └→ 사용자가 "공유" 클릭 시에만  →  PUT /v1/visibility/timer/{id}
+    ```
+
+    **장점:**
+
+    - WS 생성 직후 REST 호출 실패에 대한 에러 처리가 불필요
+    - 대부분의 타이머는 비공개로 사용되므로 불필요한 API 호출 제거
+    - UX 흐름이 단순해짐 (생성 → 바로 타이머 시작)
+
+### 접근권한 변경
 
 기존 설정을 덮어씁니다. 별도의 `PATCH`가 아니라 **`PUT`**으로 전체 교체합니다.
 
@@ -321,15 +380,15 @@ PUT /v1/visibility/schedule/{schedule_id}
 }
 ```
 
-### 가시성 삭제 (비공개 복귀)
+### 접근권한 삭제 (비공개 복귀)
 
 ```http
 DELETE /v1/visibility/schedule/{schedule_id}
 ```
 
-### 가시성 기본값
+### 접근권한 기본값
 
-가시성을 설정하지 않은 리소스는 **PRIVATE**으로 동작합니다.
+접근권한을 설정하지 않은 리소스는 **PRIVATE**으로 동작합니다.
 
 ---
 
@@ -373,7 +432,7 @@ DELETE /v1/visibility/schedule/{schedule_id}
 ## TypeScript 타입 정의
 
 ```typescript
-// ===== 가시성 타입 =====
+// ===== 접근권한 타입 =====
 
 type VisibilityLevel = "private" | "friends" | "selected" | "allowed_emails" | "public";
 
@@ -381,7 +440,7 @@ type ResourceType = "schedule" | "timer" | "todo" | "meeting";
 
 type ResourceScope = "mine" | "shared" | "all";
 
-// 가시성 설정 (PUT 요청 시 사용)
+// 접근권한 설정 (PUT 요청 시 사용)
 interface VisibilityUpdate {
   level: VisibilityLevel;
   allowed_user_ids?: string[];   // "selected" 레벨에서만
@@ -389,7 +448,7 @@ interface VisibilityUpdate {
   allowed_domains?: string[];    // "allowed_emails" 레벨에서만
 }
 
-// 가시성 조회 결과
+// 접근권한 조회 결과
 interface VisibilityRead {
   id: string;
   resource_type: ResourceType;
@@ -446,7 +505,7 @@ interface TodoUpdate {
   deadline?: string;
 }
 
-// ===== 리소스 조회 타입 (가시성 정보 포함) =====
+// ===== 리소스 조회 타입 (접근권한 정보 포함) =====
 
 interface ScheduleRead {
   id: string;
@@ -506,7 +565,7 @@ const VISIBILITY_ICONS: Record<VisibilityLevel, string> = {
 
 ## 사용 예시
 
-### 가시성 설정/변경 함수
+### 접근권한 설정/변경 함수
 
 ```typescript
 async function setVisibility(
@@ -538,7 +597,7 @@ await setVisibility("meeting", meetingId, {
 });
 ```
 
-### 가시성 조회/삭제
+### 접근권한 조회/삭제
 
 ```typescript
 async function getVisibility(
@@ -562,7 +621,7 @@ async function deleteVisibility(
 }
 ```
 
-### 리소스 생성 + 가시성 설정 (2단계)
+### 리소스 생성 + 접근권한 설정 (2단계)
 
 ```typescript
 async function createScheduleWithVisibility(
@@ -577,7 +636,7 @@ async function createScheduleWithVisibility(
   });
   const created = await createResponse.json();
 
-  // 2단계: 가시성 설정 (선택)
+  // 2단계: 접근권한 설정 (선택)
   if (visibility) {
     await setVisibility("schedule", created.id, visibility);
   }
@@ -599,7 +658,27 @@ const schedule = await createScheduleWithVisibility(
 );
 ```
 
-### 가시성 설정 UI 컴포넌트
+### Timer 접근권한 설정 (WS 생성 후 REST)
+
+```typescript
+// Timer는 WebSocket으로 생성되므로 visibility 설정은 별도 REST 호출
+function setupTimerVisibility(ws: WebSocket) {
+  ws.addEventListener("message", async (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "timer.created") {
+      const timerId = msg.payload.timer.id;
+
+      // 사용자가 공유를 원하는 경우에만 호출 (Lazy 패턴)
+      if (userWantsToShare) {
+        await setVisibility("timer", timerId, { level: "friends" });
+      }
+    }
+  });
+}
+```
+
+### 접근권한 설정 UI 컴포넌트
 
 ```typescript
 function VisibilitySelector({
@@ -688,7 +767,7 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 ## UI/UX 가이드라인
 
-### 가시성 표시 아이콘
+### 접근권한 표시 아이콘
 
 | 레벨 | 아이콘 | 설명 |
 |------|--------|------|
@@ -698,7 +777,7 @@ const allSchedules = await fetchSchedules(start, end, "all");
 | `allowed_emails` | 📧 | 이메일 - 허용된 이메일/도메인 |
 | `public` | 🌐 | 지구본 - 전체 공개 |
 
-### 가시성 선택 UI 권장사항
+### 접근권한 선택 UI 권장사항
 
 1. **기본값 명시**: "비공개(기본)"으로 표시
 2. **친구 선택 UI**: `selected` 레벨 선택 시 친구 멀티 선택 UI 표시
@@ -710,7 +789,7 @@ const allSchedules = await fetchSchedules(start, end, "all");
 1. **시각적 구분**: 공유된 리소스는 배경색/테두리로 구분
 2. **소유자 표시**: 공유된 리소스에는 소유자 정보 표시
 3. **읽기 전용 표시**: 공유된 리소스는 수정 불가능함을 표시
-4. **가시성 배지**: 리소스의 가시성 레벨을 아이콘으로 표시
+4. **접근권한 배지**: 리소스의 접근권한 레벨을 아이콘으로 표시
 
 ### 예시: 캘린더 뷰
 
@@ -735,9 +814,9 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 ## 주의사항
 
-### 1. 가시성 기본값
+### 1. 접근권한 기본값
 
-리소스 생성 시 가시성을 설정하지 않으면 **PRIVATE**으로 동작합니다.
+리소스 생성 시 접근권한을 설정하지 않으면 **PRIVATE**으로 동작합니다.
 
 ### 2. SELECTED 레벨 제약사항
 
@@ -768,13 +847,13 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 ### 5. 소유자 우선 권한
 
-리소스 소유자는 가시성 설정과 관계없이 **항상** 자신의 리소스에 접근할 수 있습니다.
+리소스 소유자는 접근권한 설정과 관계없이 **항상** 자신의 리소스에 접근할 수 있습니다.
 
 ### 6. 공유된 리소스는 읽기 전용
 
 공유된 리소스(`is_shared: true`)는 수정하거나 삭제할 수 없습니다. 소유자만 수정 권한이 있습니다.
 
-### 7. 연관 리소스의 가시성
+### 7. 연관 리소스의 접근권한
 
 - Todo의 Schedule이 공유되면, 해당 Schedule에서 Todo 정보를 볼 수 있습니다.
 - Timer가 공유되면, 연관된 Schedule/Todo 정보도 함께 조회됩니다.
@@ -788,8 +867,8 @@ const allSchedules = await fetchSchedules(start, end, "all");
 | 코드 | 상황 | 설명 |
 |------|------|------|
 | `400` | 잘못된 요청 | 친구가 아닌 사용자를 AllowList에 추가 시도 |
-| `403` | 접근 거부 | 소유자가 아닌 사용자가 가시성 설정 시도 / 가시성 권한이 없는 리소스 접근 |
-| `404` | 찾을 수 없음 | 존재하지 않는 리소스 또는 가시성 미설정 리소스 조회 |
+| `403` | 접근 거부 | 소유자가 아닌 사용자가 접근권한 설정 시도 / 접근권한 권한이 없는 리소스 접근 |
+| `404` | 찾을 수 없음 | 존재하지 않는 리소스 또는 접근권한 미설정 리소스 조회 |
 
 ### 에러 처리 예시 코드
 

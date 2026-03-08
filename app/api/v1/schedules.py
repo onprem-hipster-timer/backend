@@ -162,7 +162,7 @@ async def read_schedule(
     service = ScheduleService(session, current_user)
     schedule, is_shared = service.get_schedule_with_access_check(schedule_id)
 
-    # Schedule 모델을 ScheduleRead로 변환 (가시성 정보 포함)
+    # Schedule 모델을 ScheduleRead로 변환 (접근권한 정보 포함)
     schedule_read = service.to_read_dto(schedule, is_shared=is_shared)
 
     # 타임존 변환

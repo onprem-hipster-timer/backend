@@ -70,9 +70,9 @@ class ScheduleRead(CustomModel):
     state: ScheduleState  # 상태
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 일정 조회 시)
-    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    visibility_level: Optional[VisibilityLevel] = None  # 접근권한 레벨
     is_shared: bool = False  # 공유된 일정인지 (다른 사용자의 일정)
 
     def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "ScheduleRead":

@@ -1,7 +1,7 @@
 """
 Visibility CRUD 함수
 
-리소스 가시성 데이터 접근 레이어
+리소스 접근권한 데이터 접근 레이어
 """
 from typing import Optional
 from uuid import UUID
@@ -28,7 +28,7 @@ def create_visibility(
         owner_id: str,
         level: VisibilityLevel = VisibilityLevel.PRIVATE,
 ) -> ResourceVisibility:
-    """리소스 가시성 생성"""
+    """리소스 접근권한 생성"""
     visibility = ResourceVisibility(
         resource_type=resource_type,
         resource_id=resource_id,
@@ -45,7 +45,7 @@ def get_visibility(
         session: Session,
         visibility_id: UUID,
 ) -> Optional[ResourceVisibility]:
-    """ID로 가시성 조회"""
+    """ID로 접근권한 조회"""
     return session.get(ResourceVisibility, visibility_id)
 
 
@@ -54,7 +54,7 @@ def get_visibility_by_resource(
         resource_type: ResourceType,
         resource_id: UUID,
 ) -> Optional[ResourceVisibility]:
-    """리소스로 가시성 조회"""
+    """리소스로 접근권한 조회"""
     statement = select(ResourceVisibility).where(
         ResourceVisibility.resource_type == resource_type,
         ResourceVisibility.resource_id == resource_id,
@@ -67,7 +67,7 @@ def get_visibilities_by_owner(
         owner_id: str,
         resource_type: Optional[ResourceType] = None,
 ) -> list[ResourceVisibility]:
-    """소유자의 가시성 설정 목록 조회"""
+    """소유자의 접근권한 설정 목록 조회"""
     statement = select(ResourceVisibility).where(
         ResourceVisibility.owner_id == owner_id,
     )
@@ -81,7 +81,7 @@ def update_visibility(
         visibility: ResourceVisibility,
         level: VisibilityLevel,
 ) -> ResourceVisibility:
-    """가시성 레벨 업데이트"""
+    """접근권한 레벨 업데이트"""
     visibility.level = level
     session.flush()
     session.refresh(visibility)
@@ -95,7 +95,7 @@ def upsert_visibility(
         owner_id: str,
         level: VisibilityLevel,
 ) -> ResourceVisibility:
-    """가시성 생성 또는 업데이트"""
+    """접근권한 생성 또는 업데이트"""
     visibility = get_visibility_by_resource(session, resource_type, resource_id)
     if visibility:
         return update_visibility(session, visibility, level)
@@ -103,7 +103,7 @@ def upsert_visibility(
 
 
 def delete_visibility(session: Session, visibility: ResourceVisibility) -> None:
-    """가시성 삭제 (AllowList도 CASCADE로 삭제됨)"""
+    """접근권한 삭제 (AllowList도 CASCADE로 삭제됨)"""
     session.delete(visibility)
     session.flush()
 
@@ -113,7 +113,7 @@ def delete_visibility_by_resource(
         resource_type: ResourceType,
         resource_id: UUID,
 ) -> bool:
-    """리소스로 가시성 삭제"""
+    """리소스로 접근권한 삭제"""
     visibility = get_visibility_by_resource(session, resource_type, resource_id)
     if visibility:
         delete_visibility(session, visibility)
@@ -234,7 +234,7 @@ def add_email_to_allow_list(
     이메일 허용 목록에 추가
     
     :param session: DB 세션
-    :param visibility_id: 가시성 설정 ID
+    :param visibility_id: 접근권한 설정 ID
     :param email: 특정 이메일 주소 (예: user@company.com)
     :param domain: 도메인 (예: company.com)
     :return: 생성된 항목
@@ -276,7 +276,7 @@ def is_email_allowed(
     사용자 이메일이 허용 목록에 있는지 확인
     
     :param session: DB 세션
-    :param visibility_id: 가시성 설정 ID
+    :param visibility_id: 접근권한 설정 ID
     :param user_email: 확인할 사용자 이메일
     :return: 허용 여부
     """
@@ -316,7 +316,7 @@ def remove_email_from_allow_list(
     이메일 허용 목록에서 제거
     
     :param session: DB 세션
-    :param visibility_id: 가시성 설정 ID
+    :param visibility_id: 접근권한 설정 ID
     :param email: 제거할 이메일 주소
     :param domain: 제거할 도메인
     :return: 제거 성공 여부
@@ -357,7 +357,7 @@ def set_email_allow_list(
     이메일 허용 목록 전체 설정 (기존 목록 교체)
     
     :param session: DB 세션
-    :param visibility_id: 가시성 설정 ID
+    :param visibility_id: 접근권한 설정 ID
     :param allowed_emails: 허용할 이메일 주소 목록
     :param allowed_domains: 허용할 도메인 목록
     :return: 생성된 항목 목록
@@ -421,7 +421,7 @@ def get_shared_visibilities(
         exclude_owner_id: str,
 ) -> list[ResourceVisibility]:
     """
-    타인 소유의 공개된(visibility != PRIVATE) 리소스 가시성 목록 조회
+    타인 소유의 공개된(visibility != PRIVATE) 리소스 접근권한 목록 조회
     
     scope=shared 조회 시 사용. 반환된 목록에 대해 추가로 
     VisibilityService.can_access()로 실제 접근 가능 여부 확인 필요.
@@ -429,7 +429,7 @@ def get_shared_visibilities(
     :param session: DB 세션
     :param resource_type: 리소스 타입
     :param exclude_owner_id: 제외할 소유자 ID (본인)
-    :return: 공개된 가시성 설정 목록
+    :return: 공개된 접근권한 설정 목록
     """
     statement = (
         select(ResourceVisibility)

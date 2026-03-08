@@ -1,7 +1,7 @@
 """
 VisibilityService 테스트
 
-가시성 및 접근 제어 비즈니스 로직 테스트
+접근권한 및 접근 제어 비즈니스 로직 테스트
 """
 from uuid import uuid4
 
@@ -57,7 +57,7 @@ class TestCanAccess:
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
-        # 가시성 설정 없이도 소유자는 접근 가능
+        # 접근권한 설정 없이도 소유자는 접근 가능
         # (PRIVATE으로 간주되지만 소유자이므로 접근 가능)
         can_access = service.can_access(
             resource_type=ResourceType.SCHEDULE,
@@ -71,7 +71,7 @@ class TestCanAccess:
         """PRIVATE은 소유자만 접근 가능"""
         resource_id = uuid4()
 
-        # 소유자가 가시성 설정
+        # 소유자가 접근권한 설정
         owner_service = VisibilityService(test_session, test_user)
         owner_service.set_visibility(
             resource_type=ResourceType.SCHEDULE,
@@ -563,7 +563,7 @@ class TestRequireAccess:
         """접근 거부 시 AccessDeniedError 발생"""
         resource_id = uuid4()
 
-        # 가시성 설정 없음 (PRIVATE으로 간주)
+        # 접근권한 설정 없음 (PRIVATE으로 간주)
         other_service = VisibilityService(test_session, second_user)
 
         with pytest.raises(AccessDeniedError):
@@ -575,10 +575,10 @@ class TestRequireAccess:
 
 
 class TestSetVisibility:
-    """가시성 설정 테스트"""
+    """접근권한 설정 테스트"""
 
     def test_set_visibility_creates_new(self, test_session, test_user):
-        """새 가시성 설정 생성"""
+        """새 접근권한 설정 생성"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -592,7 +592,7 @@ class TestSetVisibility:
         assert visibility.level == VisibilityLevel.FRIENDS
 
     def test_set_visibility_updates_existing(self, test_session, test_user):
-        """기존 가시성 설정 업데이트"""
+        """기존 접근권한 설정 업데이트"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -631,7 +631,7 @@ class TestSetVisibility:
     def test_set_visibility_with_allowed_emails_creates_new(
             self, test_session, test_user, second_user
     ):
-        """ALLOWED_EMAILS 레벨로 가시성 설정 생성"""
+        """ALLOWED_EMAILS 레벨로 접근권한 설정 생성"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -649,7 +649,7 @@ class TestSetVisibility:
     def test_set_visibility_updates_allowed_emails(
             self, test_session, test_user, second_user, third_user
     ):
-        """ALLOWED_EMAILS 레벨 가시성 설정 업데이트"""
+        """ALLOWED_EMAILS 레벨 접근권한 설정 업데이트"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -761,10 +761,10 @@ class TestSetVisibility:
 
 
 class TestGetVisibility:
-    """가시성 조회 테스트"""
+    """접근권한 조회 테스트"""
 
     def test_get_visibility_returns_none_if_not_set(self, test_session, test_user):
-        """가시성 미설정 시 None 반환"""
+        """접근권한 미설정 시 None 반환"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -776,7 +776,7 @@ class TestGetVisibility:
         assert visibility is None
 
     def test_get_visibility_returns_settings(self, test_session, test_user, second_user):
-        """가시성 설정 조회"""
+        """접근권한 설정 조회"""
         # 친구 관계 생성
         user1_service = FriendService(test_session, test_user)
         friendship = user1_service.send_friend_request(second_user.sub)
@@ -787,7 +787,7 @@ class TestGetVisibility:
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
-        # 가시성 설정
+        # 접근권한 설정
         service.set_visibility(
             resource_type=ResourceType.SCHEDULE,
             resource_id=resource_id,
@@ -808,11 +808,11 @@ class TestGetVisibility:
     def test_get_visibility_returns_allowed_emails_settings(
             self, test_session, test_user, second_user
     ):
-        """ALLOWED_EMAILS 가시성 설정 조회"""
+        """ALLOWED_EMAILS 접근권한 설정 조회"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
-        # 가시성 설정 (이메일과 도메인 모두)
+        # 접근권한 설정 (이메일과 도메인 모두)
         service.set_visibility(
             resource_type=ResourceType.SCHEDULE,
             resource_id=resource_id,
@@ -835,10 +835,10 @@ class TestGetVisibility:
 
 
 class TestDeleteVisibility:
-    """가시성 삭제 테스트"""
+    """접근권한 삭제 테스트"""
 
     def test_delete_visibility_success(self, test_session, test_user):
-        """가시성 삭제 성공"""
+        """접근권한 삭제 성공"""
         service = VisibilityService(test_session, test_user)
         resource_id = uuid4()
 
@@ -865,7 +865,7 @@ class TestDeleteVisibility:
         assert visibility is None
 
     def test_delete_visibility_not_found(self, test_session, test_user):
-        """존재하지 않는 가시성 삭제"""
+        """존재하지 않는 접근권한 삭제"""
         service = VisibilityService(test_session, test_user)
 
         result = service.delete_visibility(

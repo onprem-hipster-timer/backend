@@ -78,9 +78,9 @@ class TimerRead(CustomModel):
     # 태그 목록
     tags: List["TagRead"] = []
 
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 타이머 조회 시)
-    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    visibility_level: Optional[VisibilityLevel] = None  # 접근권한 레벨
     is_shared: bool = False  # 공유된 타이머인지
 
     @field_validator("started_at", "paused_at", "ended_at", "created_at", "updated_at")

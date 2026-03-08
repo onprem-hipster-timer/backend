@@ -114,7 +114,7 @@ class MeetingRead(CustomModel):
     time_slot_minutes: int
     created_at: datetime
     updated_at: datetime
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     visibility_level: Optional[VisibilityLevel] = None
     is_shared: bool = False  # 공유된 일정인지 (다른 사용자의 일정)
 

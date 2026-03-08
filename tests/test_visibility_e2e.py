@@ -17,7 +17,7 @@ def _make_schedule(client):
 
 @pytest.mark.e2e
 def test_update_visibility(e2e_client):
-    """가시성 설정 변경 (friends → public) E2E 테스트"""
+    """접근권한 설정 변경 (friends → public) E2E 테스트"""
     schedule_id = _make_schedule(e2e_client)
 
     e2e_client.put(f"/v1/visibility/schedule/{schedule_id}", json={"level": "friends"})
@@ -32,7 +32,7 @@ def test_update_visibility(e2e_client):
 
 @pytest.mark.e2e
 def test_delete_visibility(e2e_client):
-    """가시성 삭제 후 GET은 404 E2E 테스트"""
+    """접근권한 삭제 후 GET은 404 E2E 테스트"""
     schedule_id = _make_schedule(e2e_client)
     e2e_client.put(f"/v1/visibility/schedule/{schedule_id}", json={"level": "public"})
 
@@ -45,7 +45,7 @@ def test_delete_visibility(e2e_client):
 
 @pytest.mark.e2e
 def test_get_visibility_not_set_returns_404(e2e_client):
-    """가시성 미설정 리소스 조회 시 404 E2E 테스트"""
+    """접근권한 미설정 리소스 조회 시 404 E2E 테스트"""
     schedule_id = _make_schedule(e2e_client)
     response = e2e_client.get(f"/v1/visibility/schedule/{schedule_id}")
     assert response.status_code == 404
@@ -53,7 +53,7 @@ def test_get_visibility_not_set_returns_404(e2e_client):
 
 @pytest.mark.e2e
 def test_set_visibility_resource_not_found(e2e_client):
-    """존재하지 않는 리소스에 가시성 설정 시 404 E2E 테스트"""
+    """존재하지 않는 리소스에 접근권한 설정 시 404 E2E 테스트"""
     non_existent_id = str(uuid4())
     response = e2e_client.put(
         f"/v1/visibility/schedule/{non_existent_id}",
@@ -64,7 +64,7 @@ def test_set_visibility_resource_not_found(e2e_client):
 
 @pytest.mark.e2e
 def test_set_visibility_non_owner_denied(multi_user_e2e):
-    """소유자가 아닌 사용자는 가시성 설정 불가 (403) E2E 테스트"""
+    """소유자가 아닌 사용자는 접근권한 설정 불가 (403) E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
 
@@ -79,7 +79,7 @@ def test_set_visibility_non_owner_denied(multi_user_e2e):
 
 @pytest.mark.e2e
 def test_delete_visibility_non_owner_denied(multi_user_e2e):
-    """소유자가 아닌 사용자는 가시성 삭제 불가 (403) E2E 테스트"""
+    """소유자가 아닌 사용자는 접근권한 삭제 불가 (403) E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
 

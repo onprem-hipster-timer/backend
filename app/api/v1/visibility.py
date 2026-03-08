@@ -1,8 +1,8 @@
 """
 Visibility Router
 
-리소스 가시성 설정 REST API 엔드포인트
-모든 도메인(todo, schedule, timer, meeting)의 가시성을 중앙에서 관리합니다.
+리소스 접근권한 설정 REST API 엔드포인트
+모든 도메인(todo, schedule, timer, meeting)의 접근권한을 중앙에서 관리합니다.
 """
 from uuid import UUID
 
@@ -59,9 +59,9 @@ async def set_visibility(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    리소스 가시성 설정/업데이트
+    리소스 접근권한 설정/업데이트
 
-    소유자만 가시성을 설정할 수 있습니다.
+    소유자만 접근권한을 설정할 수 있습니다.
     """
     _require_resource_owner(session, resource_type, resource_id, current_user)
 
@@ -89,9 +89,9 @@ async def get_visibility(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    리소스 가시성 설정 조회
+    리소스 접근권한 설정 조회
 
-    소유자만 가시성 설정을 조회할 수 있습니다.
+    소유자만 접근권한 설정을 조회할 수 있습니다.
     """
     _require_resource_owner(session, resource_type, resource_id, current_user)
 
@@ -115,9 +115,9 @@ async def delete_visibility(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    리소스 가시성 설정 삭제 (PRIVATE으로 복귀)
+    리소스 접근권한 설정 삭제 (PRIVATE으로 복귀)
 
-    소유자만 가시성을 삭제할 수 있습니다.
+    소유자만 접근권한을 삭제할 수 있습니다.
     """
     _require_resource_owner(session, resource_type, resource_id, current_user)
 

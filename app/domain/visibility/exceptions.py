@@ -1,7 +1,7 @@
 """
 Visibility Domain Exceptions
 
-가시성 관련 도메인 예외
+접근권한 관련 도메인 예외
 """
 from app.core.error_handlers import DomainException
 
@@ -13,13 +13,13 @@ class AccessDeniedError(DomainException):
 
 
 class VisibilityNotFoundError(DomainException):
-    """가시성 설정을 찾을 수 없음"""
+    """접근권한 설정을 찾을 수 없음"""
     status_code = 404
     detail = "Visibility setting not found"
 
 
 class InvalidVisibilityLevelError(DomainException):
-    """잘못된 가시성 레벨"""
+    """잘못된 접근권한 레벨"""
     status_code = 400
     detail = "Invalid visibility level"
 

@@ -25,7 +25,7 @@ stateDiagram-v2
     ACCEPTED --> [*]: 친구 삭제
 ```
 
-### 가시성 레벨
+### 접근권한 레벨
 
 | 레벨 | 설명 |
 |------|------|
@@ -317,9 +317,9 @@ false
 
 ---
 
-## 가시성(Visibility) 설정
+## 접근권한(Visibility) 설정
 
-### 리소스 생성/수정 시 가시성 설정
+### 리소스 생성/수정 시 접근권한 설정
 
 Schedule, Timer, Todo 생성/수정 시 `visibility` 필드를 포함할 수 있습니다.
 
@@ -353,7 +353,7 @@ Schedule, Timer, Todo 생성/수정 시 `visibility` 필드를 포함할 수 있
 
 **Note:** `allowed_user_ids`에 포함된 사용자는 모두 **친구**여야 합니다.
 
-### 가시성 레벨별 접근 권한
+### 접근권한 레벨별 접근 권한
 
 | 레벨 | 소유자 | 친구 | 비친구 |
 |------|--------|------|--------|
@@ -362,7 +362,7 @@ Schedule, Timer, Todo 생성/수정 시 `visibility` 필드를 포함할 수 있
 | `selected` | ✅ | AllowList만 | ❌ |
 | `public` | ✅ | ✅ | ✅ |
 
-### 응답에서 가시성 정보 확인
+### 응답에서 접근권한 정보 확인
 
 공유된 리소스를 조회할 때 추가 필드가 포함됩니다:
 
@@ -517,10 +517,10 @@ const privateSchedule = await fetch('/api/v1/schedules', {
 });
 ```
 
-### 가시성 변경
+### 접근권한 변경
 
 ```typescript
-// 기존 일정의 가시성 변경
+// 기존 일정의 접근권한 변경
 await fetch(`/api/v1/schedules/${scheduleId}`, {
   method: 'PATCH',
   headers: { 'Content-Type': 'application/json' },
@@ -536,7 +536,7 @@ await fetch(`/api/v1/schedules/${scheduleId}`, {
 
 ## 주의사항
 
-### 1. 가시성 기본값
+### 1. 접근권한 기본값
 
 리소스 생성 시 `visibility`를 지정하지 않으면 **PRIVATE**으로 설정됩니다.
 
@@ -558,7 +558,7 @@ await fetch(`/api/v1/schedules/${scheduleId}`, {
 
 ### 5. 소유자 우선
 
-리소스 소유자는 가시성 설정과 관계없이 항상 자신의 리소스에 접근할 수 있습니다.
+리소스 소유자는 접근권한 설정과 관계없이 항상 자신의 리소스에 접근할 수 있습니다.
 
 ---
 

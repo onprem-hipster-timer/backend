@@ -1,7 +1,7 @@
 """
 Visibility - Todo 도메인 E2E 테스트
 
-Todo 가시성 설정 및 접근 제어 통합 테스트
+Todo 접근권한 설정 및 접근 제어 통합 테스트
 """
 import pytest
 
@@ -18,8 +18,8 @@ def _make_todo(client, title="테스트 Todo"):
 
 @pytest.mark.e2e
 def test_set_and_get_visibility_todo(e2e_client):
-    """Todo 가시성 설정 및 조회 E2E 테스트"""
-    todo_id = _make_todo(e2e_client, "가시성 테스트 Todo")
+    """Todo 접근권한 설정 및 조회 E2E 테스트"""
+    todo_id = _make_todo(e2e_client, "접근권한 테스트 Todo")
 
     vis_response = e2e_client.put(
         f"/v1/visibility/todo/{todo_id}",
@@ -38,7 +38,7 @@ def test_set_and_get_visibility_todo(e2e_client):
 
 @pytest.mark.e2e
 def test_set_visibility_allowed_emails_todo(e2e_client):
-    """Todo ALLOWED_EMAILS 가시성 설정 E2E 테스트"""
+    """Todo ALLOWED_EMAILS 접근권한 설정 E2E 테스트"""
     todo_id = _make_todo(e2e_client, "이메일 공개 Todo")
 
     vis_response = e2e_client.put(

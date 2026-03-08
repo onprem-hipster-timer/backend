@@ -525,7 +525,7 @@ class TodoService:
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
         crud.detach_children(self.session, todo_id, self.owner_id)
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TODO, todo_id
         )
@@ -603,7 +603,7 @@ class TodoService:
             schedules: Optional[List["ScheduleRead"]] = None,
     ) -> TodoRead:
         """
-        Todo를 TodoRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Todo를 TodoRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         연관 Schedule은 외부에서 권한 검증 후 주입받습니다.
         각 도메인 서비스가 독립적으로 권한 검증을 수행하는 구조입니다.
@@ -612,7 +612,7 @@ class TodoService:
         :param include_reason: 포함 사유 (MATCH/ANCESTOR)
         :param is_shared: 공유된 리소스인지 여부
         :param schedules: 외부에서 권한 검증 후 주입된 Schedule DTO 리스트 (Optional)
-        :return: TodoRead DTO (가시성 정보 포함)
+        :return: TodoRead DTO (접근권한 정보 포함)
         """
         tags = self.get_todo_tags(todo.id)
         tag_reads = [TagRead.model_validate(tag) for tag in tags]
@@ -634,11 +634,11 @@ class TodoService:
             include_reason=include_reason,
         )
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         todo_read.owner_id = todo.owner_id
         todo_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TODO, todo.id
         )

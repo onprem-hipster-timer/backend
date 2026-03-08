@@ -1,7 +1,7 @@
 """
 Visibility - Meeting 도메인 E2E 테스트
 
-미팅(일정 조율) 가시성 설정 및 접근 제어 통합 테스트
+미팅(일정 조율) 접근권한 설정 및 접근 제어 통합 테스트
 """
 import pytest
 
@@ -23,8 +23,8 @@ def _make_meeting(client, title="테스트 미팅"):
 
 @pytest.mark.e2e
 def test_set_and_get_visibility_meeting(e2e_client):
-    """미팅 가시성 설정 및 조회 E2E 테스트"""
-    meeting_id = _make_meeting(e2e_client, "가시성 테스트 미팅")
+    """미팅 접근권한 설정 및 조회 E2E 테스트"""
+    meeting_id = _make_meeting(e2e_client, "접근권한 테스트 미팅")
 
     vis_response = e2e_client.put(
         f"/v1/visibility/meeting/{meeting_id}",

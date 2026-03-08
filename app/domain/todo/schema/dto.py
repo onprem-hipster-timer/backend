@@ -52,9 +52,9 @@ class TodoRead(CustomModel):
     tags: List[TagRead] = []
     schedules: List[ScheduleRead] = []  # 연관된 Schedule 목록
     include_reason: TodoIncludeReason = TodoIncludeReason.MATCH  # 포함 사유 (필터 매칭/조상)
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 Todo 조회 시)
-    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    visibility_level: Optional[VisibilityLevel] = None  # 접근권한 레벨
     is_shared: bool = False  # 공유된 Todo인지
 
 

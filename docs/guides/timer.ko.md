@@ -933,6 +933,26 @@ stateDiagram-v2
     RUNNING --> CANCELLED: cancel
 ```
 
+### 10. 접근권한(Visibility) 설정
+
+타이머의 접근권한은 **WebSocket이 아닌 별도의 REST API**로 설정합니다.
+`timer.create` 페이로드에는 `visibility` 필드가 없으므로, 생성 후 필요한 경우에만 호출합니다.
+
+```http
+PUT /v1/visibility/timer/{timer_id}
+```
+```json
+{
+  "level": "friends"
+}
+```
+
+!!! tip "권장: Lazy Visibility"
+    타이머는 개인 집중 도구이므로 기본값 `PRIVATE`이 자연스럽습니다.
+    생성 시점에 즉시 설정하기보다, 사용자가 "공유" 버튼을 누를 때만 호출하세요.
+
+자세한 내용은 [Visibility API 가이드](./visibility.ko.md#예시-timer-생성--접근권한-설정-websocket--rest)를 참고하세요.
+
 ---
 
 ## API 요약
@@ -964,7 +984,14 @@ stateDiagram-v2
 | DELETE | `/v1/timers/{id}` | 타이머 삭제 |
 | GET | `/v1/schedules/{id}/timers` | Schedule의 타이머 조회 |
 | GET | `/v1/todos/{id}/timers` | Todo의 타이머 조회 |
+| PUT | `/v1/visibility/timer/{id}` | 타이머 접근권한 설정 |
+| GET | `/v1/visibility/timer/{id}` | 타이머 접근권한 조회 |
+| DELETE | `/v1/visibility/timer/{id}` | 타이머 접근권한 삭제 (PRIVATE 복귀) |
 
 ---
 
-이 가이드를 참고하여 프론트엔드에서 WebSocket 기반 Timer 기능을 구현하세요!
+## 관련 문서
+
+- [Visibility API 가이드](./visibility.ko.md) - 접근권한 설정 상세 가이드
+- [Schedule API 가이드](./schedule.ko.md) - 일정 관리
+- [Todo API 가이드](./todo.ko.md) - 할 일 관리

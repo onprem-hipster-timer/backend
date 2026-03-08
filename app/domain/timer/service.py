@@ -593,7 +593,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TIMER, timer_id
         )
@@ -609,7 +609,7 @@ class TimerService:
             tag_include_mode: Optional[str] = None,
     ) -> "TimerRead":
         """
-        Timer를 TimerRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Timer를 TimerRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         [보안 설계] 연관 리소스(Schedule, Todo)는 반드시 외부에서 권한 검증 후 주입받습니다.
         
@@ -626,7 +626,7 @@ class TimerService:
         :param schedule: 외부에서 권한 검증 후 주입된 Schedule DTO (Optional, 권한 없으면 None)
         :param todo: 외부에서 권한 검증 후 주입된 Todo DTO (Optional, 권한 없으면 None)
         :param tag_include_mode: 태그 포함 모드 (none, timer_only, inherit_from_schedule)
-        :return: TimerRead DTO (가시성 정보 포함)
+        :return: TimerRead DTO (접근권한 정보 포함)
         """
         from app.core.constants import TagIncludeMode
         from app.domain.timer.schema.dto import TimerRead
@@ -656,11 +656,11 @@ class TimerService:
             tags=tags_read,
         )
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         timer_read.owner_id = timer.owner_id
         timer_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TIMER, timer.id
         )

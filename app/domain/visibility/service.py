@@ -1,10 +1,10 @@
 """
 Visibility Service
 
-리소스 가시성 비즈니스 로직 및 접근 제어
+리소스 접근권한 비즈니스 로직 및 접근 제어
 
 중앙 집중식 권한 검증 서비스:
-- 모든 리소스의 가시성 체크를 이 서비스에서 처리
+- 모든 리소스의 접근권한 체크를 이 서비스에서 처리
 - ReBAC + ABAC 패턴 적용
 """
 from typing import Optional, List, TypeVar
@@ -29,11 +29,11 @@ T = TypeVar("T")
 
 class VisibilityService:
     """
-    Visibility Service - 리소스 가시성 비즈니스 로직
+    Visibility Service - 리소스 접근권한 비즈니스 로직
 
     핵심 기능:
     - 리소스 접근 권한 확인 (can_access)
-    - 가시성 설정 관리 (set_visibility, get_visibility)
+    - 접근권한 설정 관리 (set_visibility, get_visibility)
     - 접근 가능한 리소스 필터링
 
     접근 제어 로직:
@@ -71,18 +71,18 @@ class VisibilityService:
         if self._is_blocked_relation(owner_id):
             return False
 
-        # 3. 가시성 설정 조회
+        # 3. 접근권한 설정 조회
         visibility = crud.get_visibility_by_resource(
             self.session,
             resource_type,
             resource_id,
         )
 
-        # 가시성 설정이 없으면 PRIVATE으로 간주
+        # 접근권한 설정이 없으면 PRIVATE으로 간주
         if not visibility:
             return False
 
-        # 4. 가시성 레벨에 따른 접근 제어
+        # 4. 접근권한 레벨에 따른 접근 제어
         return self._check_visibility_level(visibility, owner_id)
 
     def _check_visibility_level(
@@ -90,7 +90,7 @@ class VisibilityService:
             visibility: ResourceVisibility,
             owner_id: str,
     ) -> bool:
-        """가시성 레벨에 따른 접근 권한 확인"""
+        """접근권한 레벨에 따른 접근 권한 확인"""
         level = visibility.level
 
         if level == VisibilityLevel.PUBLIC:
@@ -148,15 +148,15 @@ class VisibilityService:
             allowed_domains: Optional[List[str]] = None,
     ) -> ResourceVisibility:
         """
-        리소스 가시성 설정
+        리소스 접근권한 설정
 
         :param resource_type: 리소스 타입
         :param resource_id: 리소스 ID
-        :param level: 가시성 레벨
+        :param level: 접근권한 레벨
         :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만 사용)
         :param allowed_emails: 허용할 이메일 주소 목록 (ALLOWED_EMAILS 레벨에서만 사용)
         :param allowed_domains: 허용할 도메인 목록 (ALLOWED_EMAILS 레벨에서만 사용)
-        :return: 생성/업데이트된 가시성 설정
+        :return: 생성/업데이트된 접근권한 설정
         """
         # SELECTED_FRIENDS 레벨인 경우 검증
         if level == VisibilityLevel.SELECTED_FRIENDS:
@@ -166,7 +166,7 @@ class VisibilityService:
                     if not friendship_crud.is_friend(self.session, self.user_id, user_id):
                         raise CannotShareWithNonFriendError()
 
-        # 가시성 설정 생성/업데이트
+        # 접근권한 설정 생성/업데이트
         visibility = crud.upsert_visibility(
             self.session,
             resource_type,
@@ -209,9 +209,9 @@ class VisibilityService:
             resource_id: UUID,
     ) -> Optional[VisibilityRead]:
         """
-        리소스 가시성 설정 조회
+        리소스 접근권한 설정 조회
 
-        :return: 가시성 설정 (없으면 None)
+        :return: 접근권한 설정 (없으면 None)
         """
         visibility = crud.get_visibility_by_resource(
             self.session,
@@ -249,7 +249,7 @@ class VisibilityService:
             resource_id: UUID,
     ) -> bool:
         """
-        리소스 가시성 설정 삭제 (PRIVATE으로 복귀)
+        리소스 접근권한 설정 삭제 (PRIVATE으로 복귀)
 
         :return: 삭제 성공 여부
         """
@@ -352,7 +352,7 @@ class VisibilityService:
         배치로 권한 체크를 수행합니다.
         
         :param resource_type: 리소스 타입
-        :param visibilities: 가시성 설정 목록 (미리 조회됨)
+        :param visibilities: 접근권한 설정 목록 (미리 조회됨)
         :param resources: 필터링할 리소스 목록
         :param get_resource_id: 리소스에서 ID를 추출하는 함수 (lambda r: r.id)
         :return: 접근 가능한 리소스 리스트
@@ -433,7 +433,7 @@ class VisibilityService:
             if owner_id in blocked_by_me or owner_id in blocked_me:
                 continue
 
-            # 가시성 레벨에 따른 접근 제어
+            # 접근권한 레벨에 따른 접근 제어
             level = visibility.level
 
             if level == VisibilityLevel.PUBLIC:

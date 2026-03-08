@@ -70,13 +70,13 @@ class TestCreateMeeting:
     def test_create_meeting_then_set_visibility(
             self, test_session, test_user, meeting_data
     ):
-        """일정 조율 생성 후 별도로 가시성 설정"""
+        """일정 조율 생성 후 별도로 접근권한 설정"""
         from app.domain.visibility.service import VisibilityService
 
         service = MeetingService(test_session, test_user)
         meeting = service.create_meeting(meeting_data)
 
-        # 가시성 별도 설정 (새 visibility 컨트롤러 패턴)
+        # 접근권한 별도 설정 (새 visibility 컨트롤러 패턴)
         visibility_service = VisibilityService(test_session, test_user)
         visibility_service.set_visibility(
             resource_type=ResourceType.MEETING,
@@ -86,7 +86,7 @@ class TestCreateMeeting:
             allowed_domains=["company.com"],
         )
 
-        # 가시성 설정 확인
+        # 접근권한 설정 확인
         visibility = visibility_service.get_visibility(
             ResourceType.MEETING, meeting.id
         )
@@ -175,7 +175,7 @@ class TestGetMeeting:
             self, test_session, test_user, other_user, sample_meeting
     ):
         """접근 거부 확인"""
-        # 가시성 설정 없음 (PRIVATE으로 간주)
+        # 접근권한 설정 없음 (PRIVATE으로 간주)
 
         # 다른 사용자 접근 시도
         other_service = MeetingService(test_session, other_user)

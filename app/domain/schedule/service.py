@@ -491,7 +491,7 @@ class ScheduleService:
         
         비즈니스 로직:
         - DB 레벨 CASCADE DELETE로 관련 예외 인스턴스 자동 삭제
-        - 가시성 설정도 함께 삭제
+        - 접근권한 설정도 함께 삭제
         - 모든 DB 구조에서 일관성 보장
         
         :param schedule_id: 일정 ID
@@ -501,7 +501,7 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule_id
         )
@@ -902,10 +902,10 @@ class ScheduleService:
 
     def get_schedule_visibility(self, schedule_id: UUID) -> Optional[VisibilityLevel]:
         """
-        일정의 가시성 레벨 조회
+        일정의 접근권한 레벨 조회
         
         :param schedule_id: 일정 ID
-        :return: 가시성 레벨 (설정되지 않은 경우 None = PRIVATE)
+        :return: 접근권한 레벨 (설정되지 않은 경우 None = PRIVATE)
         """
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule_id
@@ -918,21 +918,21 @@ class ScheduleService:
             is_shared: bool = False,
     ) -> "ScheduleRead":
         """
-        Schedule을 ScheduleRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Schedule을 ScheduleRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         :param schedule: Schedule 모델
         :param is_shared: 공유된 리소스인지 여부
-        :return: ScheduleRead DTO (가시성 정보 포함)
+        :return: ScheduleRead DTO (접근권한 정보 포함)
         """
         from app.domain.schedule.schema.dto import ScheduleRead
 
         schedule_read = ScheduleRead.model_validate(schedule)
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         schedule_read.owner_id = schedule.owner_id
         schedule_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule.id
         )
