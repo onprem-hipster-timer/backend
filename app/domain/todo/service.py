@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
@@ -38,8 +38,6 @@ from app.domain.todo.schema.dto import (
 )
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
-from app.models.tag import Tag, TodoTag
-from app.models.todo import Todo as TodoModel
 
 
 @dataclass
@@ -158,7 +156,7 @@ class TodoService:
         self._validate_parent_id(data.parent_id, data.tag_group_id)
 
         # Todo 모델 생성
-        todo = TodoModel(
+        todo = Todo(
             owner_id=self.owner_id,
             title=data.title,
             description=data.description,
@@ -488,11 +486,7 @@ class TodoService:
             del update_dict['tag_ids']
 
         # 나머지 필드 업데이트
-        for key, value in update_dict.items():
-            setattr(todo, key, value)
-
-        self.session.flush()
-        self.session.refresh(todo)
+        todo = crud.update_todo(self.session, todo, update_dict)
 
         return todo
 
@@ -564,18 +558,7 @@ class TodoService:
                 by_tag=[],
             )
 
-        # 태그별 카운트 집계
-        statement = (
-            select(TodoTag.tag_id, Tag.name)
-            .join(Tag)
-            .where(TodoTag.todo_id.in_(todo_ids))
-        )
-
-        # 그룹 필터링
-        if group_id:
-            statement = statement.where(Tag.group_id == group_id)
-
-        tag_rows = self.session.exec(statement).all()
+        tag_rows = crud.get_todo_tag_stats(self.session, todo_ids, group_id)
 
         # 태그별 카운트
         tag_counts: dict[UUID, dict] = {}
