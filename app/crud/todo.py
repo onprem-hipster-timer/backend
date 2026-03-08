@@ -13,6 +13,7 @@ from sqlalchemy import case
 from sqlmodel import Session, select
 
 from app.domain.todo.enums import TodoStatus
+from app.domain.todo.schema.dto import TodoUpdate
 from app.models.tag import Tag, TodoTag
 from app.models.todo import Todo
 
@@ -169,12 +170,12 @@ def create_todo(session: Session, todo: Todo) -> Todo:
     return todo
 
 
-def update_todo(session: Session, todo: Todo, update_data: dict) -> Todo:
+def update_todo(session: Session, todo: Todo, data: TodoUpdate) -> Todo:
     """
     Todo 필드 업데이트
     """
-    for key, value in update_data.items():
-        setattr(todo, key, value)
+    update_data = data.model_dump(exclude_unset=True)
+    todo.apply_update(update_data)
     session.flush()
     session.refresh(todo)
     return todo

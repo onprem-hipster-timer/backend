@@ -472,12 +472,7 @@ class ScheduleService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
-            del update_dict['tag_ids']  # CRUD에 전달하지 않음
-
-        # 변환된 dict로 ScheduleUpdate 재생성
-        update_data = ScheduleUpdate(**update_dict)
-
-        updated_schedule = crud.update_schedule(self.session, schedule, update_data)
+        updated_schedule = crud.update_schedule(self.session, schedule, data)
 
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:
@@ -554,17 +549,7 @@ class ScheduleService:
             if existing_exception.is_deleted:
                 existing_exception.is_deleted = False
 
-            if 'title' in update_dict:
-                existing_exception.title = update_dict['title']
-            if 'description' in update_dict:
-                existing_exception.description = update_dict['description']
-            if 'start_time' in update_dict:
-                existing_exception.start_time = update_dict['start_time']
-            if 'end_time' in update_dict:
-                existing_exception.end_time = update_dict['end_time']
-
-            self.session.flush()
-            self.session.refresh(existing_exception)
+            crud.update_schedule_exception(self.session, existing_exception, update_dict)
 
             # 태그 업데이트 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:

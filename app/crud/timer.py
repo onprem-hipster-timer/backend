@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlmodel import Session, select, and_
 
 from app.core.constants import TimerStatus
+from app.domain.timer.schema.dto import TimerUpdate
 from app.models.timer import TimerSession
 
 
@@ -171,6 +172,22 @@ def get_active_timer_by_todo(
     )
 
     return session.exec(statement).first()
+
+
+def update_timer(
+        session: Session,
+        timer: TimerSession,
+        data: TimerUpdate,
+        exclude: list = None,
+) -> TimerSession:
+    """
+    TimerSession 필드 업데이트
+    """
+    update_data = data.model_dump(exclude_unset=True)
+    timer.apply_update(update_data, exclude=exclude)
+    session.flush()
+    session.refresh(timer)
+    return timer
 
 
 def delete_timer(session: Session, timer: TimerSession) -> None:

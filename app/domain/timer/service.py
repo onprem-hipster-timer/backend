@@ -539,6 +539,9 @@ class TimerService:
         # exclude_unset=True: 요청에 포함되지 않은 필드는 제외
         update_data = data.model_dump(exclude_unset=True)
 
+        # 서비스에서 수동 처리할 컬럼 추적
+        exclude_fields = []
+
         # todo_id 처리 (요청에 포함된 경우에만)
         if 'todo_id' in update_data:
             new_todo_id = update_data['todo_id']
@@ -548,7 +551,7 @@ class TimerService:
                 if not todo:
                     raise TodoNotFoundError()
             timer.todo_id = new_todo_id
-            del update_data['todo_id']
+            exclude_fields.append('todo_id')
 
         # schedule_id 처리 (요청에 포함된 경우에만)
         if 'schedule_id' in update_data:
@@ -559,22 +562,16 @@ class TimerService:
                 if not schedule:
                     raise ScheduleNotFoundError()
             timer.schedule_id = new_schedule_id
-            del update_data['schedule_id']
+            exclude_fields.append('schedule_id')
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_data
         if tag_ids_updated:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
-            del update_data['tag_ids']  # CRUD에 전달하지 않음
 
-        # 나머지 필드 업데이트 (None이 아닌 경우에만)
-        for field, value in update_data.items():
-            if value is not None:
-                setattr(timer, field, value)
-
-        self.session.flush()
-        self.session.refresh(timer)
+        # 나머지 필드 업데이트
+        timer = crud.update_timer(self.session, timer, data, exclude=exclude_fields or None)
 
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:

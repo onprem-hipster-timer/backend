@@ -78,11 +78,7 @@ class TagService:
         if not tag_group:
             _raise_group_not_found(group_id)
 
-        update_data = data.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(tag_group, key, value)
-
-        return crud.update_tag_group(self.session, tag_group)
+        return crud.update_tag_group(self.session, tag_group, data)
 
     def delete_tag_group(self, group_id: UUID) -> None:
         """
@@ -165,11 +161,7 @@ class TagService:
             if existing:
                 _raise_duplicate_tag_name(tag.group_id, data.name)
 
-        update_data = data.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(tag, key, value)
-
-        return crud.update_tag(self.session, tag)
+        return crud.update_tag(self.session, tag, data)
 
     def delete_tag(self, tag_id: UUID) -> None:
         """

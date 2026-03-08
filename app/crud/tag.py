@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from app.domain.tag.schema.dto import TagGroupUpdate, TagUpdate
 from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TimerTag, TodoTag
 
 
@@ -50,10 +51,11 @@ def get_all_tag_groups(session: Session, owner_id: str) -> List[TagGroup]:
     return list(session.exec(statement).all())
 
 
-def update_tag_group(session: Session, tag_group: TagGroup) -> TagGroup:
+def update_tag_group(session: Session, tag_group: TagGroup, data: TagGroupUpdate) -> TagGroup:
     """태그 그룹 업데이트"""
-    session.add(tag_group)
-    session.flush()  # ID를 얻기 위해 flush
+    update_data = data.model_dump(exclude_unset=True)
+    tag_group.apply_update(update_data)
+    session.flush()
     session.refresh(tag_group)
     return tag_group
 
@@ -122,10 +124,11 @@ def get_tag_by_name_in_group(session: Session, group_id: UUID, name: str, owner_
     return session.exec(statement).first()
 
 
-def update_tag(session: Session, tag: Tag) -> Tag:
+def update_tag(session: Session, tag: Tag, data: TagUpdate) -> Tag:
     """태그 업데이트"""
-    session.add(tag)
-    session.flush()  # ID를 얻기 위해 flush
+    update_data = data.model_dump(exclude_unset=True)
+    tag.apply_update(update_data)
+    session.flush()
     session.refresh(tag)
     return tag
 

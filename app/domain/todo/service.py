@@ -18,6 +18,7 @@ from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
+from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.exceptions import (
@@ -483,10 +484,8 @@ class TodoService:
                 for schedule in schedules:
                     schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
                     schedule_service.update_schedule(schedule.id, schedule_update)
-            del update_dict['tag_ids']
-
         # 나머지 필드 업데이트
-        todo = crud.update_todo(self.session, todo, update_dict)
+        todo = crud.update_todo(self.session, todo, data)
 
         return todo
 

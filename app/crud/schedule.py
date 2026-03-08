@@ -107,23 +107,33 @@ def get_schedules_by_ids(session: Session, schedule_ids: list[UUID]) -> list[Sch
 def update_schedule(
         session: Session,
         schedule: Schedule,
-        data: ScheduleUpdate
+        data: ScheduleUpdate,
 ) -> Schedule:
     """
     Schedule 객체의 변경된 필드만 반영해 업데이트합니다.
-    
+
     FastAPI Best Practices:
     - commit은 get_db_transactional이 처리
-    - exclude_none=True: None 값은 업데이트하지 않음 (기존 값 유지)
     """
-    update_data = data.model_dump(exclude_unset=True, exclude_none=True)
-    for field, value in update_data.items():
-        setattr(schedule, field, value)
-
-    # commit은 get_db_transactional이 처리
+    update_data = data.model_dump(exclude_unset=True)
+    schedule.apply_update(update_data)
     session.flush()
     session.refresh(schedule)
     return schedule
+
+
+def update_schedule_exception(
+        session: Session,
+        exception: ScheduleException,
+        update_data: dict,
+) -> ScheduleException:
+    """
+    예외 인스턴스 필드 업데이트
+    """
+    exception.apply_update(update_data)
+    session.flush()
+    session.refresh(exception)
+    return exception
 
 
 def delete_schedule(session: Session, schedule: Schedule) -> None:
