@@ -67,24 +67,26 @@ class TestCreateMeeting:
         assert meeting.owner_id == test_user.sub
         assert isinstance(meeting.id, UUID)
 
-    def test_create_meeting_with_visibility(
+    def test_create_meeting_then_set_visibility(
             self, test_session, test_user, meeting_data
     ):
-        """가시성 설정과 함께 일정 조율 생성"""
-        from app.domain.meeting.schema.dto import VisibilitySettings
+        """일정 조율 생성 후 별도로 가시성 설정"""
+        from app.domain.visibility.service import VisibilityService
 
-        meeting_data.visibility = VisibilitySettings(
+        service = MeetingService(test_session, test_user)
+        meeting = service.create_meeting(meeting_data)
+
+        # 가시성 별도 설정 (새 visibility 컨트롤러 패턴)
+        visibility_service = VisibilityService(test_session, test_user)
+        visibility_service.set_visibility(
+            resource_type=ResourceType.MEETING,
+            resource_id=meeting.id,
             level=VisibilityLevel.ALLOWED_EMAILS,
             allowed_emails=["user@company.com"],
             allowed_domains=["company.com"],
         )
 
-        service = MeetingService(test_session, test_user)
-        meeting = service.create_meeting(meeting_data)
-
         # 가시성 설정 확인
-        from app.domain.visibility.service import VisibilityService
-        visibility_service = VisibilityService(test_session, test_user)
         visibility = visibility_service.get_visibility(
             ResourceType.MEETING, meeting.id
         )
