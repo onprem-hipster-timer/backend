@@ -26,13 +26,16 @@ class UpdateMixin:
         """
         mapper = inspect(self).mapper
         columns = mapper.column_attrs
-        exclude = exclude or []
+
+        pk_fields = {attr.key for attr in columns if any(c.primary_key for c in attr.columns)}
+        timestamp_fields = frozenset(TimestampMixin.__annotations__)
+        excluded = pk_fields | timestamp_fields | {"owner_id"} | set(exclude or [])
 
         for key, value in update_data.items():
-            if key in exclude: continue
+            if key in excluded: continue
             if key not in columns: continue
 
-            if value is None and not columns[key].nullable:
+            if value is None and not columns[key].columns[0].nullable:
                 continue
 
             setattr(self, key, value)
