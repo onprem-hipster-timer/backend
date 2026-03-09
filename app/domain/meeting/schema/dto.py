@@ -8,18 +8,11 @@ from typing import Optional, List
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone
 from app.models.visibility import VisibilityLevel
-
-
-class VisibilitySettings(CustomModel):
-    """가시성 설정 DTO"""
-    level: VisibilityLevel = VisibilityLevel.PUBLIC
-    allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
-    allowed_emails: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
-    allowed_domains: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
 
 
 class MeetingCreate(CustomModel):
@@ -32,7 +25,6 @@ class MeetingCreate(CustomModel):
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("available_days")
     @classmethod
@@ -75,15 +67,14 @@ class MeetingCreate(CustomModel):
 
 class MeetingUpdate(CustomModel):
     """일정 조율 업데이트 DTO"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    available_days: Optional[List[int]] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
-    time_slot_minutes: Optional[int] = None
-    visibility: Optional[VisibilitySettings] = None
+    title: str | None = MISSING
+    description: str | None = MISSING
+    start_date: date | None = MISSING
+    end_date: date | None = MISSING
+    available_days: list[int] | None = MISSING
+    start_time: time | None = MISSING
+    end_time: time | None = MISSING
+    time_slot_minutes: int | None = MISSING
 
     @field_validator("available_days")
     @classmethod
@@ -124,7 +115,7 @@ class MeetingRead(CustomModel):
     time_slot_minutes: int
     created_at: datetime
     updated_at: datetime
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     visibility_level: Optional[VisibilityLevel] = None
     is_shared: bool = False  # 공유된 일정인지 (다른 사용자의 일정)
 

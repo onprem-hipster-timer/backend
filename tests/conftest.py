@@ -142,7 +142,7 @@ async def test_async_engine():
         )
 
         # 테스트용 테이블 생성
-        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -170,7 +170,7 @@ async def test_async_engine():
             cursor.close()
 
         # 테스트용 테이블 생성
-        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: F401
 
         async with engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -497,10 +497,12 @@ def multi_user_e2e():
             self._get_optional_current_user = get_optional_current_user_ref
 
         def _set_user_override(self):
-            """요청 전에 현재 사용자로 override 설정"""
+            """요청 전에 현재 사용자로 override 설정 (REST + WebSocket)"""
             user = self._user
             self._app.dependency_overrides[self._get_current_user] = lambda: user
             self._app.dependency_overrides[self._get_optional_current_user] = lambda: user
+            from app.websocket.auth import get_ws_current_user
+            self._app.dependency_overrides[get_ws_current_user] = lambda: user
 
         def get(self, *args, **kwargs):
             self._set_user_override()
@@ -571,10 +573,15 @@ def multi_user_e2e():
                 app.dependency_overrides[get_current_user] = self._original_dependency
             elif get_current_user in app.dependency_overrides:
                 del app.dependency_overrides[get_current_user]
-            
+
             # get_optional_current_user override도 정리
             if get_optional_current_user in app.dependency_overrides:
                 del app.dependency_overrides[get_optional_current_user]
+
+            # WebSocket 인증 override 정리
+            from app.websocket.auth import get_ws_current_user
+            if get_ws_current_user in app.dependency_overrides:
+                del app.dependency_overrides[get_ws_current_user]
 
     multi_client = MultiUserTestClient()
 

@@ -7,12 +7,13 @@
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 
+from app.core.auth import CurrentUser
 from app.db.session import _session_manager
 from app.domain.timer.ws_handler import TimerWSHandler
 from app.ratelimit.websocket import ws_rate_limit_guard
-from app.websocket.auth import authenticate_websocket, get_websocket_subprotocol
+from app.websocket.auth import get_ws_current_user, get_websocket_subprotocol
 from app.websocket.base import WSClientMessage, WSServerMessage, WSMessageType
 from app.websocket.manager import connection_manager
 
@@ -22,7 +23,10 @@ router = APIRouter(tags=["Timer WebSocket"])
 
 
 @router.websocket("/ws/timers")
-async def timer_websocket(websocket: WebSocket):
+async def timer_websocket(
+        websocket: WebSocket,
+        current_user: CurrentUser = Depends(get_ws_current_user),
+):
     """
     타이머 실시간 동기화 WebSocket 엔드포인트
 
@@ -48,14 +52,6 @@ async def timer_websocket(websocket: WebSocket):
     - 연결: WS_CONNECT_MAX 회/WS_CONNECT_WINDOW 초 (기본 10회/60초)
     - 메시지: WS_MESSAGE_MAX 개/WS_MESSAGE_WINDOW 초 (기본 120개/60초)
     """
-    # 인증
-    try:
-        current_user = await authenticate_websocket(websocket)
-    except Exception as e:
-        logger.warning(f"WebSocket authentication failed: {e}")
-        await websocket.close(code=4001, reason="Authentication failed")
-        return
-
     # 타임존 파라미터 추출
     timezone_str = websocket.query_params.get("timezone")
     tz_obj = None

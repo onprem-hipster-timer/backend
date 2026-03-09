@@ -253,7 +253,7 @@ async def init_db_async() -> None:
     """
     async with async_engine.begin() as conn:
         # 모든 모델 import (테이블 메타데이터 등록)
-        from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: F401
+        from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: F401
 
         # 테이블 생성
         await conn.run_sync(SQLModel.metadata.create_all)

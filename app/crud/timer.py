@@ -173,6 +173,21 @@ def get_active_timer_by_todo(
     return session.exec(statement).first()
 
 
+def update_timer(
+        session: Session,
+        timer: TimerSession,
+        update_data: dict,
+        exclude: list[str] | None = None,
+) -> TimerSession:
+    """
+    TimerSession 필드 업데이트
+    """
+    timer.apply_update(update_data, exclude=exclude)
+    session.flush()
+    session.refresh(timer)
+    return timer
+
+
 def delete_timer(session: Session, timer: TimerSession) -> None:
     """
     TimerSession 객체를 삭제합니다.

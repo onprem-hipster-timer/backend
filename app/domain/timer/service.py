@@ -115,16 +115,6 @@ class TimerService:
         }
         timer = crud.create_timer(self.session, timer_data, self.owner_id)
 
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TIMER,
-                resource_id=timer.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
-
         # 태그 설정
         if data.tag_ids:
             tag_service = TagService(self.session, self.current_user)
@@ -546,8 +536,11 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # exclude_unset=True: 요청에 포함되지 않은 필드는 제외
-        update_data = data.model_dump(exclude_unset=True)
+        # MISSING 필드는 자동 제외
+        update_data = data.model_dump()
+
+        # 서비스에서 수동 처리할 컬럼 추적
+        exclude_fields = []
 
         # todo_id 처리 (요청에 포함된 경우에만)
         if 'todo_id' in update_data:
@@ -558,7 +551,7 @@ class TimerService:
                 if not todo:
                     raise TodoNotFoundError()
             timer.todo_id = new_todo_id
-            del update_data['todo_id']
+            exclude_fields.append('todo_id')
 
         # schedule_id 처리 (요청에 포함된 경우에만)
         if 'schedule_id' in update_data:
@@ -569,34 +562,16 @@ class TimerService:
                 if not schedule:
                     raise ScheduleNotFoundError()
             timer.schedule_id = new_schedule_id
-            del update_data['schedule_id']
+            exclude_fields.append('schedule_id')
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_data
         if tag_ids_updated:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
-            del update_data['tag_ids']  # CRUD에 전달하지 않음
 
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        if 'visibility' in update_data and update_data['visibility']:
-            visibility_data = update_data['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TIMER,
-                resource_id=timer.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_data['visibility']  # CRUD에 전달하지 않음
-
-        # 나머지 필드 업데이트 (None이 아닌 경우에만)
-        for field, value in update_data.items():
-            if value is not None:
-                setattr(timer, field, value)
-
-        self.session.flush()
-        self.session.refresh(timer)
+        # 나머지 필드 업데이트
+        timer = crud.update_timer(self.session, timer, update_data, exclude=exclude_fields or None)
 
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:
@@ -615,7 +590,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TIMER, timer_id
         )
@@ -631,7 +606,7 @@ class TimerService:
             tag_include_mode: Optional[str] = None,
     ) -> "TimerRead":
         """
-        Timer를 TimerRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Timer를 TimerRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         [보안 설계] 연관 리소스(Schedule, Todo)는 반드시 외부에서 권한 검증 후 주입받습니다.
         
@@ -648,7 +623,7 @@ class TimerService:
         :param schedule: 외부에서 권한 검증 후 주입된 Schedule DTO (Optional, 권한 없으면 None)
         :param todo: 외부에서 권한 검증 후 주입된 Todo DTO (Optional, 권한 없으면 None)
         :param tag_include_mode: 태그 포함 모드 (none, timer_only, inherit_from_schedule)
-        :return: TimerRead DTO (가시성 정보 포함)
+        :return: TimerRead DTO (접근권한 정보 포함)
         """
         from app.core.constants import TagIncludeMode
         from app.domain.timer.schema.dto import TimerRead
@@ -678,11 +653,11 @@ class TimerService:
             tags=tags_read,
         )
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         timer_read.owner_id = timer.owner_id
         timer_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TIMER, timer.id
         )

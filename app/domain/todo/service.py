@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
@@ -18,6 +18,7 @@ from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
+from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.exceptions import (
@@ -38,8 +39,6 @@ from app.domain.todo.schema.dto import (
 )
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
-from app.models.tag import Tag, TodoTag
-from app.models.todo import Todo as TodoModel
 
 
 @dataclass
@@ -158,7 +157,7 @@ class TodoService:
         self._validate_parent_id(data.parent_id, data.tag_group_id)
 
         # Todo 모델 생성
-        todo = TodoModel(
+        todo = Todo(
             owner_id=self.owner_id,
             title=data.title,
             description=data.description,
@@ -175,16 +174,6 @@ class TodoService:
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
-
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TODO,
-                resource_id=todo.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
 
         # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
@@ -427,7 +416,7 @@ class TodoService:
         todo = self.get_todo(todo_id)
 
         # 업데이트 데이터 준비
-        update_dict = data.model_dump(exclude_unset=True)
+        update_dict = data.model_dump()
 
         # parent_id 변경 시 검증
         if 'parent_id' in update_dict:
@@ -495,26 +484,8 @@ class TodoService:
                 for schedule in schedules:
                     schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
                     schedule_service.update_schedule(schedule.id, schedule_update)
-            del update_dict['tag_ids']
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        if 'visibility' in update_dict and update_dict['visibility']:
-            visibility_data = update_dict['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.TODO,
-                resource_id=todo.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_dict['visibility']
-
         # 나머지 필드 업데이트
-        for key, value in update_dict.items():
-            setattr(todo, key, value)
-
-        self.session.flush()
-        self.session.refresh(todo)
+        todo = crud.update_todo(self.session, todo, data)
 
         return todo
 
@@ -547,7 +518,7 @@ class TodoService:
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
         crud.detach_children(self.session, todo_id, self.owner_id)
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TODO, todo_id
         )
@@ -586,18 +557,7 @@ class TodoService:
                 by_tag=[],
             )
 
-        # 태그별 카운트 집계
-        statement = (
-            select(TodoTag.tag_id, Tag.name)
-            .join(Tag)
-            .where(TodoTag.todo_id.in_(todo_ids))
-        )
-
-        # 그룹 필터링
-        if group_id:
-            statement = statement.where(Tag.group_id == group_id)
-
-        tag_rows = self.session.exec(statement).all()
+        tag_rows = crud.get_todo_tag_stats(self.session, todo_ids, group_id)
 
         # 태그별 카운트
         tag_counts: dict[UUID, dict] = {}
@@ -625,7 +585,7 @@ class TodoService:
             schedules: Optional[List["ScheduleRead"]] = None,
     ) -> TodoRead:
         """
-        Todo를 TodoRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Todo를 TodoRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         연관 Schedule은 외부에서 권한 검증 후 주입받습니다.
         각 도메인 서비스가 독립적으로 권한 검증을 수행하는 구조입니다.
@@ -634,7 +594,7 @@ class TodoService:
         :param include_reason: 포함 사유 (MATCH/ANCESTOR)
         :param is_shared: 공유된 리소스인지 여부
         :param schedules: 외부에서 권한 검증 후 주입된 Schedule DTO 리스트 (Optional)
-        :return: TodoRead DTO (가시성 정보 포함)
+        :return: TodoRead DTO (접근권한 정보 포함)
         """
         tags = self.get_todo_tags(todo.id)
         tag_reads = [TagRead.model_validate(tag) for tag in tags]
@@ -656,11 +616,11 @@ class TodoService:
             include_reason=include_reason,
         )
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         todo_read.owner_id = todo.owner_id
         todo_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.TODO, todo.id
         )

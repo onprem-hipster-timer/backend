@@ -60,7 +60,7 @@ interface Meeting {
   time_slot_minutes: number;     // 시간 슬롯 단위 (분)
   created_at: string;            // 생성 시간 (ISO 8601)
   updated_at: string;            // 수정 시간 (ISO 8601)
-  visibility_level?: string;     // 가시성 레벨
+  visibility_level?: string;     // 접근권한 레벨
   is_shared: boolean;            // 공유된 리소스인지
 }
 ```
@@ -390,7 +390,7 @@ const DAY_LABELS: Record<number, string> = {
   6: "일",
 };
 
-// ===== 가시성 설정 =====
+// ===== 접근권한 설정 =====
 interface VisibilitySettings {
   level: "private" | "public" | "allowed_emails";
   allowed_emails?: string[];    // ALLOWED_EMAILS 레벨에서만

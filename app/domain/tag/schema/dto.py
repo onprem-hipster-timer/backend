@@ -11,6 +11,7 @@ from typing import Optional, List, Dict
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.utils.validators import validate_color
@@ -54,14 +55,14 @@ class TagGroupReadWithTags(TagGroupRead):
 
 class TagGroupUpdate(CustomModel):
     """태그 그룹 업데이트 DTO"""
-    name: Optional[str] = None
-    color: Optional[str] = None
-    description: Optional[str] = None
-    goal_ratios: Optional[Dict[str, float]] = None  # 태그별 목표 비율
+    name: str | None = MISSING
+    color: str | None = MISSING
+    description: str | None = MISSING
+    goal_ratios: Dict[str, float] | None = MISSING  # 태그별 목표 비율
 
     @field_validator("color")
     @classmethod
-    def validate_color_field(cls, v: Optional[str]) -> Optional[str]:
+    def validate_color_field(cls, v: str | None) -> str | None:
         """색상 코드 검증 (HEX 형식)"""
         return validate_color(v)
 
@@ -104,15 +105,15 @@ class TagReadWithGroup(TagRead):
 
 class TagUpdate(CustomModel):
     """태그 업데이트 DTO"""
-    name: Optional[str] = None
-    color: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = MISSING
+    color: str | None = MISSING
+    description: str | None = MISSING
 
     # group_id는 변경 불가 (태그 이동 시 삭제 후 재생성)
 
     @field_validator("color")
     @classmethod
-    def validate_color_field(cls, v: Optional[str]) -> Optional[str]:
+    def validate_color_field(cls, v: str | None) -> str | None:
         """색상 코드 검증 (HEX 형식)"""
         return validate_color(v)
 

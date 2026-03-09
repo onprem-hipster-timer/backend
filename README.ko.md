@@ -123,7 +123,7 @@
 | **공통 시간대 조회** | 시간대별 가능 인원 수, 겹치는 구간 조회 |
 | **접근 권한** | public / allowed_emails / private |
 
-### 🔒 Visibility (가시성)
+### 🔒 Visibility (접근권한)
 
 | 기능 | 설명 |
 |------|------|

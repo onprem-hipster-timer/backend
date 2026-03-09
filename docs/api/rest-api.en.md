@@ -53,6 +53,17 @@ POST   /v1/tags                  # Create tag
 DELETE /v1/tags/{id}             # Delete tag
 ```
 
+### Visibility
+
+```http
+PUT    /v1/visibility/{resource_type}/{resource_id}   # Set/update visibility
+GET    /v1/visibility/{resource_type}/{resource_id}   # Get visibility settings
+DELETE /v1/visibility/{resource_type}/{resource_id}   # Delete visibility (revert to PRIVATE)
+```
+
+!!! info "`resource_type`"
+    One of `schedule`, `timer`, `todo`, `meeting`.
+
 ### Holidays
 
 ```http

@@ -53,6 +53,17 @@ POST   /v1/tags                  # 태그 생성
 DELETE /v1/tags/{id}             # 태그 삭제
 ```
 
+### 접근권한 (Visibility)
+
+```http
+PUT    /v1/visibility/{resource_type}/{resource_id}   # 접근권한 설정/변경
+GET    /v1/visibility/{resource_type}/{resource_id}   # 접근권한 조회
+DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRIVATE 복귀)
+```
+
+!!! info "`resource_type`"
+    `schedule`, `timer`, `todo`, `meeting` 중 하나를 사용합니다.
+
 ### 공휴일 (Holidays)
 
 ```http

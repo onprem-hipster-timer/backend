@@ -11,6 +11,7 @@ from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
@@ -27,12 +28,6 @@ class CreateTodoOptions(CustomModel):
     tag_group_id: UUID  # Todo가 속할 그룹 (필수)
 
 
-class VisibilitySettings(CustomModel):
-    """가시성 설정 DTO"""
-    level: VisibilityLevel = VisibilityLevel.PRIVATE
-    allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
-
-
 class ScheduleCreate(CustomModel):
     """일정 생성 DTO"""
     title: str
@@ -46,7 +41,6 @@ class ScheduleCreate(CustomModel):
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -77,9 +71,9 @@ class ScheduleRead(CustomModel):
     state: ScheduleState  # 상태
     created_at: datetime
     tags: List["TagRead"] = []  # 태그 목록
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 일정 조회 시)
-    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    visibility_level: Optional[VisibilityLevel] = None  # 접근권한 레벨
     is_shared: bool = False  # 공유된 일정인지 (다른 사용자의 일정)
 
     def to_timezone(self, tz: timezone | str | None, validate: bool = True) -> "ScheduleRead":
@@ -115,17 +109,16 @@ class ScheduleRead(CustomModel):
 
 class ScheduleUpdate(CustomModel):
     """일정 업데이트 DTO"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
-    recurrence_end: Optional[datetime] = None  # 반복 종료일
-    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
-    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
-    state: Optional[ScheduleState] = None  # 상태
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
+    title: str | None = MISSING
+    description: str | None = MISSING
+    start_time: datetime | None = MISSING
+    end_time: datetime | None = MISSING
+    recurrence_rule: str | None = MISSING  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
+    recurrence_end: datetime | None = MISSING  # 반복 종료일
+    tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
+    tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
+    source_todo_id: UUID | None = MISSING  # Todo에서 생성된 Schedule 추적
+    state: ScheduleState | None = MISSING  # 상태
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod

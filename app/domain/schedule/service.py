@@ -79,16 +79,6 @@ class ScheduleService:
 
         schedule = crud.create_schedule(self.session, data, self.owner_id)
 
-        # 가시성 설정
-        if data.visibility:
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=schedule.id,
-                level=data.visibility.level,
-                allowed_user_ids=data.visibility.allowed_user_ids,
-            )
-
         # 태그 설정
         if data.tag_ids:
             from app.domain.tag.service import TagService
@@ -453,8 +443,8 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # 설정된 필드만 가져오기 (exclude_unset=True)
-        update_dict = data.model_dump(exclude_unset=True)
+        # 설정된 필드만 가져오기 (MISSING 필드는 자동 제외)
+        update_dict = data.model_dump()
 
         # datetime 필드 추출 (DTO에서 이미 UTC naive로 변환됨)
         start_time_utc = update_dict.get('start_time', schedule.start_time)
@@ -482,25 +472,7 @@ class ScheduleService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_schedule_tags(schedule.id, update_dict['tag_ids'] or [])
-            del update_dict['tag_ids']  # CRUD에 전달하지 않음
-
-        # 가시성 업데이트 (visibility가 설정된 경우에만)
-        visibility_updated = 'visibility' in update_dict
-        if visibility_updated and update_dict['visibility']:
-            visibility_data = update_dict['visibility']
-            visibility_service = VisibilityService(self.session, self.current_user)
-            visibility_service.set_visibility(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=schedule.id,
-                level=visibility_data.level,
-                allowed_user_ids=visibility_data.allowed_user_ids,
-            )
-            del update_dict['visibility']  # CRUD에 전달하지 않음
-
-        # 변환된 dict로 ScheduleUpdate 재생성
-        update_data = ScheduleUpdate(**update_dict)
-
-        updated_schedule = crud.update_schedule(self.session, schedule, update_data)
+        updated_schedule = crud.update_schedule(self.session, schedule, data)
 
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:
@@ -514,7 +486,7 @@ class ScheduleService:
         
         비즈니스 로직:
         - DB 레벨 CASCADE DELETE로 관련 예외 인스턴스 자동 삭제
-        - 가시성 설정도 함께 삭제
+        - 접근권한 설정도 함께 삭제
         - 모든 DB 구조에서 일관성 보장
         
         :param schedule_id: 일정 ID
@@ -524,7 +496,7 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # 가시성 설정 삭제
+        # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule_id
         )
@@ -565,8 +537,8 @@ class ScheduleService:
             self.session, parent_id, instance_start_utc, self.owner_id
         )
 
-        # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨)
-        update_dict = data.model_dump(exclude_unset=True)
+        # 업데이트 데이터 준비 (datetime은 DTO에서 UTC naive로 변환됨, MISSING 필드는 자동 제외)
+        update_dict = data.model_dump()
 
         # 태그 ID 추출 (별도 처리)
         tag_ids = update_dict.pop('tag_ids', None)
@@ -577,17 +549,7 @@ class ScheduleService:
             if existing_exception.is_deleted:
                 existing_exception.is_deleted = False
 
-            if 'title' in update_dict:
-                existing_exception.title = update_dict['title']
-            if 'description' in update_dict:
-                existing_exception.description = update_dict['description']
-            if 'start_time' in update_dict:
-                existing_exception.start_time = update_dict['start_time']
-            if 'end_time' in update_dict:
-                existing_exception.end_time = update_dict['end_time']
-
-            self.session.flush()
-            self.session.refresh(existing_exception)
+            crud.update_schedule_exception(self.session, existing_exception, update_dict)
 
             # 태그 업데이트 (tag_ids가 설정된 경우에만)
             if tag_ids is not None:
@@ -925,41 +887,15 @@ class ScheduleService:
 
     def get_schedule_visibility(self, schedule_id: UUID) -> Optional[VisibilityLevel]:
         """
-        일정의 가시성 레벨 조회
+        일정의 접근권한 레벨 조회
         
         :param schedule_id: 일정 ID
-        :return: 가시성 레벨 (설정되지 않은 경우 None = PRIVATE)
+        :return: 접근권한 레벨 (설정되지 않은 경우 None = PRIVATE)
         """
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule_id
         )
         return visibility.level if visibility else None
-
-    def set_schedule_visibility(
-            self,
-            schedule_id: UUID,
-            level: VisibilityLevel,
-            allowed_user_ids: Optional[List[str]] = None,
-    ) -> None:
-        """
-        일정 가시성 설정
-        
-        :param schedule_id: 일정 ID
-        :param level: 가시성 레벨
-        :param allowed_user_ids: 허용할 사용자 ID 목록 (SELECTED_FRIENDS 레벨에서만)
-        """
-        # 일정 존재 확인
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
-
-        visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.set_visibility(
-            resource_type=ResourceType.SCHEDULE,
-            resource_id=schedule_id,
-            level=level,
-            allowed_user_ids=allowed_user_ids,
-        )
 
     def to_read_dto(
             self,
@@ -967,21 +903,21 @@ class ScheduleService:
             is_shared: bool = False,
     ) -> "ScheduleRead":
         """
-        Schedule을 ScheduleRead DTO로 변환하고 가시성 정보를 채웁니다.
+        Schedule을 ScheduleRead DTO로 변환하고 접근권한 정보를 채웁니다.
         
         :param schedule: Schedule 모델
         :param is_shared: 공유된 리소스인지 여부
-        :return: ScheduleRead DTO (가시성 정보 포함)
+        :return: ScheduleRead DTO (접근권한 정보 포함)
         """
         from app.domain.schedule.schema.dto import ScheduleRead
 
         schedule_read = ScheduleRead.model_validate(schedule)
 
-        # 가시성 정보 채우기
+        # 접근권한 정보 채우기
         schedule_read.owner_id = schedule.owner_id
         schedule_read.is_shared = is_shared
 
-        # 가시성 레벨 조회
+        # 접근권한 레벨 조회
         visibility = visibility_crud.get_visibility_by_resource(
             self.session, ResourceType.SCHEDULE, schedule.id
         )

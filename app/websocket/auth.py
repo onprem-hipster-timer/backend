@@ -19,7 +19,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def authenticate_websocket(websocket: WebSocket) -> Optional[CurrentUser]:
+async def authenticate_websocket(websocket: WebSocket) -> CurrentUser:
     """
     WebSocket 연결 인증
 
@@ -76,6 +76,16 @@ async def authenticate_websocket(websocket: WebSocket) -> Optional[CurrentUser]:
             code=status.WS_1008_POLICY_VIOLATION,
             reason="Token verification failed"
         )
+
+
+async def get_ws_current_user(websocket: WebSocket) -> CurrentUser:
+    """
+    FastAPI Dependency: WebSocket용 현재 인증된 사용자 반환
+
+    REST의 get_current_user와 동일한 역할.
+    테스트 시 app.dependency_overrides로 override 가능.
+    """
+    return await authenticate_websocket(websocket)
 
 
 def get_websocket_subprotocol(websocket: WebSocket) -> Optional[str]:

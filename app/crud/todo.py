@@ -13,7 +13,8 @@ from sqlalchemy import case
 from sqlmodel import Session, select
 
 from app.domain.todo.enums import TodoStatus
-from app.models.tag import TodoTag
+from app.domain.todo.schema.dto import TodoUpdate
+from app.models.tag import Tag, TodoTag
 from app.models.todo import Todo
 
 # 정렬 우선순위용 상태 순서
@@ -160,13 +161,44 @@ def detach_children(session: Session, parent_id: UUID, owner_id: str) -> int:
 def create_todo(session: Session, todo: Todo) -> Todo:
     """
     Todo 생성 (모델 객체를 받아 저장)
-    
+
     Note: todo 객체는 이미 owner_id가 설정되어 있어야 합니다.
     """
     session.add(todo)
     session.flush()
     session.refresh(todo)
     return todo
+
+
+def update_todo(session: Session, todo: Todo, data: TodoUpdate) -> Todo:
+    """
+    Todo 필드 업데이트
+    """
+    update_data = data.model_dump()
+    todo.apply_update(update_data)
+    session.flush()
+    session.refresh(todo)
+    return todo
+
+
+def get_todo_tag_stats(
+        session: Session,
+        todo_ids: List[UUID],
+        group_id: Optional[UUID] = None,
+) -> list[tuple[UUID, str]]:
+    """
+    Todo ID 목록의 태그별 통계 조회
+
+    :return: [(tag_id, tag_name), ...]
+    """
+    statement = (
+        select(TodoTag.tag_id, Tag.name)
+        .join(Tag)
+        .where(TodoTag.todo_id.in_(todo_ids))
+    )
+    if group_id:
+        statement = statement.where(Tag.group_id == group_id)
+    return list(session.exec(statement).all())
 
 
 def delete_todo(session: Session, todo: Todo) -> None:

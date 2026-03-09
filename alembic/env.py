@@ -37,7 +37,7 @@ from app.models import (  # noqa: E402, F401
     Todo,
 )
 from app.models.tag import TimerTag  # noqa: E402, F401
-from app.domain.holiday.model import HolidayModel, HolidayHashModel  # noqa: E402, F401
+from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: E402, F401
 
 # SQLModel 메타데이터 사용 (autogenerate 지원)
 target_metadata = SQLModel.metadata

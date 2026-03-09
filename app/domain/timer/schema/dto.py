@@ -11,11 +11,12 @@ from typing import Optional, List, TYPE_CHECKING, Any
 from uuid import UUID
 
 from pydantic import ConfigDict, field_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.core.constants import TagIncludeMode, TimerStatus
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
-from app.domain.schedule.schema.dto import ScheduleRead, VisibilitySettings
+from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
 from app.models.visibility import VisibilityLevel
 
@@ -38,7 +39,6 @@ class TimerCreate(CustomModel):
     description: Optional[str] = None
     allocated_duration: int  # 할당 시간 (초 단위)
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
 
     @field_validator("allocated_duration")
     @classmethod
@@ -79,9 +79,9 @@ class TimerRead(CustomModel):
     # 태그 목록
     tags: List["TagRead"] = []
 
-    # 가시성 관련 필드
+    # 접근권한 관련 필드
     owner_id: Optional[str] = None  # 소유자 ID (공유된 타이머 조회 시)
-    visibility_level: Optional[VisibilityLevel] = None  # 가시성 레벨
+    visibility_level: Optional[VisibilityLevel] = None  # 접근권한 레벨
     is_shared: bool = False  # 공유된 타이머인지
 
     @field_validator("started_at", "paused_at", "ended_at", "created_at", "updated_at")
@@ -184,20 +184,19 @@ class TimerRead(CustomModel):
 
 class TimerUpdate(CustomModel):
     """타이머 업데이트 DTO
-    
+
     todo_id, schedule_id 필드 동작:
-    - 필드가 요청에 포함되지 않음 (undefined): 기존 값 유지
+    - 필드가 요청에 포함되지 않음 (MISSING): 기존 값 유지
     - 필드가 UUID 값: 해당 ID로 연결 변경
     - 필드가 null: 연결 해제
-    
+
     Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
     """
-    title: Optional[str] = None
-    description: Optional[str] = None
-    tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    todo_id: Optional[UUID] = None  # Todo 연결 변경 (null로 연결 해제)
-    schedule_id: Optional[UUID] = None  # Schedule 연결 변경 (null로 연결 해제)
-    visibility: Optional[VisibilitySettings] = None  # 가시성 설정
+    title: str | None = MISSING
+    description: str | None = MISSING
+    tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
+    todo_id: UUID | None = MISSING  # Todo 연결 변경 (null로 연결 해제)
+    schedule_id: UUID | None = MISSING  # Schedule 연결 변경 (null로 연결 해제)
 
 
 # Forward reference 해결

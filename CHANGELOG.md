@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **`UpdateMixin.apply_update` for ORM models**: Added a generic partial-update method to `UpdateMixin` (inherited by all models via `UUIDBase`). Accepts a dict (from `model_dump()`) and applies values to model columns with built-in safeguards.
+  - **Protected fields**: Primary keys (auto-detected via SQLAlchemy mapper), `TimestampMixin` fields (`created_at`, `updated_at` — derived from `TimestampMixin.__annotations__`), and `owner_id` are always excluded from updates.
+  - **Nullable safety**: Setting `None` on a non-nullable column is silently skipped; nullable columns accept `None` normally. Nullable status is correctly resolved via `ColumnProperty.columns[0].nullable`.
+  - **Custom exclusion**: Callers can pass `exclude=["field"]` to protect additional fields per use case.
+
+### Changed
+
+- **Centralized Visibility API controller**: Extracted visibility management from each domain (Schedule, Timer, Todo, Meeting) into a dedicated `/v1/visibility/{resource_type}/{resource_id}` endpoint with `PUT`/`GET`/`DELETE` operations.
+  - **Breaking change**: `visibility` field removed from all Create/Update DTOs. Clients must set visibility via a separate `PUT /v1/visibility/{type}/{id}` call after resource creation.
+- **MISSING sentinel for Update DTOs**: Replaced `Optional[T] = None` + `model_dump(exclude_unset=True)` pattern with `pydantic.experimental.missing_sentinel.MISSING` across all Update DTOs (`TodoUpdate`, `ScheduleUpdate`, `TagGroupUpdate`, `TagUpdate`, `TimerUpdate`, `MeetingUpdate`).
+  - Fields now use `T | None = MISSING` for explicit 3-way semantics: MISSING (not sent, keep current), `None` (clear value), value (set value).
+  - Removed all `model_dump(exclude_unset=True)` calls from CRUD and Service layers; `model_dump()` now automatically excludes MISSING fields.
+  - Fixed `validate_time_order` to use `isinstance` checks, preventing `TypeError` when cross-field validators receive MISSING sentinel values.
 
 ---
 
@@ -160,6 +174,9 @@ _No unreleased changes._
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...HEAD
+[v2026.03.05-6194559]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.04-d027c48...v2026.03.05-6194559
+[v2026.03.04-d027c48]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.03-5609ccd...v2026.03.04-d027c48
+[v2026.03.03-5609ccd]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...v2026.03.03-5609ccd
 [v2026.02.23-e582adc]: https://github.com/onprem-hipster-timer/backend/compare/v2026.01.30...v2026.02.23-e582adc
 [v2026.01.30]: https://github.com/onprem-hipster-timer/backend/releases/tag/v2026.01.30
