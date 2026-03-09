@@ -11,9 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`UpdateMixin.apply_update` for ORM models**: Added a generic partial-update method to `UpdateMixin` (inherited by all models via `UUIDBase`). Accepts a dict (from `model_dump()`) and applies values to model columns with built-in safeguards.
   - **Protected fields**: Primary keys (auto-detected via SQLAlchemy mapper), `TimestampMixin` fields (`created_at`, `updated_at` — derived from `TimestampMixin.__annotations__`), and `owner_id` are always excluded from updates.
-  - **Nullable safety**: Setting `None` on a non-nullable column is silently skipped; nullable columns accept `None` normally.
+  - **Nullable safety**: Setting `None` on a non-nullable column is silently skipped; nullable columns accept `None` normally. Nullable status is correctly resolved via `ColumnProperty.columns[0].nullable`.
   - **Custom exclusion**: Callers can pass `exclude=["field"]` to protect additional fields per use case.
-  - **Fixed nullable check bug**: Original implementation accessed `ColumnProperty.nullable` (non-existent); corrected to `ColumnProperty.columns[0].nullable`.
 
 ### Changed
 
@@ -175,6 +174,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...HEAD
+[v2026.03.05-6194559]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.04-d027c48...v2026.03.05-6194559
+[v2026.03.04-d027c48]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.03-5609ccd...v2026.03.04-d027c48
+[v2026.03.03-5609ccd]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...v2026.03.03-5609ccd
 [v2026.02.23-e582adc]: https://github.com/onprem-hipster-timer/backend/compare/v2026.01.30...v2026.02.23-e582adc
 [v2026.01.30]: https://github.com/onprem-hipster-timer/backend/releases/tag/v2026.01.30
