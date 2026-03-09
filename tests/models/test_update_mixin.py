@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 import pytest
+from pydantic.experimental.missing_sentinel import MISSING
 
 
 # ============================================================
@@ -101,3 +102,52 @@ def test_apply_update_custom_exclude(fake_model):
     fake_model.apply_update({"name": "updated"}, exclude=["name"])
 
     assert fake_model.name == "original"
+
+
+# ============================================================
+# MISSING sentinel 처리
+# ============================================================
+
+def test_apply_update_skips_missing_sentinel(fake_model):
+    """MISSING sentinel 값은 업데이트하지 않음"""
+    fake_model.apply_update({"name": MISSING, "score": MISSING})
+
+    assert fake_model.name == "original"
+    assert fake_model.score == 10
+
+
+def test_apply_update_missing_with_real_values(fake_model):
+    """MISSING과 실제 값이 섞여 있을 때 실제 값만 반영"""
+    fake_model.apply_update({
+        "name": "updated",
+        "description": MISSING,
+        "score": MISSING,
+    })
+
+    assert fake_model.name == "updated"
+    assert fake_model.description == "original desc"
+    assert fake_model.score == 10
+
+
+def test_apply_update_missing_vs_none_on_nullable(fake_model):
+    """MISSING은 스킵, None은 nullable 필드에 적용"""
+    fake_model.apply_update({
+        "name": MISSING,         # MISSING → 변경 없음
+        "description": None,     # None + nullable → NULL로 변경
+    })
+
+    assert fake_model.name == "original"
+    assert fake_model.description is None
+
+
+def test_apply_update_all_missing(fake_model):
+    """모든 값이 MISSING이면 아무것도 변경되지 않음"""
+    fake_model.apply_update({
+        "name": MISSING,
+        "description": MISSING,
+        "score": MISSING,
+    })
+
+    assert fake_model.name == "original"
+    assert fake_model.description == "original desc"
+    assert fake_model.score == 10
