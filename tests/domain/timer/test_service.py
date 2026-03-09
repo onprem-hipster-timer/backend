@@ -1633,9 +1633,9 @@ class TestElapsedTimeAccumulation:
 
         segments = [
             # (pause_at_offset, resume_at_offset, expected_elapsed_after_pause)
-            (100, 120, 100),    # 1차: 100초 실행
-            (220, 230, 200),    # 2차: 추가 100초 (resume 120 → pause 220)
-            (330, None, 300),   # 3차: 추가 100초 (resume 230 → pause 330)
+            (100, 120, 100),  # 1차: 100초 실행
+            (220, 230, 200),  # 2차: 추가 100초 (resume 120 → pause 220)
+            (330, None, 300),  # 3차: 추가 100초 (resume 230 → pause 330)
         ]
 
         for pause_offset, resume_offset, expected_elapsed in segments:

@@ -7,9 +7,8 @@ Create Date: 2026-03-04 03:11:45.582061+09:00
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'f087a3c6cc59'
@@ -25,9 +24,10 @@ def upgrade() -> None:
 
     with op.batch_alter_table('resource_visibility', schema=None) as batch_op:
         batch_op.alter_column('level',
-               existing_type=sa.VARCHAR(length=8),
-               type_=sa.Enum('private', 'friends', 'selected', 'allowed_emails', 'public', name='visibilitylevel', native_enum=False),
-               existing_nullable=False)
+                              existing_type=sa.VARCHAR(length=8),
+                              type_=sa.Enum('private', 'friends', 'selected', 'allowed_emails', 'public',
+                                            name='visibilitylevel', native_enum=False),
+                              existing_nullable=False)
 
     with op.batch_alter_table('tag_group', schema=None) as batch_op:
         batch_op.drop_column('is_todo_group')
@@ -42,9 +42,10 @@ def downgrade() -> None:
 
     with op.batch_alter_table('resource_visibility', schema=None) as batch_op:
         batch_op.alter_column('level',
-               existing_type=sa.Enum('private', 'friends', 'selected', 'allowed_emails', 'public', name='visibilitylevel', native_enum=False),
-               type_=sa.VARCHAR(length=8),
-               existing_nullable=False)
+                              existing_type=sa.Enum('private', 'friends', 'selected', 'allowed_emails', 'public',
+                                                    name='visibilitylevel', native_enum=False),
+                              type_=sa.VARCHAR(length=8),
+                              existing_nullable=False)
 
     with op.batch_alter_table('friendship', schema=None) as batch_op:
         batch_op.drop_constraint('uq_friendship_bidirectional', type_='unique')

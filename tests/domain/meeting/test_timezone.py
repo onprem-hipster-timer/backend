@@ -8,7 +8,7 @@ Meeting DTO의 타임존 변환 로직 검증:
 - UTC → UTC offset (+09:00) 변환 테스트
 - None 전달 시 원본 반환 테스트
 """
-from datetime import date, datetime, time, timezone, timedelta
+from datetime import date, datetime, time, timezone
 from uuid import uuid4
 
 import pytest

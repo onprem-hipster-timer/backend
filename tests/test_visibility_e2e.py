@@ -4,8 +4,9 @@ Visibility API 기본 동작 E2E 테스트
 /v1/visibility/{resource_type}/{resource_id} 공통 API 동작 검증:
 소유권 강제, 리소스 미존재, 설정 변경/삭제 lifecycle
 """
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 def _make_schedule(client):

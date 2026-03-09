@@ -12,6 +12,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user, get_optional_current_user
 from app.db.session import get_db_transactional
 from app.domain.dateutil.service import parse_timezone
+from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingRead,
@@ -24,7 +25,6 @@ from app.domain.meeting.schema.dto import (
     MeetingResultRead,
 )
 from app.domain.meeting.service import MeetingService
-from app.domain.meeting.result_service import MeetingResultService
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 

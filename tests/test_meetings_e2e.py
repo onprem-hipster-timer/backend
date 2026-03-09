@@ -3,8 +3,9 @@ Meeting E2E 테스트
 
 일정 조율 REST API 엔드포인트 통합 테스트
 """
-import pytest
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.mark.e2e
@@ -432,7 +433,7 @@ def test_meeting_timezone_e2e(e2e_client):
     # 타임존 정보가 포함되어야 함
     assert "+09:00" in data_kst["created_at"] or "+0900" in data_kst["created_at"]
     # 시간이 9시간 더해져야 함 (UTC -> KST)
-    from datetime import datetime, timezone as dt_timezone
+    from datetime import datetime
     utc_dt = datetime.fromisoformat(created_at_utc.replace("Z", "+00:00"))
     kst_dt = datetime.fromisoformat(data_kst["created_at"])
     # 두 datetime 모두 aware이므로 직접 비교 (같은 시점을 표현해야 함)

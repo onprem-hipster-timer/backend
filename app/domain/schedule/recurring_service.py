@@ -4,7 +4,6 @@ Recurring Schedule Service
 반복 일정 인스턴스의 생성, 수정, 삭제를 담당합니다.
 """
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlmodel import Session

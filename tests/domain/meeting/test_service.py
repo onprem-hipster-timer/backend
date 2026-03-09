@@ -9,7 +9,6 @@ from uuid import UUID
 import pytest
 
 from app.domain.meeting.exceptions import MeetingNotFoundError
-from app.domain.visibility.exceptions import AccessDeniedError
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -18,6 +17,7 @@ from app.domain.meeting.schema.dto import (
 )
 from app.domain.meeting.service import MeetingService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.exceptions import AccessDeniedError
 
 
 @pytest.fixture
@@ -377,5 +377,3 @@ class TestTimeSlots:
                     end_time=time(12, 0),
                 )],
             )
-
-

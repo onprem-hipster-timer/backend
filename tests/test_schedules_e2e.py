@@ -1672,5 +1672,4 @@ def test_get_schedules_with_multiple_tag_and_group_filter_e2e(e2e_client):
     assert schedule_a_id not in schedule_ids  # 태그B 없음
     assert schedule_c_id not in schedule_ids  # 태그A, 태그B 없음
 
-
 # Visibility 관련 E2E 테스트는 tests/test_visibility_e2e.py 로 이동되었습니다.

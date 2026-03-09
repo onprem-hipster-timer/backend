@@ -4,17 +4,16 @@ MeetingResultService 테스트
 공통 가능 시간 분석 비즈니스 로직 테스트
 """
 from datetime import date, time
-from uuid import UUID
 
 import pytest
 
+from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     ParticipantCreate,
     TimeSlotCreate,
 )
 from app.domain.meeting.service import MeetingService
-from app.domain.meeting.result_service import MeetingResultService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 
 
@@ -297,8 +296,8 @@ class TestMeetingResult:
         meeting = service.create_meeting(MeetingCreate(
             title="요일 필터",
             start_date=date(2024, 2, 5),  # 월요일
-            end_date=date(2024, 2, 9),    # 금요일
-            available_days=[0],            # 월요일만
+            end_date=date(2024, 2, 9),  # 금요일
+            available_days=[0],  # 월요일만
             start_time=time(9, 0),
             end_time=time(10, 0),
             time_slot_minutes=30,
