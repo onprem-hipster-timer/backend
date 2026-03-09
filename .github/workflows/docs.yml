@@ -59,6 +59,12 @@ jobs:
               json.dump(app.openapi(), f, indent=2)
           "
 
+      - name: Fetch OG preview image
+        continue-on-error: true
+        run: |
+          mkdir -p docs/assets
+          curl -sfL --max-time 5 "https://opengraph.githubassets.com/1/onprem-hipster-timer/backend" -o docs/assets/preview.png
+
       - name: Build MkDocs
         run: mkdocs build # --strict
 

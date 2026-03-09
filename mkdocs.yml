@@ -7,6 +7,7 @@ repo_url: https://github.com/onprem-hipster-timer/backend
 
 theme:
   name: material
+  custom_dir: overrides
   language: en
   palette:
     - scheme: default

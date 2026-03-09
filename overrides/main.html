@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  <meta name="google-site-verification" content="fDOacbtln3HsYGUUHoXKbZnFmVz1FNb5vaYFty4XOJ4" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Hipster Timer Backend" />
+  <meta property="og:title" content="{% if page and page.title %}{{ page.title }} - Hipster Timer Backend{% else %}Hipster Timer Backend{% endif %}" />
+  <meta property="og:description" content="{% if page and page.meta and page.meta.description %}{{ page.meta.description }}{% else %}All-in-one productivity backend API{% endif %}" />
+  <meta property="og:url" content="https://onprem-hipster-timer.github.io/backend/{% if page %}{{ page.url }}{% endif %}" />
+  <meta property="og:image" content="https://onprem-hipster-timer.github.io/backend/assets/preview.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta property="twitter:domain" content="onprem-hipster-timer.github.io" />
+  <meta property="twitter:url" content="https://onprem-hipster-timer.github.io/backend/{% if page %}{{ page.url }}{% endif %}" />
+  <meta name="twitter:title" content="{% if page and page.title %}{{ page.title }} - Hipster Timer Backend{% else %}Hipster Timer Backend{% endif %}" />
+  <meta name="twitter:description" content="{% if page and page.meta and page.meta.description %}{{ page.meta.description }}{% else %}All-in-one productivity backend API{% endif %}" />
+  <meta name="twitter:image" content="https://onprem-hipster-timer.github.io/backend/assets/preview.png" />
+{% endblock %}
