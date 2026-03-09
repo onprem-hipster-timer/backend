@@ -7,8 +7,14 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - 'app/**'  # OpenAPI 스펙 변경 감지
-      - 'README.md'  # 홈페이지 동기화
-      - 'README.ko.md'  # 홈페이지 동기화
+      - 'README.md'  # include-markdown → index.en.md
+      - 'README.ko.md'  # include-markdown → index.ko.md
+      - 'CHANGELOG.md'  # include-markdown → changelog.*.md
+      - 'CODE_OF_CONDUCT.md'  # include-markdown → code-of-conduct.*.md
+      - 'CONTRIBUTING.md'  # include-markdown → contributing.en.md
+      - 'CONTRIBUTING.ko.md'  # include-markdown → contributing.ko.md
+      - 'LICENSE'  # include-markdown → license.*.md
+      - 'SECURITY.md'  # include-markdown → security.*.md
   workflow_dispatch:
 
 permissions:

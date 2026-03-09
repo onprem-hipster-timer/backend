@@ -180,7 +180,8 @@ _No unreleased changes._
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.09-2c3b92f...HEAD
+[v2026.03.09-2c3b92f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...v2026.03.09-2c3b92f
 [v2026.03.05-6194559]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.04-d027c48...v2026.03.05-6194559
 [v2026.03.04-d027c48]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.03-5609ccd...v2026.03.04-d027c48
 [v2026.03.03-5609ccd]: https://github.com/onprem-hipster-timer/backend/compare/v2026.02.23-e582adc...v2026.03.03-5609ccd

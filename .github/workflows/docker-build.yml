@@ -86,6 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +96,7 @@ jobs:
       - name: Update CHANGELOG [Unreleased] to actual version
         env:
           VERSION: ${{ needs.build.outputs.version }}
+          REPO_URL: https://github.com/${{ github.repository }}
         run: |
           TODAY=$(date +'%Y-%m-%d')
           # [Unreleased] 섹션이 실제 내용을 가지고 있을 때만 치환
@@ -103,6 +105,10 @@ jobs:
             sed -i "s/^## \[Unreleased\]/## [${VERSION}] - ${TODAY}/" CHANGELOG.md
             # 새로운 [Unreleased] 섹션을 상단에 추가
             sed -i "/^## \[${VERSION}\]/i ## [Unreleased]\n\n_No unreleased changes._\n\n---\n" CHANGELOG.md
+            # 하단 reference link 업데이트: [Unreleased] 링크를 새 버전으로 갱신하고 새 버전 링크 추가
+            PREV_TAG=$(sed -n 's/^\[Unreleased\]: .*compare\/\(.*\)\.\.\.HEAD$/\1/p' CHANGELOG.md)
+            sed -i "s|^\[Unreleased\]: .*|[Unreleased]: ${REPO_URL}/compare/${VERSION}...HEAD|" CHANGELOG.md
+            sed -i "/^\[Unreleased\]: /a [${VERSION}]: ${REPO_URL}/compare/${PREV_TAG}...${VERSION}" CHANGELOG.md
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add CHANGELOG.md
@@ -123,3 +129,8 @@ jobs:
             --generate-notes \
             --title "Release $VERSION" \
             --notes "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
+
+      - name: Trigger docs rebuild
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml
