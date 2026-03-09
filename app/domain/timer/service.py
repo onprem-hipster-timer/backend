@@ -571,7 +571,7 @@ class TimerService:
             tag_service.set_timer_tags(timer.id, update_data['tag_ids'] or [])
 
         # 나머지 필드 업데이트
-        timer = crud.update_timer(self.session, timer, data, exclude=exclude_fields or None)
+        timer = crud.update_timer(self.session, timer, update_data, exclude=exclude_fields or None)
 
         # 태그가 업데이트된 경우 relationship 갱신
         if tag_ids_updated:

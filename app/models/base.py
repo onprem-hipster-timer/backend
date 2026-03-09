@@ -21,7 +21,7 @@ class TimestampMixin(SQLModel):
     )
 
 class UpdateMixin:
-    def apply_update(self, update_data: dict, exclude: list = None):
+    def apply_update(self, update_data: dict, exclude: list[str] | None = None):
         """
         MISSING sentinel을 사용하는 Update DTO의 model_dump()으로 만들어진 dict를 받아서 처리
         """

@@ -16,7 +16,7 @@ from app.crud import timer as timer_crud
 from app.crud import todo as todo_crud
 from app.db.session import get_db_transactional
 from app.domain.visibility.enums import ResourceType
-from app.domain.visibility.exceptions import AccessDeniedError
+from app.domain.visibility.exceptions import AccessDeniedError, VisibilityNotFoundError
 from app.domain.visibility.schema.dto import VisibilityUpdate, VisibilityRead
 from app.domain.visibility.service import VisibilityService
 
@@ -40,7 +40,6 @@ def _require_resource_owner(
     loader = _RESOURCE_LOADERS[resource_type]
     resource = loader(session, resource_id)
     if not resource:
-        from app.domain.visibility.exceptions import VisibilityNotFoundError
         raise VisibilityNotFoundError()
     if resource.owner_id != current_user.sub:
         raise AccessDeniedError()
@@ -98,7 +97,6 @@ async def get_visibility(
     service = VisibilityService(session, current_user)
     visibility = service.get_visibility(resource_type, resource_id)
     if not visibility:
-        from app.domain.visibility.exceptions import VisibilityNotFoundError
         raise VisibilityNotFoundError()
 
     return visibility
