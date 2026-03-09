@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from pydantic.experimental.missing_sentinel import MISSING
 from sqlmodel import SQLModel, Field
 
 from sqlalchemy import inspect
@@ -34,6 +35,9 @@ class UpdateMixin:
         for key, value in update_data.items():
             if key in excluded: continue
             if key not in columns: continue
+
+            if value is MISSING:
+                continue
 
             if value is None and not columns[key].columns[0].nullable:
                 continue
