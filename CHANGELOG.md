@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.03.09-2c3b92f] - 2026-03-09
+
 ### Added
 
 - **`UpdateMixin.apply_update` for ORM models**: Added a generic partial-update method to `UpdateMixin` (inherited by all models via `UUIDBase`). Accepts a dict (from `model_dump()`) and applies values to model columns with built-in safeguards.
