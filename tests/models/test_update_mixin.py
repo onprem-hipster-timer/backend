@@ -4,7 +4,6 @@ UpdateMixin.apply_update Tests
 import uuid
 from datetime import datetime
 
-import pytest
 from pydantic.experimental.missing_sentinel import MISSING
 
 from tests.models.conftest import FakeUpdateDTO

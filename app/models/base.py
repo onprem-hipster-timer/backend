@@ -2,14 +2,14 @@ import uuid
 from datetime import datetime, timezone
 
 from pydantic.experimental.missing_sentinel import MISSING
-from sqlmodel import SQLModel, Field
-
 from sqlalchemy import inspect
+from sqlmodel import SQLModel, Field
 
 
 def utc_now_naive() -> datetime:
     """UTC 현재 시간을 timezone-naive로 반환 (PostgreSQL TIMESTAMP WITHOUT TIME ZONE 호환)"""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class TimestampMixin(SQLModel):
     created_at: datetime = Field(
@@ -19,6 +19,7 @@ class TimestampMixin(SQLModel):
         default_factory=utc_now_naive,
         sa_column_kwargs={"onupdate": utc_now_naive},
     )
+
 
 class UpdateMixin:
     def apply_update(self, update_data: dict, exclude: list[str] | None = None):
@@ -44,7 +45,8 @@ class UpdateMixin:
 
             setattr(self, key, value)
 
-class UUIDBase(SQLModel,  UpdateMixin):
+
+class UUIDBase(SQLModel, UpdateMixin):
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         primary_key=True,

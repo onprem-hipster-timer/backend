@@ -489,7 +489,8 @@ def multi_user_e2e():
         각 요청 전에 올바른 사용자 override를 설정합니다.
         """
 
-        def __init__(self, client: TestClient, user: CurrentUser, app_ref, get_current_user_ref, get_optional_current_user_ref):
+        def __init__(self, client: TestClient, user: CurrentUser, app_ref, get_current_user_ref,
+                     get_optional_current_user_ref):
             self._client = client
             self._user = user
             self._app = app_ref

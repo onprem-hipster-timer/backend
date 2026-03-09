@@ -185,6 +185,21 @@ def get_participant_time_slots(
     return results.all()
 
 
+def get_time_slots_by_meeting(
+        session: Session,
+        meeting_id: UUID,
+) -> list[MeetingTimeSlot]:
+    """미팅의 모든 참여자 시간 슬롯을 JOIN 한 번으로 조회"""
+    statement = (
+        select(MeetingTimeSlot)
+        .join(MeetingParticipant, MeetingTimeSlot.participant_id == MeetingParticipant.id)
+        .where(MeetingParticipant.meeting_id == meeting_id)
+        .order_by(MeetingTimeSlot.slot_date, MeetingTimeSlot.start_time)
+    )
+    results = session.exec(statement)
+    return results.all()
+
+
 def delete_participant_time_slots(
         session: Session,
         participant_id: UUID,

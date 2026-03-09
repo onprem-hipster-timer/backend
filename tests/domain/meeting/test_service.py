@@ -1,18 +1,14 @@
 """
 MeetingService 테스트
 
-일정 조율 서비스 비즈니스 로직 테스트
+일정 조율 서비스 CRUD + 참여자 관리 테스트
 """
 from datetime import date, time
 from uuid import UUID
 
 import pytest
 
-from app.domain.meeting.exceptions import (
-    MeetingNotFoundError,
-    MeetingParticipantNotFoundError,
-)
-from app.domain.visibility.exceptions import AccessDeniedError
+from app.domain.meeting.exceptions import MeetingNotFoundError
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -21,6 +17,7 @@ from app.domain.meeting.schema.dto import (
 )
 from app.domain.meeting.service import MeetingService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
+from app.domain.visibility.exceptions import AccessDeniedError
 
 
 @pytest.fixture
@@ -380,98 +377,3 @@ class TestTimeSlots:
                     end_time=time(12, 0),
                 )],
             )
-
-
-class TestMeetingResult:
-    """공통 가능 시간 분석 테스트"""
-
-    def test_get_meeting_result_success(
-            self, test_session, test_user, sample_meeting
-    ):
-        """공통 가능 시간 분석 성공"""
-        service = MeetingService(test_session, test_user)
-
-        # 참여자 2명 등록
-        participant1 = service.create_participant(
-            sample_meeting.id, ParticipantCreate(display_name="참여자1")
-        )
-        participant2 = service.create_participant(
-            sample_meeting.id, ParticipantCreate(display_name="참여자2")
-        )
-
-        # 참여자1: 2월 2일(금) 9:00-12:00 가능
-        service.set_time_slots(
-            sample_meeting.id,
-            participant1.id,
-            [TimeSlotCreate(
-                slot_date=date(2024, 2, 2),  # 금요일 (weekday=4, available_days에 포함)
-                start_time=time(9, 0),
-                end_time=time(12, 0),
-            )],
-        )
-
-        # 참여자2: 2월 2일(금) 10:00-13:00 가능
-        service.set_time_slots(
-            sample_meeting.id,
-            participant2.id,
-            [TimeSlotCreate(
-                slot_date=date(2024, 2, 2),  # 금요일 (weekday=4, available_days에 포함)
-                start_time=time(10, 0),
-                end_time=time(13, 0),
-            )],
-        )
-
-        # 공통 가능 시간 분석
-        result = service.get_meeting_result(sample_meeting.id)
-
-        assert result.meeting.id == sample_meeting.id
-
-        date_group = next((g for g in result.availability_grid if g.date == "2024-02-02"), None)
-        assert date_group is not None
-
-        slots = {s.time: s.count for s in date_group.slots}
-
-        # 10:00-12:00 구간은 두 명 모두 가능 (count=2)
-        assert slots.get("10:00", 0) == 2
-        assert slots.get("11:00", 0) == 2
-        assert slots.get("11:30", 0) == 2
-
-        # 9:00-10:00 구간은 참여자1만 가능 (count=1)
-        assert slots.get("09:00", 0) == 1
-        assert slots.get("09:30", 0) == 1
-
-    def test_generate_available_dates(self, test_session, test_user):
-        """요일 기반 날짜 생성 테스트"""
-        service = MeetingService(test_session, test_user)
-
-        # 월, 수, 금만 가능
-        available_dates = service._generate_available_dates(
-            start_date=date(2024, 2, 1),  # 목요일
-            end_date=date(2024, 2, 7),  # 수요일
-            available_days=[0, 2, 4],  # 월, 수, 금
-        )
-
-        # 2월 1일(목) ~ 2월 7일(수) 중 월, 수, 금만 포함
-        # 2월 2일(금), 2월 5일(월), 2월 7일(수)
-        assert len(available_dates) == 3
-        assert date(2024, 2, 2) in available_dates  # 금요일
-        assert date(2024, 2, 5) in available_dates  # 월요일
-        assert date(2024, 2, 7) in available_dates  # 수요일
-
-    def test_generate_time_slots(self, test_session, test_user):
-        """시간 슬롯 생성 테스트"""
-        service = MeetingService(test_session, test_user)
-
-        time_slots = service._generate_time_slots(
-            start_time=time(9, 0),
-            end_time=time(12, 0),
-            slot_minutes=30,
-        )
-
-        # 9:00 ~ 12:00를 30분 단위로 나눔
-        # 9:00, 9:30, 10:00, 10:30, 11:00, 11:30 (12:00은 제외)
-        assert len(time_slots) == 6
-        assert time_slots[0] == time(9, 0)
-        assert time_slots[1] == time(9, 30)
-        assert time_slots[2] == time(10, 0)
-        assert time_slots[-1] == time(11, 30)

@@ -7,11 +7,10 @@ tests/models 전용 테스트 모델
 from typing import Optional
 
 import pytest
-from pydantic import BaseModel
 from pydantic.experimental.missing_sentinel import MISSING
 from sqlmodel import Field
-from app.core.base_model import CustomModel
 
+from app.core.base_model import CustomModel
 from app.models.base import UUIDBase, TimestampMixin
 
 
