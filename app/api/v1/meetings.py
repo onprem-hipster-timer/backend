@@ -24,6 +24,7 @@ from app.domain.meeting.schema.dto import (
     MeetingResultRead,
 )
 from app.domain.meeting.service import MeetingService
+from app.domain.meeting.result_service import MeetingResultService
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
@@ -224,8 +225,8 @@ async def get_availability(
         from app.core.auth import get_current_user as require_auth
         current_user = await require_auth(None, None)
 
-    service = MeetingService(session, current_user)
-    availability = service.get_availability(meeting_id)
+    result_service = MeetingResultService(session, current_user)
+    availability = result_service.get_availability(meeting_id)
 
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
@@ -266,8 +267,8 @@ async def get_meeting_result(
         from app.core.auth import get_current_user as require_auth
         current_user = await require_auth(None, None)
 
-    service = MeetingService(session, current_user)
-    result = service.get_meeting_result(meeting_id)
+    result_service = MeetingResultService(session, current_user)
+    result = result_service.get_meeting_result(meeting_id)
 
     # 타임존 변환 (MeetingRead의 datetime 필드만 변환)
     tz_obj = parse_timezone(tz) if tz else None
