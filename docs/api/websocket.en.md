@@ -227,6 +227,23 @@ WebSocket connections and messages are subject to rate limiting:
 
 > 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.md)
 
+## Close Codes
+
+List of close codes returned by the server when terminating a WebSocket connection. Clients should use these codes to determine whether to reconnect.
+
+| Close Code | Name | Description | Reconnect |
+|-----------|------|-------------|-----------|
+| `1000` | Normal Closure | Graceful shutdown | Optional |
+| `1008` | Policy Violation | Authentication failure (missing token, expired token, invalid token, missing `sub` claim) | :x: Do NOT reconnect — refresh token first |
+| `1011` | Internal Error | Server internal error | :white_check_mark: Retry with exponential backoff |
+| `4029` | Rate Limit Exceeded | Connection rate limit exceeded (default: 10 per 60s) | :white_check_mark: Retry with exponential backoff |
+
+!!! tip "Frontend Implementation Guide"
+    - **`1008` (Auth failure)**: Do NOT reconnect. Retrying with an expired token causes unnecessary server load. Refresh the token before reconnecting.
+    - **`4029` (Rate limit)**: Reconnect with exponential backoff.
+    - **`1011` (Server error)**: Reconnect with exponential backoff.
+    - **`1000` (Normal closure)**: Server intentionally closed the connection. Reconnect if needed.
+
 ## Reconnection
 
 It's recommended to implement automatic reconnection:
@@ -249,16 +266,24 @@ class TimerWebSocket {
     );
 
     this.ws.onclose = (event) => {
-      if (event.code === 4029) {
-        // Rate limit - exponential backoff
+      if (event.code === 1008) {
+        // Auth failure - do NOT reconnect, refresh token first
+        console.error('Authentication failed:', event.reason);
+        this.onAuthFailure?.(event.reason);
+        return;
+      }
+
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
+
+      if (event.code === 4029 || event.code === 1011) {
+        // Rate limit or server error - exponential backoff
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
         setTimeout(() => this.connect(), delay);
-        this.reconnectAttempts++;
-      } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        // Normal disconnect - reconnect
+      } else {
+        // Other disconnect - reconnect
         setTimeout(() => this.connect(), 1000);
-        this.reconnectAttempts++;
       }
+      this.reconnectAttempts++;
     };
 
     this.ws.onopen = () => {
