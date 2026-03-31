@@ -11,6 +11,14 @@ _No unreleased changes._
 
 ---
 
+## [v2026.03.31-41a4f1d] - 2026-03-31
+
+### Added
+
+- **WebSocket close code specification**: Documented close codes (`1000`, `1008`, `1011`, `4029`) in both Korean and English WebSocket API docs with reconnection guidance per code. Updated reconnection example to block retry on `1008` (auth failure). ([#15](https://github.com/onprem-hipster-timer/backend/issues/15), [#18](https://github.com/onprem-hipster-timer/backend/pull/18))
+
+---
+
 ## [v2026.03.09-2c3b92f] - 2026-03-09
 
 ### Added
@@ -180,7 +188,8 @@ _No unreleased changes._
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.09-2c3b92f...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.31-41a4f1d...HEAD
+[v2026.03.31-41a4f1d]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.09-2c3b92f...v2026.03.31-41a4f1d
 [v2026.03.09-2c3b92f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...v2026.03.09-2c3b92f
 [v2026.03.05-6194559]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.04-d027c48...v2026.03.05-6194559
 [v2026.03.04-d027c48]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.03-5609ccd...v2026.03.04-d027c48
