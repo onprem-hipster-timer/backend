@@ -227,6 +227,23 @@ WebSocket 연결과 메시지는 Rate Limiting이 적용됩니다:
 
 > 📖 **상세 가이드**: [Rate Limiting 가이드](../development/rate-limit.ko.md)
 
+## Close Codes
+
+서버가 WebSocket 연결을 종료할 때 반환하는 close code 목록입니다. 클라이언트는 이 코드를 기반으로 재연결 여부를 판단해야 합니다.
+
+| Close Code | 이름 | 설명 | 재연결 |
+|-----------|------|------|--------|
+| `1000` | Normal Closure | 정상 종료 | 선택적 |
+| `1008` | Policy Violation | 인증 실패 (토큰 누락, 토큰 만료, 무효 토큰, `sub` 클레임 누락) | :x: 재연결 금지 — 토큰 갱신 후 재시도 |
+| `1011` | Internal Error | 서버 내부 오류 | :white_check_mark: 지수 백오프 후 재시도 |
+| `4029` | Rate Limit Exceeded | 연결 Rate Limit 초과 (기본: 60초당 10회) | :white_check_mark: 지수 백오프 후 재시도 |
+
+!!! tip "프론트엔드 구현 가이드"
+    - **`1008` (인증 실패)**: 재연결하지 마세요. 만료된 토큰으로 반복 연결을 시도하면 서버에 불필요한 부하가 발생합니다. 토큰을 갱신한 후 재연결하세요.
+    - **`4029` (Rate Limit)**: 지수 백오프(exponential backoff)를 적용하여 재연결하세요.
+    - **`1011` (서버 오류)**: 지수 백오프를 적용하여 재연결하세요.
+    - **`1000` (정상 종료)**: 서버가 의도적으로 연결을 종료한 경우입니다. 필요에 따라 재연결하세요.
+
 ## 재연결
 
 자동 재연결 구현을 권장합니다:
@@ -249,16 +266,24 @@ class TimerWebSocket {
     );
 
     this.ws.onclose = (event) => {
-      if (event.code === 4029) {
-        // Rate limit - 지수 백오프
+      if (event.code === 1008) {
+        // 인증 실패 - 재연결 금지, 토큰 갱신 필요
+        console.error('인증 실패:', event.reason);
+        this.onAuthFailure?.(event.reason);
+        return;
+      }
+
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
+
+      if (event.code === 4029 || event.code === 1011) {
+        // Rate limit 또는 서버 오류 - 지수 백오프
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
         setTimeout(() => this.connect(), delay);
-        this.reconnectAttempts++;
-      } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        // 정상 연결 해제 - 재연결
+      } else {
+        // 기타 연결 해제 - 재연결
         setTimeout(() => this.connect(), 1000);
-        this.reconnectAttempts++;
       }
+      this.reconnectAttempts++;
     };
 
     this.ws.onopen = () => {
