@@ -92,6 +92,16 @@ CRUD 작업을 위한 전통적인 RESTful 엔드포인트:
 - **날짜**: ISO 8601 형식 (`2024-01-15T10:00:00Z`)
 - **UUID**: 표준 UUID v4 형식
 
+!!! warning "JSON 요청에는 `Content-Type` 헤더가 필수입니다"
+    본문을 포함하는 요청(`POST`, `PUT`, `PATCH`)은 반드시 `Content-Type: application/json` 헤더를 포함해야 합니다.
+
+    - **헤더 누락** → `422 Unprocessable Entity` (본문이 JSON으로 파싱되지 않음)
+    - **잘못된 타입**(예: `text/plain`) → `415 Unsupported Media Type`
+    - `application/json` 및 `application/*+json` 계열이 허용됩니다.
+    - 본문이 없는 요청(`GET`, `DELETE` 등)은 영향받지 않습니다.
+
+    `fetch`, `axios`, `httpx` 등 대부분의 HTTP 클라이언트는 JSON 전송 시 이 헤더를 자동으로 설정하지만, `curl --data`처럼 본문만 수동으로 보내는 경우 헤더를 직접 지정해야 합니다. (이 엄격한 검사는 FastAPI 0.132부터 기본 활성화되었습니다.)
+
 ## 대화형 문서 (테스트 링크)
 
 로컬 개발 서버 실행 시 아래 주소로 접속해 API를 테스트할 수 있습니다.
