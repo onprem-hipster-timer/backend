@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.06.09-91639bf] - 2026-06-09
+
 ### Changed
 
 - **Strict `Content-Type` checking for JSON requests**: As part of the FastAPI dependency upgrade (0.132+, via [#29](https://github.com/onprem-hipster-timer/backend/pull/29)), requests carrying a JSON body must include a `Content-Type: application/json` header. A missing header now returns `422 Unprocessable Entity`, and an incorrect media type returns `415 Unsupported Media Type`; bodyless requests (`GET`, `DELETE`) are unaffected. The previous lenient behavior can be restored with `FastAPI(strict_content_type=False)`. Documented in the API Overview (Korean and English).
@@ -190,7 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.31-41a4f1d...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-91639bf...HEAD
+[v2026.06.09-91639bf]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.31-41a4f1d...v2026.06.09-91639bf
 [v2026.03.31-41a4f1d]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.09-2c3b92f...v2026.03.31-41a4f1d
 [v2026.03.09-2c3b92f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...v2026.03.09-2c3b92f
 [v2026.03.05-6194559]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.04-d027c48...v2026.03.05-6194559
