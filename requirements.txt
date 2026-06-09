@@ -128,7 +128,7 @@ typing-inspection==0.4.2
     #   fastapi
     #   pydantic
     #   pydantic-settings
-tzdata==2025.3
+tzdata==2026.2
     # via -r requirements.in
 uvicorn[standard]==0.48.0
     # via -r requirements.in
