@@ -36,7 +36,7 @@ bracex==2.6
     # via wcmatch
 build==1.4.0
     # via pip-tools
-cachetools==6.2.6
+cachetools==7.1.1
     # via -r requirements.txt
 certifi==2026.1.4
     # via
