@@ -44,6 +44,7 @@
 | `MAX_OVERFLOW` | 최대 초과 연결 수 | `10` |
 | `DB_POOL_PRE_PING` | 사용 전 연결 유효성 검사 | `True` |
 | `DB_POOL_RECYCLE` | 연결 재활용 시간 (초) | `3600` |
+| `DB_KEEPALIVE_INTERVAL_SECONDS` | 주기적 keep-alive `SELECT 1` 실행 간격 (초). `0` 이하면 비활성화 | `0` |
 
 **데이터베이스 URL 예시:**
 
@@ -54,6 +55,26 @@ DATABASE_URL=sqlite:///./schedule.db
 # PostgreSQL (프로덕션)
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 ```
+
+!!! tip "DB Keep-Alive (유휴 자동 정지 방지)"
+    일부 관리형/서버리스 데이터베이스는 일정 시간 트래픽이 없으면 인스턴스를
+    자동으로 일시 정지시키거나 유휴 연결을 끊습니다. `DB_KEEPALIVE_INTERVAL_SECONDS`를
+    양수(초)로 설정하면 해당 주기마다 가벼운 `SELECT 1` 쿼리를 실행해 DB를 깨운 상태로
+    유지합니다. `0`(기본값) 또는 음수면 비활성화됩니다.
+
+    초 변환표:
+
+    | 주기 | 초 |
+    |------|----|
+    | 5분 | `300` |
+    | 1시간 | `3600` |
+    | 6시간 | `21600` |
+    | 12시간 | `43200` |
+    | 1일 | `86400` |
+    | (참고) 7일 = Supabase 정지 기준 | `604800` |
+
+    주기는 정지 기준(7일)보다 충분히 짧게 두세요. 앱 재시작·장애로 한 번 놓쳐도
+    여유가 있도록 `86400`(1일) 정도를 권장합니다.
 
 ## 인증 (OIDC)
 

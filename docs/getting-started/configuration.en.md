@@ -44,6 +44,7 @@ Configuration is done via `.env` file or environment variables.
 | `MAX_OVERFLOW` | Max overflow connections | `10` |
 | `DB_POOL_PRE_PING` | Validate connections before use | `True` |
 | `DB_POOL_RECYCLE` | Connection recycle time (seconds) | `3600` |
+| `DB_KEEPALIVE_INTERVAL_SECONDS` | Interval (seconds) for periodic keep-alive `SELECT 1`; `0` or less disables it | `0` |
 
 **Database URL Examples:**
 
@@ -54,6 +55,26 @@ DATABASE_URL=sqlite:///./schedule.db
 # PostgreSQL (production)
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 ```
+
+!!! tip "DB Keep-Alive (prevent idle auto-pause)"
+    Some managed/serverless databases automatically pause an instance (or drop idle
+    connections) after a period without traffic. Set `DB_KEEPALIVE_INTERVAL_SECONDS`
+    to a positive value (seconds) to run a lightweight `SELECT 1` on that interval and
+    keep the database awake. A value of `0` (the default) or any negative value disables it.
+
+    Seconds conversion:
+
+    | Interval | Seconds |
+    |----------|---------|
+    | 5 minutes | `300` |
+    | 1 hour | `3600` |
+    | 6 hours | `21600` |
+    | 12 hours | `43200` |
+    | 1 day | `86400` |
+    | (ref) 7 days = Supabase pause threshold | `604800` |
+
+    Keep the interval well below the pause threshold (7 days). `86400` (1 day) is a
+    good default so a single missed ping (app restart/outage) still leaves plenty of margin.
 
 ## Authentication (OIDC)
 

@@ -17,6 +17,7 @@ from app.core.auth import AuthMiddleware
 from app.core.config import settings
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import setup_logging
+from app.db.keepalive import DatabaseKeepAliveTask
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
 from app.middleware.request_logger import RequestLoggerMiddleware
@@ -27,7 +28,9 @@ logger = logging.getLogger(__name__)
 
 # 전역 태스크 참조 (shutdown 시 정리)
 holiday_task = HolidayBackgroundTask()
+keepalive_task = DatabaseKeepAliveTask()
 _asyncio_task: asyncio.Task | None = None
+_keepalive_asyncio_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
@@ -40,7 +43,7 @@ async def lifespan(app: FastAPI):
     
     이 패턴으로 startup/shutdown 로직 연결 가능
     """
-    global _asyncio_task
+    global _asyncio_task, _keepalive_asyncio_task
 
     # ============ STARTUP ============
     logger.info("🌍 Starting FastAPI application")
@@ -83,6 +86,17 @@ async def lifespan(app: FastAPI):
         _asyncio_task = asyncio.create_task(holiday_task.run())
         logger.info("✅ Holiday background task scheduled")
 
+        # 6-1. DB keep-alive 태스크 시작 (활성화된 경우에만)
+        #      유휴 시 DB 자동 정지/연결 끊김 방지용
+        if keepalive_task.enabled:
+            _keepalive_asyncio_task = asyncio.create_task(keepalive_task.run())
+            logger.info(
+                "✅ DB keep-alive task scheduled (interval=%ds)",
+                keepalive_task.interval_seconds,
+            )
+        else:
+            logger.info("ℹ️  DB keep-alive disabled")
+
         # 7. Cloudflare/Trusted Proxy 설정 초기화
         if settings.CF_ENABLED:
             cf_manager = get_cloudflare_manager()
@@ -118,6 +132,16 @@ async def lifespan(app: FastAPI):
                 await _asyncio_task
             except asyncio.CancelledError:
                 logger.info("✅ Holiday background task stopped")
+
+        # 2. DB keep-alive 태스크 정상 종료
+        if _keepalive_asyncio_task:
+            keepalive_task.is_running = False
+            _keepalive_asyncio_task.cancel()
+
+            try:
+                await _keepalive_asyncio_task
+            except asyncio.CancelledError:
+                logger.info("✅ DB keep-alive task stopped")
 
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
