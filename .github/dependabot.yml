@@ -1,0 +1,49 @@
+version: 2
+updates:
+  # Python 의존성 (requirements.txt — pip-compile 락파일 자동 인식)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # 공급망 공격 방어: 갓 릴리스된 버전은 일정 기간 숙성 후 PR 생성.
+    # 단, 보안(CVE) 업데이트는 cooldown 적용 제외 → 즉시 PR.
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      # patch/minor 업데이트는 하나의 PR로 묶어 노이즈 감소
+      python-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Dockerfile 베이스 이미지 (python:3.14-slim)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    commit-message:
+      prefix: "chore"
+
+  # GitHub Actions 버전 (actions/checkout@v4 등)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    commit-message:
+      prefix: "ci"
