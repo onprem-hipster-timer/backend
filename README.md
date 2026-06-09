@@ -709,6 +709,7 @@ DOCS_ENABLED=false
 | `MAX_OVERFLOW` | Max overflow connections | `10` |
 | `DB_POOL_PRE_PING` | Validate connections before use | `True` |
 | `DB_POOL_RECYCLE` | Connection recycle time (seconds) | `3600` |
+| `DB_KEEPALIVE_INTERVAL_SECONDS` | Interval (seconds) for periodic keep-alive `SELECT 1`; `0` or less disables it | `0` |
 
 **Database URL Examples:**
 
@@ -719,6 +720,25 @@ DATABASE_URL=sqlite:///./schedule.db
 # PostgreSQL (production)
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 ```
+
+**DB Keep-Alive:**
+
+Some managed/serverless databases automatically pause an instance (or drop idle
+connections) after a period without traffic. Set `DB_KEEPALIVE_INTERVAL_SECONDS`
+to a positive value to run a lightweight `SELECT 1` on that interval and keep the
+database awake. Set it to `0` (the default) or any value `<= 0` to disable it.
+
+```bash
+# Ping the database every 5 minutes to prevent idle auto-pause
+DB_KEEPALIVE_INTERVAL_SECONDS=300
+
+# Disabled (default)
+DB_KEEPALIVE_INTERVAL_SECONDS=0
+```
+
+Seconds conversion: `300` = 5 min, `3600` = 1 hour, `21600` = 6 hours,
+`43200` = 12 hours, `86400` = 1 day (`604800` = 7 days, the Supabase pause threshold).
+Keep the interval well below the threshold — `86400` (1 day) is a good default.
 
 #### Authentication (OIDC)
 

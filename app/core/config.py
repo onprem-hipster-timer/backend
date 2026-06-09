@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     MAX_OVERFLOW: int = 10
     DB_POOL_PRE_PING: bool = True  # 연결 유효성 검사 (PostgreSQL 권장)
     DB_POOL_RECYCLE: int = 3600  # 연결 재활용 시간 (초, PostgreSQL 권장)
+    # DB Keep-Alive: 유휴 시 DB가 일시 정지/연결이 끊기는 것을 막기 위해
+    # 주기적으로 가벼운 쿼리(SELECT 1)를 실행. 0 이하면 비활성화.
+    # (예: 무료 호스팅 DB의 유휴 자동 정지 방지)
+    DB_KEEPALIVE_INTERVAL_SECONDS: int = 0  # 주기(초), 0 이하면 비활성화
 
     # 로깅
     LOG_LEVEL: str = "INFO"
