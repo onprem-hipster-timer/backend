@@ -1,6 +1,11 @@
 # Core Framework
 fastapi
 uvicorn[standard]  # WebSocket 지원 포함
+# uvicorn[standard]의 전이 의존성 uvloop은 Windows 미지원(휠 없음)이라 그냥 두면 로컬
+# Windows에서 sdist 빌드 실패로 설치가 깨진다. 직접 선언 + 마커로 제외해 크로스 플랫폼
+# 설치를 가능하게 한다. pip-compile은 .in의 명시적 마커를 출력에 유지하고, Dependabot은
+# --universal을 보존하지 않으므로 마커는 .in에 둔다. (Linux 프로덕션은 uvloop 그대로 사용)
+uvloop ; sys_platform != 'win32'
 starlette
 
 # Database
