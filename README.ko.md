@@ -1033,6 +1033,23 @@ pip-compile requirements.in
 pip-sync requirements.txt
 ```
 
+#### 크로스 플랫폼 마커 (Windows 호환성)
+
+lockfile은 Linux에서 컴파일됩니다(로컬 Docker 및 Dependabot). 그래서 플랫폼별 간접 의존성이
+**환경 마커 없이** 고정될 수 있는데, 이러면 다른 플랫폼에서 `pip install`이 깨집니다. 대표적인
+예가 **`uvloop`**(`uvicorn[standard]`가 가져옴)으로, Windows 휠이 없어 마커 없는 `uvloop==…`
+고정은 Windows 설치 시 `uvloop does not support Windows` 오류로 실패합니다.
+
+모든 플랫폼에서 설치가 되도록, 이런 패키지는 **`requirements.in`에 마커와 함께 직접 선언**합니다:
+
+```
+uvloop ; sys_platform != 'win32'
+```
+
+pip-compile은 `.in`의 명시적 마커를 생성된 `.txt`에 유지하고, Dependabot은 `requirements.in`을
+읽기만 하고 수정하지 않으므로 마커가 모든 재생성에서 살아남습니다. `--universal`로도 마커를
+넣을 수 있지만 Dependabot이 이 플래그를 보존하지 않으므로, 마커는 `requirements.in`에 두어야 합니다.
+
 #### pip-tools를 사용하는 이유
 
 - **재현 가능한 빌드**: 고정된 버전으로 일관된 환경 보장

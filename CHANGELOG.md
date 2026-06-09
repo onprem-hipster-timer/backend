@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Cross-platform lockfile (Windows installability)**: `uvloop` (a `uvicorn[standard]` transitive dependency with no Windows wheel) was pinned without an environment marker, so `pip install -r requirements.txt` failed on Windows with `uvloop does not support Windows`. `uvloop` is now declared directly in `requirements.in` with a `; sys_platform != 'win32'` marker, which pip-compile preserves in the lockfile and Dependabot retains across regenerations (it reads but never rewrites `requirements.in`). Linux/production installs are unchanged. Verified: fresh Windows venv install succeeds (uvloop skipped); Linux test suite still passes (824 tests).
 
 ---
 

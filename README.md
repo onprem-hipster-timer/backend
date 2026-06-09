@@ -1037,6 +1037,26 @@ pip-compile requirements.in
 pip-sync requirements.txt
 ```
 
+#### Cross-platform markers (Windows compatibility)
+
+The lockfiles are compiled on Linux (locally via Docker and by Dependabot), so a platform-specific
+transitive dependency may be pinned **without** an environment marker — which breaks `pip install`
+on other platforms. The clearest case is **`uvloop`** (pulled by `uvicorn[standard]`): it has no
+Windows wheel, so a bare `uvloop==…` pin makes Windows installs fail with
+`uvloop does not support Windows`.
+
+To keep installs working everywhere, such packages are declared **directly in `requirements.in`
+with an explicit marker**:
+
+```
+uvloop ; sys_platform != 'win32'
+```
+
+pip-compile preserves explicit `.in` markers in the generated `.txt`, and Dependabot reads (but
+never rewrites) `requirements.in` — so the marker survives every regeneration. `--universal` would
+also emit markers, but Dependabot does **not** preserve that flag, so the marker must live in
+`requirements.in`.
+
 #### Why pip-tools?
 
 - **Reproducible builds**: Pinned versions ensure consistent environments
