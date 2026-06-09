@@ -21,7 +21,7 @@ asyncpg==0.31.0
     # via -r requirements.in
 authlib==1.7.2
     # via -r requirements.in
-cachetools==6.2.6
+cachetools==7.1.1
     # via -r requirements.in
 certifi==2026.1.4
     # via
