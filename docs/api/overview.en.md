@@ -92,6 +92,16 @@ Common HTTP status codes:
 - **Dates**: ISO 8601 format (`2024-01-15T10:00:00Z`)
 - **UUIDs**: Standard UUID v4 format
 
+!!! warning "JSON requests require the `Content-Type` header"
+    Requests that carry a body (`POST`, `PUT`, `PATCH`) must include the `Content-Type: application/json` header.
+
+    - **Missing header** → `422 Unprocessable Entity` (the body is not parsed as JSON)
+    - **Wrong type** (e.g. `text/plain`) → `415 Unsupported Media Type`
+    - `application/json` and `application/*+json` media types are accepted.
+    - Bodyless requests (`GET`, `DELETE`, etc.) are unaffected.
+
+    Most HTTP clients (`fetch`, `axios`, `httpx`, ...) set this header automatically when sending JSON, but you must set it explicitly when sending a raw body (e.g. `curl --data`). (This strict check is enabled by default since FastAPI 0.132.)
+
 ## Interactive Documentation (Test Links)
 
 When running the local dev server, you can test the API at these URLs:
