@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.06.09-30c31db] - 2026-06-09
+
 ### Fixed
 
 - **Cross-platform lockfile (Windows installability)**: `uvloop` (a `uvicorn[standard]` transitive dependency with no Windows wheel) was pinned without an environment marker, so `pip install -r requirements.txt` failed on Windows with `uvloop does not support Windows`. `uvloop` is now declared directly in `requirements.in` with a `; sys_platform != 'win32'` marker, which pip-compile preserves in the lockfile and Dependabot retains across regenerations (it reads but never rewrites `requirements.in`). Linux/production installs are unchanged. Verified: fresh Windows venv install succeeds (uvloop skipped); Linux test suite still passes (824 tests).
@@ -198,7 +204,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-91639bf...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-30c31db...HEAD
+[v2026.06.09-30c31db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-91639bf...v2026.06.09-30c31db
 [v2026.06.09-91639bf]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.31-41a4f1d...v2026.06.09-91639bf
 [v2026.03.31-41a4f1d]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.09-2c3b92f...v2026.03.31-41a4f1d
 [v2026.03.09-2c3b92f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.05-6194559...v2026.03.09-2c3b92f
