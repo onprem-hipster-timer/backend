@@ -9,11 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from authlib.jose import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from joserfc import jwt
+from joserfc.jwk import KeySet, RSAKey
 
 
 # ============================================================================
@@ -40,8 +41,7 @@ def generate_rsa_keypair():
     )
 
     # JWKS 형태로 공개키 변환
-    from authlib.jose import JsonWebKey
-    jwk = JsonWebKey.import_key(public_pem, {"kty": "RSA", "use": "sig", "kid": "test-key-id"})
+    jwk = RSAKey.import_key(public_pem, parameters={"use": "sig", "kid": "test-key-id"})
     jwks = {"keys": [jwk.as_dict()]}
 
     return private_pem, public_pem, jwks
@@ -78,8 +78,9 @@ def create_test_token(
         claims.update(extra_claims)
 
     header = {"alg": "RS256", "kid": "test-key-id"}
-    token = jwt.encode(header, claims, TEST_PRIVATE_KEY)
-    return token.decode() if isinstance(token, bytes) else token
+    private_key = RSAKey.import_key(TEST_PRIVATE_KEY)
+    token = jwt.encode(header, claims, private_key, algorithms=["RS256"])
+    return token
 
 
 # ============================================================================
@@ -308,7 +309,6 @@ class TestOIDCClient:
     async def test_verify_token_valid(self):
         """유효한 토큰 검증 성공"""
         from app.core.auth import OIDCClient
-        from authlib.jose import JsonWebKey
 
         # 유효한 토큰 생성
         token = create_test_token(
@@ -325,7 +325,7 @@ class TestOIDCClient:
             client = OIDCClient()
 
             # get_jwks를 mock하여 테스트용 JWKS 반환
-            jwks = JsonWebKey.import_key_set(TEST_JWKS)
+            jwks = KeySet.import_key_set(TEST_JWKS)
             with patch.object(client, "get_jwks", new_callable=AsyncMock) as mock_get_jwks:
                 mock_get_jwks.return_value = jwks
 
@@ -339,7 +339,6 @@ class TestOIDCClient:
     async def test_verify_token_invalid_issuer(self):
         """잘못된 issuer의 토큰 검증 실패"""
         from app.core.auth import OIDCClient
-        from authlib.jose import JsonWebKey
 
         # 잘못된 issuer로 토큰 생성
         token = create_test_token(
@@ -355,7 +354,7 @@ class TestOIDCClient:
 
             client = OIDCClient()
 
-            jwks = JsonWebKey.import_key_set(TEST_JWKS)
+            jwks = KeySet.import_key_set(TEST_JWKS)
             with patch.object(client, "get_jwks", new_callable=AsyncMock) as mock_get_jwks:
                 mock_get_jwks.return_value = jwks
 
@@ -369,7 +368,6 @@ class TestOIDCClient:
     async def test_verify_token_invalid_audience(self):
         """잘못된 audience의 토큰 검증 실패"""
         from app.core.auth import OIDCClient
-        from authlib.jose import JsonWebKey
 
         # 잘못된 audience로 토큰 생성
         token = create_test_token(
@@ -385,7 +383,7 @@ class TestOIDCClient:
 
             client = OIDCClient()
 
-            jwks = JsonWebKey.import_key_set(TEST_JWKS)
+            jwks = KeySet.import_key_set(TEST_JWKS)
             with patch.object(client, "get_jwks", new_callable=AsyncMock) as mock_get_jwks:
                 mock_get_jwks.return_value = jwks
 
@@ -399,7 +397,6 @@ class TestOIDCClient:
     async def test_verify_token_expired(self):
         """만료된 토큰 검증 실패"""
         from app.core.auth import OIDCClient
-        from authlib.jose import JsonWebKey
 
         # 만료된 토큰 생성
         token = create_test_token(
@@ -416,7 +413,7 @@ class TestOIDCClient:
 
             client = OIDCClient()
 
-            jwks = JsonWebKey.import_key_set(TEST_JWKS)
+            jwks = KeySet.import_key_set(TEST_JWKS)
             with patch.object(client, "get_jwks", new_callable=AsyncMock) as mock_get_jwks:
                 mock_get_jwks.return_value = jwks
 
