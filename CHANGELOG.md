@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **`authlib.jose` → `joserfc` migration**: OIDC JWT verification in `app/core/auth.py` was migrated off the deprecated `authlib.jose` module (deprecated since Authlib 1.7.0, slated for removal in Authlib 2.0.0) to the standalone `joserfc` package, which Authlib already pulls in transitively. JWKS loading (`KeySet.import_key_set`), decoding + claim validation (`jwt.decode` + `JWTClaimsRegistry`), and error handling (`joserfc.errors.JoseError`) were ported with no behavioral change to token verification. Signature verification is now restricted to asymmetric algorithms (`RS256/384/512`, `ES256/384/512`), preventing the `alg` confusion / `none` attacks that Authlib's unrestricted default allowed. `authlib` was dropped from `requirements.in` (and the lockfiles) in favor of a direct `joserfc` dependency. ([#34](https://github.com/onprem-hipster-timer/backend/issues/34), [#37](https://github.com/onprem-hipster-timer/backend/pull/37))
 
 ---
 

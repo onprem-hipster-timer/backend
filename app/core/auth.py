@@ -1,16 +1,18 @@
 """
 OIDC 인증 모듈
 
-Authlib를 사용한 OIDC discovery 및 JWT Access Token 검증.
+joserfc를 사용한 OIDC discovery 및 JWT Access Token 검증.
 모든 API 엔드포인트를 보호하고 CurrentUser 컨텍스트를 제공합니다.
 """
 import logging
 from typing import Any
 
 import httpx
-from authlib.jose import JsonWebKey, jwt
-from authlib.jose.errors import JoseError
 from cachetools import TTLCache
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import KeySet
+from joserfc.jwt import JWTClaimsRegistry
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -22,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 # HTTP Bearer 스키마
 security = HTTPBearer(auto_error=False)
+
+# 허용 서명 알고리즘 (비대칭만 허용 — alg 혼동/none 공격 방지)
+ALLOWED_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]
+
+# JWT 표준 클레임(exp/nbf/iat) 검증 레지스트리
+_claims_registry = JWTClaimsRegistry()
 
 
 class CurrentUser(BaseModel):
@@ -83,12 +91,12 @@ class OIDCClient:
         logger.info(f"OIDC metadata loaded from {self.discovery_url}")
         return metadata
 
-    async def get_jwks(self) -> JsonWebKey:
+    async def get_jwks(self) -> KeySet:
         """
         JWKS (JSON Web Key Set) 조회 (캐싱됨)
-        
+
         Returns:
-            Authlib JsonWebKey 객체
+            joserfc KeySet 객체
         """
         cache_key = "jwks"
         if cache_key in self._jwks_cache:
@@ -104,7 +112,7 @@ class OIDCClient:
             response.raise_for_status()
             jwks_data = response.json()
 
-        jwks = JsonWebKey.import_key_set(jwks_data)
+        jwks = KeySet.import_key_set(jwks_data)
         self._jwks_cache[cache_key] = jwks
         logger.info(f"JWKS loaded from {jwks_uri}")
         return jwks
@@ -125,11 +133,12 @@ class OIDCClient:
         try:
             jwks = await self.get_jwks()
 
-            # JWT 디코딩 및 서명 검증
-            claims = jwt.decode(token, jwks)
+            # JWT 디코딩 및 서명 검증 (허용된 비대칭 알고리즘만)
+            decoded = jwt.decode(token, jwks, algorithms=ALLOWED_JWT_ALGORITHMS)
+            claims = decoded.claims
 
-            # 클레임 검증
-            claims.validate()
+            # 표준 클레임(exp/nbf/iat) 검증
+            _claims_registry.validate(claims)
 
             # issuer 검증
             if claims.get("iss") != settings.OIDC_ISSUER_URL:

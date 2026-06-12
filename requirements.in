@@ -17,7 +17,7 @@ aiosqlite
 psycopg2-binary
 
 # Authentication
-authlib
+joserfc  # authlib.jose deprecation 대응 (authlib → joserfc 마이그레이션, #34)
 cryptography
 
 # HTTP Client
