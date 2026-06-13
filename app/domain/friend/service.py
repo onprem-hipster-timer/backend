@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import friendship as crud
+from app.crud import user_profile as profile_crud
 from app.crud import visibility as visibility_crud
 from app.domain.friend.exceptions import (
     FriendshipNotFoundError,
@@ -297,13 +298,23 @@ class FriendService:
         """
         friendships = crud.get_friends(self.session, self.user_id)
 
+        # 상대방 표시정보 배치 조회 (N+1 방지)
+        friend_ids = [
+            f.addressee_id if f.requester_id == self.user_id else f.requester_id
+            for f in friendships
+        ]
+        profiles = profile_crud.get_profiles_by_subs(self.session, friend_ids)
+
         friends = []
         for f in friendships:
             # 상대방 ID 결정
             friend_id = f.addressee_id if f.requester_id == self.user_id else f.requester_id
+            profile = profiles.get(friend_id)
             friends.append(FriendRead(
                 user_id=friend_id,
                 friendship_id=f.id,
+                display_name=profile.display_name if profile else None,
+                avatar_url=profile.avatar_url if profile else None,
                 since=f.updated_at,  # 수락 시점
             ))
 
@@ -324,16 +335,7 @@ class FriendService:
         :return: 대기 중인 친구 요청 목록
         """
         friendships = crud.get_pending_requests_received(self.session, self.user_id)
-
-        return [
-            PendingRequestRead(
-                id=f.id,
-                requester_id=f.requester_id,
-                addressee_id=f.addressee_id,
-                created_at=f.created_at,
-            )
-            for f in friendships
-        ]
+        return self._to_pending_reads(friendships)
 
     def get_pending_requests_sent(self) -> list[PendingRequestRead]:
         """
@@ -342,16 +344,24 @@ class FriendService:
         :return: 대기 중인 친구 요청 목록
         """
         friendships = crud.get_pending_requests_sent(self.session, self.user_id)
+        return self._to_pending_reads(friendships)
 
-        return [
-            PendingRequestRead(
+    def _to_pending_reads(self, friendships: list[Friendship]) -> list[PendingRequestRead]:
+        """Friendship 목록을 PendingRequestRead로 변환 (요청자 표시정보 배치 조회)"""
+        requester_ids = [f.requester_id for f in friendships]
+        profiles = profile_crud.get_profiles_by_subs(self.session, requester_ids)
+        reads = []
+        for f in friendships:
+            profile = profiles.get(f.requester_id)
+            reads.append(PendingRequestRead(
                 id=f.id,
                 requester_id=f.requester_id,
                 addressee_id=f.addressee_id,
+                requester_display_name=profile.display_name if profile else None,
+                requester_avatar_url=profile.avatar_url if profile else None,
                 created_at=f.created_at,
-            )
-            for f in friendships
-        ]
+            ))
+        return reads
 
     def is_friend(self, other_user_id: str) -> bool:
         """

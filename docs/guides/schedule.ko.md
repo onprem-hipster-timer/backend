@@ -167,9 +167,9 @@ if (isRegularSchedule(schedule)) {
 날짜 범위로 일정을 조회하면 반복 일정은 자동으로 가상 인스턴스로 확장되어 반환됩니다.
 
 ```typescript
-// GET /api/v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59
+// GET /v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59
 const response = await fetch(
-  `/api/v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59`
+  `/v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59`
 );
 const schedules: Schedule[] = await response.json();
 
@@ -183,8 +183,8 @@ const schedules: Schedule[] = await response.json();
 
 #### 일반 일정 수정
 ```typescript
-// PATCH /api/v1/schedules/{schedule_id}
-const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
+// PATCH /v1/schedules/{schedule_id}
+const response = await fetch(`/v1/schedules/${schedule.id}`, {
   method: 'PATCH',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -197,9 +197,9 @@ const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
 
 #### 반복 일정 전체 수정
 ```typescript
-// PATCH /api/v1/schedules/{parent_id}
+// PATCH /v1/schedules/{parent_id}
 // instance_start 없이 호출하면 원본 반복 일정 전체가 수정됩니다 (모든 인스턴스에 영향)
-const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
+const response = await fetch(`/v1/schedules/${schedule.id}`, {
   method: 'PATCH',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -212,10 +212,10 @@ const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
 
 #### 반복 일정의 특정 인스턴스 수정
 ```typescript
-// PATCH /api/v1/schedules/{parent_id}?instance_start={instance_start_time}
+// PATCH /v1/schedules/{parent_id}?instance_start={instance_start_time}
 // 가상 인스턴스를 수정할 때는 parent_id와 instance_start를 함께 전송
 const response = await fetch(
-  `/api/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
+  `/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
   {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -232,27 +232,27 @@ const response = await fetch(
 
 #### 일반 일정 삭제
 ```typescript
-// DELETE /api/v1/schedules/{schedule_id}
-const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
+// DELETE /v1/schedules/{schedule_id}
+const response = await fetch(`/v1/schedules/${schedule.id}`, {
   method: 'DELETE'
 });
 ```
 
 #### 반복 일정 전체 삭제
 ```typescript
-// DELETE /api/v1/schedules/{parent_id}
+// DELETE /v1/schedules/{parent_id}
 // instance_start 없이 호출하면 원본 반복 일정 전체가 삭제됩니다 (모든 인스턴스 포함)
-const response = await fetch(`/api/v1/schedules/${schedule.id}`, {
+const response = await fetch(`/v1/schedules/${schedule.id}`, {
   method: 'DELETE'
 });
 ```
 
 #### 반복 일정의 특정 인스턴스 삭제
 ```typescript
-// DELETE /api/v1/schedules/{parent_id}?instance_start={instance_start_time}
+// DELETE /v1/schedules/{parent_id}?instance_start={instance_start_time}
 // 가상 인스턴스를 삭제할 때는 parent_id와 instance_start를 함께 전송
 const response = await fetch(
-  `/api/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
+  `/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
   {
     method: 'DELETE'
   }

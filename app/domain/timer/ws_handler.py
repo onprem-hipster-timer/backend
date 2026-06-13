@@ -374,6 +374,9 @@ class TimerWSHandler:
                 type=TimerWSMessageType.FRIEND_ACTIVITY.value,
                 payload={
                     "friend_id": self.current_user.sub,
+                    # 행위자 = 현재 사용자이므로 표시명은 라이브 토큰 클레임에서 직접
+                    # 채운다(프로필 조회 불필요, 항상 최신).
+                    "display_name": self.current_user.name,
                     "action": action.value,
                     "timer_id": str(timer_id),
                     "timer_title": timer_title,

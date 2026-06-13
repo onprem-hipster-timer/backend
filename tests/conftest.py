@@ -42,6 +42,7 @@ def test_user() -> CurrentUser:
     return CurrentUser(
         sub="test-user-id",
         email="test@example.com",
+        email_verified=True,
         name="Test User",
     )
 
@@ -52,6 +53,7 @@ def other_user() -> CurrentUser:
     return CurrentUser(
         sub="other-user-id",
         email="other@example.com",
+        email_verified=True,
         name="Other User",
     )
 
@@ -373,10 +375,11 @@ def _create_test_engine():
 
 
 def make_user(sub: str, email: str = None, name: str = None) -> CurrentUser:
-    """테스트용 사용자 생성 헬퍼"""
+    """테스트용 사용자 생성 헬퍼 (이메일은 검증된 것으로 간주 → 이메일 친추 테스트 가능)"""
     return CurrentUser(
         sub=sub,
         email=email or f"{sub}@example.com",
+        email_verified=True,
         name=name or f"User {sub}",
     )
 

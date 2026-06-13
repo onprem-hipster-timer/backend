@@ -12,6 +12,21 @@ from app.ratelimit.config import (
 pytestmark = pytest.mark.ratelimit
 
 
+class TestFriendRequestRule:
+    """친구 요청 전용 rate limit 규칙"""
+
+    def test_friend_request_post_has_stricter_limit(self):
+        rule = get_rule_for_request("POST", "/v1/friends/requests")
+        assert rule is not None
+        assert rule.max_requests == 20  # 전역 폴백(60)보다 엄격
+
+    def test_friend_accept_falls_back_to_global(self):
+        # accept/reject 등은 전용 규칙 없이 전역 폴백(/v1/*)
+        rule = get_rule_for_request("POST", "/v1/friends/requests/abc/accept")
+        assert rule is not None
+        assert rule.max_requests == 60
+
+
 class TestRateLimitRule:
     """RateLimitRule 테스트"""
 

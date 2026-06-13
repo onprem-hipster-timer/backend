@@ -86,6 +86,7 @@ nav:
     - Timer: guides/timer.md
     - Todo: guides/todo.md
     - Friend: guides/friend.md
+    - Add Friend: guides/add-friend.md
     - Visibility: guides/visibility.md
     - Meeting: guides/meeting.md
   - Deployment:

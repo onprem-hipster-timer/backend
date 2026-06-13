@@ -1,6 +1,6 @@
 # Friend & Visibility API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-23
+> **최종 업데이트**: 2026-06-14
 
 ## 개요
 
@@ -11,8 +11,12 @@ Friend & Visibility API는 사용자 간 **친구 관계**와 **리소스 공유
 | 개념 | 설명 |
 |------|------|
 | **Friendship** | 두 사용자 간의 친구 관계. 요청/수락 워크플로우를 통해 생성. |
-| **Visibility** | 리소스(Schedule, Timer, Todo)의 공개 범위 설정. |
+| **친구코드(friend_code)** | 사용자별 불투명 코드(`base64url(SHA256(sub))`). 본인 코드는 `GET /v1/users/me`로 확인해 친추 URL 등으로 공유한다. 친추는 **친구코드 또는 검증된 이메일**로 보낸다(사용자 검색은 제공하지 않음). |
+| **표시정보(display_name·avatar_url)** | 친구 목록/받은 요청에서 "누가"를 표시하기 위한 값. OIDC 토큰의 `name`/`picture` 클레임에서 채워지며, 친구·요청 관계가 있는 상대에 한해 노출된다. |
+| **Visibility** | 리소스(Schedule, Timer, Todo, Meeting)의 공개 범위 설정. |
 | **AllowList** | SELECTED_FRIENDS 레벨에서 접근을 허용할 친구 목록. |
+
+> **참고:** 이 백엔드는 사용자 디렉터리/검색을 제공하지 않습니다. 상대를 추가하려면 상대가 공유한 `friend_code` 또는 상대의 (검증된) 이메일이 필요합니다. 이메일 경로는 계정 열거 방지를 위해 매칭 여부와 무관하게 항상 `202`를 반환합니다.
 
 ### 친구 관계 워크플로우
 
@@ -65,9 +69,11 @@ interface Friendship {
 
 ```typescript
 interface Friend {
-  user_id: string;         // 친구 사용자 ID
-  friendship_id: string;   // 친구 관계 ID
-  since: string;           // 친구가 된 시점 (ISO 8601)
+  user_id: string;            // 친구 사용자 ID
+  friendship_id: string;      // 친구 관계 ID
+  display_name?: string;      // 친구 표시명 (프로필 없으면 null)
+  avatar_url?: string;        // 친구 아바타 URL (프로필 없으면 null)
+  since: string;              // 친구가 된 시점 (ISO 8601)
 }
 ```
 
@@ -75,10 +81,24 @@ interface Friend {
 
 ```typescript
 interface PendingRequest {
-  id: string;              // 친구 관계 ID
-  requester_id: string;    // 요청자 ID
-  addressee_id: string;    // 수신자 ID
-  created_at: string;      // ISO 8601
+  id: string;                       // 친구 관계 ID
+  requester_id: string;             // 요청자 ID
+  addressee_id: string;             // 수신자 ID
+  requester_display_name?: string;  // 요청자 표시명 (받은 요청에서 "누가" 표시)
+  requester_avatar_url?: string;    // 요청자 아바타 URL
+  created_at: string;               // ISO 8601
+}
+```
+
+### MyProfile
+
+```typescript
+// GET /v1/users/me 응답 — 본인 표시정보 + 공유용 친구코드
+interface MyProfile {
+  id: string;              // 본인 사용자 ID (OIDC sub)
+  display_name?: string;   // 표시명 (토큰 name 클레임)
+  avatar_url?: string;     // 아바타 URL (토큰 picture 클레임)
+  friend_code: string;     // 친추 URL에 실어 공유하는 불투명 코드
 }
 ```
 
@@ -108,7 +128,7 @@ interface VisibilitySettings {
 ### Base URL
 
 ```
-/api/v1/friends
+/v1/friends
 ```
 
 ### 친구 목록
@@ -123,6 +143,8 @@ interface VisibilitySettings {
   {
     "user_id": "friend-user-id",
     "friendship_id": "uuid",
+    "display_name": "Alice",
+    "avatar_url": "https://.../alice.png",
     "since": "2026-01-23T10:00:00Z"
   }
 ]
@@ -152,18 +174,49 @@ false
 
 ---
 
+### 내 프로필 / 친구코드
+
+#### GET /v1/users/me
+
+본인 표시정보와 **친구코드**를 조회합니다. 프로필이 없으면 토큰 클레임으로 자동 생성됩니다.
+`friend_code`를 친추 URL(예: `https://app.example.com/add-friend?code=<friend_code>`) 등으로 공유하면 상대가 그 코드로 친구 요청을 보낼 수 있습니다.
+
+**Response 200:**
+```json
+{
+  "id": "my-user-id",
+  "display_name": "Bob",
+  "avatar_url": "https://.../bob.png",
+  "friend_code": "Xy7mGq2bQ1A"
+}
+```
+
+> 응답에 email은 포함되지 않습니다(이메일은 신원으로 노출/저장하지 않음).
+
+---
+
 ### 친구 요청
 
 #### POST /friends/requests
 
-친구 요청을 보냅니다.
+단일 `identifier`로 친구 요청을 보냅니다. **`@` 포함 여부로 분기**됩니다(이메일엔 `@`가 있어 친구코드와 절대 겹치지 않음).
 
 **Request Body:**
 ```json
 {
-  "addressee_id": "target-user-id"
+  "identifier": "Xy7mGq2bQ1A"
 }
 ```
+또는
+```json
+{
+  "identifier": "alice@example.com"
+}
+```
+
+##### 친구코드 경로 (`@` 없음)
+
+상대가 `GET /v1/users/me`로 공유한 친구코드와 직접 매칭합니다. **정상 피드백**을 줍니다.
 
 **Response 201:**
 ```json
@@ -178,13 +231,31 @@ false
 ```
 
 **Error Responses:**
+- `404`: 친구코드가 유효하지 않음 (해당 코드의 사용자 없음)
 - `400`: 자기 자신에게 요청
 - `409`: 이미 친구이거나 대기 중인 요청 존재
 - `403`: 차단 관계
 
+##### 이메일 경로 (`@` 포함)
+
+검증된 이메일(`email_verified`)을 가진 사용자와 매칭합니다. **계정 열거를 막기 위해 항상 `202`** 를 반환합니다 — 이메일이 존재하든, 본인이든, 이미 친구든, 차단됐든 **응답이 동일**합니다(매칭되면 내부적으로만 요청이 생성됨).
+
+**Response 202 (항상 동일):**
+```json
+{ "ok": true }
+```
+
+!!! note "왜 피드백이 없나요?"
+    이메일은 추측 가능하므로, 성공/실패를 구분해 응답하면 "그 이메일이 가입돼 있는지"가 노출됩니다(계정 열거). 그래서 이메일 경로는 결과와 무관하게 `202`만 줍니다. 반면 친구코드는 추측 불가(고엔트로피)라 `404` 피드백을 줘도 안전합니다.
+
+    검증된 이메일을 토큰에 주지 않는 IdP 사용자는 이메일로 찾히지 않습니다(이 경우에도 `202`). 그런 사용자도 **친구코드로는 항상 추가 가능**합니다.
+
+!!! warning "Rate Limit"
+    `POST /v1/friends/requests`는 이메일 경로의 대량 시도(열거·스팸)를 막기 위해 **다른 쓰기보다 엄격하게 60초당 20회**로 제한됩니다. 초과 시 `429`. 자세한 내용은 [Rate Limiting 가이드](../development/rate-limit.ko.md)를 참고하세요.
+
 #### GET /friends/requests/received
 
-받은 친구 요청 목록을 조회합니다.
+받은 친구 요청 목록을 조회합니다. 각 항목에 요청자 표시정보(`requester_display_name`·`requester_avatar_url`)가 포함되어 "누가 보냈는지" 표시할 수 있습니다.
 
 **Response 200:**
 ```json
@@ -193,6 +264,8 @@ false
     "id": "uuid",
     "requester_id": "other-user-id",
     "addressee_id": "my-user-id",
+    "requester_display_name": "Alice",
+    "requester_avatar_url": "https://.../alice.png",
     "created_at": "2026-01-23T10:00:00Z"
   }
 ]
@@ -409,7 +482,14 @@ interface PendingRequest {
 }
 
 interface FriendRequest {
-  addressee_id: string;
+  identifier: string;   // 이메일(@ 포함) 또는 친구코드
+}
+
+interface MyProfile {
+  id: string;
+  display_name?: string;
+  avatar_url?: string;
+  friend_code: string;
 }
 
 // Visibility Types
@@ -457,29 +537,34 @@ interface TodoCreateWithVisibility extends TodoCreate {
 
 ## 사용 예시
 
-### 친구 추가 흐름
+### 친구 추가 흐름 (친구코드 기반)
 
 ```typescript
-// 1. 친구 요청 보내기
-const response = await fetch('/api/v1/friends/requests', {
+// 0. (상대방) 본인 친구코드 확인 후 공유 — 예: 친추 URL/QR로 전달
+const me = await (await fetch('/v1/users/me')).json();
+const shareUrl = `${location.origin}/add-friend?code=${me.friend_code}`;
+
+// 1. (나) 친구코드 또는 이메일로 요청 보내기 (identifier 하나로 @ 유무 분기)
+const response = await fetch('/v1/friends/requests', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ addressee_id: 'target-user-id' }),
+  body: JSON.stringify({ identifier: 'Xy7mGq2bQ1A' }),   // 또는 'alice@example.com'
 });
+// 코드 경로: 404=유효하지 않은 코드. 이메일 경로: 항상 202(열거 방지).
 const friendship = await response.json();
 console.log('요청 보냄:', friendship.id);
 
-// 2. 받은 요청 확인 (상대방)
-const requests = await fetch('/api/v1/friends/requests/received');
+// 2. 받은 요청 확인 (상대방) — requester_display_name으로 누가 보냈는지 표시
+const requests = await fetch('/v1/friends/requests/received');
 const pendingRequests = await requests.json();
 
 // 3. 요청 수락 (상대방)
-await fetch(`/api/v1/friends/requests/${pendingRequests[0].id}/accept`, {
+await fetch(`/v1/friends/requests/${pendingRequests[0].id}/accept`, {
   method: 'POST',
 });
 
-// 4. 친구 목록 확인
-const friends = await fetch('/api/v1/friends');
+// 4. 친구 목록 확인 (display_name/avatar_url 포함)
+const friends = await fetch('/v1/friends');
 const friendList = await friends.json();
 console.log('친구 목록:', friendList);
 ```
@@ -488,7 +573,7 @@ console.log('친구 목록:', friendList);
 
 ```typescript
 // 모든 친구에게 공유되는 일정 생성
-const schedule = await fetch('/api/v1/schedules', {
+const schedule = await fetch('/v1/schedules', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -502,7 +587,7 @@ const schedule = await fetch('/api/v1/schedules', {
 });
 
 // 특정 친구에게만 공유
-const privateSchedule = await fetch('/api/v1/schedules', {
+const privateSchedule = await fetch('/v1/schedules', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -521,7 +606,7 @@ const privateSchedule = await fetch('/api/v1/schedules', {
 
 ```typescript
 // 기존 일정의 접근권한 변경
-await fetch(`/api/v1/schedules/${scheduleId}`, {
+await fetch(`/v1/schedules/${scheduleId}`, {
   method: 'PATCH',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({

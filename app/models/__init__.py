@@ -7,6 +7,7 @@ from app.models.schedule import Schedule, ScheduleException
 from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TodoTag
 from app.models.timer import TimerSession
 from app.models.todo import Todo
+from app.models.user_profile import UserProfile
 from app.models.visibility import (
     ResourceVisibility,
     VisibilityAllowList,
@@ -25,6 +26,8 @@ __all__ = [
     "ScheduleExceptionTag",
     "TodoTag",
     "Todo",
+    # User profile (OIDC sub ↔ 표시정보 JIT 캐시)
+    "UserProfile",
     # Meeting
     "Meeting",
     "MeetingParticipant",

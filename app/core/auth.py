@@ -16,9 +16,11 @@ from joserfc.jwt import JWTClaimsRegistry
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sqlmodel import Session
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.core.config import settings
+from app.db.session import get_db_transactional
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +38,38 @@ class CurrentUser(BaseModel):
     """현재 인증된 사용자 정보 (JWT 클레임에서 추출)"""
     sub: str  # 사용자 고유 식별자 (owner_id로 사용)
     email: str | None = None
+    email_verified: bool = False  # OIDC `email_verified` (이메일 기반 친추 인덱싱 조건)
     name: str | None = None
+    picture: str | None = None  # OIDC `picture` 클레임 (avatar_url 출처)
 
     # 추가 클레임 (필요시 확장)
     raw_claims: dict[str, Any] = {}
+
+    @classmethod
+    def from_claims(cls, claims: dict[str, Any]) -> "CurrentUser":
+        """검증된 JWT 클레임에서 CurrentUser 생성 (표준 OIDC 클레임만 매핑).
+
+        호출 전에 `sub` 존재를 보장해야 한다(클레임→객체 매핑의 단일 출처).
+        """
+        verified = claims.get("email_verified")
+        return cls(
+            sub=claims.get("sub"),
+            email=claims.get("email"),
+            email_verified=(verified is True or verified == "true"),
+            name=claims.get("name"),
+            picture=claims.get("picture"),
+            raw_claims=claims,
+        )
+
+    @classmethod
+    def mock(cls) -> "CurrentUser":
+        """OIDC 비활성화(개발/테스트) 시 주입되는 mock 사용자 (단일 정의)."""
+        return cls(
+            sub="test-user-id",
+            email="test@example.com",
+            email_verified=True,
+            name="Test User",
+        )
 
 
 class OIDCClient:
@@ -199,11 +229,7 @@ async def get_current_user(
 
     # 인증 비활성화 시 테스트용 사용자 반환
     if not settings.OIDC_ENABLED:
-        return CurrentUser(
-            sub="test-user-id",
-            email="test@example.com",
-            name="Test User",
-        )
+        return CurrentUser.mock()
 
     # 토큰 없음
     if not credentials:
@@ -224,12 +250,7 @@ async def get_current_user(
             detail="Token missing 'sub' claim",
         )
 
-    return CurrentUser(
-        sub=sub,
-        email=claims.get("email"),
-        name=claims.get("name"),
-        raw_claims=claims,
-    )
+    return CurrentUser.from_claims(claims)
 
 
 async def get_optional_current_user(
@@ -246,11 +267,7 @@ async def get_optional_current_user(
         return request.state.current_user
 
     if not settings.OIDC_ENABLED:
-        return CurrentUser(
-            sub="test-user-id",
-            email="test@example.com",
-            name="Test User",
-        )
+        return CurrentUser.mock()
 
     if not credentials:
         return None
@@ -259,6 +276,33 @@ async def get_optional_current_user(
         return await get_current_user(request, credentials)
     except HTTPException:
         return None
+
+
+async def get_current_user_synced(
+        current_user: CurrentUser = Depends(get_current_user),
+        session: Session = Depends(get_db_transactional),
+) -> CurrentUser:
+    """
+    FastAPI Dependency: 인증된 사용자 반환 + 표시 프로필 JIT 동기화
+
+    소셜 라우터(friends, users)에 적용한다. 인증된 사용자의 표준 OIDC 클레임으로
+    UserProfile을 upsert하여, 친구 목록/받은 요청에서 표시정보를 보여줄 수 있게 한다.
+
+    - `get_db_transactional`은 요청 내 1회만 평가(FastAPI 캐시)되므로 엔드포인트와
+      **동일 세션**을 공유하고 요청 끝에 함께 commit된다.
+    - 동기화는 SAVEPOINT(begin_nested) 안에서 수행한다. 동기화가 실패해도 엔드포인트
+      트랜잭션을 오염시키지 않고 best-effort로 넘어간다(표시정보는 None으로 degrade).
+    """
+    # 지연 import: domain.user.service가 app.core.auth.CurrentUser를 import하므로 순환 회피
+    from app.domain.user.service import UserProfileService
+
+    try:
+        with session.begin_nested():
+            UserProfileService(session, current_user).sync_from_current_user()
+    except Exception as e:  # noqa: BLE001 - 동기화 실패는 요청을 막지 않는다
+        logger.warning("User profile sync failed for sub=%s: %s", current_user.sub, e)
+
+    return current_user
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -285,11 +329,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # OIDC 비활성화 시 테스트 사용자
         if not settings.OIDC_ENABLED:
-            request.state.current_user = CurrentUser(
-                sub="test-user-id",
-                email="test@example.com",
-                name="Test User",
-            )
+            request.state.current_user = CurrentUser.mock()
             return await call_next(request)
 
         # Authorization 헤더 확인
@@ -300,12 +340,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 claims = await oidc_client.verify_token(token)
                 sub = claims.get("sub")
                 if sub:
-                    request.state.current_user = CurrentUser(
-                        sub=sub,
-                        email=claims.get("email"),
-                        name=claims.get("name"),
-                        raw_claims=claims,
-                    )
+                    request.state.current_user = CurrentUser.from_claims(claims)
             except Exception:
                 # 토큰 검증 실패 - 미인증 상태로 진행
                 # 실제 인증 에러는 엔드포인트의 get_current_user에서 처리

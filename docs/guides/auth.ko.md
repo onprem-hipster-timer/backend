@@ -199,7 +199,7 @@ Authorization: Bearer <access_token>
 ```javascript
 const accessToken = 'your-access-token';
 
-const response = await fetch('http://localhost:8000/api/v1/schedules', {
+const response = await fetch('http://localhost:8000/v1/schedules', {
   method: 'GET',
   headers: {
     'Authorization': `Bearer ${accessToken}`,
@@ -221,7 +221,7 @@ const data = await response.json();
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api/v1',
+  baseURL: 'http://localhost:8000/v1',
 });
 
 // 요청 인터셉터: 토큰 자동 추가
