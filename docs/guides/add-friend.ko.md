@@ -13,7 +13,7 @@
 | **친구코드** | 상대가 공유한 불투명 코드 | 정상 피드백(성공/실패 구분). 모든 사용자에게 존재. |
 | **이메일** | 상대의 (검증된) 이메일 | **항상 `202` 균일 응답**(계정 열거 방지). 검증 이메일이 없는 사용자는 못 찾음. 저장된 검증 이메일로 매칭하되 검색/목록/응답에는 노출하지 않음. |
 
-두 경로 모두 **단일 엔드포인트** `POST /v1/friends/requests`를 씁니다. 바디에 `email` 또는 `friend_code` 중 **정확히 하나**를 담아 어느 경로인지 **클라이언트가 명시**합니다. 둘 다·둘 다 없음·대상 값 `null`·이메일 형식 오류는 `422`.
+두 경로 모두 **단일 엔드포인트** `POST /v1/friends/requests`를 씁니다. 바디에 `email` 또는 `friend_code` 중 **정확히 하나**를 담아 어느 경로인지 **클라이언트가 명시**합니다. 둘 다·둘 다 없음·대상 값 `null`은 `422`. `email`은 형식 검증하지 않으며, 형식이 어긋난 값은 매칭 실패로 균일 `202`가 됩니다.
 
 ```mermaid
 flowchart TD
@@ -85,7 +85,7 @@ type AddFriendResult =
   | { kind: 'sent'; friendship: Friendship }   // 코드 경로 성공
   | { kind: 'submitted' }                       // 이메일 경로(항상)
   | { kind: 'invalid_code' }                    // 404
-  | { kind: 'invalid_input' }                   // 422 (이메일 형식 오류 등)
+  | { kind: 'invalid_input' }                   // 422 (둘 다/둘 다 없음/null)
   | { kind: 'already' }                         // 409
   | { kind: 'self' }                            // 400
   | { kind: 'blocked' }                         // 403
