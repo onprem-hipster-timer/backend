@@ -199,22 +199,22 @@ false
 
 #### POST /friends/requests
 
-단일 `identifier`로 친구 요청을 보냅니다. **`@` 포함 여부로 분기**됩니다(이메일엔 `@`가 있어 친구코드와 절대 겹치지 않음).
+`email` 또는 `friend_code` 중 **정확히 하나**로 친구 요청을 보냅니다(서버가 DTO에서 검증). 둘 다 보내거나 둘 다 비우면 `422`, `email` 형식이 올바르지 않아도 `422`.
 
-**Request Body:**
+**Request Body (친구코드):**
 ```json
 {
-  "identifier": "Xy7mGq2bQ1A"
+  "friend_code": "Xy7mGq2bQ1A"
 }
 ```
-또는
+**Request Body (이메일):**
 ```json
 {
-  "identifier": "alice@example.com"
+  "email": "alice@example.com"
 }
 ```
 
-##### 친구코드 경로 (`@` 없음)
+##### 친구코드 경로 (`friend_code`)
 
 상대가 `GET /v1/users/me`로 공유한 친구코드와 직접 매칭합니다. **정상 피드백**을 줍니다.
 
@@ -235,10 +235,11 @@ false
 - `400`: 자기 자신에게 요청
 - `409`: 이미 친구이거나 대기 중인 요청 존재
 - `403`: 차단 관계
+- `422`: `email`·`friend_code`를 둘 다 보내거나 둘 다 비움(또는 `email` 형식 오류)
 
-##### 이메일 경로 (`@` 포함)
+##### 이메일 경로 (`email`)
 
-검증된 이메일(`email_verified`)을 가진 사용자와 매칭합니다. **계정 열거를 막기 위해 항상 `202`** 를 반환합니다 — 이메일이 존재하든, 본인이든, 이미 친구든, 차단됐든 **응답이 동일**합니다(매칭되면 내부적으로만 요청이 생성됨).
+형식 검증된 `email`로, 검증된 이메일(`email_verified`)을 가진 사용자와 매칭합니다. **계정 열거를 막기 위해 항상 `202`** 를 반환합니다 — 이메일이 존재하든, 본인이든, 이미 친구든, 차단됐든 **응답이 동일**합니다(매칭되면 내부적으로만 요청이 생성됨).
 
 **Response 202 (항상 동일):**
 ```json
@@ -481,9 +482,10 @@ interface PendingRequest {
   created_at: string;
 }
 
-interface FriendRequest {
-  identifier: string;   // 이메일(@ 포함) 또는 친구코드
-}
+// email · friend_code 중 정확히 하나
+type FriendRequest =
+  | { email: string }
+  | { friend_code: string };
 
 interface MyProfile {
   id: string;
@@ -544,13 +546,13 @@ interface TodoCreateWithVisibility extends TodoCreate {
 const me = await (await fetch('/v1/users/me')).json();
 const shareUrl = `${location.origin}/add-friend?code=${me.friend_code}`;
 
-// 1. (나) 친구코드 또는 이메일로 요청 보내기 (identifier 하나로 @ 유무 분기)
+// 1. (나) 친구코드 또는 이메일로 요청 보내기 (둘 중 정확히 하나)
 const response = await fetch('/v1/friends/requests', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ identifier: 'Xy7mGq2bQ1A' }),   // 또는 'alice@example.com'
+  body: JSON.stringify({ friend_code: 'Xy7mGq2bQ1A' }),   // 또는 { email: 'alice@example.com' }
 });
-// 코드 경로: 404=유효하지 않은 코드. 이메일 경로: 항상 202(열거 방지).
+// 코드 경로: 404=유효하지 않은 코드. 이메일 경로: 항상 202(열거 방지). 둘 다/둘 다 없음: 422.
 const friendship = await response.json();
 console.log('요청 보냄:', friendship.id);
 

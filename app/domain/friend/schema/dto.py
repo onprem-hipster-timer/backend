@@ -7,7 +7,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, EmailStr, model_validator
+from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.models.friendship import FriendshipStatus
@@ -16,12 +17,31 @@ from app.models.friendship import FriendshipStatus
 class FriendRequest(CustomModel):
     """친구 요청 DTO
 
-    친추 대상을 단일 `identifier`로 지정한다(라우터에서 `@` 유무로 분기):
-    - `@` 포함 → 이메일. 검증된 이메일 사용자와 매칭(항상 균일 202, 존재 비노출).
-    - `@` 없음 → 친구코드. `GET /v1/users/me`로 공유된 값과 직접 매칭(미존재 404).
-    OIDC sub는 외부에서 얻을 수 없으므로 식별자로 받지 않는다.
+    친추 대상을 `email` 또는 `friend_code` 중 **정확히 하나**로 지정한다:
+    - `email`: 검증된 이메일 사용자와 매칭(항상 균일 202, 존재 비노출).
+    - `friend_code`: `GET /v1/users/me`로 공유된 코드와 직접 매칭(미존재 404).
+
+    둘 다 비었거나 둘 다 주어지면 422. `email`은 형식 검증된다. OIDC sub는 외부에서
+    얻을 수 없으므로 식별자로 받지 않는다.
     """
-    identifier: str  # 이메일 또는 친구코드
+    email: EmailStr | None = MISSING
+    friend_code: str | None = MISSING
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self):
+        """email / friend_code 중 정확히 하나만 제공되도록 강제."""
+        provided = [
+            v for v in (self.email, self.friend_code)
+            if v is not MISSING and v is not None
+        ]
+        if len(provided) != 1:
+            raise ValueError("email 또는 friend_code 중 정확히 하나를 제공해야 합니다")
+        return self
+
+    @property
+    def is_email_target(self) -> bool:
+        """이메일 경로 여부 (검증으로 정확히 하나가 보장됨)."""
+        return self.email is not MISSING and self.email is not None
 
 
 class FriendshipRead(CustomModel):

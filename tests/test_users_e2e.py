@@ -36,7 +36,7 @@ class TestFriendCodeFlow:
 
         b_code = b.get("/v1/users/me").json()["friend_code"]
 
-        sent = a.post("/v1/friends/requests", json={"identifier": b_code})
+        sent = a.post("/v1/friends/requests", json={"friend_code": b_code})
         assert sent.status_code == 201, sent.json()
 
         received = b.get("/v1/friends/requests/received").json()
@@ -48,13 +48,13 @@ class TestFriendCodeFlow:
 
     def test_invalid_friend_code_returns_404(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a")
-        r = a.post("/v1/friends/requests", json={"identifier": "does-not-exist"})
+        r = a.post("/v1/friends/requests", json={"friend_code": "does-not-exist"})
         assert r.status_code == 404
 
     def test_self_friend_code_returns_400(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a")
         own_code = a.get("/v1/users/me").json()["friend_code"]
-        r = a.post("/v1/friends/requests", json={"identifier": own_code})
+        r = a.post("/v1/friends/requests", json={"friend_code": own_code})
         assert r.status_code == 400
 
     def test_accept_then_friend_list_has_display_name(self, multi_user_e2e):
@@ -62,7 +62,7 @@ class TestFriendCodeFlow:
         b = multi_user_e2e.as_user("user-b", name="Bob")
 
         b_code = b.get("/v1/users/me").json()["friend_code"]
-        friendship_id = a.post("/v1/friends/requests", json={"identifier": b_code}).json()["id"]
+        friendship_id = a.post("/v1/friends/requests", json={"friend_code": b_code}).json()["id"]
 
         accept = b.post(f"/v1/friends/requests/{friendship_id}/accept")
         assert accept.status_code == 200
@@ -84,7 +84,7 @@ class TestFriendCodeFlow:
         assert a.post(f"/v1/friends/block/{b_id}").status_code == 200
 
         # B가 A의 코드로 친추 시도 → 차단으로 거절
-        r = b.post("/v1/friends/requests", json={"identifier": a_code})
+        r = b.post("/v1/friends/requests", json={"friend_code": a_code})
         assert r.status_code in (400, 403, 409)
 
 
@@ -97,7 +97,7 @@ class TestEmailFriendRequest:
         b.get("/v1/users/me")  # B 동기화(email_hash 인덱싱)
         b_email = multi_user_e2e.get_user("user-b").email
 
-        r = a.post("/v1/friends/requests", json={"identifier": b_email})
+        r = a.post("/v1/friends/requests", json={"email": b_email})
         assert r.status_code == 202
         assert r.json() == {"ok": True}
 
@@ -107,7 +107,7 @@ class TestEmailFriendRequest:
 
     def test_unknown_email_uniform_202_no_request(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a")
-        r = a.post("/v1/friends/requests", json={"identifier": "nobody@nowhere.example"})
+        r = a.post("/v1/friends/requests", json={"email": "nobody@nowhere.example"})
         assert r.status_code == 202
         assert r.json() == {"ok": True}
         assert a.get("/v1/friends/requests/sent").json() == []
@@ -115,7 +115,7 @@ class TestEmailFriendRequest:
     def test_self_email_uniform_202_no_request(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a")
         a_email = multi_user_e2e.get_user("user-a").email
-        r = a.post("/v1/friends/requests", json={"identifier": a_email})
+        r = a.post("/v1/friends/requests", json={"email": a_email})
         assert r.status_code == 202  # 자기자신도 균일 202
         assert a.get("/v1/friends/requests/sent").json() == []  # 요청 미생성
 
@@ -125,8 +125,8 @@ class TestEmailFriendRequest:
         b.get("/v1/users/me")
         b_email = multi_user_e2e.get_user("user-b").email
 
-        first = a.post("/v1/friends/requests", json={"identifier": b_email})
-        second = a.post("/v1/friends/requests", json={"identifier": b_email})
+        first = a.post("/v1/friends/requests", json={"email": b_email})
+        second = a.post("/v1/friends/requests", json={"email": b_email})
         assert first.status_code == 202
         assert second.status_code == 202  # 중복도 균일 202(409 비노출)
         assert len(b.get("/v1/friends/requests/received").json()) == 1
@@ -139,7 +139,7 @@ class TestEmailFriendRequest:
         multi_user_e2e.get_user("user-b").email_verified = False
         b.get("/v1/users/me")
 
-        r = a.post("/v1/friends/requests", json={"identifier": "user-b@example.com"})
+        r = a.post("/v1/friends/requests", json={"email": "user-b@example.com"})
         assert r.status_code == 202
         assert b.get("/v1/friends/requests/received").json() == []
 
@@ -160,7 +160,7 @@ class TestGlobalProfileSync:
 
         # 그래도 B가 A를 이메일로 추가 가능(전역 동기화로 A의 email_hash 확보됨)
         a_email = multi_user_e2e.get_user("user-a").email
-        r = b.post("/v1/friends/requests", json={"identifier": a_email})
+        r = b.post("/v1/friends/requests", json={"email": a_email})
         assert r.status_code == 202
 
         received_a = a.get("/v1/friends/requests/received").json()

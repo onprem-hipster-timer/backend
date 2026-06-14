@@ -10,14 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Friend display info**: Friend list and pending-request responses now carry the counterparty's display info so a UI can show *who* a request/friend is. `FriendRead` gained `display_name`/`avatar_url`, and `PendingRequestRead` gained `requester_display_name`/`requester_avatar_url`. A new `GET /v1/users/me` returns the caller's profile and a shareable `friend_code`. Display info is sourced **only** from standard OIDC claims (`name`→`display_name`, `picture`→`avatar_url`) of each user's own validated access token via just-in-time provisioning into a new `user_profile` table — no UserInfo/Admin-API calls, so the backend stays provider-agnostic. JIT sync runs on every authenticated endpoint, so any active user is addressable even if they never open the social UI. The WebSocket `timer.friend_activity` payload also gained `display_name`. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
-- **Friend requests by code or email**: `POST /v1/friends/requests` takes a single `{ "identifier": "<value>" }`, dispatched by whether it contains `@`:
-  - **friend code** (no `@`): resolved against `friend_code = base64url(SHA256(sub))` (deterministic, stable, opaque — `sub` is high-entropy so a plain hash is safe and never exposes the OIDC subject). An unknown code returns `404`.
-  - **email** (`@`): matched against `email_hash = base64url(SHA256(normalized email))`, populated only when the token's `email_verified` is true. To prevent account enumeration the endpoint **always returns `202 {"ok": true}`** regardless of whether the email matched, was your own, was a duplicate, or was blocked. Rate-limited tighter than other writes (20/min).
+- **Friend requests by code or email**: `POST /v1/friends/requests` takes **exactly one** of `{ "friend_code": "<value>" }` or `{ "email": "<value>" }` (sending both, neither, or a malformed email returns `422`):
+  - **friend code**: resolved against `friend_code = base64url(SHA256(sub))` (deterministic, stable, opaque — `sub` is high-entropy so a plain hash is safe and never exposes the OIDC subject). An unknown code returns `404`.
+  - **email** (format-validated): matched against `email_hash = base64url(SHA256(normalized email))`, populated only when the token's `email_verified` is true. To prevent account enumeration the endpoint **always returns `202 {"ok": true}`** regardless of whether the email matched, was your own, was a duplicate, or was blocked. Rate-limited tighter than other writes (20/min).
   Plaintext email is never stored or returned; only its hash is kept, used solely for matching. There is deliberately **no user-search/directory endpoint**. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
 
 ### Changed
 
-- **Friend request body**: `POST /v1/friends/requests` now accepts `{ "identifier" }` (email or friend code) instead of `{ "addressee_id": "<sub>" }` — an OIDC `sub` could never be obtained by a client. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
+- **Friend request body**: `POST /v1/friends/requests` now accepts an explicit `{ "email" }` or `{ "friend_code" }` (exactly one, validated) instead of `{ "addressee_id": "<sub>" }` — an OIDC `sub` could never be obtained by a client. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
 
 ---
 

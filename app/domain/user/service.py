@@ -107,11 +107,6 @@ class UserProfileService:
         )
         return profile
 
-    @staticmethod
-    def is_email_identifier(identifier: str) -> bool:
-        """식별자 종류 판별: `@` 포함 → 이메일, 아니면 친구코드. (도메인 규칙)"""
-        return "@" in identifier
-
     def resolve_friend_code(self, friend_code: str) -> str | None:
         """친구코드 → sub 해석 (직접 매칭). 없으면 None."""
         profile = crud.get_by_friend_code(self.session, friend_code)

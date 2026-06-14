@@ -71,7 +71,7 @@ def test_schedule_visibility_friends_scope_shared(multi_user_e2e):
 
     friend_request = client_a.post(
         "/v1/friends/requests",
-        json={"identifier": client_b.get("/v1/users/me").json()["friend_code"]},
+        json={"friend_code": client_b.get("/v1/users/me").json()["friend_code"]},
     )
     assert friend_request.status_code == 201
 
@@ -110,7 +110,7 @@ def test_schedule_visibility_friends_single_item_access(multi_user_e2e):
 
     client_a.put(f"/v1/visibility/schedule/{schedule_id}", json={"level": "friends"})
 
-    client_a.post("/v1/friends/requests", json={"identifier": client_b.get("/v1/users/me").json()["friend_code"]})
+    client_a.post("/v1/friends/requests", json={"friend_code": client_b.get("/v1/users/me").json()["friend_code"]})
     friendship_id = client_b.get("/v1/friends/requests/received").json()[0]["id"]
     client_b.post(f"/v1/friends/requests/{friendship_id}/accept")
 
@@ -155,10 +155,10 @@ def test_schedule_visibility_selected_friends(multi_user_e2e):
     user_b_id = multi_user_e2e.get_user("user-b").sub
     user_c_id = multi_user_e2e.get_user("user-c").sub
 
-    client_a.post("/v1/friends/requests", json={"identifier": client_b.get("/v1/users/me").json()["friend_code"]})
+    client_a.post("/v1/friends/requests", json={"friend_code": client_b.get("/v1/users/me").json()["friend_code"]})
     client_b.post(f"/v1/friends/requests/{client_b.get('/v1/friends/requests/received').json()[0]['id']}/accept")
 
-    client_a.post("/v1/friends/requests", json={"identifier": client_c.get("/v1/users/me").json()["friend_code"]})
+    client_a.post("/v1/friends/requests", json={"friend_code": client_c.get("/v1/users/me").json()["friend_code"]})
     client_c.post(f"/v1/friends/requests/{client_c.get('/v1/friends/requests/received').json()[0]['id']}/accept")
 
     schedule_response = client_a.post(

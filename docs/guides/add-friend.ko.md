@@ -13,15 +13,15 @@
 | **친구코드** | 상대가 공유한 불투명 코드 | 정상 피드백(성공/실패 구분). 모든 사용자에게 존재. |
 | **이메일** | 상대의 (검증된) 이메일 | **항상 `202` 균일 응답**(계정 열거 방지). 검증 이메일이 없는 사용자는 못 찾음. |
 
-두 경로 모두 **단일 엔드포인트** `POST /v1/friends/requests`에 `identifier` 하나로 보냅니다. 서버가 **`@` 포함 여부**로 이메일/코드를 구분합니다(이메일엔 `@`가 있어 절대 겹치지 않음).
+두 경로 모두 **단일 엔드포인트** `POST /v1/friends/requests`를 씁니다. 바디에 `email` 또는 `friend_code` 중 **정확히 하나**를 담아 어느 경로인지 **클라이언트가 명시**합니다. 둘 다·둘 다 없음·이메일 형식 오류는 `422`.
 
 ```mermaid
 flowchart TD
-    A[친구 추가 입력] --> B{"@ 포함?"}
+    A[친구 추가 입력] --> B{"이메일 형태?<br/>(@ 포함)"}
     B -- 예 --> C[이메일 경로]
     B -- 아니오 --> D[친구코드 경로]
-    C --> E["POST /v1/friends/requests<br/>{ identifier: 이메일 }"]
-    D --> F["POST /v1/friends/requests<br/>{ identifier: 코드 }"]
+    C --> E["POST /v1/friends/requests<br/>{ email: 이메일 }"]
+    D --> F["POST /v1/friends/requests<br/>{ friend_code: 코드 }"]
     E --> G["항상 202 { ok: true }<br/>(성공/실패 구분 불가)"]
     F --> H{결과}
     H -- 201 --> I[요청 전송됨]
@@ -85,16 +85,21 @@ type AddFriendResult =
   | { kind: 'sent'; friendship: Friendship }   // 코드 경로 성공
   | { kind: 'submitted' }                       // 이메일 경로(항상)
   | { kind: 'invalid_code' }                    // 404
+  | { kind: 'invalid_input' }                   // 422 (이메일 형식 오류 등)
   | { kind: 'already' }                         // 409
   | { kind: 'self' }                            // 400
   | { kind: 'blocked' }                         // 403
   | { kind: 'rate_limited'; retryAfter: number };// 429
 
-async function addFriend(identifier: string): Promise<AddFriendResult> {
+async function addFriend(input: string): Promise<AddFriendResult> {
+  const value = input.trim();
+  // 클라이언트가 경로를 명시한다: 이메일 형태(@ 포함)면 email, 아니면 friend_code
+  const body = value.includes('@') ? { email: value } : { friend_code: value };
+
   const res = await fetch('/v1/friends/requests', {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifier: identifier.trim() }),
+    body: JSON.stringify(body),
   });
 
   if (res.status === 429) {
@@ -110,6 +115,7 @@ async function addFriend(identifier: string): Promise<AddFriendResult> {
   if (res.status === 409) return { kind: 'already' };
   if (res.status === 400) return { kind: 'self' };
   if (res.status === 403) return { kind: 'blocked' };
+  if (res.status === 422) return { kind: 'invalid_input' };
 
   throw new Error(`Unexpected status ${res.status}`);
 }
@@ -132,6 +138,7 @@ function messageFor(result: AddFriendResult): string {
     case 'already':    return '이미 친구이거나 대기 중인 요청이 있습니다.';
     case 'self':       return '자기 자신은 추가할 수 없습니다.';
     case 'blocked':    return '이 사용자에게는 요청을 보낼 수 없습니다.';
+    case 'invalid_input': return '입력 형식을 확인해주세요.';
     case 'rate_limited': return `요청이 많습니다. ${result.retryAfter}초 후 다시 시도하세요.`;
   }
 }
@@ -157,7 +164,7 @@ async function handleAddFriendDeepLink() {
   if (!code) return;
 
   // (로그인 필요) 로그인 후 자동으로 친구 요청 전송
-  const result = await addFriend(code);   // '@' 없음 → 코드 경로
+  const result = await addFriend(code);   // 코드엔 @가 없어 friend_code 경로
   showToast(messageFor(result));
 }
 ```
@@ -215,7 +222,7 @@ async function rejectRequest(id: string) {
 
 ## 6. UI/UX 권장사항
 
-1. **단일 입력 + 안내**: "친구코드 또는 이메일"을 한 입력란으로 받고, `@` 포함 시 자동으로 이메일 경로로 처리됨을 사용자가 의식할 필요는 없습니다(서버가 분기).
+1. **단일 입력 + 안내**: "친구코드 또는 이메일"을 한 입력란으로 받고, 클라이언트가 `@` 포함 여부로 `email`/`friend_code` 필드를 골라 보냅니다(사용자는 의식할 필요 없음).
 2. **이메일은 항상 중립 메시지**: "초대를 보냈습니다(가입돼 있으면 전달됨)". 절대 "찾았습니다/전송 완료"로 단정하지 마세요.
 3. **내 코드 공유 UI**: `friend_code`를 복사 버튼·QR·딥링크로 제공.
 4. **받은 요청에 사람 정보**: `requester_display_name`/avatar로 카드 렌더링, 없으면 placeholder.

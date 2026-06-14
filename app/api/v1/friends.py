@@ -97,26 +97,26 @@ async def send_friend_request(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    친구 요청 보내기 (식별자 기반)
+    친구 요청 보내기 (email 또는 friend_code)
 
-    `identifier`를 `@` 유무로 분기합니다:
-    - **이메일**(`@` 포함): 검증된 이메일 사용자와 매칭. 계정 열거를 막기 위해 매칭/자기자신/
-      중복/차단/미존재 여부와 무관하게 **항상 202** `{"ok": true}`를 반환합니다.
-    - **친구코드**(`@` 없음): `GET /v1/users/me`로 공유된 코드와 직접 매칭. 코드가 유효하지 않으면
+    `email` / `friend_code` 중 정확히 하나를 보냅니다(DTO에서 검증):
+    - **email**: 검증된 이메일 사용자와 매칭. 계정 열거를 막기 위해 매칭/자기자신/중복/차단/
+      미존재 여부와 무관하게 **항상 202** `{"ok": true}`를 반환합니다.
+    - **friend_code**: `GET /v1/users/me`로 공유된 코드와 직접 매칭. 코드가 유효하지 않으면
       404, 매칭되면 정상 피드백(201, 또는 자기자신 400 / 중복·이미친구 409 / 차단 403).
     """
     profile_service = UserProfileService(session, current_user)
     friend_service = FriendService(session, current_user)
 
-    if profile_service.is_email_identifier(data.identifier):
+    if data.is_email_target:
         # 이메일 경로 — 균일 202 (존재 비노출, 도메인 예외는 try_* 가 흡수)
-        addressee_id = profile_service.resolve_email(data.identifier)
+        addressee_id = profile_service.resolve_email(data.email)
         if addressee_id is not None:
             friend_service.try_send_friend_request(addressee_id)
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content={"ok": True})
 
     # 친구코드 경로 — 정상 피드백 (도메인 예외는 전역 핸들러가 변환)
-    addressee_id = profile_service.resolve_friend_code(data.identifier)
+    addressee_id = profile_service.resolve_friend_code(data.friend_code)
     if addressee_id is None:
         raise FriendCodeNotFoundError()
     friendship = friend_service.send_friend_request(addressee_id)
