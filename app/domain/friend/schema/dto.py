@@ -72,6 +72,11 @@ class FriendRequest(CustomModel):
         return self.email is not None
 
 
+class FriendRequestAccepted(CustomModel):
+    """이메일 기반 친구 요청의 균일 수락 응답."""
+    ok: bool
+
+
 class FriendshipRead(CustomModel):
     """친구 관계 조회 DTO"""
     model_config = ConfigDict(from_attributes=True)

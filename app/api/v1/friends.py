@@ -15,6 +15,7 @@ from app.db.session import get_db_transactional
 from app.domain.friend.exceptions import FriendCodeNotFoundError
 from app.domain.friend.schema.dto import (
     FriendRequest,
+    FriendRequestAccepted,
     FriendshipRead,
     FriendRead,
     PendingRequestRead,
@@ -90,7 +91,15 @@ async def list_sent_requests(
     return service.get_pending_requests_sent()
 
 
-@router.post("/requests")
+@router.post(
+    "/requests",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"model": FriendshipRead, "description": "Friend request created"},
+        202: {"model": FriendRequestAccepted, "description": "Email friend request accepted"},
+        404: {"description": "Friend code not found"},
+    },
+)
 async def send_friend_request(
         data: FriendRequest,
         session: Session = Depends(get_db_transactional),
