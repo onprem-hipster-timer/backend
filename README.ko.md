@@ -708,6 +708,7 @@ DOCS_ENABLED=false
 | `MAX_OVERFLOW` | 최대 초과 연결 수 | `10` |
 | `DB_POOL_PRE_PING` | 연결 유효성 검사 | `True` |
 | `DB_POOL_RECYCLE` | 연결 재활용 시간 (초) | `3600` |
+| `DB_KEEPALIVE_INTERVAL_SECONDS` | 주기적 keep-alive `SELECT 1` 실행 주기 (초); `0` 이하이면 비활성화 | `0` |
 
 **데이터베이스 URL 예시:**
 
