@@ -22,28 +22,28 @@ from app.api.v1.ws_playground import router as ws_playground_router
 
 api_router = APIRouter()
 
-# 인증 라우터 공통 의존성: 모든 인증된 요청에서 행위자의 표시 프로필을 JIT 동기화.
+# ── 인증 라우터 ──────────────────────────────────────────────────────────────
+# 토큰 검증 게이트 + 행위자 표시 프로필 JIT 동기화(get_current_user_synced)를 부모
+# 라우터에 한 번만 선언 → 하위 모든 경로에 적용. 새 소셜 라우터는 여기에 include만
+# 하면 인증/동기화가 자동 적용되어 누락될 수 없다.
 # (소셜 미사용 사용자도 프로필·email_hash를 확보해 친구 표시/이메일 친추가 가능)
-# 무인증/공개 라우터(holidays, ws_playground, graphql, health)에는 적용하지 않는다.
-_synced = [Depends(get_current_user_synced)]
+authed = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user_synced)])
+for r in (
+        schedules_router,
+        timers_router,
+        tags_router,
+        todos_router,
+        meetings_router,
+        friends_router,
+        users_router,
+        visibility_router,
+):
+    authed.include_router(r)
+api_router.include_router(authed)
 
-# REST API 등록
-api_router.include_router(schedules_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(timers_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(holidays_router, prefix="/v1")  # 공개(무인증) — 동기화 제외
-api_router.include_router(tags_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(todos_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(meetings_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(friends_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(users_router, prefix="/v1", dependencies=_synced)
-api_router.include_router(visibility_router, prefix="/v1", dependencies=_synced)
-
-# WebSocket API 등록
+# ── 공개(무인증) 라우터 ───────────────────────────────────────────────────────
+# 인증/동기화 의존성 없음. 타입·prefix가 제각각이라 개별 등록한다.
+api_router.include_router(holidays_router, prefix="/v1")
 api_router.include_router(timers_ws_router, prefix="/v1")
-
-# GraphQL API 등록 (v1에 통합)
-graphql_router = create_graphql_router()
-api_router.include_router(graphql_router, prefix="/v1/graphql", tags=["GraphQL"])
-
-# WebSocket Playground (개발 환경 전용)
-api_router.include_router(ws_playground_router)
+api_router.include_router(create_graphql_router(), prefix="/v1/graphql", tags=["GraphQL"])
+api_router.include_router(ws_playground_router)  # WebSocket Playground (개발 전용)
