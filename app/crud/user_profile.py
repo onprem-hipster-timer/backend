@@ -55,3 +55,35 @@ def create_profile(
     session.flush()
     session.refresh(profile)
     return profile
+
+
+def update_profile_if_changed(
+        session: Session,
+        profile: UserProfile,
+        *,
+        display_name: str | None,
+        avatar_url: str | None,
+        email_hash: str | None,
+        iss: str | None,
+        friend_code: str,
+) -> bool:
+    """desired 값과 다른 필드만 기록(write 증폭 방지).
+
+    변경된 필드가 하나라도 있으면 flush하고 True를, 없으면 미기록 후 False를 반환한다.
+    `updated_at`은 TimestampMixin의 onupdate가 자동 갱신한다.
+    """
+    changed = False
+    for field, value in (
+        ("display_name", display_name),
+        ("avatar_url", avatar_url),
+        ("email_hash", email_hash),
+        ("iss", iss),
+        ("friend_code", friend_code),
+    ):
+        if getattr(profile, field) != value:
+            setattr(profile, field, value)
+            changed = True
+    if changed:
+        session.add(profile)
+        session.flush()
+    return changed

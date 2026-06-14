@@ -6,13 +6,13 @@ Friend Router
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.error_handlers import DomainException
 from app.db.session import get_db_transactional
+from app.domain.friend.exceptions import FriendCodeNotFoundError
 from app.domain.friend.schema.dto import (
     FriendRequest,
     FriendshipRead,
@@ -108,23 +108,17 @@ async def send_friend_request(
     profile_service = UserProfileService(session, current_user)
     friend_service = FriendService(session, current_user)
 
-    if "@" in data.identifier:
-        # 이메일 경로 — 균일 202 (도메인 예외는 삼켜 존재 여부를 노출하지 않음)
+    if profile_service.is_email_identifier(data.identifier):
+        # 이메일 경로 — 균일 202 (존재 비노출, 도메인 예외는 try_* 가 흡수)
         addressee_id = profile_service.resolve_email(data.identifier)
         if addressee_id is not None:
-            try:
-                friend_service.send_friend_request(addressee_id)
-            except DomainException:
-                pass  # 자기자신/중복/이미친구/차단 등 — 균일 응답 유지
+            friend_service.try_send_friend_request(addressee_id)
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content={"ok": True})
 
-    # 친구코드 경로 — 직접 매칭, 정상 피드백
+    # 친구코드 경로 — 정상 피드백 (도메인 예외는 전역 핸들러가 변환)
     addressee_id = profile_service.resolve_friend_code(data.identifier)
     if addressee_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Friend code not found",
-        )
+        raise FriendCodeNotFoundError()
     friendship = friend_service.send_friend_request(addressee_id)
     read = FriendshipRead.model_validate(friendship)
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=read.model_dump(mode="json"))

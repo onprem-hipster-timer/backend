@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
+from app.core.error_handlers import DomainException
 from app.crud import friendship as crud
 from app.crud import user_profile as profile_crud
 from app.crud import visibility as visibility_crud
@@ -39,7 +40,7 @@ class FriendService:
     def __init__(self, session: Session, current_user: CurrentUser):
         self.session = session
         self.current_user = current_user
-        self.user_id = current_user.sub
+        self.owner_id = current_user.sub
 
     def send_friend_request(self, addressee_id: str) -> Friendship:
         """
@@ -55,11 +56,11 @@ class FriendService:
         :return: 생성된 친구 관계
         """
         # 자기 자신에게 요청 불가
-        if self.user_id == addressee_id:
+        if self.owner_id == addressee_id:
             raise CannotFriendSelfError()
 
         # 기존 관계 확인
-        existing = crud.get_friendship_between(self.session, self.user_id, addressee_id)
+        existing = crud.get_friendship_between(self.session, self.owner_id, addressee_id)
 
         if existing:
             if existing.status == FriendshipStatus.ACCEPTED:
@@ -74,7 +75,7 @@ class FriendService:
         try:
             friendship = crud.create_friendship(
                 self.session,
-                requester_id=self.user_id,
+                requester_id=self.owner_id,
                 addressee_id=addressee_id,
                 status=FriendshipStatus.PENDING,
             )
@@ -84,6 +85,22 @@ class FriendService:
             raise FriendRequestAlreadyExistsError()
 
         return friendship
+
+    def try_send_friend_request(self, addressee_id: str) -> Friendship | None:
+        """
+        best-effort 친구 요청 (이메일 경로용)
+
+        계정 열거 방지를 위해 자기자신/중복/이미친구/차단 등 **모든 도메인 예외를
+        흡수하고 None을 반환**한다. 존재 여부·거절 사유를 호출자에게 노출하지 않는다.
+        (schedule.try_get_schedule_read 관례와 동일.)
+
+        :param addressee_id: 친구 요청 대상 사용자 ID
+        :return: 생성된 친구 관계, 또는 거절/실패 시 None
+        """
+        try:
+            return self.send_friend_request(addressee_id)
+        except DomainException:
+            return None
 
     def accept_friend_request(self, friendship_id: UUID) -> Friendship:
         """
@@ -101,7 +118,7 @@ class FriendService:
             raise FriendshipNotFoundError()
 
         # 수신자만 수락 가능
-        if friendship.addressee_id != self.user_id:
+        if friendship.addressee_id != self.owner_id:
             raise NotFriendRequestRecipientError()
 
         # PENDING 상태만 수락 가능
@@ -132,7 +149,7 @@ class FriendService:
             raise FriendshipNotFoundError()
 
         # 수신자만 거절 가능
-        if friendship.addressee_id != self.user_id:
+        if friendship.addressee_id != self.owner_id:
             raise NotFriendRequestRecipientError()
 
         # PENDING 상태만 거절 가능
@@ -157,7 +174,7 @@ class FriendService:
             raise FriendshipNotFoundError()
 
         # 발신자만 취소 가능
-        if friendship.requester_id != self.user_id:
+        if friendship.requester_id != self.owner_id:
             raise NotFriendRequestRecipientError()
 
         # PENDING 상태만 취소 가능
@@ -185,13 +202,13 @@ class FriendService:
             raise FriendshipNotFoundError()
 
         # 양쪽 모두 삭제 가능
-        if friendship.requester_id != self.user_id and friendship.addressee_id != self.user_id:
+        if friendship.requester_id != self.owner_id and friendship.addressee_id != self.owner_id:
             raise NotFriendsError()
 
         # 상대방 ID 결정
         other_user_id = (
             friendship.addressee_id
-            if friendship.requester_id == self.user_id
+            if friendship.requester_id == self.owner_id
             else friendship.requester_id
         )
 
@@ -214,13 +231,13 @@ class FriendService:
         :param target_user_id: 차단할 사용자 ID
         :return: 차단 관계
         """
-        if self.user_id == target_user_id:
+        if self.owner_id == target_user_id:
             raise CannotFriendSelfError()
 
-        existing = crud.get_friendship_between(self.session, self.user_id, target_user_id)
+        existing = crud.get_friendship_between(self.session, self.owner_id, target_user_id)
 
         if existing:
-            if existing.status == FriendshipStatus.BLOCKED and existing.blocked_by == self.user_id:
+            if existing.status == FriendshipStatus.BLOCKED and existing.blocked_by == self.owner_id:
                 # 이미 차단한 상태
                 return existing
 
@@ -233,17 +250,17 @@ class FriendService:
                 self.session,
                 existing,
                 FriendshipStatus.BLOCKED,
-                blocked_by=self.user_id,
+                blocked_by=self.owner_id,
             )
         else:
             # 새로운 차단 관계 생성
             friendship = crud.create_friendship(
                 self.session,
-                requester_id=self.user_id,
+                requester_id=self.owner_id,
                 addressee_id=target_user_id,
                 status=FriendshipStatus.BLOCKED,
             )
-            friendship.blocked_by = self.user_id
+            friendship.blocked_by = self.owner_id
             self.session.flush()
             self.session.refresh(friendship)
             return friendship
@@ -259,14 +276,14 @@ class FriendService:
         # 내 리소스의 AllowList에서 상대방 제거
         visibility_crud.remove_user_from_all_allow_lists(
             self.session,
-            owner_id=self.user_id,
+            owner_id=self.owner_id,
             user_id=other_user_id,
         )
         # 상대방 리소스의 AllowList에서 나 제거
         visibility_crud.remove_user_from_all_allow_lists(
             self.session,
             owner_id=other_user_id,
-            user_id=self.user_id,
+            user_id=self.owner_id,
         )
 
     def unblock_user(self, target_user_id: str) -> None:
@@ -275,7 +292,7 @@ class FriendService:
 
         :param target_user_id: 차단 해제할 사용자 ID
         """
-        existing = crud.get_friendship_between(self.session, self.user_id, target_user_id)
+        existing = crud.get_friendship_between(self.session, self.owner_id, target_user_id)
 
         if not existing:
             raise FriendshipNotFoundError()
@@ -283,7 +300,7 @@ class FriendService:
         if existing.status != FriendshipStatus.BLOCKED:
             raise FriendshipNotFoundError()
 
-        if existing.blocked_by != self.user_id:
+        if existing.blocked_by != self.owner_id:
             # 상대방이 차단한 경우 해제 불가
             raise UserBlockedError()
 
@@ -296,11 +313,11 @@ class FriendService:
 
         :return: 친구 목록
         """
-        friendships = crud.get_friends(self.session, self.user_id)
+        friendships = crud.get_friends(self.session, self.owner_id)
 
         # 상대방 표시정보 배치 조회 (N+1 방지)
         friend_ids = [
-            f.addressee_id if f.requester_id == self.user_id else f.requester_id
+            f.addressee_id if f.requester_id == self.owner_id else f.requester_id
             for f in friendships
         ]
         profiles = profile_crud.get_profiles_by_subs(self.session, friend_ids)
@@ -308,7 +325,7 @@ class FriendService:
         friends = []
         for f in friendships:
             # 상대방 ID 결정
-            friend_id = f.addressee_id if f.requester_id == self.user_id else f.requester_id
+            friend_id = f.addressee_id if f.requester_id == self.owner_id else f.requester_id
             profile = profiles.get(friend_id)
             friends.append(FriendRead(
                 user_id=friend_id,
@@ -326,7 +343,7 @@ class FriendService:
 
         :return: 친구 ID 목록
         """
-        return crud.get_friend_ids(self.session, self.user_id)
+        return crud.get_friend_ids(self.session, self.owner_id)
 
     def get_pending_requests_received(self) -> list[PendingRequestRead]:
         """
@@ -334,7 +351,7 @@ class FriendService:
 
         :return: 대기 중인 친구 요청 목록
         """
-        friendships = crud.get_pending_requests_received(self.session, self.user_id)
+        friendships = crud.get_pending_requests_received(self.session, self.owner_id)
         return self._to_pending_reads(friendships)
 
     def get_pending_requests_sent(self) -> list[PendingRequestRead]:
@@ -343,7 +360,7 @@ class FriendService:
 
         :return: 대기 중인 친구 요청 목록
         """
-        friendships = crud.get_pending_requests_sent(self.session, self.user_id)
+        friendships = crud.get_pending_requests_sent(self.session, self.owner_id)
         return self._to_pending_reads(friendships)
 
     def _to_pending_reads(self, friendships: list[Friendship]) -> list[PendingRequestRead]:
@@ -370,7 +387,7 @@ class FriendService:
         :param other_user_id: 확인할 사용자 ID
         :return: 친구 여부
         """
-        return crud.is_friend(self.session, self.user_id, other_user_id)
+        return crud.is_friend(self.session, self.owner_id, other_user_id)
 
     def is_blocked_by(self, other_user_id: str) -> bool:
         """
@@ -379,7 +396,7 @@ class FriendService:
         :param other_user_id: 확인할 사용자 ID
         :return: 차단 여부
         """
-        return crud.is_blocked(self.session, other_user_id, self.user_id)
+        return crud.is_blocked(self.session, other_user_id, self.owner_id)
 
     def has_blocked(self, other_user_id: str) -> bool:
         """
@@ -388,4 +405,4 @@ class FriendService:
         :param other_user_id: 확인할 사용자 ID
         :return: 차단 여부
         """
-        return crud.is_blocked(self.session, self.user_id, other_user_id)
+        return crud.is_blocked(self.session, self.owner_id, other_user_id)

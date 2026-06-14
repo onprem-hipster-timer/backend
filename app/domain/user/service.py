@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import user_profile as crud
-from app.models.user_profile import UserProfile
+from app.domain.user.model import UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -94,27 +94,23 @@ class UserProfileService:
             )
             return profile
 
-        changed = False
-        if profile.display_name != display_name:
-            profile.display_name = display_name
-            changed = True
-        if profile.avatar_url != avatar_url:
-            profile.avatar_url = avatar_url
-            changed = True
-        if profile.email_hash != email_hash:
-            profile.email_hash = email_hash
-            changed = True
-        if iss and profile.iss != iss:
-            profile.iss = iss
-            changed = True
-        # friend_code은 결정적이라 보통 불변이나, 혹시 비어있으면 채운다.
-        if not profile.friend_code:
-            profile.friend_code = friend_code_for(cu.sub)
-            changed = True
-        if changed:
-            self.session.add(profile)
-            self.session.flush()
+        # 변경 필드만 기록(write 증폭 방지)은 crud에 위임. 서비스는 "어떤 값을 동기화할지"만
+        # 판단한다: iss는 클레임에 없으면 기존값 유지, friend_code는 결정적이라 비어있을 때만 백필.
+        crud.update_profile_if_changed(
+            self.session,
+            profile,
+            display_name=display_name,
+            avatar_url=avatar_url,
+            email_hash=email_hash,
+            iss=iss or profile.iss,
+            friend_code=profile.friend_code or friend_code_for(cu.sub),
+        )
         return profile
+
+    @staticmethod
+    def is_email_identifier(identifier: str) -> bool:
+        """식별자 종류 판별: `@` 포함 → 이메일, 아니면 친구코드. (도메인 규칙)"""
+        return "@" in identifier
 
     def resolve_friend_code(self, friend_code: str) -> str | None:
         """친구코드 → sub 해석 (직접 매칭). 없으면 None."""

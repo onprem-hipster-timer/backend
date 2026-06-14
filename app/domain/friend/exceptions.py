@@ -12,6 +12,12 @@ class FriendshipNotFoundError(DomainException):
     detail = "Friendship not found"
 
 
+class FriendCodeNotFoundError(DomainException):
+    """친구코드가 유효하지 않음"""
+    status_code = 404
+    detail = "Friend code not found"
+
+
 class FriendRequestAlreadyExistsError(DomainException):
     """이미 친구 요청이 존재함"""
     status_code = 409
