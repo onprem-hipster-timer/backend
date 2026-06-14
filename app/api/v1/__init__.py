@@ -23,10 +23,9 @@ from app.api.v1.ws_playground import router as ws_playground_router
 api_router = APIRouter()
 
 # ── 인증 라우터 ──────────────────────────────────────────────────────────────
-# 토큰 검증 게이트 + 행위자 표시 프로필 JIT 동기화(get_current_user_synced)를 부모
-# 라우터에 한 번만 선언 → 하위 모든 경로에 적용. 새 소셜 라우터는 여기에 include만
-# 하면 인증/동기화가 자동 적용되어 누락될 수 없다.
-# (소셜 미사용 사용자도 프로필·email_hash를 확보해 친구 표시/이메일 친추가 가능)
+# 토큰 검증 게이트 + 최소 사용자 프로필 JIT 동기화(get_current_user_synced)를 부모
+# 라우터에 한 번만 선언 → 하위 모든 인증 REST 경로에 적용. 프론트가 별도 프로필
+# 조회를 호출하지 않아도 활성 사용자의 표시정보와 이메일 친추 인덱스가 준비된다.
 authed = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user_synced)])
 for r in (
         schedules_router,

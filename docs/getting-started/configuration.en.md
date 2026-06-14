@@ -88,6 +88,12 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)
 
+!!! note "Verified email storage"
+    When a token contains `email_verified=true` and an `email` claim, the backend stores the
+    normalized verified email for email-based friend requests. This value is used only as a
+    friend-request matching index and is not exposed through search, lists, or API responses.
+    There is no separate HMAC secret setting.
+
 ## Rate Limiting
 
 **HTTP Rate Limiting:**

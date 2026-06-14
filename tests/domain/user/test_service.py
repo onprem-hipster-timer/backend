@@ -36,7 +36,7 @@ class TestProfileSync:
         assert p.friend_code  # 생성됨
 
     def test_no_email_column_persisted(self, test_session):
-        """email은 신원으로 영속화하지 않는다 (컬럼 자체가 없어야 함)"""
+        """프로필 모델에 범용 email 컬럼은 두지 않는다."""
         cu = _user("u-mail", name="X")
         p = UserProfileService(test_session, cu).sync_from_current_user()
         assert not hasattr(p, "email")
@@ -83,34 +83,31 @@ class TestResolveFriendCode:
         svc = UserProfileService(test_session, _user("caller"))
         assert svc.resolve_friend_code("nonexistent-code") is None
 
-    def test_friend_code_is_deterministic_sha256(self, test_session):
-        """friend_code = base64url(SHA256(sub)) — 결정적"""
-        import base64
-        import hashlib
+    def test_friend_code_is_not_derived_from_sub(self, test_session):
+        """friend_code는 sub에서 파생하지 않는 무작위 저장 토큰"""
         p = UserProfileService(test_session, _user("user-x")).sync_from_current_user()
-        expected = base64.urlsafe_b64encode(
-            hashlib.sha256(b"user-x").digest()
-        ).decode().rstrip("=")
-        assert p.friend_code == expected
+        assert p.friend_code
+        assert p.friend_code != "user-x"
+        assert "user-x" not in p.friend_code
 
 
-class TestEmailHash:
-    def test_email_hash_set_when_verified(self, test_session):
+class TestVerifiedEmail:
+    def test_verified_email_set_when_verified(self, test_session):
         p = UserProfileService(
             test_session, _user("u1", email="A@Example.com ", email_verified=True)
         ).sync_from_current_user()
-        assert p.email_hash is not None
+        assert p.verified_email == "a@example.com"
 
-    def test_email_hash_none_when_unverified(self, test_session):
+    def test_verified_email_none_when_unverified(self, test_session):
         p = UserProfileService(
             test_session, _user("u2", email="b@example.com", email_verified=False)
         ).sync_from_current_user()
-        assert p.email_hash is None
+        assert p.verified_email is None
 
-    def test_email_hash_normalized_case_and_trim(self, test_session):
-        """정규화(소문자·trim) 후 해시 → 대소문자/공백 차이 무시"""
-        from app.domain.user.service import email_hash_for
-        assert email_hash_for("A@Example.com ") == email_hash_for("a@example.com")
+    def test_verified_email_normalized_case_and_trim(self, test_session):
+        """정규화(소문자·trim)로 대소문자/공백 차이 무시"""
+        from app.domain.user.service import verified_email_for
+        assert verified_email_for("A@Example.com ") == verified_email_for("a@example.com")
 
     def test_resolve_email_matches_verified(self, test_session):
         UserProfileService(
@@ -126,12 +123,12 @@ class TestEmailHash:
         svc = UserProfileService(test_session, _user("caller"))
         assert svc.resolve_email("t2@example.com") is None
 
-    def test_email_hash_cleared_when_email_unverified_later(self, test_session):
-        """검증 해제 시 email_hash가 None으로 갱신됨"""
+    def test_verified_email_cleared_when_email_unverified_later(self, test_session):
+        """검증 해제 시 verified_email이 None으로 갱신됨"""
         UserProfileService(
             test_session, _user("u3", email="u3@example.com", email_verified=True)
         ).sync_from_current_user()
         updated = UserProfileService(
             test_session, _user("u3", email="u3@example.com", email_verified=False)
         ).sync_from_current_user()
-        assert updated.email_hash is None
+        assert updated.verified_email is None

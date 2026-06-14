@@ -12,8 +12,8 @@ OIDC sub ↔ 표시 정보(display_name, avatar_url) 매핑.
 - `sub`가 정본 키. 코드베이스 전체(friendship 등)가 sub 기반이라 자연 조인된다.
 - 표시 필드(display_name/avatar_url)는 **서명된 JWT 클레임에서만** 채운다.
   사용자가 임의로 쓰는 경로가 없으므로 위변조 표면이 없다.
-- **email은 저장하지 않는다.** email은 ALLOWED_EMAILS 접근제어에서 요청자 본인
-  토큰으로만 라이브 매칭되며, 신원으로 영속화/노출하지 않는다.
+- `verified_email`은 IdP가 검증했다고 표시한 이메일만 정규화해 저장하며,
+  친구 추가 매칭용으로만 사용한다. 사용자 검색/목록/응답에는 노출하지 않는다.
 - 외부 공유는 `sub`가 아니라 `friend_code`로만 한다(OIDC subject 비노출).
 """
 from sqlmodel import Field
@@ -37,8 +37,8 @@ class UserProfile(TimestampMixin, table=True):
     iss: str | None = Field(default=None, nullable=True)
     display_name: str | None = Field(default=None, nullable=True)
     avatar_url: str | None = Field(default=None, nullable=True)
-    # 친추용 식별자 = base64url(SHA256(sub)). 결정적·안정적, sub는 고엔트로피라 평문 해시 안전.
+    # 친추용 식별자 = CSPRNG 기반 URL-safe 토큰. OIDC sub에서 파생하지 않는다.
     friend_code: str = Field(index=True, unique=True)
-    # 이메일 기반 친추용 = base64url(SHA256(normalize(email))). 검증된 이메일이 있을 때만 채워짐.
-    # 평문 이메일은 저장하지 않고, 동일 이메일 입력의 해시와 매칭하는 용도로만 쓴다.
-    email_hash: str | None = Field(default=None, nullable=True, index=True)
+    # 이메일 기반 친추용. 검증된 이메일이 있을 때만 normalize(email)로 채운다.
+    # 사용자 검색/목록/응답에는 노출하지 않는다.
+    verified_email: str | None = Field(default=None, nullable=True, index=True)

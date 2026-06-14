@@ -19,9 +19,9 @@ def get_by_friend_code(session: Session, friend_code: str) -> UserProfile | None
     return session.exec(statement).first()
 
 
-def get_by_email_hash(session: Session, email_hash: str) -> UserProfile | None:
-    """이메일 해시로 프로필 조회 (이메일 기반 친추 대상 해석용)"""
-    statement = select(UserProfile).where(UserProfile.email_hash == email_hash)
+def get_by_verified_email(session: Session, verified_email: str) -> UserProfile | None:
+    """검증 이메일로 프로필 조회 (이메일 기반 친추 대상 해석용)"""
+    statement = select(UserProfile).where(UserProfile.verified_email == verified_email)
     return session.exec(statement).first()
 
 
@@ -40,7 +40,7 @@ def create_profile(
         display_name: str | None,
         avatar_url: str | None,
         friend_code: str,
-        email_hash: str | None = None,
+        verified_email: str | None = None,
 ) -> UserProfile:
     """프로필 생성"""
     profile = UserProfile(
@@ -49,7 +49,7 @@ def create_profile(
         display_name=display_name,
         avatar_url=avatar_url,
         friend_code=friend_code,
-        email_hash=email_hash,
+        verified_email=verified_email,
     )
     session.add(profile)
     session.flush()
@@ -63,7 +63,7 @@ def update_profile_if_changed(
         *,
         display_name: str | None,
         avatar_url: str | None,
-        email_hash: str | None,
+        verified_email: str | None,
         iss: str | None,
         friend_code: str,
 ) -> bool:
@@ -76,7 +76,7 @@ def update_profile_if_changed(
     for field, value in (
         ("display_name", display_name),
         ("avatar_url", avatar_url),
-        ("email_hash", email_hash),
+        ("verified_email", verified_email),
         ("iss", iss),
         ("friend_code", friend_code),
     ):

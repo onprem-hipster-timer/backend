@@ -94,7 +94,7 @@ class TestEmailFriendRequest:
     def test_add_by_email_creates_request(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a", name="Alice")
         b = multi_user_e2e.as_user("user-b", name="Bob")
-        b.get("/v1/users/me")  # B 동기화(email_hash 인덱싱)
+        b.get("/v1/users/me")  # B 동기화(verified_email 인덱싱)
         b_email = multi_user_e2e.get_user("user-b").email
 
         r = a.post("/v1/friends/requests", json={"email": b_email})
@@ -145,7 +145,7 @@ class TestEmailFriendRequest:
 
 
 class TestGlobalProfileSync:
-    """비소셜(인증) 엔드포인트 호출만으로도 프로필·email_hash가 동기화됨"""
+    """비소셜(인증) 엔드포인트 호출만으로도 프로필·verified_email이 동기화됨"""
 
     def test_sync_on_non_social_endpoint_enables_email_add(self, multi_user_e2e):
         a = multi_user_e2e.as_user("user-a", name="Alice")
@@ -158,7 +158,7 @@ class TestGlobalProfileSync:
         )
         assert resp.status_code == 200
 
-        # 그래도 B가 A를 이메일로 추가 가능(전역 동기화로 A의 email_hash 확보됨)
+        # 그래도 B가 A를 이메일로 추가 가능(전역 동기화로 A의 verified_email 확보됨)
         a_email = multi_user_e2e.get_user("user-a").email
         r = b.post("/v1/friends/requests", json={"email": a_email})
         assert r.status_code == 202

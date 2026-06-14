@@ -69,6 +69,18 @@ class TestFriendRequestValidation:
         )
         assert r.status_code == 422
 
+    def test_both_target_fields_even_with_null_422(self, e2e_client):
+        """필드가 둘 다 있으면 null이어도 422"""
+        r = e2e_client.post(
+            "/v1/friends/requests",
+            json={"email": None, "friend_code": "some-code"},
+        )
+        assert r.status_code == 422
+
+    def test_null_target_field_422(self, e2e_client):
+        """단일 대상 필드도 null이면 422"""
+        assert e2e_client.post("/v1/friends/requests", json={"email": None}).status_code == 422
+
     def test_invalid_email_format_422(self, e2e_client):
         """email 형식이 아니면 422"""
         r = e2e_client.post("/v1/friends/requests", json={"email": "not-an-email"})

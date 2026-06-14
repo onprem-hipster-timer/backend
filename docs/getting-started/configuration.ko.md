@@ -88,6 +88,11 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
 
+!!! note "검증 이메일 저장"
+    토큰에 `email_verified=true`와 `email` 클레임이 있으면, 백엔드는 이메일 기반 친구 추가를 위해
+    정규화한 검증 이메일을 저장합니다. 이 값은 친구 추가 매칭용 인덱스로만 사용하며 사용자 검색,
+    목록, API 응답에는 노출하지 않습니다. 별도 HMAC secret 설정은 두지 않습니다.
+
 ## Rate Limiting
 
 **HTTP Rate Limiting:**

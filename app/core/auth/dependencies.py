@@ -3,7 +3,7 @@
 
 - get_current_user: 인증 게이트(실패 시 401). AuthMiddleware가 채운 request.state를 재사용.
 - get_optional_current_user: 선택적 인증(미인증 허용 엔드포인트용).
-- get_current_user_synced: 인증 + 표시 프로필 JIT 동기화(소셜 라우터용).
+- get_current_user_synced: 인증 + 최소 표시 프로필 JIT 동기화(인증 REST 라우터용).
 """
 import logging
 
@@ -97,8 +97,9 @@ async def get_current_user_synced(
     """
     FastAPI Dependency: 인증된 사용자 반환 + 표시 프로필 JIT 동기화
 
-    소셜 라우터(friends, users)에 적용한다. 인증된 사용자의 표준 OIDC 클레임으로
-    UserProfile을 upsert하여, 친구 목록/받은 요청에서 표시정보를 보여줄 수 있게 한다.
+    모든 인증 REST 라우터에 적용한다. 인증된 사용자의 표준 OIDC 클레임으로
+    UserProfile을 upsert하여, 프론트가 별도 프로필 조회를 호출하지 않아도 친구 목록/
+    받은 요청 표시정보와 이메일 친추 인덱스를 준비한다.
 
     - `get_db_transactional`은 요청 내 1회만 평가(FastAPI 캐시)되므로 엔드포인트와
       **동일 세션**을 공유하고 요청 끝에 함께 commit된다.
