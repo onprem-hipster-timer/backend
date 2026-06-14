@@ -129,7 +129,7 @@ class TestOIDCClient:
         """OIDC discovery URL 기본 생성"""
         from app.core.auth import OIDCClient
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -142,7 +142,7 @@ class TestOIDCClient:
         """커스텀 discovery URL 사용"""
         from app.core.auth import OIDCClient
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = "https://custom.example.com/oidc/.well-known/openid-configuration"
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -155,7 +155,7 @@ class TestOIDCClient:
         """issuer URL 끝에 슬래시가 있어도 올바르게 처리"""
         from app.core.auth import OIDCClient
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com/"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -176,7 +176,7 @@ class TestOIDCClient:
             "token_endpoint": "https://issuer.example.com/token",
         }
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -209,7 +209,7 @@ class TestOIDCClient:
             "jwks_uri": "https://issuer.example.com/.well-known/jwks.json",
         }
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -246,7 +246,7 @@ class TestOIDCClient:
             "jwks_uri": "https://issuer.example.com/.well-known/jwks.json",
         }
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -284,7 +284,7 @@ class TestOIDCClient:
             # jwks_uri 누락
         }
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -316,7 +316,7 @@ class TestOIDCClient:
             aud="test-client-id",
         )
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -346,7 +346,7 @@ class TestOIDCClient:
             aud="test-client-id",
         )
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -375,7 +375,7 @@ class TestOIDCClient:
             aud="wrong-client-id",
         )
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -405,7 +405,7 @@ class TestOIDCClient:
             exp_delta=timedelta(hours=-1),  # 1시간 전에 만료
         )
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -427,7 +427,7 @@ class TestOIDCClient:
         """JWKS 조회 실패 시 503 반환"""
         from app.core.auth import OIDCClient
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.client.settings") as mock_settings:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
@@ -459,7 +459,7 @@ class TestGetCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = False
 
             user = await get_current_user(request=mock_request, credentials=None)
@@ -476,7 +476,7 @@ class TestGetCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             with pytest.raises(HTTPException) as exc_info:
@@ -493,7 +493,7 @@ class TestGetCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             credentials = HTTPAuthorizationCredentials(
@@ -523,7 +523,7 @@ class TestGetCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             credentials = HTTPAuthorizationCredentials(
@@ -565,7 +565,7 @@ class TestGetOptionalCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = False
 
             user = await get_optional_current_user(request=mock_request, credentials=None)
@@ -581,7 +581,7 @@ class TestGetOptionalCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             user = await get_optional_current_user(request=mock_request, credentials=None)
@@ -596,7 +596,7 @@ class TestGetOptionalCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             credentials = HTTPAuthorizationCredentials(
@@ -619,7 +619,7 @@ class TestGetOptionalCurrentUser:
         mock_request = MagicMock()
         mock_request.state.current_user = None
 
-        with patch("app.core.auth.settings") as mock_settings:
+        with patch("app.core.auth.dependencies.settings") as mock_settings:
             mock_settings.OIDC_ENABLED = True
 
             credentials = HTTPAuthorizationCredentials(
