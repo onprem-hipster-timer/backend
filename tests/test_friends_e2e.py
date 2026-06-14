@@ -55,7 +55,7 @@ class TestFriendRequestAPI:
 
 
 class TestFriendRequestValidation:
-    """친구 요청 DTO 검증 (email / friend_code 중 정확히 하나)"""
+    """친구 요청 DTO 검증 (email / friend_code 중 정확히 하나, email 형식)"""
 
     def test_no_target_field_422(self, e2e_client):
         """email·friend_code 둘 다 없으면 422"""
@@ -81,11 +81,10 @@ class TestFriendRequestValidation:
         """단일 대상 필드도 null이면 422"""
         assert e2e_client.post("/v1/friends/requests", json={"email": None}).status_code == 422
 
-    def test_malformed_email_uniform_202(self, e2e_client):
-        """email은 형식 검증하지 않는다 — 매칭 실패로 균일 202(열거 비노출)"""
+    def test_invalid_email_format_422(self, e2e_client):
+        """email 형식이 아니면 422"""
         r = e2e_client.post("/v1/friends/requests", json={"email": "not-an-email"})
-        assert r.status_code == 202
-        assert r.json() == {"ok": True}
+        assert r.status_code == 422
 
 
 class TestFriendListAPI:

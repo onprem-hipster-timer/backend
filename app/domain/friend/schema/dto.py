@@ -21,9 +21,7 @@ class FriendRequest(CustomModel):
     - `friend_code`: `GET /v1/users/me`로 공유된 코드와 직접 매칭(미존재 404).
 
     둘 다 비었거나 둘 다 주어지면 422. `null`이라도 필드가 둘 다 있으면 422로 본다.
-    `email`은 형식 검증하지 않는다 — 매칭은 저장된 검증 이메일(normalize 후)과의 룩업으로만
-    이뤄지므로, 형식이 어긋난 값은 매칭 실패로 균일 202가 된다(열거 비노출).
-    OIDC sub는 외부에서 얻을 수 없으므로 식별자로 받지 않는다.
+    `email`은 형식 검증된다. OIDC sub는 외부에서 얻을 수 없으므로 식별자로 받지 않는다.
     """
     email: str | None = None
     friend_code: str | None = None
@@ -53,6 +51,20 @@ class FriendRequest(CustomModel):
         if not stripped:
             raise ValueError("friend_code는 비어 있을 수 없습니다")
         return stripped
+
+    @field_validator("email")
+    @classmethod
+    def _email_format(cls, value: str | None) -> str | None:
+        """추가 의존성 없이 친추 입력에 필요한 최소 이메일 형식을 검증."""
+        if value is None:
+            return value
+        email = value.strip()
+        if not email or any(ch.isspace() for ch in email):
+            raise ValueError("email 형식이 올바르지 않습니다")
+        local, sep, domain = email.partition("@")
+        if not sep or "@" in domain or not local or not domain:
+            raise ValueError("email 형식이 올바르지 않습니다")
+        return email
 
     @property
     def is_email_target(self) -> bool:
