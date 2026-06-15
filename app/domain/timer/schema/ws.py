@@ -135,6 +135,7 @@ class TimerUpdatedPayload(BaseModel):
 class FriendActivityPayload(BaseModel):
     """친구 활동 알림 페이로드"""
     friend_id: str
+    display_name: Optional[str] = None  # 행위자 표시명 (라이브 토큰 클레임, 없으면 None)
     action: TimerAction
     timer_id: UUID
     timer_title: Optional[str] = None

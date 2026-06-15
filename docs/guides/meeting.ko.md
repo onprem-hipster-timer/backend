@@ -133,7 +133,7 @@ const grid: AvailabilityDateGroup[] = [
 
 #### 일정 조율 생성
 
-**POST /api/v1/meetings**
+**POST /v1/meetings**
 
 ```typescript
 // Request
@@ -174,7 +174,7 @@ interface MeetingCreate {
 
 #### 일정 조율 목록 조회 (내 것만)
 
-**GET /api/v1/meetings**
+**GET /v1/meetings**
 
 쿼리 파라미터:
 - `timezone` (optional): 타임존 (예: `+09:00`, `Asia/Seoul`)
@@ -185,7 +185,7 @@ interface MeetingCreate {
 
 #### 일정 조율 상세 조회
 
-**GET /api/v1/meetings/{meeting_id}**
+**GET /v1/meetings/{meeting_id}**
 
 쿼리 파라미터:
 - `timezone` (optional): 타임존
@@ -196,7 +196,7 @@ interface MeetingCreate {
 
 #### 일정 조율 수정
 
-**PATCH /api/v1/meetings/{meeting_id}**
+**PATCH /v1/meetings/{meeting_id}**
 
 ```typescript
 // Request
@@ -216,7 +216,7 @@ interface MeetingUpdate {
 
 #### 일정 조율 삭제
 
-**DELETE /api/v1/meetings/{meeting_id}**
+**DELETE /v1/meetings/{meeting_id}**
 
 ```typescript
 // Response: 204 No Content
@@ -228,7 +228,7 @@ interface MeetingUpdate {
 
 #### 참여자 등록
 
-**POST /api/v1/meetings/{meeting_id}/participate**
+**POST /v1/meetings/{meeting_id}/participate**
 
 ```typescript
 // Request
@@ -253,7 +253,7 @@ interface ParticipantCreate {
 
 #### 가능 시간 설정/업데이트
 
-**PUT /api/v1/meetings/{meeting_id}/availability**
+**PUT /v1/meetings/{meeting_id}/availability**
 
 쿼리 파라미터:
 - `participant_id` (required): 참여자 ID
@@ -290,7 +290,7 @@ interface TimeSlotCreate {
 
 #### 전체 가능 시간 조회
 
-**GET /api/v1/meetings/{meeting_id}/availability**
+**GET /v1/meetings/{meeting_id}/availability**
 
 쿼리 파라미터:
 - `timezone` (optional): 타임존
@@ -311,7 +311,7 @@ interface AvailabilityRead {
 
 #### 공통 가능 시간 분석
 
-**GET /api/v1/meetings/{meeting_id}/result**
+**GET /v1/meetings/{meeting_id}/result**
 
 쿼리 파라미터:
 - `timezone` (optional): 타임존
@@ -497,7 +497,7 @@ interface MeetingResult {
 ```typescript
 // 일정 조율 생성
 async function createMeeting(data: MeetingCreate): Promise<Meeting> {
-  const response = await fetch('/api/v1/meetings', {
+  const response = await fetch('/v1/meetings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -538,7 +538,7 @@ async function registerParticipant(
   meetingId: string,
   displayName: string
 ): Promise<Participant> {
-  const response = await fetch(`/api/v1/meetings/${meetingId}/participate`, {
+  const response = await fetch(`/v1/meetings/${meetingId}/participate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ display_name: displayName }),
@@ -554,7 +554,7 @@ async function setAvailability(
   timeSlots: TimeSlotCreate[]
 ): Promise<TimeSlot[]> {
   const response = await fetch(
-    `/api/v1/meetings/${meetingId}/availability?participant_id=${participantId}`,
+    `/v1/meetings/${meetingId}/availability?participant_id=${participantId}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -579,7 +579,7 @@ await setAvailability(meeting.id, participant.id, [
 
 ```typescript
 async function getMeetingResult(meetingId: string): Promise<MeetingResult> {
-  const response = await fetch(`/api/v1/meetings/${meetingId}/result`);
+  const response = await fetch(`/v1/meetings/${meetingId}/result`);
   return response.json();
 }
 

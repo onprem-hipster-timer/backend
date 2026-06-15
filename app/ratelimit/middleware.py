@@ -1,7 +1,7 @@
 """
 Rate Limit Middleware
 
-FastAPI 미들웨어로 모든 /api/v1/* 요청에 레이트 리밋 적용
+FastAPI 미들웨어로 모든 /v1/* 요청에 레이트 리밋 적용
 """
 import logging
 
@@ -22,7 +22,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     레이트 리밋 미들웨어
     
     처리 흐름:
-    1. 요청 경로가 /api/v1/*인지 확인
+    1. 요청 경로가 /v1/*인지 확인
     2. 경로에 맞는 규칙 찾기
     3. 사용자 식별 (Authorization 헤더 -> sub 또는 Client IP)
     4. 레이트 리밋 체크

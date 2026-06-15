@@ -574,7 +574,7 @@ async function setVisibility(
   settings: VisibilityUpdate
 ): Promise<VisibilityRead> {
   const response = await fetch(
-    `/api/v1/visibility/${resourceType}/${resourceId}`,
+    `/v1/visibility/${resourceType}/${resourceId}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -605,7 +605,7 @@ async function getVisibility(
   resourceId: string
 ): Promise<VisibilityRead | null> {
   const response = await fetch(
-    `/api/v1/visibility/${resourceType}/${resourceId}`
+    `/v1/visibility/${resourceType}/${resourceId}`
   );
   if (response.status === 404) return null;
   return response.json();
@@ -615,7 +615,7 @@ async function deleteVisibility(
   resourceType: ResourceType,
   resourceId: string
 ): Promise<void> {
-  await fetch(`/api/v1/visibility/${resourceType}/${resourceId}`, {
+  await fetch(`/v1/visibility/${resourceType}/${resourceId}`, {
     method: "DELETE",
   });
 }
@@ -629,7 +629,7 @@ async function createScheduleWithVisibility(
   visibility?: VisibilityUpdate
 ): Promise<ScheduleRead> {
   // 1단계: 리소스 생성
-  const createResponse = await fetch("/api/v1/schedules", {
+  const createResponse = await fetch("/v1/schedules", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(schedule),
@@ -749,7 +749,7 @@ async function fetchSchedules(
     scope,
   });
 
-  const response = await fetch(`/api/v1/schedules?${params}`);
+  const response = await fetch(`/v1/schedules?${params}`);
   return response.json();
 }
 

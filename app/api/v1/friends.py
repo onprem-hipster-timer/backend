@@ -7,18 +7,23 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
+from app.domain.friend.exceptions import FriendCodeNotFoundError
 from app.domain.friend.schema.dto import (
     FriendRequest,
+    FriendRequestAccepted,
     FriendshipRead,
     FriendRead,
     PendingRequestRead,
 )
 from app.domain.friend.service import FriendService
+from app.domain.user.service import UserProfileService
 
+# 행위자 표시 프로필의 JIT 동기화는 app/api/v1/__init__.py에서 전역(모든 인증 라우터)으로 적용됨.
 router = APIRouter(prefix="/friends", tags=["Friends"])
 
 
@@ -86,21 +91,46 @@ async def list_sent_requests(
     return service.get_pending_requests_sent()
 
 
-@router.post("/requests", response_model=FriendshipRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/requests",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"model": FriendshipRead, "description": "Friend request created"},
+        202: {"model": FriendRequestAccepted, "description": "Email friend request accepted"},
+        404: {"description": "Friend code not found"},
+    },
+)
 async def send_friend_request(
         data: FriendRequest,
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    친구 요청 보내기
-    
-    대상 사용자에게 친구 요청을 보냅니다.
-    이미 친구이거나 대기 중인 요청이 있으면 에러가 발생합니다.
+    친구 요청 보내기 (email 또는 friend_code)
+
+    `email` / `friend_code` 중 정확히 하나를 보냅니다(DTO에서 검증):
+    - **email**: 검증된 이메일 사용자와 매칭. 계정 열거를 막기 위해 매칭/자기자신/중복/차단/
+      미존재 여부와 무관하게 **항상 202** `{"ok": true}`를 반환합니다.
+    - **friend_code**: `GET /v1/users/me`로 공유된 코드와 직접 매칭. 코드가 유효하지 않으면
+      404, 매칭되면 정상 피드백(201, 또는 자기자신 400 / 중복·이미친구 409 / 차단 403).
     """
-    service = FriendService(session, current_user)
-    friendship = service.send_friend_request(data.addressee_id)
-    return FriendshipRead.model_validate(friendship)
+    profile_service = UserProfileService(session, current_user)
+    friend_service = FriendService(session, current_user)
+
+    if data.is_email_target:
+        # 이메일 경로 — 균일 202 (존재 비노출, 도메인 예외는 try_* 가 흡수)
+        addressee_id = profile_service.resolve_email(data.email)
+        if addressee_id is not None:
+            friend_service.try_send_friend_request(addressee_id)
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content={"ok": True})
+
+    # 친구코드 경로 — 정상 피드백 (도메인 예외는 전역 핸들러가 변환)
+    addressee_id = profile_service.resolve_friend_code(data.friend_code)
+    if addressee_id is None:
+        raise FriendCodeNotFoundError()
+    friendship = friend_service.send_friend_request(addressee_id)
+    read = FriendshipRead.model_validate(friendship)
+    return JSONResponse(status_code=status.HTTP_201_CREATED, content=read.model_dump(mode="json"))
 
 
 @router.post("/requests/{friendship_id}/accept", response_model=FriendshipRead)

@@ -43,7 +43,7 @@ class RateLimitStorage(ABC):
         - 현재 시간 기준 window_seconds 이전의 요청만 카운트
         - 새 요청을 기록하고 허용 여부 판단
         
-        :param key: 레이트 리밋 키 (예: "user:{sub}:POST:/api/v1/todos")
+        :param key: 레이트 리밋 키 (예: "user:{sub}:POST:/v1/todos")
         :param window_seconds: 윈도우 크기 (초)
         :param max_requests: 윈도우 내 최대 허용 요청 수
         :return: RateLimitResult

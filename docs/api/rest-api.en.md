@@ -64,6 +64,32 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # Delete visibility (rever
 !!! info "`resource_type`"
     One of `schedule`, `timer`, `todo`, `meeting`.
 
+### Friends
+
+```http
+GET    /v1/friends                       # Friend list (includes display_name, avatar_url)
+GET    /v1/friends/ids                    # Friend id list
+GET    /v1/friends/check/{user_id}        # Check friendship
+POST   /v1/friends/requests               # Friend request (email or friend_code)
+GET    /v1/friends/requests/received      # Received requests (includes requester_display_name)
+GET    /v1/friends/requests/sent          # Sent requests
+POST   /v1/friends/requests/{id}/accept   # Accept request
+POST   /v1/friends/requests/{id}/reject   # Reject request
+DELETE /v1/friends/requests/{id}          # Cancel sent request
+DELETE /v1/friends/{id}                   # Remove friend
+POST   /v1/friends/block/{user_id}        # Block user
+DELETE /v1/friends/block/{user_id}        # Unblock user
+```
+
+!!! info "Friend request (`POST /v1/friends/requests`)"
+    The body provides **exactly one** of `{ "email": "..." }` or `{ "friend_code": "..." }` — an **email** (validated; matched against stored verified emails; always returns a uniform `202` to prevent account enumeration) or a **friend code** (random share code; `404` if unknown). Sending both, neither, or `null` returns `422`. No user search/directory is provided. Get your friend code from `GET /v1/users/me`.
+
+### Users
+
+```http
+GET    /v1/users/me                       # Own display info + friend code (for sharing)
+```
+
 ### Holidays
 
 ```http

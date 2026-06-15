@@ -64,6 +64,32 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRI
 !!! info "`resource_type`"
     `schedule`, `timer`, `todo`, `meeting` 중 하나를 사용합니다.
 
+### 친구 (Friends)
+
+```http
+GET    /v1/friends                       # 친구 목록 (display_name·avatar_url 포함)
+GET    /v1/friends/ids                    # 친구 ID 목록
+GET    /v1/friends/check/{user_id}        # 친구 여부 확인
+POST   /v1/friends/requests               # 친구 요청 (email 또는 friend_code)
+GET    /v1/friends/requests/received      # 받은 요청 (requester_display_name 포함)
+GET    /v1/friends/requests/sent          # 보낸 요청
+POST   /v1/friends/requests/{id}/accept   # 요청 수락
+POST   /v1/friends/requests/{id}/reject   # 요청 거절
+DELETE /v1/friends/requests/{id}          # 보낸 요청 취소
+DELETE /v1/friends/{id}                   # 친구 삭제
+POST   /v1/friends/block/{user_id}        # 차단
+DELETE /v1/friends/block/{user_id}        # 차단 해제
+```
+
+!!! info "친구 요청 (`POST /v1/friends/requests`)"
+    바디는 `{ "email": "..." }` 또는 `{ "friend_code": "..." }` 중 **정확히 하나**를 보냅니다 — **이메일**(형식 검증, 저장된 검증 이메일과 매칭, 계정 열거 방지를 위해 항상 `202` 균일 응답) 또는 **친구코드**(무작위 공유 코드 직접 매칭, 미존재 시 `404`). 둘 다 보내거나 둘 다 비우거나 `null`을 보내면 `422`. 사용자 검색/디렉터리는 제공하지 않습니다. 친구코드는 `GET /v1/users/me`로 확인합니다.
+
+### 사용자 (Users)
+
+```http
+GET    /v1/users/me                       # 본인 표시정보 + 친구코드(공유용)
+```
+
 ### 공휴일 (Holidays)
 
 ```http

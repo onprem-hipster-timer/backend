@@ -1,50 +1,90 @@
 """
 Friend API E2E 테스트
 
-친구 관계 API 엔드포인트 테스트
+친구 관계 API 엔드포인트 테스트.
+친구 추가는 친구코드 기반(POST /v1/friends/requests {friend_code}).
 """
 
 
-class TestFriendRequestAPI:
-    """친구 요청 API 테스트"""
+def _friend_code(client) -> str:
+    """클라이언트(사용자)의 친구코드 조회 헬퍼"""
+    return client.get("/v1/users/me").json()["friend_code"]
 
-    def test_send_friend_request_success(self, e2e_client):
+
+class TestFriendRequestAPI:
+    """친구 요청 API 테스트 (친구코드 기반)"""
+
+    def test_send_friend_request_success(self, multi_user_e2e):
         """친구 요청 전송 성공"""
-        response = e2e_client.post(
-            "/v1/friends/requests",
-            json={"addressee_id": "target-user-id"},
-        )
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        a_id = multi_user_e2e.get_user("user-a").sub
+        b_id = multi_user_e2e.get_user("user-b").sub
+
+        response = a.post("/v1/friends/requests", json={"friend_code": _friend_code(b)})
 
         assert response.status_code == 201
         data = response.json()
-        assert data["requester_id"] == "test-user-id"
-        assert data["addressee_id"] == "target-user-id"
+        assert data["requester_id"] == a_id
+        assert data["addressee_id"] == b_id
         assert data["status"] == "pending"
 
-    def test_send_friend_request_to_self_fails(self, e2e_client):
+    def test_send_friend_request_to_self_fails(self, multi_user_e2e):
         """자기 자신에게 친구 요청 실패"""
-        response = e2e_client.post(
-            "/v1/friends/requests",
-            json={"addressee_id": "test-user-id"},
-        )
-
+        a = multi_user_e2e.as_user("user-a")
+        response = a.post("/v1/friends/requests", json={"friend_code": _friend_code(a)})
         assert response.status_code == 400
 
-    def test_duplicate_friend_request_fails(self, e2e_client):
+    def test_send_friend_request_invalid_code_404(self, multi_user_e2e):
+        """존재하지 않는 친구코드 → 404"""
+        a = multi_user_e2e.as_user("user-a")
+        response = a.post("/v1/friends/requests", json={"friend_code": "no-such-code"})
+        assert response.status_code == 404
+
+    def test_duplicate_friend_request_fails(self, multi_user_e2e):
         """중복 친구 요청 실패"""
-        # 첫 번째 요청
-        e2e_client.post(
-            "/v1/friends/requests",
-            json={"addressee_id": "another-user-id"},
-        )
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        b_code = _friend_code(b)
 
-        # 두 번째 요청
-        response = e2e_client.post(
-            "/v1/friends/requests",
-            json={"addressee_id": "another-user-id"},
-        )
+        first = a.post("/v1/friends/requests", json={"friend_code": b_code})
+        assert first.status_code == 201
 
-        assert response.status_code == 409
+        second = a.post("/v1/friends/requests", json={"friend_code": b_code})
+        assert second.status_code == 409
+
+
+class TestFriendRequestValidation:
+    """친구 요청 DTO 검증 (email / friend_code 중 정확히 하나, email 형식)"""
+
+    def test_no_target_field_422(self, e2e_client):
+        """email·friend_code 둘 다 없으면 422"""
+        assert e2e_client.post("/v1/friends/requests", json={}).status_code == 422
+
+    def test_both_target_fields_422(self, e2e_client):
+        """email·friend_code 둘 다 주면 422"""
+        r = e2e_client.post(
+            "/v1/friends/requests",
+            json={"email": "a@example.com", "friend_code": "some-code"},
+        )
+        assert r.status_code == 422
+
+    def test_both_target_fields_even_with_null_422(self, e2e_client):
+        """필드가 둘 다 있으면 null이어도 422"""
+        r = e2e_client.post(
+            "/v1/friends/requests",
+            json={"email": None, "friend_code": "some-code"},
+        )
+        assert r.status_code == 422
+
+    def test_null_target_field_422(self, e2e_client):
+        """단일 대상 필드도 null이면 422"""
+        assert e2e_client.post("/v1/friends/requests", json={"email": None}).status_code == 422
+
+    def test_invalid_email_format_422(self, e2e_client):
+        """email 형식이 아니면 422"""
+        r = e2e_client.post("/v1/friends/requests", json={"email": "not-an-email"})
+        assert r.status_code == 422
 
 
 class TestFriendListAPI:
@@ -89,22 +129,20 @@ class TestPendingRequestsAPI:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    def test_list_sent_requests_after_sending(self, e2e_client):
+    def test_list_sent_requests_after_sending(self, multi_user_e2e):
         """친구 요청 후 보낸 요청 목록에 표시"""
-        # 친구 요청 전송
-        send_response = e2e_client.post(
-            "/v1/friends/requests",
-            json={"addressee_id": "some-user-id"},
-        )
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        b_id = multi_user_e2e.get_user("user-b").sub
+
+        send_response = a.post("/v1/friends/requests", json={"friend_code": _friend_code(b)})
         assert send_response.status_code == 201
 
-        # 보낸 요청 목록 조회
-        response = e2e_client.get("/v1/friends/requests/sent")
-
+        response = a.get("/v1/friends/requests/sent")
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 1
-        assert any(r["addressee_id"] == "some-user-id" for r in data)
+        assert any(r["addressee_id"] == b_id for r in data)
 
 
 class TestBlockAPI:
@@ -143,7 +181,7 @@ class TestReverseFriendRequest:
     def test_reverse_friend_request_returns_409(self, multi_user_e2e):
         """
         역방향 친구 요청 시 409 반환
-        
+
         시나리오:
         - userA → userB 요청(PENDING)
         - userB → userA 요청 시도
@@ -153,26 +191,22 @@ class TestReverseFriendRequest:
         client_b = multi_user_e2e.as_user("user-b")
 
         user_a_id = multi_user_e2e.get_user("user-a").sub
-        user_b_id = multi_user_e2e.get_user("user-b").sub
+
+        # 코드 확보 (양쪽 프로필 생성)
+        a_code = _friend_code(client_a)
+        b_code = _friend_code(client_b)
 
         # 1. userA → userB 친구 요청
-        request_a_to_b = client_a.post(
-            "/v1/friends/requests",
-            json={"addressee_id": user_b_id},
-        )
+        request_a_to_b = client_a.post("/v1/friends/requests", json={"friend_code": b_code})
         assert request_a_to_b.status_code == 201, f"Failed: {request_a_to_b.json()}"
 
         # 2. userB → userA 역방향 친구 요청 시도
-        request_b_to_a = client_b.post(
-            "/v1/friends/requests",
-            json={"addressee_id": user_a_id},
-        )
+        request_b_to_a = client_b.post("/v1/friends/requests", json={"friend_code": a_code})
 
         # 3. 409 Conflict 반환 확인
         assert request_b_to_a.status_code == 409
 
         # 4. 추가 레코드 생성되지 않았는지 확인
-        # userB의 보낸 요청 목록에 userA가 없어야 함
         sent_response = client_b.get("/v1/friends/requests/sent")
         assert sent_response.status_code == 200
         sent_requests = sent_response.json()
@@ -181,9 +215,6 @@ class TestReverseFriendRequest:
     def test_reverse_friend_request_does_not_create_duplicate(self, multi_user_e2e):
         """
         역방향 친구 요청이 중복 레코드를 생성하지 않음 확인
-        
-        이미 PENDING인 상태에서 반대 방향 요청 시,
-        데이터베이스에 2개의 레코드가 생기면 안 됨
         """
         client_a = multi_user_e2e.as_user("user-a")
         client_b = multi_user_e2e.as_user("user-b")
@@ -191,26 +222,22 @@ class TestReverseFriendRequest:
         user_a_id = multi_user_e2e.get_user("user-a").sub
         user_b_id = multi_user_e2e.get_user("user-b").sub
 
+        a_code = _friend_code(client_a)
+        b_code = _friend_code(client_b)
+
         # 1. userA → userB 친구 요청
-        client_a.post(
-            "/v1/friends/requests",
-            json={"addressee_id": user_b_id},
-        )
+        client_a.post("/v1/friends/requests", json={"friend_code": b_code})
 
         # 2. userB → userA 역방향 친구 요청 시도 (실패 예상)
-        client_b.post(
-            "/v1/friends/requests",
-            json={"addressee_id": user_a_id},
-        )
+        client_b.post("/v1/friends/requests", json={"friend_code": a_code})
 
-        # 3. userA의 받은 요청 목록에 하나만 있어야 함
-        # (역방향 요청이 생성되지 않았으므로)
+        # 3. userA의 받은 요청 목록에 역방향 요청 없음
         received_a = client_a.get("/v1/friends/requests/received")
         received_requests = received_a.json()
         user_b_requests = [r for r in received_requests if r["requester_id"] == user_b_id]
         assert len(user_b_requests) == 0, "역방향 요청이 생성되면 안 됨"
 
-        # 4. userB의 받은 요청 목록에 userA의 원래 요청은 있어야 함
+        # 4. userB의 받은 요청 목록에 userA의 원래 요청은 유지
         received_b = client_b.get("/v1/friends/requests/received")
         received_b_requests = received_b.json()
         user_a_requests = [r for r in received_b_requests if r["requester_id"] == user_a_id]

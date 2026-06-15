@@ -14,14 +14,14 @@ class RateLimitRule(BaseModel):
     엔드포인트별 레이트 리밋 규칙
     
     Examples:
-        # POST /api/v1/todos에만 적용 (생성 제한)
-        RateLimitRule(methods=["POST"], path_pattern="/api/v1/todos", ...)
+        # POST /v1/todos에만 적용 (생성 제한)
+        RateLimitRule(methods=["POST"], path_pattern="/v1/todos", ...)
         
-        # /api/v1/todos/* 모든 메서드에 적용
-        RateLimitRule(path_pattern="/api/v1/todos/*", ...)
+        # /v1/todos/* 모든 메서드에 적용
+        RateLimitRule(path_pattern="/v1/todos/*", ...)
     """
     methods: Optional[List[str]] = None  # None = 모든 메서드, ["POST", "PUT"] = 특정 메서드만
-    path_pattern: str  # fnmatch 패턴: "/api/v1/todos/*", "/api/v1/todos"
+    path_pattern: str  # fnmatch 패턴: "/v1/todos/*", "/v1/todos"
     window_seconds: int  # 윈도우 크기 (초)
     max_requests: int  # 윈도우 내 최대 요청 수
 
@@ -81,6 +81,13 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         path_pattern="/v1/tags/groups",
         window_seconds=60,
         max_requests=30,
+    ),
+    # 친구 요청: 이메일 경로 대량 시도(열거/스팸) 억제를 위해 더 엄격하게 제한
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/friends/requests",
+        window_seconds=60,
+        max_requests=20,
     ),
 
     # --------------------------------------------------------

@@ -32,8 +32,16 @@ Configuration is done via `.env` file or environment variables.
 | `REDOC_URL` | ReDoc URL (empty string to disable) | `/redoc` |
 | `LOG_LEVEL` | Log level | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | Korea Public Data Portal API key | - |
+| `HOLIDAY_API_BASE_URL` | Holiday (KASI Public Data Portal) API base URL | `https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService` |
 | `GRAPHQL_ENABLE_PLAYGROUND` | Enable GraphQL Sandbox | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | Allow GraphQL introspection | `True` |
+
+!!! warning "Applying HTTPS to already-deployed versions"
+    The `HOLIDAY_API_BASE_URL` default is now `https://`, but **all builds up to the currently deployed tag (`v2026.06.12-cfa3200`) ship the `http://` default**. If you run one of those versions, inject the HTTPS address directly via an environment variable until you upgrade the build, so the API key (`HOLIDAY_API_SERVICE_KEY`) and responses are not sent in cleartext.
+
+    ```bash
+    HOLIDAY_API_BASE_URL=https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService
+    ```
 
 ## Database Configuration
 
@@ -87,6 +95,12 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)
+
+!!! note "Verified email storage"
+    When a token contains `email_verified=true` and an `email` claim, the backend stores the
+    normalized verified email for email-based friend requests. This value is used only as a
+    friend-request matching index and is not exposed through search, lists, or API responses.
+    There is no separate HMAC secret setting.
 
 ## Rate Limiting
 
