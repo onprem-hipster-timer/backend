@@ -53,20 +53,21 @@ The server will echo back the same subprotocol in the response to complete the W
 
 | Message Type | Description | Payload |
 |--------------|-------------|---------|
-| `timer.create` | Create and start a new timer | `{ scheduleId?, todoId?, allocatedDuration }` |
-| `timer.pause` | Pause a running timer | `{ timerId }` |
-| `timer.resume` | Resume a paused timer | `{ timerId }` |
-| `timer.stop` | Stop and complete a timer | `{ timerId }` |
-| `timer.sync` | Sync active timers from server | `{}` |
+| `timer.create` | Create and start a new timer | `{ allocated_duration, schedule_id?, todo_id?, title?, description?, tag_ids? }` |
+| `timer.pause` | Pause a running timer | `{ timer_id }` |
+| `timer.resume` | Resume a paused timer | `{ timer_id }` |
+| `timer.stop` | Stop and complete a timer | `{ timer_id }` |
+| `timer.sync` | Sync timers from server | `{ timer_id?, scope? }` |
 
 ### Server → Client
 
 | Message Type | Description | Payload |
 |--------------|-------------|---------|
-| `timer.created` | Timer created | `{ timer: TimerDTO }` |
-| `timer.updated` | Timer updated | `{ timer: TimerDTO }` |
-| `timer.completed` | Timer completed | `{ timer: TimerDTO }` |
-| `timer.synced` | Active timers synced | `{ timers: TimerDTO[] }` |
+| `connected` | Connection accepted | `{ user_id, message }` |
+| `timer.created` | Timer created | `{ timer: TimerDTO, action: "start" }` |
+| `timer.updated` | Timer updated | `{ timer: TimerDTO \| null, action: "pause" \| "resume" \| "stop" \| "sync" }` |
+| `timer.sync_result` | Timer list synced | `{ timers: TimerDTO[], count: number }` |
+| `timer.friend_activity` | Friend timer activity notification | `{ friend_id, display_name?, action, timer_id, timer_title? }` |
 | `error` | Error occurred | `{ code: string, message: string }` |
 
 ## Message Format
@@ -77,11 +78,14 @@ All messages are JSON:
 {
   "type": "timer.create",
   "payload": {
-    "scheduleId": "uuid-here",
-    "allocatedDuration": 3600
+    "schedule_id": "uuid-here",
+    "allocated_duration": 3600
   }
 }
 ```
+
+!!! note "Field names"
+    WebSocket payload fields use the same `snake_case` names as the server DTOs. Examples: `allocated_duration`, `timer_id`, `schedule_id`.
 
 ## Example Usage
 
@@ -102,8 +106,8 @@ ws.onopen = () => {
   ws.send(JSON.stringify({
     type: 'timer.create',
     payload: {
-      scheduleId: 'schedule-uuid',
-      allocatedDuration: 3600 // 1 hour in seconds
+      schedule_id: 'schedule-uuid',
+      allocated_duration: 3600 // 1 hour in seconds
     }
   }));
 };
@@ -148,8 +152,8 @@ const ws = new WebSocket(
 ws.send(JSON.stringify({
   type: 'timer.create',
   payload: {
-    scheduleId: 'schedule-uuid',
-    allocatedDuration: 3600 // seconds
+    schedule_id: 'schedule-uuid',
+    allocated_duration: 3600 // seconds
   }
 }));
 ```
@@ -160,7 +164,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.pause',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -171,7 +175,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.resume',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -182,7 +186,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.stop',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -212,11 +216,17 @@ Errors are returned as messages:
 
 Common error codes:
 
-- `TIMER_NOT_FOUND` - Timer does not exist
-- `TIMER_ALREADY_COMPLETED` - Timer is already completed
-- `TIMER_NOT_RUNNING` - Timer is not in running state
+- `INVALID_MESSAGE` - Invalid JSON or message schema
+- `UNKNOWN_TYPE` - Unknown message type
+- `CREATE_FAILED` - Timer creation failed
+- `PAUSE_FAILED` - Timer pause failed
+- `RESUME_FAILED` - Timer resume failed
+- `STOP_FAILED` - Timer stop failed
+- `SYNC_FAILED` - Timer sync failed
+- `HANDLER_ERROR` - Unexpected error while handling a message
 - `RATE_LIMIT_EXCEEDED` - Rate limit exceeded
-- `UNAUTHORIZED` - Authentication failed
+
+Authentication failures close the WebSocket with close code `1008` instead of returning an error message.
 
 ## Rate Limiting
 
@@ -295,4 +305,4 @@ class TimerWebSocket {
 
 ## Detailed Guide
 
-For comprehensive WebSocket API documentation, see the [Timer Guide](../guides/timer.ko.md).
+For comprehensive WebSocket API documentation, see the [Timer Guide](../guides/timer.md).

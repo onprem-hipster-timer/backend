@@ -24,7 +24,7 @@
 - **연결 URL**: `ws://localhost:2614/v1/ws/timers`
 - **쿼리 예시 (타임존)**: `ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul`
 
-Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat) 등으로 `Sec-WebSocket-Protocol` 헤더에 Bearer 토큰을 넣어 연결할 수도 있습니다. 동작 예제는 아래 [Example Usage](#example-usage)를 참고하세요.
+Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat) 등으로 `Sec-WebSocket-Protocol` 헤더에 Bearer 토큰을 넣어 연결할 수도 있습니다. 동작 예제는 아래 사용 예시를 참고하세요.
 
 선택적 쿼리 매개변수:
 - `timezone`: 응답 타임스탬프의 타임존 (예: `Asia/Seoul`, `+09:00`)
@@ -53,20 +53,21 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 | 메시지 유형 | 설명 | 페이로드 |
 |-------------|------|----------|
-| `timer.create` | 새 타이머 생성 및 시작 | `{ scheduleId?, todoId?, allocatedDuration }` |
-| `timer.pause` | 실행 중인 타이머 일시정지 | `{ timerId }` |
-| `timer.resume` | 일시정지된 타이머 재개 | `{ timerId }` |
-| `timer.stop` | 타이머 중지 및 완료 | `{ timerId }` |
-| `timer.sync` | 서버에서 활성 타이머 동기화 | `{}` |
+| `timer.create` | 새 타이머 생성 및 시작 | `{ allocated_duration, schedule_id?, todo_id?, title?, description?, tag_ids? }` |
+| `timer.pause` | 실행 중인 타이머 일시정지 | `{ timer_id }` |
+| `timer.resume` | 일시정지된 타이머 재개 | `{ timer_id }` |
+| `timer.stop` | 타이머 중지 및 완료 | `{ timer_id }` |
+| `timer.sync` | 서버에서 타이머 동기화 | `{ timer_id?, scope? }` |
 
 ### 서버 → 클라이언트
 
 | 메시지 유형 | 설명 | 페이로드 |
 |-------------|------|----------|
-| `timer.created` | 타이머 생성됨 | `{ timer: TimerDTO }` |
-| `timer.updated` | 타이머 수정됨 | `{ timer: TimerDTO }` |
-| `timer.completed` | 타이머 완료됨 | `{ timer: TimerDTO }` |
-| `timer.synced` | 활성 타이머 동기화됨 | `{ timers: TimerDTO[] }` |
+| `connected` | 연결 성공 | `{ user_id, message }` |
+| `timer.created` | 타이머 생성됨 | `{ timer: TimerDTO, action: "start" }` |
+| `timer.updated` | 타이머 수정됨 | `{ timer: TimerDTO \| null, action: "pause" \| "resume" \| "stop" \| "sync" }` |
+| `timer.sync_result` | 타이머 목록 동기화됨 | `{ timers: TimerDTO[], count: number }` |
+| `timer.friend_activity` | 친구의 타이머 활동 알림 | `{ friend_id, display_name?, action, timer_id, timer_title? }` |
 | `error` | 오류 발생 | `{ code: string, message: string }` |
 
 ## 메시지 형식
@@ -77,11 +78,14 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 {
   "type": "timer.create",
   "payload": {
-    "scheduleId": "uuid-here",
-    "allocatedDuration": 3600
+    "schedule_id": "uuid-here",
+    "allocated_duration": 3600
   }
 }
 ```
+
+!!! note "필드 이름"
+    WebSocket 페이로드 필드는 서버 DTO와 동일하게 `snake_case`를 사용합니다. 예: `allocated_duration`, `timer_id`, `schedule_id`.
 
 ## 사용 예시
 
@@ -102,8 +106,8 @@ ws.onopen = () => {
   ws.send(JSON.stringify({
     type: 'timer.create',
     payload: {
-      scheduleId: 'schedule-uuid',
-      allocatedDuration: 3600 // 1시간(초)
+      schedule_id: 'schedule-uuid',
+      allocated_duration: 3600 // 1시간(초)
     }
   }));
 };
@@ -148,8 +152,8 @@ const ws = new WebSocket(
 ws.send(JSON.stringify({
   type: 'timer.create',
   payload: {
-    scheduleId: 'schedule-uuid',
-    allocatedDuration: 3600 // 초
+    schedule_id: 'schedule-uuid',
+    allocated_duration: 3600 // 초
   }
 }));
 ```
@@ -160,7 +164,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.pause',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -171,7 +175,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.resume',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -182,7 +186,7 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'timer.stop',
   payload: {
-    timerId: 'timer-uuid'
+    timer_id: 'timer-uuid'
   }
 }));
 ```
@@ -212,11 +216,17 @@ ws.send(JSON.stringify({
 
 일반적인 에러 코드:
 
-- `TIMER_NOT_FOUND` - 타이머가 존재하지 않음
-- `TIMER_ALREADY_COMPLETED` - 타이머가 이미 완료됨
-- `TIMER_NOT_RUNNING` - 타이머가 실행 중이 아님
+- `INVALID_MESSAGE` - JSON 형식 또는 메시지 스키마가 올바르지 않음
+- `UNKNOWN_TYPE` - 알 수 없는 메시지 타입
+- `CREATE_FAILED` - 타이머 생성 실패
+- `PAUSE_FAILED` - 타이머 일시정지 실패
+- `RESUME_FAILED` - 타이머 재개 실패
+- `STOP_FAILED` - 타이머 중지 실패
+- `SYNC_FAILED` - 타이머 동기화 실패
+- `HANDLER_ERROR` - 메시지 처리 중 예기치 않은 오류
 - `RATE_LIMIT_EXCEEDED` - 요청 한도 초과
-- `UNAUTHORIZED` - 인증 실패
+
+인증 실패는 에러 메시지가 아니라 WebSocket close code `1008`로 연결이 종료됩니다.
 
 ## Rate Limiting
 

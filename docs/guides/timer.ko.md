@@ -300,7 +300,6 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
     "scope": "active"           // 선택: "active" (기본값) | "all"
   }
 }
-}
 ```
 
 | 필드 | 타입 | 기본값 | 설명 |
@@ -368,6 +367,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
   "type": "timer.friend_activity",
   "payload": {
     "friend_id": "friend-user-uuid",
+    "display_name": "친구 이름",
     "action": "start",
     "timer_id": "timer-uuid",
     "timer_title": "친구의 작업"
@@ -536,6 +536,7 @@ export interface TimerUpdatedPayload {
 
 export interface FriendActivityPayload {
   friend_id: string;
+  display_name?: string | null;
   action: TimerAction;
   timer_id: string;
   timer_title?: string;
@@ -659,6 +660,13 @@ class TimerWebSocket {
     });
   }
 
+  syncTimers(scope: 'active' | 'all' = 'active'): void {
+    this.send({
+      type: 'timer.sync',
+      payload: { scope },
+    });
+  }
+
   disconnect(): void {
     this.ws?.close();
     this.ws = null;
@@ -739,10 +747,7 @@ function useTimerWebSocket(token: string, timezone?: string) {
   }, []);
 
   const syncTimer = useCallback((scope: 'active' | 'all' = 'active') => {
-    wsRef.current?.send({
-      type: 'timer.sync',
-      payload: { scope },
-    });
+    wsRef.current?.syncTimers(scope);
   }, []);
 
   return {
