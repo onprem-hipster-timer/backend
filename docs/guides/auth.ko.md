@@ -32,6 +32,45 @@ sequenceDiagram
 | **JWKS** | JSON Web Key Set, JWT 서명 검증에 사용되는 공개키 |
 | **sub claim** | JWT 내 사용자 고유 식별자, 데이터 소유권(owner_id)에 사용 |
 
+### 인증 모듈 구성 (객체 의존성과 역할)
+
+인증 로직은 `app/core/auth/` 패키지에 책임별로 분리되어 있습니다. 하위호환을 위해
+`from app.core.auth import X` 형태의 기존 import 경로는 그대로 동작합니다.
+
+| 모듈 | 객체 | 역할 |
+|------|------|------|
+| `model.py` | `CurrentUser` | 검증된 JWT 클레임에서 추출한 인증 주체. **DB에 영속되지 않는 휘발성 값 객체**(영속 표시 프로필 `UserProfile`과 별개 개념). `from_claims()`(클레임→객체 단일 매핑)·`mock()`(OIDC 비활성화 시 주입) 제공. |
+| `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | 외부 OIDC Provider 통신 전담. discovery 메타데이터·JWKS를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. 비대칭 알고리즘만 허용해 `alg` 혼동·`none` 공격을 차단. |
+| `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
+| `dependencies.py` | `get_optional_current_user` | 선택적 인증(미인증 허용 엔드포인트용). 토큰이 없으면 `None` 반환. |
+| `dependencies.py` | `get_current_user_synced` | 인증 게이트 + 최소 표시 프로필 JIT 동기화. 인증 REST 라우터 dependency 전용(아래 「인증 라우터 구성」 참고). |
+| `middleware.py` | `AuthMiddleware` | 라우팅 이전 단계에서 토큰을 **best-effort로 검증**해 `request.state.current_user`를 사전 설정(거부하지 않음). 실패/무토큰이면 `None`. |
+
+#### 객체 의존성
+
+```mermaid
+graph TD
+    MW["AuthMiddleware<br/>(middleware.py)"] -->|verify_token| OC["oidc_client<br/>(client.py)"]
+    DEP["get_current_user<br/>(dependencies.py)"] -.->|state 있으면 재사용| MW
+    DEP -->|state 없으면 직접 검증| OC
+    SYNC["get_current_user_synced"] --> DEP
+    SYNC -->|JIT upsert| UPS["UserProfileService<br/>(domain/user)"]
+    OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
+    RL["RateLimitMiddleware"] -.->|user 키로 재사용| MW
+```
+
+#### 요청 수명주기에서의 협력
+
+미들웨어는 `app/main.py`에서 **AuthMiddleware가 RateLimitMiddleware보다 먼저 실행**되도록 등록됩니다.
+
+1. **AuthMiddleware** — 토큰을 best-effort 검증해 `request.state.current_user`를 채웁니다(거부하지 않음).
+2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반.
+3. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다.
+
+결과적으로 토큰 검증은 사실상 1회(`AuthMiddleware`)만 수행되고, 미들웨어와 의존성이
+`request.state.current_user`를 공유해 중복 검증을 피합니다. `AuthMiddleware`는 게이트가
+아니므로 인증 강제는 **항상 의존성 계층**에서 일어납니다.
+
 ### 인증 라우터 구성 (게이트 + JIT 프로필 동기화)
 
 인증이 필요한 모든 REST 경로는 개별 엔드포인트마다 `Depends`를 반복하지 않고,
@@ -457,7 +496,10 @@ const oidcConfig = {
 | 파일 | 설명 |
 |------|------|
 | `app/core/auth/` | OIDC 인증 패키지 (model·client·dependencies·middleware) |
+| `app/core/auth/model.py` | `CurrentUser` 인증 주체 값 객체 |
+| `app/core/auth/client.py` | `OIDCClient` / `oidc_client` (discovery·JWKS·토큰 검증) |
 | `app/core/auth/dependencies.py` | `get_current_user` / `get_current_user_synced` 의존성 |
+| `app/core/auth/middleware.py` | `AuthMiddleware` (request.state 사전 설정) |
 | `app/api/v1/__init__.py` | 인증·공개 라우터 구성 (게이트 + JIT 동기화 선언) |
 | `app/core/config.py` | 환경변수 설정 |
 | `app/api/v1/graphql.py` | GraphQL 컨텍스트 인증 처리 |
@@ -466,10 +508,12 @@ const oidcConfig = {
 
 ```python
 class CurrentUser(BaseModel):
-    sub: str          # 사용자 고유 식별자 (owner_id로 사용)
-    email: str | None
-    name: str | None
-    raw_claims: dict  # 전체 JWT 클레임 (필요시 확장용)
+    sub: str                      # 사용자 고유 식별자 (owner_id로 사용)
+    email: str | None = None
+    email_verified: bool = False  # 이메일 기반 친추 인덱싱 조건 (OIDC email_verified)
+    name: str | None = None
+    picture: str | None = None    # avatar_url 출처 (OIDC picture)
+    raw_claims: dict = {}         # 전체 JWT 클레임 (필요시 확장용)
 ```
 
 ### FastAPI Dependency 사용법
