@@ -90,7 +90,7 @@ async def get_optional_current_user(
         return None
 
 
-async def get_current_user_synced(
+def get_current_user_synced(
         current_user: CurrentUser = Depends(get_current_user),
         session: Session = Depends(get_db_transactional),
 ) -> CurrentUser:
