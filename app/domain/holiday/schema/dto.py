@@ -6,6 +6,8 @@ Holiday Domain DTO (Data Transfer Objects)
 - REST API와 GraphQL 모두에서 사용
 - Pydantic을 사용한 데이터 검증
 """
+from datetime import datetime
+
 from typing import Optional, List, Union
 
 from pydantic import ConfigDict, model_validator
@@ -76,6 +78,25 @@ class HolidayItem(CustomModel):
     def is_national_holiday(self) -> bool:
         """국경일 여부 (dateKind == "01")"""
         return self.dateKind == "01"
+
+    def to_utc_naive_range(self) -> tuple[datetime, datetime]:
+        """
+        locdate(YYYYMMDD)를 UTC naive datetime 24시간 범위로 변환한다.
+
+        천문연구원(KASI) 특일정보 API 응답의 날짜에는 timezone 정보가 없다(naive).
+        따라서 이 응답을 받는 DTO가 해당 날짜를 한국 표준시(KST, Asia/Seoul)로 간주하여
+        KST를 명시적으로 부여한 뒤, 기존 UTC naive 변환 파이프라인으로 변환한다.
+
+        DB는 naive UTC(TIMESTAMP WITHOUT TIME ZONE)로 저장하므로, 저장 직전 단계에서
+        호출하여 사용한다.
+
+        :return: (UTC naive 시작, UTC naive 종료) - 해당 KST 날짜의 24시간 범위
+        """
+        from app.domain.dateutil.service import parse_locdate_to_datetime_range
+
+        # parse_locdate_to_datetime_range가 locdate에 KST(Asia/Seoul)를 부여한 뒤
+        # UTC naive로 변환한다.
+        return parse_locdate_to_datetime_range(self.locdate)
 
 
 class HolidayApiBodyItems(CustomModel):

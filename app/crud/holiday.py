@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session
 
 from app.domain.dateutil.service import (
-    parse_locdate_to_datetime_range,
     get_year_range_utc,
     ensure_utc_naive,
 )
@@ -232,8 +231,9 @@ async def save_holidays(
 
     # 3. 새 데이터 삽입
     for item in holidays:
-        # locdate 문자열을 한국 표준시 기준 24시간 범위로 변환
-        start_date, end_date = parse_locdate_to_datetime_range(item.locdate)
+        # KASI 응답 날짜(locdate)에는 timezone 정보가 없으므로,
+        # 수신 DTO가 KST를 부여하여 UTC naive 24시간 범위로 변환한다.
+        start_date, end_date = item.to_utc_naive_range()
 
         # dateKind를 label로 변환 ("01" -> "국경일")
         date_kind_label = _parse_datekind_to_label(item.dateKind)

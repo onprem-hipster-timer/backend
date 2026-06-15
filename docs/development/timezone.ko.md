@@ -73,6 +73,10 @@
 - **datetime 쿼리 파라미터:** 서비스/CRUD에서 비교·저장 직전에 `ensure_utc_naive`로 변환합니다.
   (예: `start_date`, `end_date`, `instance_start`)
 
+- **외부 업스트림 API 응답(예: 천문연구원 KASI):** 응답 날짜에 timezone 정보가 없으면(naive),
+  이를 받는 DTO가 한국 표준시(KST, Asia/Seoul)로 간주하여 KST를 부여한 뒤 UTC naive로
+  변환합니다. (예: `HolidayItem.to_utc_naive_range`)
+
 ### 출력 경계
 
 - **응답 DTO:** `to_timezone(tz, validate=True)` 메서드를 두고, 라우터에서
@@ -98,7 +102,7 @@
 | schedule | ✅ `ScheduleCreate/Update` validator, 쿼리 파라미터 변환 | ✅ `ScheduleRead.to_timezone` + `timezone` | |
 | timer | ✅ 서버에서 `ensure_utc_naive(datetime.now(UTC))` 설정 | ✅ `TimerRead.to_timezone` + `timezone` | 입력 datetime을 직접 받지 않음 |
 | todo | ✅ `TodoCreate/Update` validator | ✅ `TodoRead.to_timezone` + `timezone` | `deadline` |
-| holiday | ✅ `parse_locdate_to_datetime_range`, `ensure_utc_naive` | – | 해시 `updated_at`도 naive UTC로 저장 |
+| holiday | ✅ 수신 DTO `HolidayItem.to_utc_naive_range` (KASI 날짜→KST→UTC naive) | – | 해시 `updated_at`도 naive UTC로 저장 |
 | meeting | ✅ `date`/`time` 타입만 사용(datetime 입력 없음) | – | |
 | friend / visibility / tag | – | – | `TimestampMixin` 타임스탬프만 사용 |
 

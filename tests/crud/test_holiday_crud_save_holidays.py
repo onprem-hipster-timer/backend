@@ -55,6 +55,27 @@ def _assert_utc_naive(value: datetime | None) -> None:
     assert value.tzinfo is None
 
 
+def test_holiday_item_to_utc_naive_range_assumes_kst():
+    """
+    목적 객체:
+    - HolidayItem.to_utc_naive_range()
+
+    검증:
+    - 천문연구원(KASI) 응답 날짜(locdate)에는 timezone 정보가 없으므로,
+      수신 DTO가 이를 KST로 간주하여 UTC naive 24시간 범위로 변환한다.
+    - KST 2024-01-01 00:00 ~ 23:59:59.999999
+      -> UTC 2023-12-31 15:00:00 ~ 2024-01-01 14:59:59.999999 (naive)
+    """
+    item = _make_holiday_item(locdate="20240101")
+
+    start, end = item.to_utc_naive_range()
+
+    _assert_utc_naive(start)
+    _assert_utc_naive(end)
+    assert start == datetime(2023, 12, 31, 15, 0, 0)
+    assert end == datetime(2024, 1, 1, 14, 59, 59, 999999)
+
+
 @pytest.mark.asyncio
 async def test_save_holidays_creates_holidays_with_naive_utc_datetimes(
     test_async_session,
