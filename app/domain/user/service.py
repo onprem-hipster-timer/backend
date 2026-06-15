@@ -74,12 +74,14 @@ class UserProfileService:
         if profile is None:
             profile = crud.create_profile(
                 self.session,
-                sub=cu.sub,
-                iss=iss,
-                display_name=display_name,
-                avatar_url=avatar_url,
-                friend_code=self._new_unique_friend_code(),
-                verified_email=verified_email,
+                crud.UserProfileSyncData(
+                    sub=cu.sub,
+                    iss=iss,
+                    display_name=display_name,
+                    avatar_url=avatar_url,
+                    friend_code=self._new_unique_friend_code(),
+                    verified_email=verified_email,
+                ),
             )
             logger.info(
                 "Created user profile sub=%s (name=%s, picture=%s, email_indexed=%s)",
@@ -92,11 +94,14 @@ class UserProfileService:
         crud.update_profile_if_changed(
             self.session,
             profile,
-            display_name=display_name,
-            avatar_url=avatar_url,
-            verified_email=verified_email,
-            iss=iss or profile.iss,
-            friend_code=profile.friend_code or self._new_unique_friend_code(),
+            crud.UserProfileSyncData(
+                sub=cu.sub,
+                iss=iss or profile.iss,
+                display_name=display_name,
+                avatar_url=avatar_url,
+                friend_code=profile.friend_code or self._new_unique_friend_code(),
+                verified_email=verified_email,
+            ),
         )
         return profile
 

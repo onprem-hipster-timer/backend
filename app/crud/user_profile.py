@@ -3,9 +3,27 @@ UserProfile CRUD 함수
 
 사용자 표시 프로필 데이터 접근 레이어.
 """
+from dataclasses import dataclass
+
 from sqlmodel import Session, select
 
 from app.models.user_profile import UserProfile
+
+
+@dataclass(frozen=True)
+class UserProfileSyncData:
+    """JIT 동기화가 프로필에 반영할 값 묶음(내부 전용).
+
+    외부 API 요청 body가 아니라 검증된 OIDC 클레임에서 파생되는 내부 projection이므로
+    public DTO가 아닌 내부 dataclass로 둔다. `create_profile`/`update_profile_if_changed`
+    공통 입력으로 쓰여 CRUD 시그니처를 단순화한다(`sub`는 PK라 update에선 무시).
+    """
+    sub: str
+    iss: str | None
+    display_name: str | None
+    avatar_url: str | None
+    friend_code: str
+    verified_email: str | None
 
 
 def get_by_sub(session: Session, sub: str) -> UserProfile | None:
@@ -33,23 +51,15 @@ def get_profiles_by_subs(session: Session, subs: list[str]) -> dict[str, UserPro
     return {p.sub: p for p in session.exec(statement).all()}
 
 
-def create_profile(
-        session: Session,
-        sub: str,
-        iss: str | None,
-        display_name: str | None,
-        avatar_url: str | None,
-        friend_code: str,
-        verified_email: str | None = None,
-) -> UserProfile:
+def create_profile(session: Session, data: UserProfileSyncData) -> UserProfile:
     """프로필 생성"""
     profile = UserProfile(
-        sub=sub,
-        iss=iss,
-        display_name=display_name,
-        avatar_url=avatar_url,
-        friend_code=friend_code,
-        verified_email=verified_email,
+        sub=data.sub,
+        iss=data.iss,
+        display_name=data.display_name,
+        avatar_url=data.avatar_url,
+        friend_code=data.friend_code,
+        verified_email=data.verified_email,
     )
     session.add(profile)
     session.flush()
@@ -60,26 +70,16 @@ def create_profile(
 def update_profile_if_changed(
         session: Session,
         profile: UserProfile,
-        *,
-        display_name: str | None,
-        avatar_url: str | None,
-        verified_email: str | None,
-        iss: str | None,
-        friend_code: str,
+        data: UserProfileSyncData,
 ) -> bool:
-    """desired 값과 다른 필드만 기록(write 증폭 방지).
+    """desired 값(`data`)과 다른 필드만 기록(write 증폭 방지).
 
-    변경된 필드가 하나라도 있으면 flush하고 True를, 없으면 미기록 후 False를 반환한다.
-    `updated_at`은 TimestampMixin의 onupdate가 자동 갱신한다.
+    `sub`는 PK라 갱신 대상이 아니다. 변경된 필드가 하나라도 있으면 flush하고 True를,
+    없으면 미기록 후 False를 반환한다. `updated_at`은 TimestampMixin의 onupdate가 자동 갱신한다.
     """
     changed = False
-    for field, value in (
-        ("display_name", display_name),
-        ("avatar_url", avatar_url),
-        ("verified_email", verified_email),
-        ("iss", iss),
-        ("friend_code", friend_code),
-    ):
+    for field in ("display_name", "avatar_url", "verified_email", "iss", "friend_code"):
+        value = getattr(data, field)
         if getattr(profile, field) != value:
             setattr(profile, field, value)
             changed = True
