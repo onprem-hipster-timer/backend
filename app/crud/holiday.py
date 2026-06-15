@@ -17,6 +17,7 @@ from sqlmodel import Session
 from app.domain.dateutil.service import (
     parse_locdate_to_datetime_range,
     get_year_range_utc,
+    ensure_utc_naive,
 )
 from app.domain.holiday.enums import DateKind
 from app.domain.holiday.schema.dto import HolidayItem
@@ -145,6 +146,8 @@ def get_holiday_by_date_sync(
     from app.domain.dateutil.service import ensure_utc_naive
 
     # 날짜를 UTC naive로 변환
+    # (내부 호출자는 parse_locdate_to_datetime_range로 이미 UTC naive를 전달하므로
+    #  여기서 naive를 KST로 재해석하면 안 된다. UTC 가정으로 정규화한다.)
     date_naive = ensure_utc_naive(date)
 
     # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
@@ -173,6 +176,8 @@ async def get_holiday_by_date(
     from app.domain.dateutil.service import ensure_utc_naive
 
     # 날짜를 UTC naive로 변환
+    # (내부 호출자는 parse_locdate_to_datetime_range로 이미 UTC naive를 전달하므로
+    #  여기서 naive를 KST로 재해석하면 안 된다. UTC 가정으로 정규화한다.)
     date_naive = ensure_utc_naive(date)
 
     # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
@@ -243,7 +248,10 @@ async def save_holidays(
         session.add(holiday)
 
     # 4. 해시 저장/업데이트 (이미 조회한 hash_model 사용)
-    now = datetime.now(UTC)
+    # DB는 naive UTC(TIMESTAMP WITHOUT TIME ZONE)로 저장하므로
+    # aware datetime을 그대로 주입하면 asyncpg에서 타입 충돌(#41)이 발생한다.
+    # UTC naive로 변환하여 저장한다.
+    now = ensure_utc_naive(datetime.now(UTC))
     if hash_model:
         hash_model.hash_value = hash_value
         hash_model.updated_at = now

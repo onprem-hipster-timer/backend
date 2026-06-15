@@ -74,12 +74,17 @@ def _get_related_schedule_reads(
 @router.post("", response_model=TodoRead, status_code=status.HTTP_201_CREATED)
 async def create_todo(
         data: TodoCreate,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     새 Todo 생성
-    
+
     Todo는 독립적인 엔티티입니다.
     deadline이 있으면 별도의 Schedule이 자동으로 생성됩니다.
     """
@@ -90,7 +95,11 @@ async def create_todo(
 
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
-    return todo_service.to_read_dto(todo, schedules=schedule_reads)
+    todo_read = todo_service.to_read_dto(todo, schedules=schedule_reads)
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return todo_read.to_timezone(tz_obj)
 
 
 @router.get("", response_model=list[TodoRead])
@@ -106,6 +115,11 @@ async def read_todos(
         group_ids: Optional[List[UUID]] = Query(
             None,
             description="태그 그룹 ID 리스트 (해당 그룹에 속한 Todo 반환 - 직접 연결 또는 태그 기반)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
@@ -135,6 +149,7 @@ async def read_todos(
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
+    tz_obj = parse_timezone(tz) if tz else None
     result_list = []
 
     # 내 Todo 조회 (scope=mine 또는 scope=all)
@@ -170,7 +185,8 @@ async def read_todos(
             todo_read = todo_service.to_read_dto(todo, is_shared=True, schedules=schedule_reads)
             result_list.append(todo_read)
 
-    return result_list
+    # 타임존 변환
+    return [todo_read.to_timezone(tz_obj) for todo_read in result_list]
 
 
 @router.get("/stats", response_model=TodoStats)
@@ -195,12 +211,17 @@ async def get_todo_stats(
 @router.get("/{todo_id}", response_model=TodoRead)
 async def read_todo(
         todo_id: UUID,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     ID로 Todo 조회 (공유된 Todo 포함)
-    
+
     본인 소유 Todo 또는 공유 접근 권한이 있는 Todo를 조회합니다.
     접근 권한이 없으면 403 Forbidden을 반환합니다.
     """
@@ -211,21 +232,30 @@ async def read_todo(
 
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=is_shared)
-    return todo_service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
+    todo_read = todo_service.to_read_dto(todo, is_shared=is_shared, schedules=schedule_reads)
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return todo_read.to_timezone(tz_obj)
 
 
 @router.patch("/{todo_id}", response_model=TodoRead)
 async def update_todo(
         todo_id: UUID,
         data: TodoUpdate,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 업데이트
-    
+
     title, description, tag_ids, deadline, parent_id, status를 업데이트할 수 있습니다.
-    
+
     deadline 변경 시:
     - deadline 추가: 새 Schedule 생성
     - deadline 변경: 기존 Schedule 업데이트
@@ -238,7 +268,11 @@ async def update_todo(
 
     # 연관 Schedule 조회 및 DTO 생성 (라우터에서 orchestration)
     schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
-    return todo_service.to_read_dto(todo, schedules=schedule_reads)
+    todo_read = todo_service.to_read_dto(todo, schedules=schedule_reads)
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return todo_read.to_timezone(tz_obj)
 
 
 @router.delete("/{todo_id}", status_code=status.HTTP_200_OK)
