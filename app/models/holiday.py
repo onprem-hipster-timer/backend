@@ -10,8 +10,14 @@ from sqlmodel import Field, Column, String, UniqueConstraint
 from app.models.base import UUIDBase, TimestampMixin
 
 
-class HolidayModel(UUIDBase, table=True):
-    """공휴일 정보 테이블"""
+class HolidayModel(UUIDBase, TimestampMixin, table=True):
+    """공휴일 정보 테이블
+
+    Note:
+        created_at/updated_at(TimestampMixin)은 모델 재배치 과정에서 누락됐다가 복원됨.
+        holidays 테이블은 create_all로 생성되며 기존 운영 DB에 NOT NULL
+        created_at/updated_at 컬럼이 존재하므로, 모델이 반드시 값을 채워야 한다.
+    """
     __tablename__ = "holidays"
 
     start_date: datetime = Field(index=True)  # 시작 날짜 (한국 표준시 기준 날짜의 시작, UTC naive)
