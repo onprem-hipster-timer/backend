@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Per-request timezone for Todo responses**: The Todo endpoints (`POST`/`GET`/`PATCH /v1/todos`, `GET /v1/todos/{id}`) gained an optional `timezone` query parameter (e.g. `Asia/Seoul`, `+09:00`, `UTC`), matching the existing Schedule/Timer behavior. `TodoRead.to_timezone` converts the UTC-naive `deadline`/`created_at` (and nested schedules) to the requested timezone; when omitted, values are returned in UTC.
+
+### Fixed
+
+- **Holiday sync timezone crash**: The holiday sync batch failed when updating `holiday_hashes.updated_at`, because a timezone-*aware* `datetime.now(timezone.utc)` was assigned to a `TIMESTAMP WITHOUT TIME ZONE` (naive) column, raising `TypeError: can't subtract offset-naive and offset-aware datetimes` / `asyncpg.exceptions.DataError` during autoflush. `save_holidays` now stores the hash timestamp as UTC-naive. Holiday dates ingested from the KASI (천문연구원) API — whose `locdate` values carry no timezone — are now explicitly assigned KST (`Asia/Seoul`) at the receiving DTO (`HolidayItem.to_utc_naive_range`) before being normalized to UTC-naive. ([#41](https://github.com/onprem-hipster-timer/backend/issues/41))
+- **Todo deadline timezone (same bug class as #41)**: `TodoCreate`/`TodoUpdate.deadline` lacked the UTC-normalization validator that the Schedule/Timer DTOs already had, so a client-supplied timezone-aware `deadline` was written directly to the naive `todo.deadline` column — the same `asyncpg.DataError` class as #41 on PostgreSQL. Both DTOs now run `ensure_utc_naive` on `deadline`, converting aware datetimes to UTC-naive before storage. A timezone-handling guide was added at `docs/development/timezone.ko.md`. ([#41](https://github.com/onprem-hipster-timer/backend/issues/41))
 
 ---
 
