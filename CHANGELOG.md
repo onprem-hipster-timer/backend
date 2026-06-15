@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.06.15-53559c3] - 2026-06-15
+
 ### Added
 
 - **Friend display info**: Friend list and pending-request responses now carry the counterparty's display info so a UI can show *who* a request/friend is. `FriendRead` gained `display_name`/`avatar_url`, and `PendingRequestRead` gained `requester_display_name`/`requester_avatar_url`. A new `GET /v1/users/me` returns the caller's profile and a shareable `friend_code`. Display info is sourced **only** from standard OIDC claims (`name`→`display_name`, `picture`→`avatar_url`) of each user's own validated access token via just-in-time provisioning into a new `user_profile` table — no UserInfo/Admin-API calls, so the backend stays provider-agnostic. JIT sync runs on every authenticated endpoint, so any active user is addressable even if they never open the social UI. The WebSocket `timer.friend_activity` payload also gained `display_name`. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
@@ -230,7 +236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.12-cfa3200...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...HEAD
+[v2026.06.15-53559c3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.12-cfa3200...v2026.06.15-53559c3
 [v2026.06.12-cfa3200]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-30c31db...v2026.06.12-cfa3200
 [v2026.06.09-30c31db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-91639bf...v2026.06.09-30c31db
 [v2026.06.09-91639bf]: https://github.com/onprem-hipster-timer/backend/compare/v2026.03.31-41a4f1d...v2026.06.09-91639bf
