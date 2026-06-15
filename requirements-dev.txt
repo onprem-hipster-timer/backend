@@ -34,7 +34,7 @@ bracex==2.6
     # via wcmatch
 build==1.4.0
     # via pip-tools
-cachetools==7.1.1
+cachetools==7.1.4
     # via -r requirements.txt
 certifi==2026.1.4
     # via
@@ -56,7 +56,7 @@ click==8.3.1
     #   uvicorn
 colorama==0.4.6
     # via mkdocs-material
-coverage[toml]==7.14.0
+coverage[toml]==7.14.1
     # via
     #   -r requirements-dev.in
     #   pytest-cov
@@ -220,7 +220,7 @@ python-dotenv==1.2.2
     #   pydantic-settings
     #   pytest-dotenv
     #   uvicorn
-python-multipart==0.0.30
+python-multipart==0.0.32
     # via -r requirements.txt
 pyyaml==6.0.3
     # via

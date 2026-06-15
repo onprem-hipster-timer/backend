@@ -19,7 +19,7 @@ anyio==4.12.1
     #   watchfiles
 asyncpg==0.31.0
     # via -r requirements.in
-cachetools==7.1.1
+cachetools==7.1.4
     # via -r requirements.in
 certifi==2026.1.4
     # via
@@ -90,7 +90,7 @@ python-dotenv==1.2.2
     #   -r requirements.in
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.30
+python-multipart==0.0.32
     # via -r requirements.in
 pyyaml==6.0.3
     # via uvicorn
