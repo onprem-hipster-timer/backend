@@ -32,6 +32,37 @@ sequenceDiagram
 | **JWKS** | JSON Web Key Set, JWT 서명 검증에 사용되는 공개키 |
 | **sub claim** | JWT 내 사용자 고유 식별자, 데이터 소유권(owner_id)에 사용 |
 
+### 인증 라우터 구성 (게이트 + JIT 프로필 동기화)
+
+인증이 필요한 모든 REST 경로는 개별 엔드포인트마다 `Depends`를 반복하지 않고,
+**부모 라우터에 인증 의존성을 한 번만 선언**하여 보호합니다.
+
+```python
+# app/api/v1/__init__.py
+authed = APIRouter(prefix="/v1", dependencies=[Depends(get_current_user_synced)])
+for r in (schedules_router, timers_router, tags_router, todos_router,
+          meetings_router, friends_router, users_router, visibility_router):
+    authed.include_router(r)
+api_router.include_router(authed)
+```
+
+부모 라우터에 선언된 `get_current_user_synced`는 두 가지 일을 합니다.
+
+1. **토큰 검증 게이트** — `get_current_user`에 위임하여 토큰을 검증합니다. 실패 시
+   `401`을 반환하며, 하위 모든 인증 REST 경로에 자동으로 적용됩니다.
+2. **최소 사용자 프로필 JIT 동기화** — 인증된 사용자의 표준 OIDC 클레임으로
+   `UserProfile`을 upsert합니다. 덕분에 프론트가 별도 프로필 조회를 호출하지 않아도
+   활성 사용자의 표시정보(이름·아바타)와 **이메일 친추 인덱스**가 준비됩니다.
+
+동기화는 `SAVEPOINT`(`begin_nested`) 안에서 best-effort로 수행되므로, 동기화가
+실패하더라도 엔드포인트 트랜잭션을 오염시키지 않고 요청을 그대로 진행합니다
+(표시정보만 `None`으로 degrade). 또한 PK 조회 후 신규이거나 값이 바뀐 경우에만
+기록하여 write 증폭을 방지합니다.
+
+!!! note "공개(무인증) 라우터"
+    `holidays`, `timers_ws`(WebSocket), `graphql`, `ws_playground`는 이 게이트 밖에
+    별도로 등록됩니다. GraphQL은 컨텍스트 단계에서 인증을 처리합니다(5장 참고).
+
 ### 데이터 격리
 
 모든 사용자 데이터는 `owner_id` 필드로 격리됩니다:
@@ -425,7 +456,9 @@ const oidcConfig = {
 
 | 파일 | 설명 |
 |------|------|
-| `app/core/auth.py` | OIDC 인증 핵심 로직 |
+| `app/core/auth/` | OIDC 인증 패키지 (model·client·dependencies·middleware) |
+| `app/core/auth/dependencies.py` | `get_current_user` / `get_current_user_synced` 의존성 |
+| `app/api/v1/__init__.py` | 인증·공개 라우터 구성 (게이트 + JIT 동기화 선언) |
 | `app/core/config.py` | 환경변수 설정 |
 | `app/api/v1/graphql.py` | GraphQL 컨텍스트 인증 처리 |
 
