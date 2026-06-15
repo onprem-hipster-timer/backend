@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.06.15-552ec57] - 2026-06-15
+
 ### Added
 
 - **Per-request timezone for Todo responses**: The Todo endpoints (`POST`/`GET`/`PATCH /v1/todos`, `GET /v1/todos/{id}`) gained an optional `timezone` query parameter (e.g. `Asia/Seoul`, `+09:00`, `UTC`), matching the existing Schedule/Timer behavior. `TodoRead.to_timezone` converts the UTC-naive `deadline`/`created_at` (and nested schedules) to the requested timezone; when omitted, values are returned in UTC.
@@ -243,7 +249,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...HEAD
+[v2026.06.15-552ec57]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...v2026.06.15-552ec57
 [v2026.06.15-53559c3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.12-cfa3200...v2026.06.15-53559c3
 [v2026.06.12-cfa3200]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-30c31db...v2026.06.12-cfa3200
 [v2026.06.09-30c31db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-91639bf...v2026.06.09-30c31db
