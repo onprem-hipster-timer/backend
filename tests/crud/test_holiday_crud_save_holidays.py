@@ -125,6 +125,11 @@ async def test_save_holidays_creates_holidays_with_naive_utc_datetimes(
     assert saved_holiday.start_date == datetime(2023, 12, 31, 15, 0, 0)
     assert saved_holiday.end_date == datetime(2024, 1, 1, 14, 59, 59, 999999)
 
+    # holidays 테이블의 created_at/updated_at(NOT NULL)이 채워져야 한다.
+    # (TimestampMixin 누락 시 NotNullViolationError가 발생했던 회귀 방지)
+    _assert_utc_naive(saved_holiday.created_at)
+    _assert_utc_naive(saved_holiday.updated_at)
+
     # locdate는 UTC naive를 다시 KST로 환산한 날짜다.
     assert saved_holiday.locdate == "20240101"
 
