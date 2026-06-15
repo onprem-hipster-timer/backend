@@ -32,8 +32,16 @@
 | `REDOC_URL` | ReDoc URL (빈 문자열로 비활성화) | `/redoc` |
 | `LOG_LEVEL` | 로그 레벨 | `INFO` |
 | `HOLIDAY_API_SERVICE_KEY` | 공공데이터포털 API 키 | - |
+| `HOLIDAY_API_BASE_URL` | 공휴일(천문연구원 특일정보) API 베이스 URL | `https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService` |
 | `GRAPHQL_ENABLE_PLAYGROUND` | GraphQL Sandbox 활성화 | `True` |
 | `GRAPHQL_ENABLE_INTROSPECTION` | GraphQL Introspection 허용 | `True` |
+
+!!! warning "이미 배포된 버전의 HTTPS 적용"
+    `HOLIDAY_API_BASE_URL` 기본값은 `https://`이지만, **현재 배포 태그(`v2026.06.12-cfa3200`)까지의 빌드는 `http://`를 기본값으로 포함**합니다. 해당 버전을 운영 중이라면 API 키(`HOLIDAY_API_SERVICE_KEY`)와 응답이 평문으로 전송되는 것을 막기 위해, 빌드를 갱신하기 전까지 환경변수로 HTTPS 주소를 직접 주입하세요.
+
+    ```bash
+    HOLIDAY_API_BASE_URL=https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService
+    ```
 
 ## 데이터베이스 구성
 

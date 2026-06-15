@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Friend request body**: `POST /v1/friends/requests` now accepts an explicit `{ "email" }` or `{ "friend_code" }` (exactly one, validated) instead of `{ "addressee_id": "<sub>" }` — an OIDC `sub` could never be obtained by a client. ([#20](https://github.com/onprem-hipster-timer/backend/issues/20))
 
+### Security
+
+- **Holiday API over HTTPS**: The default `HOLIDAY_API_BASE_URL` was changed from `http://apis.data.go.kr/...` to `https://apis.data.go.kr/...`, so Korea Astronomy and Space Science Institute (Public Data Portal) holiday lookups — which carry the `HOLIDAY_API_SERVICE_KEY` — are no longer transmitted in cleartext. **All released versions up to and including `v2026.06.12-cfa3200` ship the `http://` default.** Operators running those tags should inject the HTTPS address directly through the `HOLIDAY_API_BASE_URL` environment variable until they upgrade to a build containing this change:
+
+  ```bash
+  HOLIDAY_API_BASE_URL=https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService
+  ```
+
 ---
 
 ## [v2026.06.12-cfa3200] - 2026-06-12
