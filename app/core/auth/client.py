@@ -152,8 +152,8 @@ class OIDCClient:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Invalid token: {str(e)}",
             )
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch JWKS: {e}")
+        except httpx.HTTPError:
+            logger.exception("Failed to fetch JWKS")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Authentication service unavailable",
