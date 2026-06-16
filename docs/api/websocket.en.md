@@ -200,6 +200,8 @@ ws.send(JSON.stringify({
 }));
 ```
 
+When `scope` is omitted, the server treats it as `"active"`, so `payload: {}` and `payload: { scope: 'active' }` are equivalent.
+
 ## Error Handling
 
 Errors are returned as messages:

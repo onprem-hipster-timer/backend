@@ -200,6 +200,8 @@ ws.send(JSON.stringify({
 }));
 ```
 
+`scope`를 생략하면 서버는 `"active"`로 처리하므로 `payload: {}`와 `payload: { scope: 'active' }`는 같은 요청입니다.
+
 ## 에러 처리
 
 에러는 메시지로 반환됩니다:

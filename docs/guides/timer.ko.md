@@ -310,6 +310,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 **응답:**
 
 - 단건 조회 (timer_id 지정): `timer.updated` 메시지
+  - 타이머가 없으면 `payload.timer`는 `null`
 - 목록 조회 (timer_id 생략): `timer.sync_result` 메시지
 
 > **💡 Tip**: 연결 시 자동 동기화가 되므로, 수동 sync는 **재연결 후 상태 확인**이 필요한 경우에만 사용하세요.
@@ -338,7 +339,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 {
   "type": "timer.updated",
   "payload": {
-    "timer": { /* Timer 객체 */ },
+    "timer": { /* Timer 객체 */ },  // 또는 null (sync 단건 조회에서 타이머 없음)
     "action": "pause"  // "pause" | "resume" | "stop" | "sync"
   },
   "from_user": "user-uuid",
@@ -530,7 +531,7 @@ export interface WSServerMessage {
 }
 
 export interface TimerUpdatedPayload {
-  timer: Timer;
+  timer: Timer | null;
   action: TimerAction;
 }
 
@@ -702,6 +703,9 @@ function useTimerWebSocket(token: string, timezone?: string) {
         case 'timer.created':
         case 'timer.updated':
           const payload = msg.payload as TimerUpdatedPayload;
+          if (!payload.timer) {
+            return;
+          }
           // 활성 타이머 목록 업데이트
           setActiveTimers(prev => {
             const filtered = prev.filter(t => t.id !== payload.timer.id);

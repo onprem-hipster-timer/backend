@@ -36,6 +36,7 @@ class TimerAction(str, Enum):
     PAUSE = "pause"
     RESUME = "resume"
     STOP = "stop"
+    SYNC = "sync"
 
 
 # ============================================================
@@ -128,7 +129,7 @@ class TimerData(BaseModel):
 
 class TimerUpdatedPayload(BaseModel):
     """타이머 업데이트 응답 페이로드"""
-    timer: TimerData
+    timer: Optional[TimerData] = None
     action: TimerAction
 
 
