@@ -34,7 +34,7 @@ bracex==2.6
     # via wcmatch
 build==1.4.0
     # via pip-tools
-cachetools==7.1.1
+cachetools==7.1.4
     # via -r requirements.txt
 certifi==2026.1.4
     # via
@@ -56,7 +56,7 @@ click==8.3.1
     #   uvicorn
 colorama==0.4.6
     # via mkdocs-material
-coverage[toml]==7.14.0
+coverage[toml]==7.14.2
     # via
     #   -r requirements-dev.in
     #   pytest-cov
@@ -64,11 +64,11 @@ cross-web==0.7.0
     # via
     #   -r requirements.txt
     #   strawberry-graphql
-cryptography==48.0.0
+cryptography==48.0.1
     # via
     #   -r requirements.txt
     #   joserfc
-fastapi==0.136.3
+fastapi==0.137.0
     # via -r requirements.txt
 ghp-import==2.1.0
     # via mkdocs
@@ -89,7 +89,7 @@ httpcore==1.0.9
     # via
     #   -r requirements.txt
     #   httpx
-httptools==0.7.1
+httptools==0.8.0
     # via
     #   -r requirements.txt
     #   uvicorn
@@ -185,7 +185,7 @@ pydantic-core==2.46.4
     # via
     #   -r requirements.txt
     #   pydantic
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
     # via -r requirements.txt
 pygments==2.19.2
     # via
@@ -197,7 +197,7 @@ pyproject-hooks==1.2.0
     # via
     #   build
     #   pip-tools
-pytest==9.0.3
+pytest==9.1.0
     # via
     #   -r requirements-dev.in
     #   pytest-asyncio
@@ -220,7 +220,7 @@ python-dotenv==1.2.2
     #   pydantic-settings
     #   pytest-dotenv
     #   uvicorn
-python-multipart==0.0.30
+python-multipart==0.0.32
     # via -r requirements.txt
 pyyaml==6.0.3
     # via
@@ -240,14 +240,14 @@ six==1.17.0
     #   python-dateutil
 soupsieve==2.8.3
     # via beautifulsoup4
-sqlalchemy==2.0.50
+sqlalchemy==2.0.51
     # via
     #   -r requirements.txt
     #   alembic
     #   sqlmodel
 sqlmodel==0.0.38
     # via -r requirements.txt
-starlette==1.0.0
+starlette==1.3.1
     # via
     #   -r requirements.txt
     #   fastapi
@@ -276,7 +276,7 @@ tzdata==2026.2
     # via -r requirements.txt
 urllib3==2.6.3
     # via requests
-uvicorn[standard]==0.48.0
+uvicorn[standard]==0.49.0
     # via -r requirements.txt
 uvloop==0.22.1 ; sys_platform != "win32"
     # via
