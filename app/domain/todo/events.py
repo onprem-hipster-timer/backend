@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Tuple
 from uuid import UUID
 
+from app.domain.todo.enums import LinkedSchedulePolicy
 from app.shared.events import DomainEvent
 
 
@@ -33,7 +34,17 @@ class TodoDeadlineChanged(TodoEvent):
 
 @dataclass(frozen=True, kw_only=True)
 class TodoDeadlineRemoved(TodoEvent):
-    """deadline이 제거됨 → 투영 Schedule 정리"""
+    """
+    deadline이 제거됨 → 투영 Schedule 정리
+
+    :param policy: 클라이언트가 명시한 투영 처리 정책 (#61 — 디폴트 없음)
+    """
+    policy: LinkedSchedulePolicy
+
+
+@dataclass(frozen=True, kw_only=True)
+class TodoContentChanged(TodoEvent):
+    """제목·설명이 변경됨 → 투영 Schedule에 최신 내용 반영 (Todo 소유 필드)"""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,5 +60,7 @@ class TodoDeleted(TodoEvent):
     :param linked_schedule_ids: 삭제 직전 스냅샷한 연결 Schedule ID.
         `Schedule.source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush
         후에는 조회할 수 없어 이벤트가 사실로서 운반합니다.
+    :param policy: 클라이언트가 명시한 투영 처리 정책 (#61 — 디폴트 없음)
     """
     linked_schedule_ids: Tuple[UUID, ...]
+    policy: LinkedSchedulePolicy

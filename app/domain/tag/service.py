@@ -94,12 +94,14 @@ class TagService:
             _raise_group_not_found(group_id)
 
         # 1. 해당 그룹의 Todo 삭제 (Todo 모델 직접 사용)
+        # 그룹 삭제 = 전부 삭제 계약이므로 투영 정책은 delete 명시 (#61)
+        from app.domain.todo.enums import LinkedSchedulePolicy
         from app.domain.todo.service import TodoService
 
         todo_service = TodoService(self.session, self.current_user)
         result = todo_service.get_all_todos(group_ids=[group_id])
         for todo in result.todos:
-            todo_service.delete_todo(todo.id)
+            todo_service.delete_todo(todo.id, LinkedSchedulePolicy.DELETE)
 
         # 2. 일정의 tag_group_id를 NULL로 설정
         from app.crud import schedule as schedule_crud

@@ -19,7 +19,7 @@ from app.crud import visibility as visibility_crud
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.domain.todo.exceptions import (
     TodoNotFoundError,
     TodoInvalidParentError,
@@ -37,6 +37,7 @@ from app.domain.todo.schema.dto import (
     TodoIncludeReason,
 )
 from app.domain.todo.events import (
+    TodoContentChanged,
     TodoDeadlineChanged,
     TodoDeadlineRemoved,
     TodoDeadlineSet,
@@ -164,6 +165,14 @@ class TodoService:
         # parent_id 검증 (존재/그룹 일치)
         self._validate_parent_id(data.parent_id, data.tag_group_id)
 
+        # status 자동 불변조건: 투영(deadline) 존재 ⇔ SCHEDULED — 명시 status가 우선 (doc §5.1)
+        if "status" in data.model_fields_set and data.status is not None:
+            status = data.status
+        elif data.deadline:
+            status = TodoStatus.SCHEDULED
+        else:
+            status = TodoStatus.UNSCHEDULED
+
         # Todo 모델 생성
         todo = Todo(
             owner_id=self.owner_id,
@@ -172,7 +181,7 @@ class TodoService:
             deadline=data.deadline,
             tag_group_id=data.tag_group_id,
             parent_id=data.parent_id,
-            status=data.status if data.status is not None else TodoStatus.UNSCHEDULED,
+            status=status,
         )
         todo = crud.create_todo(self.session, todo)
 
@@ -437,12 +446,24 @@ class TodoService:
         if deadline_updated:
             # 투영 동기화는 이벤트로 위임 (핸들러: schedule/event_handlers.py)
             if old_deadline and not new_deadline:
-                event_type = TodoDeadlineRemoved
-            elif not old_deadline and new_deadline:
-                event_type = TodoDeadlineSet
+                # 마감 취소: 투영 처리 정책은 클라이언트가 명시 (#61, DTO에서 필수 검증)
+                collect_event(self.session, TodoDeadlineRemoved(
+                    owner_id=self.owner_id,
+                    origin=EventOrigin.TODO,
+                    todo_id=todo_id,
+                    policy=LinkedSchedulePolicy(update_dict['linked_schedule_policy']),
+                ))
             else:
-                event_type = TodoDeadlineChanged
-            collect_event(self.session, event_type(
+                event_type = TodoDeadlineSet if not old_deadline else TodoDeadlineChanged
+                collect_event(self.session, event_type(
+                    owner_id=self.owner_id,
+                    origin=EventOrigin.TODO,
+                    todo_id=todo_id,
+                ))
+
+        # 제목·설명 변경 → 투영에 최신 내용 반영 (Todo 소유 필드, doc §5.1)
+        if 'title' in update_dict or 'description' in update_dict:
+            collect_event(self.session, TodoContentChanged(
                 owner_id=self.owner_id,
                 origin=EventOrigin.TODO,
                 todo_id=todo_id,
@@ -463,29 +484,42 @@ class TodoService:
         # 나머지 필드 업데이트
         todo = crud.update_todo(self.session, todo, data)
 
+        # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
+        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지 (doc §5.1)
+        if deadline_updated and 'status' not in update_dict:
+            if new_deadline and todo.status not in (TodoStatus.DONE, TodoStatus.CANCELLED):
+                todo.status = TodoStatus.SCHEDULED
+            elif not new_deadline and todo.status == TodoStatus.SCHEDULED:
+                todo.status = TodoStatus.UNSCHEDULED
+
         # 필드 반영 후 dispatch → 핸들러가 최신 상태를 투영 (doc §5.1)
         flush_and_dispatch_events(self.session)
 
         return todo
 
-    def delete_todo(self, todo_id: UUID) -> None:
+    def delete_todo(
+            self,
+            todo_id: UUID,
+            linked_schedule_policy: LinkedSchedulePolicy,
+    ) -> None:
         """
         Todo 삭제
-        
+
         비즈니스 로직:
-        - 외부 캘린더 sync 고려: 서비스 로직에서 명시적으로 연관된 Schedule 삭제
-        - source_todo_id로 연관된 모든 Schedule 조회
-        - 각 Schedule에 대해 ScheduleService.delete_schedule() 명시적 호출
+        - 연결 투영 Schedule은 클라이언트가 명시한 정책에 따라 처리 (#61)
+          - delete: 투영 삭제 + visibility cleanup
+          - unlink: 연결만 해제 — 일반 일정으로 생존
         - 자식 Todo는 삭제하지 않고 루트로 승격 (parent_id = NULL)
         - 자식의 Schedule은 유지됨
         - 그 후 Todo 삭제
-        
+
         :param todo_id: Todo ID
+        :param linked_schedule_policy: 연결 투영 처리 정책 (서버 디폴트 없음)
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
         """
         todo = self.get_todo(todo_id)
 
-        # 연결 Schedule ID 스냅샷 후 이벤트 발행 (핸들러가 삭제 + visibility cleanup)
+        # 연결 Schedule ID 스냅샷 후 이벤트 발행 (핸들러가 정책에 따라 처리)
         # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는 조회 불가
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
         collect_event(self.session, TodoDeleted(
@@ -493,6 +527,7 @@ class TodoService:
             origin=EventOrigin.TODO,
             todo_id=todo_id,
             linked_schedule_ids=tuple(s.id for s in schedules),
+            policy=linked_schedule_policy,
         ))
 
         # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)

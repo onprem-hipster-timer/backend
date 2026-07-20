@@ -11,14 +11,14 @@ from enum import Enum
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.models.visibility import VisibilityLevel
 
 
@@ -122,12 +122,39 @@ class TodoUpdate(CustomModel):
     deadline: datetime | None = MISSING  # 마감기간 변경
     parent_id: UUID | None = MISSING  # 부모 Todo 변경
     status: TodoStatus | None = MISSING  # 상태 변경
+    # 마감 취소(deadline: null) 시 연결 투영 처리 정책 — 명시 필수, 디폴트 없음 (#61)
+    linked_schedule_policy: LinkedSchedulePolicy = MISSING
 
     @field_validator("deadline")
     @classmethod
     def ensure_utc_naive_datetime(cls, v):
         """deadline을 UTC naive로 변환 (aware 입력 → UTC naive 저장, #41 방지)"""
         return ensure_utc_naive(v) if v is not None else None
+
+    @model_validator(mode="after")
+    def validate_linked_schedule_policy(self):
+        """
+        linked_schedule_policy는 deadline 명시적 null과 함께만 유효 (#61)
+
+        - deadline: null인데 정책 누락 → 422 (서버 디폴트 없음)
+        - 정책이 있는데 deadline: null이 아님 → 422 (무의미한 조합 차단)
+
+        MISSING sentinel: `is None` 검사는 명시적 null만 참 (MISSING은 None이 아님)
+        """
+        deadline_cleared = self.deadline is None
+        policy_given = self.linked_schedule_policy is not MISSING
+
+        if deadline_cleared and not policy_given:
+            raise ValueError(
+                "linked_schedule_policy is required when clearing deadline "
+                "(deadline: null). Choose 'delete' or 'unlink'."
+            )
+        if policy_given and not deadline_cleared:
+            raise ValueError(
+                "linked_schedule_policy is only allowed together with an "
+                "explicit 'deadline': null."
+            )
+        return self
 
 
 class TagStat(CustomModel):
