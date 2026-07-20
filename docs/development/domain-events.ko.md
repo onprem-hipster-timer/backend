@@ -156,7 +156,25 @@ def handle(events, session):
 
 실제 모듈 간 전파가 필요한 것만 우선 정의합니다.
 
-`ScheduleTimeChanged`, `ScheduleDeleted`, `TodoDeadlineSet/Changed/Removed`, `TodoTagsChanged`, `TodoDeleted`, `ScheduleCreatedWithTodoOption`.
+`ScheduleTimeChanged`, `ScheduleDeleted`, `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted`, `ScheduleCreatedWithTodoOption`.
+
+- `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
+- `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
+- `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
+
+### 5.1 필드 소유권 (source of record)
+
+핸들러 스펙은 이 표에서 도출됩니다. 수신 핸들러는 이벤트의 식별자로 **같은 트랜잭션에서 현재 상태를 조회**해 소유 필드만 투영합니다(전체 상태 덮어쓰기 금지).
+
+| 논리 필드 | 원본 | 전파 규칙 |
+|-----------|------|-----------|
+| 제목·설명 | **Todo** | Todo→Schedule 항상 반영 (`TodoContentChanged`) |
+| 마감 시점 | Todo.deadline ⇔ Schedule.start_time | **양방향** (origin 가드) |
+| 일정 길이 (end−start) | **Schedule** | 전파 안 함. deadline 변경 시 start만 이동, 길이 보존. 생성 시 초기값 1시간 |
+| 태그 | **Todo** | full-replace Todo→Schedule (일정 태그는 할일 태그의 투영 — 계약) |
+| 상태 | 자동 불변조건 | `SCHEDULED` ⇔ 연결 투영 존재 (DONE/CANCELLED 터미널 상태 예외). status 변경은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
+| 수명주기 | **Todo 주도 + 클라이언트 정책** | `linked_schedule_policy` — 디폴트 없음, 미지정 422 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
+| 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)) |
 
 !!! note "source of truth"
     Todo `deadline`이 원본, Schedule `start_time`은 그 투영입니다. `ScheduleTimeChanged`는 **`source_todo_id`가 있는(=Todo가 만든) Schedule**에 한해 Todo로 역전파하고, `origin`이 Todo면 다시 전파하지 않습니다.
