@@ -1,13 +1,14 @@
 # 읽기/쓰기 분리 & 도메인 이벤트 아키텍처
 
-> **상태**: 부분 구현 — 쓰기 경로의 Message Bus 인프라([#54](https://github.com/onprem-hipster-timer/backend/issues/54))와
-> Todo→Schedule 정방향 전파([#55](https://github.com/onprem-hipster-timer/backend/issues/55) 일부,
-> [#61](https://github.com/onprem-hipster-timer/backend/issues/61) 정책 포함) 구현 완료.
-> 역전파(Schedule→Todo)·읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
+> **상태**: 쓰기 경로 구현 완료 — Message Bus 인프라([#54](https://github.com/onprem-hipster-timer/backend/issues/54)),
+> Todo↔Schedule 양방향 전파([#55](https://github.com/onprem-hipster-timer/backend/issues/55),
+> [#44](https://github.com/onprem-hipster-timer/backend/issues/44) 해결,
+> [#61](https://github.com/onprem-hipster-timer/backend/issues/61) 정책 포함).
+> 읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
 >
-> 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/todo/events.py` ·
-> 핸들러: `app/domain/schedule/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
-> `tests/domain/todo/test_projection_policy.py`
+> 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/{todo,schedule}/events.py` ·
+> 핸들러: `app/domain/{schedule,todo}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
+> `tests/domain/todo/test_projection_policy.py`, `tests/domain/schedule/test_backpropagation.py`
 
 이 문서는 읽기 경로와 쓰기 경로의 책임을 분리하고, 도메인 간 전파를 **외부 broker 없이** in-process Message Bus로 처리하기 위한 설계를 설명합니다. 대상 환경은 **단일 프로세스 · 단일 DB · 요청당 단일 세션 · 단일 트랜잭션 · 강한 일관성**입니다.
 
@@ -165,8 +166,15 @@ def handle(events, session):
 
 | 이벤트 | 상태 |
 |--------|------|
-| `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py`) |
-| `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleCreatedWithTodoOption` (역전파) | 계획 — #55 잔여 |
+| `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/schedule/event_handlers.py`) |
+| `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleCreatedWithTodoOption` | ✅ 구현 (`app/domain/schedule/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
+
+!!! note "반복 일정 × source_todo (결정)"
+    source-linked Schedule이 반복 일정으로 전환된 경우 **시간 역투영을 하지 않습니다** —
+    반복 일정은 시점 마감의 투영이 아니게 되기 때문입니다.
+    `tests/domain/schedule/test_backpropagation.py::test_recurring_source_linked_schedule_does_not_backpropagate`로 고정.
+    반복 시리즈 소진으로 원본이 자동 삭제되는 경로(recurring_service)도 `ScheduleDeleted`를
+    발행하고 접근권한 cleanup을 수행합니다.
 
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))

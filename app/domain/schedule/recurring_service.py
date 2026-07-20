@@ -257,6 +257,23 @@ class RecurringScheduleService:
         if parent_schedule.recurrence_end:
             if self._are_all_instances_deleted(parent_schedule):
                 # 모든 인스턴스가 삭제되었으면 원본 일정도 삭제
+                # (ScheduleService.delete_schedule을 경유하지 않는 삭제 경로이므로
+                #  접근권한 cleanup과 삭제 이벤트 수집을 여기서 직접 수행)
+                from app.crud import visibility as visibility_crud
+                from app.domain.schedule.events import ScheduleDeleted
+                from app.domain.visibility.enums import ResourceType
+                from app.shared.events import EventOrigin
+                from app.shared.uow import collect_event
+
+                visibility_crud.delete_visibility_by_resource(
+                    self.session, ResourceType.SCHEDULE, parent_schedule.id
+                )
+                collect_event(self.session, ScheduleDeleted(
+                    owner_id=self.owner_id,
+                    origin=EventOrigin.SCHEDULE,
+                    schedule_id=parent_schedule.id,
+                    source_todo_id=parent_schedule.source_todo_id,
+                ))
                 crud.delete_schedule(self.session, parent_schedule)
 
     def _are_all_instances_deleted(self, schedule: Schedule) -> bool:

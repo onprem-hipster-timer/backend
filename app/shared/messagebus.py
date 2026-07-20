@@ -100,6 +100,7 @@ def register_handlers() -> None:
     방지로 재호출에 안전합니다. 순환 import 방지를 위해 lazy import.
     """
     import app.domain.schedule.event_handlers  # noqa: F401
+    import app.domain.todo.event_handlers  # noqa: F401
 
 
 def reset_handlers() -> None:

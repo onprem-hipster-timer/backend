@@ -105,6 +105,11 @@ interface PauseEvent {
 }
 ```
 
+!!! note "연결 리소스 삭제 시 타이머 동작 (DB 레벨 SET NULL)"
+    연결된 Schedule 또는 Todo가 삭제되면 타이머는 **삭제되지 않고**
+    `schedule_id` / `todo_id`가 `null`로 해제되어 독립 타이머로 남습니다.
+    기록(경과 시간·이력)은 보존됩니다.
+
 ### pause_history 예시
 
 ```json
