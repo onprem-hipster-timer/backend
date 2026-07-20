@@ -65,9 +65,22 @@ GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 r
     - `accumulate_elapsed_until(timer, now)` — pause/stop 등 **write transition 전용** 누적
 - **인증 parent dependency**: 모든 인증 라우터에 걸린 `get_current_user_synced`가 자체 `get_db_transactional` + 프로필 JIT sync를 엽니다. **auth-only 게이트**와 **profile-sync write 경로**로 분리해야 GET이 진짜 read-only가 됩니다.
 
+!!! tip "쓰기 경로 구현이 읽기 전환에 주는 순풍"
+    - [#52](https://github.com/onprem-hipster-timer/backend/issues/52): `get_db`의 rollback 경계에
+      `clear_events`가 이미 들어가 있어(§4.5), GET이 실수로 이벤트를 수집해도 누수되지 않습니다.
+      read-only 전환 시 이벤트 위생은 추가 조치 불필요.
+    - [#53](https://github.com/onprem-hipster-timer/backend/issues/53): `TodoService`가 더는
+      `ScheduleService`를 import하지 않아 계층 분리가 깨끗해졌고, status 자동 불변조건
+      (`SCHEDULED` ⇔ 투영 존재)으로 Facade가 조립하는 데이터의 일관성이 보장됩니다.
+
 ### 3.2 Read Facade
 
 라우터의 다중 리소스 조립 로직(`_build_timer_read_with_relations`, `_get_related_schedule_reads`)을 `app/application/read/*`(신규 레이어)로 옮깁니다. 라우터는 Facade 호출만 합니다.
+
+!!! note "Facade가 전제해야 할 계약"
+    "자동 생성 리소스가 응답에 즉시 보인다"는 계약(§2)은 각 쓰기 use-case 끝의
+    `flush_and_dispatch_events` 타이밍에 의해 성립합니다. Facade는 서비스 메서드 반환 후의
+    세션 상태를 신뢰하고 조립하면 됩니다.
 
 !!! warning "권한 불변조건 (위반 시 정보 노출)"
     Read Facade는 raw CRUD/lazy load로 연관 리소스를 응답에 넣지 않습니다. 권한 판정은 `CurrentUser`에 강결합돼 있으므로, **연관 리소스마다** `try_get_schedule_read`/`get_*_with_access_check`로 개별 권한검증을 거칩니다. **부모 리소스 접근권한은 자식/연결 리소스 접근권한을 보장하지 않습니다** (공유 Timer를 봐도 연결 Schedule이 PRIVATE이면 숨김).
@@ -81,21 +94,34 @@ GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 r
 이벤트는 **발생한 도메인 사실**만 담는 불변 값 객체입니다.
 
 ```python
+# app/shared/events.py
 class EventOrigin(str, Enum):
     TODO = "todo"
     SCHEDULE = "schedule"
 
 
-@dataclass(frozen=True)
-class ScheduleTimeChanged:
-    schedule_id: UUID
-    new_start_time: datetime
+@dataclass(frozen=True, kw_only=True)
+class DomainEvent:
     owner_id: str
     origin: EventOrigin  # 이벤트를 촉발한 source 도메인
+
+    def event_key(self) -> tuple: ...  # 타입 + 주요 식별자 (중복 dispatch 억제)
+
+
+# app/domain/schedule/events.py — 실제 구현 예
+@dataclass(frozen=True, kw_only=True)
+class ScheduleTimeChanged(ScheduleEvent):  # ScheduleEvent가 schedule_id + event_key 제공
+    """일정 시간이 변경됨 → source-linked·비반복 일정이면 Todo.deadline 역투영"""
 ```
 
 !!! danger "payload 금지 사항"
     이벤트에 API DTO, ORM instance, response DTO, handler 이름, target service를 넣지 않습니다. **식별자와 도메인 사실만** 담습니다.
+
+!!! tip "payload 최소화 원칙 (구현 채택)"
+    핸들러는 이벤트의 식별자로 **같은 트랜잭션에서 현재 상태를 조회**해 투영하므로,
+    대부분의 이벤트는 식별자만 운반합니다. 예외는 **dispatch 시점에 원본이 사라지는 사실**
+    — `TodoDeleted.linked_schedule_ids`(FK SET NULL로 사후 조회 불가),
+    `ScheduleDeleted.source_todo_id`, 클라이언트 정책(`policy`) 등 — 만 스냅샷으로 담습니다.
 
 ### 4.2 이벤트 보관 — 세션 스코프 수집
 
@@ -149,7 +175,25 @@ def handle(events, session):
 - 이벤트 `origin` 필드 + `max_dispatch_depth` 상한 병행
 - 보강: 동일 이벤트(타입+식별자) 중복 dispatch 방지
 
-### 4.5 핸들러의 권한 불변조건
+### 4.5 트랜잭션 경계별 이벤트 커버리지
+
+이벤트 drain/clear가 어느 진입점에서 보장되는지의 현황입니다.
+
+| 진입점 | commit | 이벤트 처리 | 상태 |
+|--------|--------|-------------|------|
+| REST 쓰기 (`get_db_transactional`) | `commit_with_events` | ✅ 안전망 drain 후 commit, 예외 시 rollback + `clear_events` | 구현됨 |
+| REST 읽기 (`get_db`) | 없음 (항상 rollback) | ✅ rollback 경계에서 `clear_events` (누수 위생) | 구현됨 |
+| WebSocket per-message (`timers_ws.py`) | 맨 `session.commit()` | ❌ **drain/clear 없음** | [#49](https://github.com/onprem-hipster-timer/backend/issues/49) 범위 |
+
+!!! danger "WS 경로의 이벤트 유실 함정 (#49 스코프)"
+    WS per-message 커밋은 `commit_with_events`를 타지 않습니다. 현재 WS는 타이머 연산만
+    수행하고 타이머는 이벤트를 발행하지 않아 무해하지만, **WS에서 도달하는 코드가
+    `collect_event`를 호출하는 순간 이벤트가 드레인 없이 커밋되고 세션이 닫히면서
+    조용히 유실**됩니다. WS 도달 경로에 이벤트 발행을 추가하는 변경(예: 타이머 완료
+    전파 [#62](https://github.com/onprem-hipster-timer/backend/issues/62))은
+    **#49(WS 커밋 → `commit_with_events`, rollback 경계 → `clear_events`) 선행이 필수**입니다.
+
+### 4.6 핸들러의 권한 불변조건
 
 이벤트 핸들러는 내부 projection이므로 사용자 권한 검증을 우회합니다. 대신 **owner 불변조건**을 강제합니다.
 
@@ -192,32 +236,58 @@ def handle(events, session):
 | 태그 | **Todo** | full-replace Todo→Schedule (일정 태그는 할일 태그의 투영 — 계약) |
 | 상태 | 자동 불변조건 | `SCHEDULED` ⇔ 연결 투영 존재 (DONE/CANCELLED 터미널 상태 예외). status 변경은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
 | 수명주기 | **Todo 주도 + 클라이언트 정책** | `linked_schedule_policy` — 디폴트 없음, 미지정 422 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
-| 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)) |
+| 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)). 구현 시 이 인프라 위 핸들러로 추가하되, `stop_timer`가 WS에서도 불리므로 **WS 커버리지는 #49 선행 필수**(§4.5)이고 터미널 상태 가드(DONE/CANCELLED 미덮음) 패턴을 따라야 함 |
 
 !!! note "source of truth"
     Todo `deadline`이 원본, Schedule `start_time`은 그 투영입니다. `ScheduleTimeChanged`는 **`source_todo_id`가 있는(=Todo가 만든) Schedule**에 한해 Todo로 역전파하고, `origin`이 Todo면 다시 전파하지 않습니다.
 
-!!! note "Schedule 삭제 정책"
-    현재 공개 계약은 Todo `deadline` 제거 또는 Todo 삭제가 연결 Schedule을 삭제하는 방향입니다. 반대로 `source_todo_id`가 있는 Schedule을 삭제했을 때 Todo `deadline`을 자동 제거하는 동작은 현재 계약이 아니므로 초기 마이그레이션에서는 도입하지 않습니다. 필요하면 별도 정책/이슈로 다룹니다.
+!!! note "Schedule 삭제 정책 (확정·구현됨)"
+    Todo `deadline` 제거·Todo 삭제 시 연결 Schedule 처리는 클라이언트가 `linked_schedule_policy`로
+    명시합니다([#61](https://github.com/onprem-hipster-timer/backend/issues/61)).
+    반대 방향 — `source_todo_id`가 있는 Schedule을 삭제한 경우 — 는 **Todo와 `deadline`을 유지**하고
+    (삭제는 캘린더 표시 제거일 뿐) `status`만 투영 부재를 반영해 `UNSCHEDULED`로 되돌립니다
+    (터미널 상태 보호). `tests/domain/schedule/test_backpropagation.py::test_deleting_projected_schedule_keeps_todo_and_deadline`으로 고정.
 
 ---
 
 ## 6. 단계별 적용
 
-| 파트 | 내용 | 이슈 |
-|------|------|------|
-| 1 | 읽기가 DB를 바꾸는 문제 수정 (Timer `elapsed_time`) | [#51](https://github.com/onprem-hipster-timer/backend/issues/51) |
-| 2 | GET을 진짜 read-only로 (인증 의존성 분리 포함) | [#52](https://github.com/onprem-hipster-timer/backend/issues/52) |
-| 3 | 읽기 조립을 Read Facade로 | [#53](https://github.com/onprem-hipster-timer/backend/issues/53) |
-| 4 | 이벤트 버스를 테스트로 고정 | [#54](https://github.com/onprem-hipster-timer/backend/issues/54) |
-| 5 | Todo/Schedule 직접 호출을 이벤트로 이전 | [#55](https://github.com/onprem-hipster-timer/backend/issues/55) |
-| 6 | WebSocket을 같은 commit/rollback 규칙으로 | [#49](https://github.com/onprem-hipster-timer/backend/issues/49) |
+| 파트 | 내용 | 이슈 | 상태 |
+|------|------|------|------|
+| 1 | 읽기가 DB를 바꾸는 문제 수정 (Timer `elapsed_time`) | [#51](https://github.com/onprem-hipster-timer/backend/issues/51) | 미착수 |
+| 2 | GET을 진짜 read-only로 (인증 의존성 분리 포함) | [#52](https://github.com/onprem-hipster-timer/backend/issues/52) | 미착수 |
+| 3 | 읽기 조립을 Read Facade로 | [#53](https://github.com/onprem-hipster-timer/backend/issues/53) | 미착수 |
+| 4 | 이벤트 버스를 테스트로 고정 | [#54](https://github.com/onprem-hipster-timer/backend/issues/54) | ✅ 완료 |
+| 5 | Todo/Schedule 직접 호출을 이벤트로 이전 (양방향) | [#55](https://github.com/onprem-hipster-timer/backend/issues/55) | ✅ 완료 |
+| 6 | WebSocket을 같은 commit/rollback 규칙으로 — **버스 도입으로 스코프 추가**: WS 커밋 → `commit_with_events`, rollback 경계 → `clear_events` (§4.5 유실 함정) | [#49](https://github.com/onprem-hipster-timer/backend/issues/49) | 미착수 |
 
 각 파트는 **기존 테스트 그린 유지**가 1차 게이트입니다. 특히 `tests/test_shared_resource_filtering.py`(부모 공유/자식 PRIVATE 은닉)는 Read Facade 이전 후에도 통과해야 합니다.
 
 ---
 
-## 7. 참고
+## 7. 새 이벤트/핸들러 추가 가이드
+
+1. **이벤트 정의** — 발행 도메인의 `app/domain/<domain>/events.py`에 `DomainEvent`
+   서브클래스를 추가합니다. frozen dataclass, `kw_only=True`, payload는 식별자 +
+   사라지는 사실만(§4.1). `event_key()`가 주요 식별자를 포함하는지 확인합니다.
+2. **발행** — 서비스 use-case에서 상태 변경 후 `collect_event(self.session, 이벤트)`,
+   메서드 끝에서 `flush_and_dispatch_events(self.session)`. 응답 조립 전에 dispatch돼야
+   자동 생성 리소스가 응답에 보입니다(§2).
+3. **핸들러** — 수신 도메인의 `app/domain/<domain>/event_handlers.py`에
+   `@register(이벤트타입)` 함수 추가. 시그니처 `(event, session)`, owner 불변조건 확인,
+   low-level 연산 사용, status류 직접 쓰기는 이벤트 미발행(§4.6, §5.1).
+4. **등록 배선** — 새 `event_handlers.py` 모듈이면
+   `app/shared/messagebus.py::register_handlers()`에 lazy import 한 줄 추가.
+   (앱 lifespan과 테스트 conftest가 이 함수를 공유하므로 다른 배선은 불필요)
+5. **테스트** — 행동을 테스트명으로 고정(red→green). 왕복 가능성이 있으면
+   origin 가드/구조적 차단을 함께 검증. 버스 자체 동작은 `tests/shared/test_messagebus.py`가
+   이미 커버하므로 재검증하지 않습니다.
+6. **주의** — WS에서 도달하는 경로에 발행을 추가한다면 §4.5의 유실 함정 확인
+   ([#49](https://github.com/onprem-hipster-timer/backend/issues/49) 선행 필요).
+
+---
+
+## 8. 참고
 
 - [Cosmic Python — Events and the Message Bus](https://www.cosmicpython.com/book/chapter_08_events_and_message_bus.html)
 - [SQLAlchemy — ORM/Session Events](https://docs.sqlalchemy.org/en/20/orm/session_events.html)
