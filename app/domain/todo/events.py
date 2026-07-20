@@ -1,9 +1,9 @@
 """
-Todo Domain Events (#55)
+Todo Domain Events
 
-Todo 변경 사실을 알리는 불변 이벤트. payload는 식별자와 도메인 사실만
-담습니다 (doc §4.1) — 수신 핸들러가 같은 트랜잭션에서 현재 상태를
-조회해 소유 필드만 투영합니다 (필드 소유권 표: doc §5.1).
+payload는 식별자만 담고, 수신 핸들러가 같은 트랜잭션에서 현재 상태를
+조회해 투영한다. 예외적으로 dispatch 시점에 원본이 사라지는 사실만
+스냅샷으로 운반한다.
 """
 from dataclasses import dataclass
 from typing import Tuple
@@ -24,43 +24,43 @@ class TodoEvent(DomainEvent):
 
 @dataclass(frozen=True, kw_only=True)
 class TodoDeadlineSet(TodoEvent):
-    """deadline이 새로 설정됨 (생성 시 포함) → 투영 Schedule 생성"""
+    """deadline이 새로 설정됨 (생성 시 포함)"""
 
 
 @dataclass(frozen=True, kw_only=True)
 class TodoDeadlineChanged(TodoEvent):
-    """deadline 값이 변경됨 → 투영 Schedule 시간 이동"""
+    """deadline 값이 변경됨"""
 
 
 @dataclass(frozen=True, kw_only=True)
 class TodoDeadlineRemoved(TodoEvent):
     """
-    deadline이 제거됨 → 투영 Schedule 정리
+    deadline이 제거됨
 
-    :param policy: 클라이언트가 명시한 투영 처리 정책 (#61 — 디폴트 없음)
+    :param policy: 클라이언트가 명시한 연결 투영 처리 정책
     """
     policy: LinkedSchedulePolicy
 
 
 @dataclass(frozen=True, kw_only=True)
 class TodoContentChanged(TodoEvent):
-    """제목·설명이 변경됨 → 투영 Schedule에 최신 내용 반영 (Todo 소유 필드)"""
+    """제목·설명이 변경됨"""
 
 
 @dataclass(frozen=True, kw_only=True)
 class TodoTagsChanged(TodoEvent):
-    """태그가 변경됨 → 투영 Schedule 태그 full-replace (D2 계약)"""
+    """태그가 변경됨"""
 
 
 @dataclass(frozen=True, kw_only=True)
 class TodoDeleted(TodoEvent):
     """
-    Todo가 삭제됨 → 연결 Schedule 정리
+    Todo가 삭제됨
 
     :param linked_schedule_ids: 삭제 직전 스냅샷한 연결 Schedule ID.
         `Schedule.source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush
-        후에는 조회할 수 없어 이벤트가 사실로서 운반합니다.
-    :param policy: 클라이언트가 명시한 투영 처리 정책 (#61 — 디폴트 없음)
+        후에는 조회할 수 없어 이벤트가 사실로서 운반한다.
+    :param policy: 클라이언트가 명시한 연결 투영 처리 정책
     """
     linked_schedule_ids: Tuple[UUID, ...]
     policy: LinkedSchedulePolicy

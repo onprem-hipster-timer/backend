@@ -1,15 +1,15 @@
 """
-세션 스코프 이벤트 수집 helper (#54)
+세션 스코프 이벤트 수집 helper
 
 도메인 모델이 SQLModel ORM 클래스의 alias라 엔티티에 `.events` 리스트를
-직접 붙일 수 없어, 1차 구현은 `session.info` 기반 세션 스코프 수집을 사용합니다.
+직접 붙일 수 없어, 세션 스코프 수집(`session.info`)을 사용한다.
 
 !!! important
-    `session.info`는 트랜잭션 aware가 아닙니다 — DB rollback이 돼도 이벤트
-    큐가 자동으로 비워지지 않습니다. rollback 경계에서 반드시
-    `clear_events(session)`를 호출해야 합니다 (doc §4.2).
+    `session.info`는 트랜잭션 aware가 아니다 — DB rollback이 돼도 이벤트
+    큐가 자동으로 비워지지 않는다. rollback 경계에서 반드시
+    `clear_events(session)`를 호출해야 한다.
 
-이 모듈의 helper로만 큐에 접근합니다 (`session.info` 직접 접근 금지).
+이 모듈의 helper로만 큐에 접근한다 (`session.info` 직접 접근 금지).
 """
 from typing import TYPE_CHECKING, List
 
@@ -42,9 +42,9 @@ def flush_and_dispatch_events(session: Session) -> None:
     """
     flush → drain/handle 루프 → flush (commit 없음)
 
-    쓰기 use-case가 응답 DTO를 조립하기 전에 호출해, 핸들러가 만든
-    자동 생성 리소스가 응답에 즉시 보이게 합니다 (doc §2).
-    핸들러 예외는 전파됩니다 → 호출자(트랜잭션 경계)에서 전체 rollback.
+    쓰기 use-case가 응답 DTO를 조립하기 전에 호출해야 핸들러가 만든
+    자동 생성 리소스가 응답에 즉시 보인다. 핸들러 예외는 전파된다 →
+    호출자(트랜잭션 경계)에서 전체 rollback.
     """
     from app.shared import messagebus
 

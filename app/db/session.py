@@ -138,7 +138,7 @@ def get_db() -> Generator[Session, None, None]:
                     len(session.deleted),
                 )
             session.rollback()
-            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear (doc §4.2)
+            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear
             clear_events(session)
 
 
@@ -157,7 +157,7 @@ def get_db_transactional() -> Generator[Session, None, None]:
             commit_with_events(session)
         except Exception:
             session.rollback()
-            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear (doc §4.2)
+            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear
             clear_events(session)
             raise
 

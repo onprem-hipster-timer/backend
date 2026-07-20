@@ -102,8 +102,6 @@ class ScheduleService:
             # 태그 설정 후 relationship 갱신
             self.session.refresh(schedule)
 
-        # create_todo_options가 있으면 연결 Todo 생성 이벤트 발행
-        # (핸들러: app/domain/todo/event_handlers.py — low-level 생성이라 A→B→A 없음)
         if data.create_todo_options:
             collect_event(self.session, ScheduleCreatedWithTodoOption(
                 owner_id=self.owner_id,
@@ -112,7 +110,7 @@ class ScheduleService:
                 tag_group_id=data.create_todo_options.tag_group_id,
             ))
 
-        # 응답 조립 전 dispatch → source_todo_id가 응답에 즉시 보임 (doc §2)
+        # 응답 조립 전에 dispatch해야 source_todo_id가 응답에 보인다
         flush_and_dispatch_events(self.session)
         if data.create_todo_options:
             self.session.refresh(schedule)
@@ -191,8 +189,7 @@ class ScheduleService:
         if tag_ids_updated:
             self.session.refresh(updated_schedule)
 
-        # source-linked 일정의 시간 변경 → Todo.deadline 역투영 이벤트 (#44)
-        # (반복 일정 제외 판정은 핸들러가 수행)
+        # 반복 일정 제외 판정은 핸들러가 수행하므로 여기서는 연결 여부만 본다
         if 'start_time' in update_dict and updated_schedule.source_todo_id is not None:
             collect_event(self.session, ScheduleTimeChanged(
                 owner_id=self.owner_id,
@@ -220,8 +217,7 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
-        # 삭제 사실 발행 — source Todo의 status 반영용 (핸들러: todo/event_handlers.py)
-        # source_todo_id는 삭제 전 스냅샷 (row가 사라져 사후 조회 불가)
+        # source_todo_id는 row가 사라지면 조회할 수 없으므로 삭제 전에 스냅샷
         collect_event(self.session, ScheduleDeleted(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,
@@ -415,7 +411,6 @@ class ScheduleService:
         if schedule.source_todo_id is not None:
             raise ScheduleAlreadyLinkedToTodoError()
 
-        # 연결 Todo 생성 이벤트 발행 (핸들러: todo/event_handlers.py — 태그 복사 포함)
         collect_event(self.session, ScheduleCreatedWithTodoOption(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,

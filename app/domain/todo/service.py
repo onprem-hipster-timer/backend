@@ -165,7 +165,7 @@ class TodoService:
         # parent_id 검증 (존재/그룹 일치)
         self._validate_parent_id(data.parent_id, data.tag_group_id)
 
-        # status 자동 불변조건: 투영(deadline) 존재 ⇔ SCHEDULED — 명시 status가 우선 (doc §5.1)
+        # status 자동 불변조건: 투영(deadline) 존재 ⇔ SCHEDULED — 명시 status가 우선
         if "status" in data.model_fields_set and data.status is not None:
             status = data.status
         elif data.deadline:
@@ -192,8 +192,6 @@ class TodoService:
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
 
-        # deadline이 있으면 투영 Schedule 생성 이벤트 발행
-        # (핸들러: app/domain/schedule/event_handlers.py — 제목·설명·태그는 Todo에서 투영)
         if data.deadline:
             collect_event(self.session, TodoDeadlineSet(
                 owner_id=self.owner_id,
@@ -201,7 +199,7 @@ class TodoService:
                 todo_id=todo.id,
             ))
 
-        # 응답 조립 전에 dispatch → 자동 생성 리소스가 즉시 보임 (doc §2)
+        # 응답 조립 전에 dispatch해야 자동 생성 리소스가 응답에 보인다
         flush_and_dispatch_events(self.session)
 
         return todo
@@ -444,9 +442,8 @@ class TodoService:
         new_deadline = update_dict.get('deadline')
 
         if deadline_updated:
-            # 투영 동기화는 이벤트로 위임 (핸들러: schedule/event_handlers.py)
             if old_deadline and not new_deadline:
-                # 마감 취소: 투영 처리 정책은 클라이언트가 명시 (#61, DTO에서 필수 검증)
+                # 정책 키 존재는 DTO cross-field 검증이 보장 (deadline: null과 함께만 유효)
                 collect_event(self.session, TodoDeadlineRemoved(
                     owner_id=self.owner_id,
                     origin=EventOrigin.TODO,
@@ -461,7 +458,6 @@ class TodoService:
                     todo_id=todo_id,
                 ))
 
-        # 제목·설명 변경 → 투영에 최신 내용 반영 (Todo 소유 필드, doc §5.1)
         if 'title' in update_dict or 'description' in update_dict:
             collect_event(self.session, TodoContentChanged(
                 owner_id=self.owner_id,
@@ -475,7 +471,6 @@ class TodoService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_todo_tags(todo.id, update_dict['tag_ids'] or [])
-            # 투영 Schedule 태그 동기화는 이벤트로 위임 (D2: full-replace)
             collect_event(self.session, TodoTagsChanged(
                 owner_id=self.owner_id,
                 origin=EventOrigin.TODO,
@@ -485,14 +480,14 @@ class TodoService:
         todo = crud.update_todo(self.session, todo, data)
 
         # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
-        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지 (doc §5.1)
+        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지
         if deadline_updated and 'status' not in update_dict:
             if new_deadline and todo.status not in (TodoStatus.DONE, TodoStatus.CANCELLED):
                 todo.status = TodoStatus.SCHEDULED
             elif not new_deadline and todo.status == TodoStatus.SCHEDULED:
                 todo.status = TodoStatus.UNSCHEDULED
 
-        # 필드 반영 후 dispatch → 핸들러가 최신 상태를 투영 (doc §5.1)
+        # 필드 반영 후에 dispatch해야 핸들러가 최신 상태를 투영한다
         flush_and_dispatch_events(self.session)
 
         return todo
@@ -506,7 +501,7 @@ class TodoService:
         Todo 삭제
 
         비즈니스 로직:
-        - 연결 투영 Schedule은 클라이언트가 명시한 정책에 따라 처리 (#61)
+        - 연결 투영 Schedule은 클라이언트가 명시한 정책에 따라 처리
           - delete: 투영 삭제 + visibility cleanup
           - unlink: 연결만 해제 — 일반 일정으로 생존
         - 자식 Todo는 삭제하지 않고 루트로 승격 (parent_id = NULL)
@@ -514,13 +509,13 @@ class TodoService:
         - 그 후 Todo 삭제
 
         :param todo_id: Todo ID
-        :param linked_schedule_policy: 연결 투영 처리 정책 (서버 디폴트 없음)
+        :param linked_schedule_policy: 연결 투영 처리 정책 (서버 기본값 없음)
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
         """
         todo = self.get_todo(todo_id)
 
-        # 연결 Schedule ID 스냅샷 후 이벤트 발행 (핸들러가 정책에 따라 처리)
-        # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는 조회 불가
+        # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는
+        # 연결 Schedule을 조회할 수 없다 — 삭제 전에 ID를 스냅샷해 이벤트에 싣는다
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
         collect_event(self.session, TodoDeleted(
             owner_id=self.owner_id,

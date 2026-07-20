@@ -1,18 +1,9 @@
 """
-Todo 측 Schedule 이벤트 핸들러 (#55 Phase B, #44)
+Schedule 이벤트를 받아 source Todo를 동기화하는 핸들러.
 
-Schedule 도메인의 사실(이벤트)을 받아 source Todo를 동기화합니다.
-변환 책임은 받는 쪽(이 모듈)에 있습니다.
-
-source of truth 규칙 (doc §5):
-- 역투영은 `source_todo_id`가 있는(=Todo가 만든) Schedule에 한정
-- origin이 TODO인 변경은 재전파하지 않음 (왕복 차단, doc §4.4)
-- 반복 일정이 된 투영은 역투영 제외 — 시점 마감의 투영이 아니게 됨
-  (tests/domain/schedule/test_backpropagation.py로 결정 고정)
-- 투영 삭제 시 Todo·deadline 유지, status만 투영 부재 반영 (#55 정책)
-
-원칙 (doc §4.5): owner 불변조건 + low-level 연산, status 직접 쓰기
-(이벤트 미발행)로 drain 재수집 방지.
+역투영은 source_todo_id가 있는 일정에 한정하며, origin이 TODO인 변경은
+재전파하지 않는다. status는 직접 쓰기(이벤트 미발행)로 갱신해 drain
+재수집을 막는다.
 """
 import logging
 
@@ -36,15 +27,15 @@ logger = logging.getLogger(__name__)
 
 @register(ScheduleTimeChanged)
 def backpropagate_deadline(event: ScheduleTimeChanged, session: Session) -> None:
-    """투영 일정 시간 이동 → Todo.deadline 역투영 (#44)"""
+    """투영 일정 시간 이동 → Todo.deadline 역투영"""
     if event.origin == EventOrigin.TODO:
-        return  # Todo발 변경의 재전파 차단 (doc §4.4)
+        return  # Todo발 변경의 재전파 차단
 
     schedule = schedule_crud.get_schedule(session, event.schedule_id, event.owner_id)
     if schedule is None or schedule.source_todo_id is None:
         return
     if schedule.recurrence_rule:
-        # 반복 일정이 된 투영은 시점 마감의 투영이 아님 — 역투영 제외 (결정)
+        # 반복 일정이 된 투영은 시점 마감의 투영이 아님 — 역투영 제외
         logger.debug(
             "Skipping deadline back-propagation for recurring schedule %s",
             schedule.id,
@@ -61,7 +52,7 @@ def backpropagate_deadline(event: ScheduleTimeChanged, session: Session) -> None
 
 @register(ScheduleDeleted)
 def reset_status_of_source_todo(event: ScheduleDeleted, session: Session) -> None:
-    """투영 삭제 → Todo·deadline 유지, status만 UNSCHEDULED (#55 정책)"""
+    """투영 삭제 → Todo·deadline 유지, status만 투영 부재 반영"""
     if event.origin == EventOrigin.TODO:
         return  # Todo발 삭제/정리는 Todo 쪽 흐름이 이미 상태를 관리
     if event.source_todo_id is None:
@@ -84,8 +75,8 @@ def create_todo_for_schedule(
     """
     create_todo_options → 연결 Todo 생성 + 역연결
 
-    low-level 생성이므로 TodoDeadlineSet이 재발화하지 않습니다
-    (A→B→A 구조적 차단). 태그는 Schedule에서 복사합니다.
+    low-level 생성이므로 TodoDeadlineSet이 재발화하지 않는다
+    (A→B→A 순환의 구조적 차단). 태그는 Schedule에서 복사한다.
     """
     schedule = schedule_crud.get_schedule(session, event.schedule_id, event.owner_id)
     if schedule is None or schedule.source_todo_id is not None:
@@ -95,7 +86,7 @@ def create_todo_for_schedule(
         owner_id=event.owner_id,
         title=schedule.title,
         description=schedule.description,
-        deadline=schedule.start_time,  # Schedule의 start_time을 deadline으로
+        deadline=schedule.start_time,
         tag_group_id=event.tag_group_id,
         parent_id=None,
         status=TodoStatus.SCHEDULED,  # 투영(이 Schedule)이 있으므로 SCHEDULED

@@ -282,7 +282,7 @@ async def delete_todo(
         linked_schedule_policy: LinkedSchedulePolicy = Query(
             ...,
             description=(
-                "연결 투영 Schedule 처리 정책 (필수, 서버 디폴트 없음 — #61). "
+                "연결 투영 Schedule 처리 정책 (필수, 서버 기본값 없음). "
                 "delete: 투영 삭제 + 접근권한 정리 / unlink: 연결만 해제(일정 보존)"
             ),
         ),

@@ -1,26 +1,13 @@
 """
-Schedule 측 Todo 이벤트 핸들러 (#55, #61)
+Todo 이벤트를 받아 투영 Schedule을 동기화하는 핸들러.
 
-Todo 도메인의 사실(이벤트)을 받아 투영 Schedule을 동기화합니다.
-변환 책임은 받는 쪽(이 모듈)에 있으며, 규칙은 필드 소유권 표
-(docs/development/domain-events.ko.md §5.1)에서 도출됩니다.
-
-- 제목·설명·태그: Todo 소유 → 항상 최신 반영 (태그는 full-replace)
-- 시작 시간: Todo.deadline의 투영
-- 일정 길이: Schedule 소유 → deadline 변경 시 보존 (생성 시 초기값 1시간)
-- 수명주기: 클라이언트 명시 정책 (delete | unlink, #61)
-- 단일 투영 불변조건: 연결 투영은 정확히 1개 (없으면 재생성)
-
-원칙 (doc §4.5):
-- 핸들러는 내부 projection이므로 사용자 권한 검증을 우회하는 대신
-  **owner 불변조건**을 강제합니다: 변경 대상의 owner_id == event.owner_id.
-- CurrentUser를 요구하는 Service를 호출하지 않고 owner_id 기반
-  low-level 연산(crud, 모델 직접 조작)을 사용합니다.
-- 자동 생성 리소스에 visibility를 복사하지 않습니다 (기본 PRIVATE).
-- 삭제 시 delete_visibility_by_resource cleanup을 유지합니다.
+핸들러는 내부 projection이라 사용자 권한 검증 대신 owner 불변조건
+(변경 대상 owner_id == event.owner_id)을 강제하고, CurrentUser 없이
+low-level 연산만 사용한다. 자동 생성 리소스에 visibility는 복사하지 않는다.
 """
 import logging
 from datetime import timedelta
+from uuid import UUID
 
 from sqlmodel import Session
 
@@ -41,11 +28,11 @@ from app.domain.visibility.enums import ResourceType
 from app.models.schedule import Schedule
 from app.models.todo import Todo
 from app.shared.messagebus import register
-from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-#: 투영 Schedule 생성 시 초기 길이 (이후 길이는 Schedule 소유 — doc §5.1)
+#: 투영 생성 시 초기 길이. 이후 길이는 사용자가 조정할 수 있고
+#: deadline 이동 시 보존된다.
 INITIAL_PROJECTION_DURATION = timedelta(hours=1)
 
 
@@ -65,11 +52,7 @@ def _get_owned_todo(session: Session, event) -> Todo | None:
 
 
 def _sync_projection_tags(session: Session, schedule_id: UUID, todo: Todo) -> None:
-    """
-    투영 Schedule 태그를 Todo 태그로 full-replace (D2 계약)
-
-    owner 불변조건: 이벤트 소유자의 태그만 연결합니다.
-    """
+    """투영 태그를 Todo 태그로 전체 교체. 소유자의 태그만 연결한다."""
     tag_crud.delete_all_schedule_tags(session, schedule_id)
     for tag in todo.tags:
         if tag.owner_id == todo.owner_id:
@@ -95,7 +78,7 @@ def _create_projection(session: Session, todo: Todo) -> Schedule:
 
 
 def _move_projection(session: Session, schedule: Schedule, todo: Todo) -> None:
-    """deadline 투영: start만 이동, 사용자가 조정한 길이 보존 (doc §5.1)"""
+    """start만 이동하고 사용자가 조정한 길이는 보존한다."""
     duration = schedule.end_time - schedule.start_time
     schedule.start_time = todo.deadline
     schedule.end_time = todo.deadline + duration
@@ -111,7 +94,7 @@ def _delete_schedule_with_cleanup(session: Session, schedule: Schedule) -> None:
 
 
 def _unlink_schedule(session: Session, schedule: Schedule) -> None:
-    """연결만 해제 — 일반 일정으로 생존 (메모·태그·공유 보존, #61 unlink)"""
+    """연결만 해제 — 일반 일정으로 생존 (메모·태그·공유 보존)"""
     schedule.source_todo_id = None
     session.flush()
 
@@ -122,7 +105,7 @@ def _unlink_schedule(session: Session, schedule: Schedule) -> None:
 
 @register(TodoDeadlineSet)
 def create_projection_schedule(event: TodoDeadlineSet, session: Session) -> None:
-    """deadline 설정 → 투영 생성 (이미 있으면 이동 — 단일 투영 불변조건)"""
+    """deadline 설정 → 투영 생성. 이미 있으면 이동 (단일 투영 불변조건)"""
     todo = _get_owned_todo(session, event)
     if todo is None or todo.deadline is None:
         return
@@ -138,7 +121,7 @@ def create_projection_schedule(event: TodoDeadlineSet, session: Session) -> None
 
 @register(TodoDeadlineChanged)
 def move_projection_schedule(event: TodoDeadlineChanged, session: Session) -> None:
-    """deadline 변경 → 투영 이동 (길이 보존). 투영이 없으면 재생성"""
+    """deadline 변경 → 투영 이동. 투영이 없으면 재생성 (조용한 no-op 금지)"""
     todo = _get_owned_todo(session, event)
     if todo is None or todo.deadline is None:
         return
@@ -149,13 +132,12 @@ def move_projection_schedule(event: TodoDeadlineChanged, session: Session) -> No
     if schedules:
         _move_projection(session, schedules[0], todo)
     else:
-        # 투영이 사라진 상태의 deadline 변경 → 재생성 (조용한 no-op 금지)
         _create_projection(session, todo)
 
 
 @register(TodoDeadlineRemoved)
 def remove_projection_schedule(event: TodoDeadlineRemoved, session: Session) -> None:
-    """deadline 제거 → 클라이언트 정책에 따라 삭제 또는 연결 해제 (#61)"""
+    """deadline 제거 → 클라이언트 정책에 따라 삭제 또는 연결 해제"""
     schedules = schedule_crud.get_schedules_by_source_todo_id(
         session, event.todo_id, event.owner_id
     )
@@ -168,7 +150,7 @@ def remove_projection_schedule(event: TodoDeadlineRemoved, session: Session) -> 
 
 @register(TodoContentChanged)
 def sync_projection_content(event: TodoContentChanged, session: Session) -> None:
-    """제목·설명 변경 → 투영에 최신 내용 반영 (Todo 소유 필드)"""
+    """제목·설명 변경 → 투영에 최신 내용 반영"""
     todo = _get_owned_todo(session, event)
     if todo is None:
         return
@@ -185,7 +167,7 @@ def sync_projection_content(event: TodoContentChanged, session: Session) -> None
 
 @register(TodoTagsChanged)
 def sync_projection_tags(event: TodoTagsChanged, session: Session) -> None:
-    """태그 변경 → 투영 태그 full-replace (D2 계약)"""
+    """태그 변경 → 투영 태그 전체 교체"""
     todo = _get_owned_todo(session, event)
     if todo is None:
         return
@@ -199,13 +181,12 @@ def sync_projection_tags(event: TodoTagsChanged, session: Session) -> None:
 
 @register(TodoDeleted)
 def remove_projections_of_deleted_todo(event: TodoDeleted, session: Session) -> None:
-    """Todo 삭제 → 스냅샷된 연결 투영을 클라이언트 정책에 따라 처리 (#61)"""
+    """Todo 삭제 → 스냅샷된 연결 투영을 클라이언트 정책에 따라 처리"""
     schedules = schedule_crud.get_schedules_by_ids(
         session, list(event.linked_schedule_ids)
     )
     for schedule in schedules:
-        # owner 불변조건 (doc §4.5)
-        if schedule.owner_id != event.owner_id:
+        if schedule.owner_id != event.owner_id:  # owner 불변조건
             logger.warning(
                 "Schedule %s owner mismatch on TodoDeleted — skipping", schedule.id
             )

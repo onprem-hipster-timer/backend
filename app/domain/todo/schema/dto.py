@@ -45,7 +45,7 @@ class TodoCreate(CustomModel):
 
         해외 출장 등으로 클라이언트가 자기 타임존이 붙은 aware datetime을 보낼 수 있다.
         DB는 naive UTC(TIMESTAMP WITHOUT TIME ZONE)로 저장하므로,
-        aware datetime은 UTC로 변환 후 naive로 저장한다. (#41 동일 버그 클래스 방지)
+        aware datetime은 UTC로 변환 후 naive로 저장한다.
         """
         return ensure_utc_naive(v) if v is not None else None
 
@@ -122,21 +122,21 @@ class TodoUpdate(CustomModel):
     deadline: datetime | None = MISSING  # 마감기간 변경
     parent_id: UUID | None = MISSING  # 부모 Todo 변경
     status: TodoStatus | None = MISSING  # 상태 변경
-    # 마감 취소(deadline: null) 시 연결 투영 처리 정책 — 명시 필수, 디폴트 없음 (#61)
+    # 마감 취소(deadline: null) 시 연결 투영 처리 정책 — 명시 필수, 서버 기본값 없음
     linked_schedule_policy: LinkedSchedulePolicy = MISSING
 
     @field_validator("deadline")
     @classmethod
     def ensure_utc_naive_datetime(cls, v):
-        """deadline을 UTC naive로 변환 (aware 입력 → UTC naive 저장, #41 방지)"""
+        """deadline을 UTC naive로 변환 (aware 입력 → UTC naive 저장)"""
         return ensure_utc_naive(v) if v is not None else None
 
     @model_validator(mode="after")
     def validate_linked_schedule_policy(self):
         """
-        linked_schedule_policy는 deadline 명시적 null과 함께만 유효 (#61)
+        linked_schedule_policy는 deadline 명시적 null과 함께만 유효
 
-        - deadline: null인데 정책 누락 → 422 (서버 디폴트 없음)
+        - deadline: null인데 정책 누락 → 422 (서버 기본값 없음)
         - 정책이 있는데 deadline: null이 아님 → 422 (무의미한 조합 차단)
 
         MISSING sentinel: `is None` 검사는 명시적 null만 참 (MISSING은 None이 아님)
