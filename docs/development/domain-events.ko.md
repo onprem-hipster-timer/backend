@@ -33,24 +33,27 @@
 
 ```mermaid
 flowchart TD
-    subgraph write["쓰기 경로"]
-        WReq[Router] --> WSvc[App Service]
-        WSvc --> WMut[도메인 상태 변경]
-        WMut --> WEvt["collect_event(session, evt)"]
-        WEvt --> WFlush["flush_and_dispatch_events()<br/>flush → drain/handle → flush"]
-        WFlush --> WResp[응답 DTO 조립]
-        WResp --> WCommit["commit_with_events()<br/>(안전망 + commit)"]
+    subgraph write["쓰기 경로 — 구현됨 · 한 세션/한 트랜잭션 (get_db_transactional)"]
+        WReq[Router] --> WSvc["도메인 Service use-case"]
+        WSvc --> WMut["도메인 상태 변경"]
+        WMut --> WEvt["collect_event(session, event)<br/>session.info 큐에 적재"]
+        WEvt --> WFlush["flush_and_dispatch_events()<br/>use-case 끝 — 응답 조립 전"]
+        WFlush --> WBus["messagebus.handle()<br/>drain 루프 (§4.3)"]
+        WBus --> WResp["Router: 응답 DTO 조립<br/>자동 생성 리소스 포함"]
+        WResp --> WCommit["commit_with_events()<br/>안전망 drain 후 commit"]
     end
+    WBus -. "핸들러 예외 전파" .-> WRB["rollback + clear_events"]
+    WCommit -. "commit 실패" .-> WRB
 
-    subgraph read["읽기 경로"]
+    subgraph read["읽기 경로 — 계획 (파트 1~3 미구현)"]
         RReq[Router] --> RFac[Read Facade]
-        RFac --> RQ[권한검증된 쿼리/조립]
+        RFac --> RQ["권한검증된 쿼리/조립"]
         RQ --> RDTO[Response DTO]
     end
 ```
 
-- **쓰기**: 도메인 상태를 바꾼 뒤 이벤트를 수집하고, **응답을 조립하기 전에** 핸들러를 dispatch하여 자동 생성 리소스가 응답에 즉시 보이게 합니다. 모든 핸들러는 **같은 세션/트랜잭션**에서 실행되고, 하나라도 실패하면 전체 rollback합니다.
-- **읽기**: read-only 세션으로 조회하고, 조립은 Read Facade가 담당합니다.
+- **쓰기**: 도메인 상태를 바꾼 뒤 이벤트를 수집하고, **응답을 조립하기 전에**(use-case 메서드 끝) 핸들러를 dispatch하여 자동 생성 리소스가 응답에 즉시 보이게 합니다. 모든 핸들러는 **같은 세션/트랜잭션**에서 실행되고, 하나라도 실패하면 전체 rollback + `clear_events`합니다. `commit_with_events`는 미처리 이벤트를 한 번 더 drain하는 안전망입니다.
+- **읽기**: 현재는 라우터가 직접 조립합니다. read-only 세션 전환과 Read Facade 분리는 파트 1~3(§6)의 계획입니다.
 
 ---
 
@@ -139,6 +142,20 @@ class ScheduleTimeChanged(ScheduleEvent):  # ScheduleEvent가 schedule_id + even
     DB rollback이 돼도 `session.info`의 이벤트 큐는 자동으로 비워지지 않습니다. SAVEPOINT/내부 예외와 섞이면 이미 취소된 변경의 이벤트가 남을 수 있으므로, **rollback 경계에서 반드시 `clear_events(session)`**를 호출하고, **SAVEPOINT(`begin_nested`) 내부에서는 이벤트를 수집하지 않습니다** (§4.5).
 
 ### 4.3 Message Bus
+
+```mermaid
+flowchart TD
+    Start["handle(events, session)"] --> Pop{"큐에 이벤트 남음?"}
+    Pop -- "아니오" --> Done["종료 (flush 후 반환)"]
+    Pop -- "예" --> Key{"event_key<br/>이미 처리됨?"}
+    Key -- "예 (중복)" --> Pop
+    Key -- "아니오" --> Depth{"총 처리 수<br/>MAX_DISPATCH_DEPTH 도달?"}
+    Depth -- "예" --> Err["MaxDispatchDepthExceededError<br/>전파 → 전체 rollback"]
+    Depth -- "아니오" --> Run["등록 순서대로 핸들러 실행<br/>예외는 삼키지 않고 전파"]
+    Run --> Flush["session.flush()<br/>후속 핸들러가 앞선 변경 조회 가능"]
+    Flush --> Recollect["drain_events()<br/>핸들러가 낳은 후속 이벤트를 큐에 추가"]
+    Recollect --> Pop
+```
 
 ```python
 # app/shared/messagebus.py
@@ -249,6 +266,21 @@ def handle(events, session):
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
+
+### 5.0 전파 토폴로지
+
+발행자는 Service, 수신자는 상대 도메인의 `event_handlers`입니다. 핸들러는
+대상 행을 **직접 수정하고 이벤트를 발행하지 않으므로** 반대 방향이 재발화하지
+않습니다 — 왕복(A→B→A)은 구조적으로 차단되고, origin 가드는 이중 안전장치입니다.
+
+```mermaid
+flowchart LR
+    TS["TodoService<br/>(발행)"] -->|"TodoDeadlineSet / Changed / Removed(policy)<br/>TodoContentChanged · TodoTagsChanged<br/>TodoDeleted(schedule_ids·policy 스냅샷)"| SH["schedule/event_handlers<br/>단일 투영 유지 · 길이 보존<br/>없으면 재생성 · 태그 full-replace"]
+    SH -->|"직접 수정 — 이벤트 미발행"| SDB[("schedule 행")]
+
+    SS["ScheduleService<br/>(발행)"] -->|"ScheduleTimeChanged<br/>ScheduleDeleted(source_todo_id 스냅샷)<br/>ScheduleCreatedWithTodoOption"| TH["todo/event_handlers<br/>가드: origin==TODO skip<br/>반복 일정 제외 · 터미널 상태 미덮음"]
+    TH -->|"직접 수정 — 이벤트 미발행"| TDB[("todo 행")]
+```
 
 ### 5.1 필드 소유권 (source of record)
 
