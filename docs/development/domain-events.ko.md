@@ -136,7 +136,7 @@ class ScheduleTimeChanged(ScheduleEvent):  # ScheduleEvent가 schedule_id + even
 | `commit_with_events(session)` | 위를 한 번 더 보장 후 commit |
 
 !!! important "`session.info`는 트랜잭션 aware가 아님"
-    DB rollback이 돼도 `session.info`의 이벤트 큐는 자동으로 비워지지 않습니다. SAVEPOINT/내부 예외와 섞이면 이미 취소된 변경의 이벤트가 남을 수 있으므로, **rollback 경계에서 반드시 `clear_events(session)`**를 호출합니다.
+    DB rollback이 돼도 `session.info`의 이벤트 큐는 자동으로 비워지지 않습니다. SAVEPOINT/내부 예외와 섞이면 이미 취소된 변경의 이벤트가 남을 수 있으므로, **rollback 경계에서 반드시 `clear_events(session)`**를 호출하고, **SAVEPOINT(`begin_nested`) 내부에서는 이벤트를 수집하지 않습니다** (§4.5).
 
 ### 4.3 Message Bus
 
@@ -175,15 +175,41 @@ def handle(events, session):
 - 이벤트 `origin` 필드 + `max_dispatch_depth` 상한 병행
 - 보강: 동일 이벤트(타입+식별자) 중복 dispatch 방지
 
-### 4.5 트랜잭션 경계별 이벤트 커버리지
+### 4.5 적용 범위와 안전 경계
 
-이벤트 drain/clear가 어느 진입점에서 보장되는지의 현황입니다.
+이 메커니즘은 범용 이벤트 버스나 transactional outbox가 아니라
+**"동기 트랜잭션 내 도메인 이벤트 투영 큐"**입니다. 안전 보장은
+**동기 HTTP 요청 · 같은 DB 세션 · DB 행만 갱신하는 핸들러** 범위에
+한정됩니다 — 이 범위 안에서는 핸들러 예외·commit 실패 시 투영 변경이
+도메인 변경과 함께 원자적으로 rollback됩니다.
+
+이벤트 drain/clear가 어느 진입점에서 보장되는지의 현황:
 
 | 진입점 | commit | 이벤트 처리 | 상태 |
 |--------|--------|-------------|------|
 | REST 쓰기 (`get_db_transactional`) | `commit_with_events` | ✅ 안전망 drain 후 commit, 예외 시 rollback + `clear_events` | 구현됨 |
 | REST 읽기 (`get_db`) | 없음 (항상 rollback) | ✅ rollback 경계에서 `clear_events` (누수 위생) | 구현됨 |
 | WebSocket per-message (`timers_ws.py`) | 맨 `session.commit()` | ❌ **drain/clear 없음** | [#49](https://github.com/onprem-hipster-timer/backend/issues/49) 범위 |
+| AsyncSession (`get_async_db`, background tasks) | 맨 `await session.commit()` | ❌ **drain/clear 없음** — 이벤트 발행 금지 | async 이벤트가 필요해지면 별도 async UoW 설계 |
+
+!!! danger "핸들러에 외부 부작용 금지"
+    핸들러는 **commit 전에** 실행됩니다. 트랜잭션이 rollback돼도 외부 효과는
+    취소할 수 없으므로, 핸들러에서 알림 발송·메시지 브로커·외부 HTTP 호출을
+    하면 안 됩니다 — **DB 행 수정만** 허용됩니다. commit 이후 실행이 보장돼야
+    하는 부작용이 필요해지면 transactional outbox로 확장합니다 (장기 방향,
+    [#50](https://github.com/onprem-hipster-timer/backend/issues/50) 참조 문서).
+
+!!! warning "SAVEPOINT 내부에서 이벤트 수집 금지"
+    이벤트 큐는 중첩 트랜잭션(SAVEPOINT) rollback을 알지 못합니다.
+    `begin_nested()` 블록 안에서 `collect_event`를 호출하면 savepoint가
+    rollback돼도 취소된 변경의 이벤트가 큐에 남아 dispatch됩니다.
+    savepoint 내부에서는 이벤트를 수집하지 않습니다 (필요해지면
+    savepoint별 큐 checkpoint 구현이 선행돼야 함).
+
+!!! note "`MAX_DISPATCH_DEPTH`의 실제 의미"
+    이 상한은 재귀 "깊이"가 아니라 **한 drain 루프에서 처리하는 총 이벤트
+    수**입니다. 한 요청이 정당하게 많은 이벤트를 발행하는 배치성 유스케이스가
+    생기면 체인 깊이와 총량을 분리해야 합니다.
 
 !!! danger "WS 경로의 이벤트 유실 함정 (#49 스코프)"
     WS per-message 커밋은 `commit_with_events`를 타지 않습니다. 현재 WS는 타이머 연산만
@@ -277,6 +303,7 @@ def handle(events, session):
 3. **핸들러** — 수신 도메인의 `app/domain/<domain>/event_handlers.py`에
    `@register(이벤트타입)` 함수 추가. 시그니처 `(event, session)`, owner 불변조건 확인,
    low-level 연산 사용, status류 직접 쓰기는 이벤트 미발행(§4.6, §5.1).
+   **DB 행 수정만 허용** — 알림·브로커·외부 HTTP 등 외부 부작용 금지(§4.5).
 4. **등록 배선** — 새 `event_handlers.py` 모듈이면
    `app/shared/messagebus.py::register_handlers()`에 lazy import 한 줄 추가.
    (앱 lifespan과 테스트 conftest가 이 함수를 공유하므로 다른 배선은 불필요)

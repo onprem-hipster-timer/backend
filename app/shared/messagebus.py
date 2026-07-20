@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 Handler = Callable[[DomainEvent, Session], None]
 
-#: 한 drain 루프에서 처리할 수 있는 이벤트 수 상한 (폭주 cascade 차단)
+#: 한 drain 루프에서 처리하는 **총 이벤트 수** 상한 (폭주 cascade 차단).
+#: 재귀 깊이가 아니다 — 배치성 대량 발행이 필요해지면 깊이/총량 분리 필요.
 MAX_DISPATCH_DEPTH = 10
 
 #: 중앙 핸들러 registry — register()로만 등록

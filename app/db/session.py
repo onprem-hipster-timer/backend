@@ -243,6 +243,8 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     - Background tasks 등에서 사용
     - 함수 종료 성공: commit 자동
     - 예외 발생: rollback 자동
+    - 도메인 이벤트 drain/clear가 없다 — 이 세션에서 collect_event 금지
+      (docs/development/domain-events.ko.md §4.5)
     """
     async with async_session_maker() as session:
         try:

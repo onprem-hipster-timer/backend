@@ -1,6 +1,10 @@
 """
 세션 스코프 이벤트 수집 helper
 
+범용 이벤트 버스/outbox가 아니라 **동기 트랜잭션 내 도메인 이벤트 투영
+큐**다 — 안전 보장은 "동기 요청 · 같은 세션 · DB 행만 갱신하는 핸들러"
+범위에 한정된다 (적용 범위·경계: docs/development/domain-events.ko.md §4.5).
+
 도메인 모델이 SQLModel ORM 클래스의 alias라 엔티티에 `.events` 리스트를
 직접 붙일 수 없어, 세션 스코프 수집(`session.info`)을 사용한다.
 
