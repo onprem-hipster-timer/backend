@@ -65,6 +65,10 @@ type TodoStatus =
   | "DONE"         // 완료
   | "CANCELLED";   // 취소됨
 
+// 자동 불변조건: status를 명시하지 않으면 투영 일정 존재 여부를 따라갑니다.
+//   deadline 설정 → SCHEDULED / deadline 제거 → UNSCHEDULED
+//   (DONE·CANCELLED 터미널 상태는 자동화가 덮지 않음, 명시 status가 항상 우선)
+
 type TodoIncludeReason =
   | "MATCH"     // 필터 조건에 직접 매칭된 Todo (또는 필터 미사용 시)
   | "ANCESTOR"; // 필터에 매칭된 Todo의 조상이라서 포함된 Todo
@@ -153,7 +157,7 @@ Content-Type: application/json
 | `tag_ids` | UUID[] | ❌ | 연결할 태그 ID 목록 |
 | `deadline` | datetime | ❌ | 마감일시 (있으면 Schedule 자동 생성) |
 | `parent_id` | UUID | ❌ | 부모 Todo ID (트리 구조) |
-| `status` | string | ❌ | 상태 (기본값: `UNSCHEDULED`) |
+| `status` | string | ❌ | 상태 (미지정 시 자동: `deadline` 있으면 `SCHEDULED`, 없으면 `UNSCHEDULED`) |
 
 **응답 (201 Created):**
 

@@ -1,6 +1,13 @@
 # 읽기/쓰기 분리 & 도메인 이벤트 아키텍처
 
-> **상태**: 설계 (구현 예정) · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
+> **상태**: 부분 구현 — 쓰기 경로의 Message Bus 인프라([#54](https://github.com/onprem-hipster-timer/backend/issues/54))와
+> Todo→Schedule 정방향 전파([#55](https://github.com/onprem-hipster-timer/backend/issues/55) 일부,
+> [#61](https://github.com/onprem-hipster-timer/backend/issues/61) 정책 포함) 구현 완료.
+> 역전파(Schedule→Todo)·읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
+>
+> 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/todo/events.py` ·
+> 핸들러: `app/domain/schedule/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
+> `tests/domain/todo/test_projection_policy.py`
 
 이 문서는 읽기 경로와 쓰기 경로의 책임을 분리하고, 도메인 간 전파를 **외부 broker 없이** in-process Message Bus로 처리하기 위한 설계를 설명합니다. 대상 환경은 **단일 프로세스 · 단일 DB · 요청당 단일 세션 · 단일 트랜잭션 · 강한 일관성**입니다.
 
@@ -156,7 +163,10 @@ def handle(events, session):
 
 실제 모듈 간 전파가 필요한 것만 우선 정의합니다.
 
-`ScheduleTimeChanged`, `ScheduleDeleted`, `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted`, `ScheduleCreatedWithTodoOption`.
+| 이벤트 | 상태 |
+|--------|------|
+| `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py`) |
+| `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleCreatedWithTodoOption` (역전파) | 계획 — #55 잔여 |
 
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))

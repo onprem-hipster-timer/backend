@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **In-process Domain Event + Message Bus**: Cross-domain write propagation now flows through a session-scoped event queue (`app/shared/uow.py`) and a central handler registry with a queue-based drain loop (`app/shared/messagebus.py`) — same session/transaction, no external broker. Handlers run before response assembly so auto-created resources appear immediately; a handler failure rolls back the whole transaction. Cascade loops are stopped by per-chain `event_key` dedupe plus a `MAX_DISPATCH_DEPTH` bound. `get_db_transactional` now commits via `commit_with_events` (safety-net drain) and clears the event queue at rollback boundaries. ([#54](https://github.com/onprem-hipster-timer/backend/issues/54))
+- **`linked_schedule_policy` (breaking)**: Clearing a Todo's deadline (`PATCH` with `"deadline": null`) and deleting a Todo (`DELETE /v1/todos/{id}`) now require an explicit `linked_schedule_policy` — `delete` (remove the projected Schedule + its visibility settings) or `unlink` (detach `source_todo_id`; the Schedule survives as a regular schedule with its notes/tags/sharing intact). There is deliberately **no server default** (Kubernetes `propagationPolicy`-style enum); omitting it returns `422`. ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
+
+### Changed
+
+- **Todo→Schedule sync moved to domain events, and corrected**: The inline `TodoService`→`ScheduleService` calls were replaced by `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, and `TodoDeleted` events handled in `app/domain/schedule/event_handlers.py` (owner-invariant checked, low-level ops, no visibility copying). Field-ownership rules (`docs/development/domain-events.ko.md` §5.1) fixed several long-standing sync gaps, each pinned by tests:
+  - Renaming a Todo (title/description) now updates the projected Schedule — previously never propagated.
+  - Changing a deadline moves only the projection's start; a user-adjusted duration is preserved (previously forced back to 1 hour).
+  - Changing a deadline when the projection is missing recreates it (previously a silent no-op).
+  - `status` now follows projection existence when not explicitly set (`SCHEDULED` ⇔ linked schedule exists; `DONE`/`CANCELLED` are never overridden) — consistent across both creation paths.
+  - Exactly one linked projection per Todo is maintained. ([#55](https://github.com/onprem-hipster-timer/backend/issues/55), [#61](https://github.com/onprem-hipster-timer/backend/issues/61))
 
 ---
 
