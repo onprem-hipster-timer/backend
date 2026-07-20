@@ -65,9 +65,11 @@ type TodoStatus =
   | "DONE"         // 완료
   | "CANCELLED";   // 취소됨
 
-// 자동 불변조건: status를 명시하지 않으면 투영 일정 존재 여부를 따라갑니다.
-//   deadline 설정 → SCHEDULED / deadline 제거 → UNSCHEDULED
-//   (DONE·CANCELLED 터미널 상태는 자동화가 덮지 않음, 명시 status가 항상 우선)
+// UNSCHEDULED/SCHEDULED는 **연동 유무 플래그** — 연결 일정 존재에서 파생됩니다.
+//   미지정 시 자동 계산: deadline 설정 → SCHEDULED / 연결 소멸 → UNSCHEDULED
+//   명시 전송 시 실제 연동 상태와 불일치하면 422 (거짓 플래그 불가)
+//   DONE/CANCELLED만 사용자가 자유롭게 정하는 상태 (자동화가 덮지 않음)
+//   재오픈: 연동이 있으면 SCHEDULED, 없으면 UNSCHEDULED로 전송
 
 type TodoIncludeReason =
   | "MATCH"     // 필터 조건에 직접 매칭된 Todo (또는 필터 미사용 시)
@@ -157,7 +159,7 @@ Content-Type: application/json
 | `tag_ids` | UUID[] | ❌ | 연결할 태그 ID 목록 |
 | `deadline` | datetime | ❌ | 마감일시 (있으면 Schedule 자동 생성) |
 | `parent_id` | UUID | ❌ | 부모 Todo ID (트리 구조) |
-| `status` | string | ❌ | 상태 (미지정 시 자동: `deadline` 있으면 `SCHEDULED`, 없으면 `UNSCHEDULED`) |
+| `status` | string | ❌ | 미지정 시 자동 계산 (`deadline` 있으면 `SCHEDULED`, 없으면 `UNSCHEDULED`). 명시 시 실제 연동 상태와 불일치하면 `422` |
 
 **응답 (201 Created):**
 
@@ -253,9 +255,10 @@ Content-Type: application/json
     - deadline 변경: 기존 Schedule의 시작 시간 이동 (사용자가 조정한 일정 길이는 보존, 투영이 없으면 재생성)
     - deadline 제거 (null): `linked_schedule_policy` **필수** — 아래 참조
 
-!!! danger "deadline 제거 시 `linked_schedule_policy` 필수 (#61)"
-    `deadline: null`을 명시하는 요청은 연결 Schedule 처리 방식을 반드시 함께 지정해야 합니다.
-    **서버 디폴트는 없으며**, 누락 시 `422`를 반환합니다.
+!!! danger "deadline 제거 시 `linked_schedule_policy` (#61)"
+    `deadline: null`을 명시하는 요청은 **연결 Schedule이 있는 경우** 처리 방식을 반드시
+    함께 지정해야 합니다. **서버 기본값은 없으며**, 연결이 있는데 누락하면 `422`를
+    반환합니다. 연결이 없으면 생략할 수 있습니다.
 
     ```json
     { "deadline": null, "linked_schedule_policy": "delete" }
@@ -277,8 +280,9 @@ Content-Type: application/json
 DELETE /v1/todos/{todo_id}?linked_schedule_policy=delete
 ```
 
-!!! danger "`linked_schedule_policy` query param 필수 (#61)"
-    연결 Schedule 처리 방식을 반드시 지정해야 합니다. **서버 디폴트는 없으며**, 누락 시 `422`를 반환합니다.
+!!! danger "`linked_schedule_policy` query param (#61)"
+    **연결 Schedule이 있는 경우** 처리 방식을 반드시 지정해야 합니다. **서버 기본값은
+    없으며**, 연결이 있는데 누락하면 `422`를 반환합니다. 연결이 없으면 생략할 수 있습니다.
 
     | 값 | 동작 |
     |----|------|
@@ -999,6 +1003,64 @@ function TodoList() {
 
 ---
 
+## 프론트엔드 마이그레이션 가이드
+
+이벤트 기반 동기화·정책 도입에 따른 브레이킹 변경과 대응 방법입니다.
+
+### 1. 마감 취소 — 연결 일정이 있으면 정책 명시
+
+```json
+// 이전
+{ "deadline": null }
+// 이후 (연결 일정이 있는 경우 — 없으면 이전 그대로 동작)
+{ "deadline": null, "linked_schedule_policy": "delete" }
+```
+
+연결이 있는데 누락하면 `422`. UI 권장: *"연결된 일정도 삭제할까요, 일반 일정으로 남길까요?"* 선택 다이얼로그.
+
+### 2. Todo 삭제 — 동일 정책을 query param으로
+
+```http
+DELETE /v1/todos/{id}?linked_schedule_policy=delete   // 또는 unlink
+```
+
+연결 일정이 있는 경우 필수, 없으면 생략 가능.
+
+### 3. 연결 일정 직접 삭제 — `source_todo_policy`
+
+```http
+DELETE /v1/schedules/{id}?source_todo_policy=keep_deadline   // 또는 clear_deadline
+```
+
+응답의 `source_todo_id`가 있는 일정(마감 투영)에 필수. 일반 일정은 기존 그대로.
+
+### 4. 연결 일정의 반복 전환 — 정책과 함께만 가능
+
+```json
+// PATCH /v1/schedules/{id} — source-linked 일정에 recurrence_rule을 설정하는 경우
+{ "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO", "source_todo_policy": "keep_deadline" }
+```
+
+마감 투영은 반복이 될 수 없으므로, 전환 시 **자동으로 연결이 해제**됩니다. 정책 누락 → `422`.
+
+### 5. `status`는 연동 유무 플래그
+
+- `UNSCHEDULED`/`SCHEDULED`를 직접 보내는 코드는 제거를 권장합니다 (서버가 자동 계산).
+- 보내는 경우 실제 연동 상태와 일치해야 하며, 불일치하면 `422`.
+- 재오픈(DONE 해제): 연동이 있으면 `"SCHEDULED"`, 없으면 `"UNSCHEDULED"`를 전송.
+
+### 6. `source_todo_id`는 쓰기 불가
+
+`POST/PATCH /v1/schedules` payload에서 제거하세요 — 전송 시 `422`입니다
+(이전 버전은 조용히 무시해서 연결됐다고 착각하기 쉬웠습니다). 연결 생성은 전용 흐름만:
+deadline 설정, `create_todo_options`, `POST /v1/schedules/{id}/todo`.
+
+### 7. 항상 서버 응답으로 화면 갱신
+
+변경 응답에는 최신 전체 상태(태그·연결·플래그)가 포함됩니다. 로컬 병합 대신 응답 기준으로 갱신하세요.
+
+---
+
 ## 주의사항
 
 ### 1. tag_group_id는 필수
@@ -1041,9 +1103,12 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그가 Todo의 �
 ### 4. 삭제 시 동작
 
 - **Todo 삭제**:
-  - 해당 Todo에 연결된 Schedule은 함께 삭제
+  - 연결된 Schedule은 `linked_schedule_policy`에 따라 처리 (delete: 삭제 / unlink: 일반 일정으로 보존)
   - 자식 Todo는 삭제되지 않고 루트로 승격 (parent_id → NULL)
   - 자식 Todo에 연결된 Schedule은 유지됨
+- **연결 Schedule을 직접 삭제**(`DELETE /v1/schedules/{id}`):
+  - `source_todo_policy` 필수 (clear_deadline: 마감도 제거 / keep_deadline: 마감 유지)
+  - 어느 쪽이든 Todo는 유지되고 연동 플래그만 `UNSCHEDULED`로 해제
 - **TagGroup 삭제**:
   - 그룹 내 모든 **Todo 삭제** (Todo 삭제 규칙 연쇄 적용: 연결 Schedule 삭제, 자식 루트 승격)
   - Schedule의 `tag_group_id`는 NULL로 해제 (일정 유지)

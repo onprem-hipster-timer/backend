@@ -254,17 +254,20 @@ def handle(events, session):
 | 이벤트 | 상태 |
 |--------|------|
 | `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/schedule/event_handlers.py`) |
-| `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleCreatedWithTodoOption` | ✅ 구현 (`app/domain/schedule/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
+| `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleUnlinkedFromTodo`, `ScheduleCreatedWithTodoOption` | ✅ 구현 (`app/domain/schedule/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
 
 !!! note "반복 일정 × source_todo (결정)"
-    source-linked Schedule이 반복 일정으로 전환된 경우 **시간 역투영을 하지 않습니다** —
-    반복 일정은 시점 마감의 투영이 아니게 되기 때문입니다.
-    `tests/domain/schedule/test_backpropagation.py::test_recurring_source_linked_schedule_does_not_backpropagate`로 고정.
-    반복 시리즈 소진으로 원본이 자동 삭제되는 경로(recurring_service)도 `ScheduleDeleted`를
-    발행하고 접근권한 cleanup을 수행합니다.
+    마감은 시점이므로 그 투영이 반복 시리즈가 되는 것 자체가 모순 — source-linked
+    Schedule의 반복 전환은 `source_todo_policy` 없이는 422이고, 정책과 함께 요청하면
+    **자동으로 연결을 해제**(`ScheduleUnlinkedFromTodo`)한 뒤 적용됩니다.
+    역투영 핸들러의 반복 일정 제외 가드는 이제 방어선(defense-in-depth)입니다.
+    반복 시리즈 소진으로 원본이 자동 삭제되는 경로(recurring_service)는 클라이언트에게
+    물을 수 없어 `KEEP_DEADLINE` 고정으로 `ScheduleDeleted`를 발행하고 접근권한
+    cleanup을 수행합니다.
 
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
+- `ScheduleDeleted`/`ScheduleUnlinkedFromTodo`는 클라이언트가 지정한 `source_todo_policy`(`clear_deadline`|`keep_deadline`)를 운반
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
 
 ### 5.0 전파 토폴로지
@@ -278,7 +281,7 @@ flowchart LR
     TS["TodoService<br/>(발행)"] -->|"TodoDeadlineSet / Changed / Removed(policy)<br/>TodoContentChanged · TodoTagsChanged<br/>TodoDeleted(schedule_ids·policy 스냅샷)"| SH["schedule/event_handlers<br/>단일 투영 유지 · 길이 보존<br/>없으면 재생성 · 태그 full-replace"]
     SH -->|"직접 수정 — 이벤트 미발행"| SDB[("schedule 행")]
 
-    SS["ScheduleService<br/>(발행)"] -->|"ScheduleTimeChanged<br/>ScheduleDeleted(source_todo_id 스냅샷)<br/>ScheduleCreatedWithTodoOption"| TH["todo/event_handlers<br/>가드: origin==TODO skip<br/>반복 일정 제외 · 터미널 상태 미덮음"]
+    SS["ScheduleService<br/>(발행)"] -->|"ScheduleTimeChanged<br/>ScheduleDeleted(policy·스냅샷)<br/>ScheduleUnlinkedFromTodo(policy)<br/>ScheduleCreatedWithTodoOption"| TH["todo/event_handlers<br/>가드: origin==TODO skip<br/>반복 일정 제외 · 터미널 상태 미덮음"]
     TH -->|"직접 수정 — 이벤트 미발행"| TDB[("todo 행")]
 ```
 
@@ -292,20 +295,24 @@ flowchart LR
 | 마감 시점 | Todo.deadline ⇔ Schedule.start_time | **양방향** (origin 가드) |
 | 일정 길이 (end−start) | **Schedule** | 전파 안 함. deadline 변경 시 start만 이동, 길이 보존. 생성 시 초기값 1시간 |
 | 태그 | **Todo** | full-replace Todo→Schedule (일정 태그는 할일 태그의 투영 — 계약) |
-| 상태 | 자동화 (명시가 우선) | status **미지정 시에만** 투영 존재를 따라감: 생성→`SCHEDULED`, 소멸→`UNSCHEDULED` (터미널 상태 미덮음). **명시 status는 항상 우선** — 비터미널 명시(`UNSCHEDULED`+투영 공존 등)도 허용 (재오픈 흐름 지원). status 변경은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
-| 수명주기 | **Todo 주도 + 클라이언트 정책** | `linked_schedule_policy` — 디폴트 없음, 미지정 422 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
-| 연결(source_todo_id) | **전용 흐름 전유** | 공개 Schedule Create/Update DTO에서 제외 — 일반 API로 연결/해제/재연결 불가 (단일 투영·status 불변조건 보호, `TestProjectionLinkImmutability`로 고정) |
+| 상태 | 연동 유무 플래그 (파생) | `UNSCHEDULED`/`SCHEDULED`는 연결 투영 존재에서 파생 — 미지정 시 자동 계산, **명시 값이 실제 연동 상태와 불일치하면 422** (거짓 플래그 불가, 재오픈은 일치 값으로). `DONE`/`CANCELLED`만 사용자 상태 (자동화 미덮음). 플래그 갱신은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
+| 수명주기 (Todo발) | **클라이언트 정책** | `linked_schedule_policy`(`delete`\|`unlink`) — 서버 기본값 없음, **연결 투영이 있을 때만 필수** ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
+| 수명주기 (Schedule발) | **클라이언트 정책** | 투영의 삭제·반복 전환 시 `source_todo_policy`(`clear_deadline`\|`keep_deadline`) — 서버 기본값 없음, source-linked일 때만 필수. 어느 쪽이든 연동 플래그는 해제 |
+| 연결(source_todo_id) | **전용 흐름 전유** | 공개 Schedule Create/Update에 실으면 **422 거절** (조용한 무시 금지). '할일당 투영 1개'는 DB partial unique index가 최종 보장 (마이그레이션 `c4d7e8f1a2b3`) |
 | 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)). 구현 시 이 인프라 위 핸들러로 추가하되, `stop_timer`가 WS에서도 불리므로 **WS 커버리지는 #49 선행 필수**(§4.5)이고 터미널 상태 가드(DONE/CANCELLED 미덮음) 패턴을 따라야 함 |
 
 !!! note "source of truth"
     Todo `deadline`이 원본, Schedule `start_time`은 그 투영입니다. `ScheduleTimeChanged`는 **`source_todo_id`가 있는(=Todo가 만든) Schedule**에 한해 Todo로 역전파하고, `origin`이 Todo면 다시 전파하지 않습니다.
 
-!!! note "Schedule 삭제 정책 (확정·구현됨)"
-    Todo `deadline` 제거·Todo 삭제 시 연결 Schedule 처리는 클라이언트가 `linked_schedule_policy`로
-    명시합니다([#61](https://github.com/onprem-hipster-timer/backend/issues/61)).
-    반대 방향 — `source_todo_id`가 있는 Schedule을 삭제한 경우 — 는 **Todo와 `deadline`을 유지**하고
-    (삭제는 캘린더 표시 제거일 뿐) `status`만 투영 부재를 반영해 `UNSCHEDULED`로 되돌립니다
-    (터미널 상태 보호). `tests/domain/schedule/test_backpropagation.py::test_deleting_projected_schedule_keeps_todo_and_deadline`으로 고정.
+!!! note "수명주기 정책 (확정·구현됨) — 양방향 대칭"
+    투영 관계가 끊어지는 모든 경우에 클라이언트가 처리를 명시합니다 (서버 기본값 없음,
+    대상이 있을 때만 필수):
+
+    - **Todo발** (마감 취소, Todo 삭제): `linked_schedule_policy` — `delete`(투영 삭제 +
+      visibility cleanup) | `unlink`(일반 일정으로 보존)
+    - **Schedule발** (투영 삭제, 반복 전환): `source_todo_policy` — `clear_deadline`
+      (Todo 마감도 제거) | `keep_deadline`(마감 유지). 어느 쪽이든 Todo는 유지되고
+      연동 플래그만 해제 (터미널 상태 보호)
 
 ---
 

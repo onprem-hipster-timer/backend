@@ -259,8 +259,9 @@ async def update_todo(
 
     deadline 변경 시:
     - deadline 추가: 새 Schedule 생성
-    - deadline 변경: 기존 Schedule 업데이트
-    - deadline 제거: 기존 Schedule 삭제
+    - deadline 변경: 기존 Schedule 시작 시간 이동 (길이 보존, 없으면 재생성)
+    - deadline 제거(null): 연결 Schedule이 있으면 linked_schedule_policy 필수
+      (delete: 삭제 / unlink: 연결만 해제)
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
