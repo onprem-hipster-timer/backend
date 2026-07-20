@@ -22,6 +22,7 @@ from app.domain.schedule.schema.dto import (
     ScheduleRead,
     ScheduleUpdate,
 )
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import TimerRead
 from app.domain.timer.service import TimerService
@@ -219,25 +220,30 @@ async def update_schedule(
 async def delete_schedule(
         schedule_id: UUID,
         instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        source_todo_policy: SourceTodoPolicy | None = Query(
+            None,
+            description=(
+                "source Todo 처리 정책 — 이 일정이 Todo의 마감 투영(source-linked)인 경우 필수, "
+                "서버 기본값 없음. clear_deadline: Todo의 마감도 제거 / keep_deadline: 마감 유지"
+            ),
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정 삭제 (반복 일정 인스턴스 포함)
-    
+
     일반 일정과 가상 인스턴스 모두 지원:
     - 일반 일정: schedule_id로 조회하여 삭제
     - 가상 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송
-    
-    FastAPI Best Practices:
-    - Service는 session을 받아서 CRUD 직접 사용
-    - 가상 인스턴스인 경우 instance_start 쿼리 파라미터로 처리
+
+    source-linked 일정인데 `source_todo_policy`가 누락되면 422를 반환합니다.
     """
     service = ScheduleService(session, current_user)
     if instance_start:
         service.delete_recurring_instance(schedule_id, instance_start)
     else:
-        service.delete_schedule(schedule_id)
+        service.delete_schedule(schedule_id, source_todo_policy)
 
     return {"ok": True}
 

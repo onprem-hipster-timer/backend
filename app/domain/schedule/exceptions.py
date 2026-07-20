@@ -38,6 +38,15 @@ class RecurringScheduleError(DomainException):
     detail = "This schedule is not a recurring schedule"
 
 
+class SourceTodoPolicyRequiredError(DomainException):
+    """source-linked 일정의 삭제·반복 전환에는 source Todo 처리 정책이 필수"""
+    status_code = 422
+    detail = (
+        "source_todo_policy is required because this schedule is linked to a Todo. "
+        "Choose 'clear_deadline' or 'keep_deadline'."
+    )
+
+
 class ScheduleAlreadyLinkedToTodoError(DomainException):
     """이미 Todo와 연결된 Schedule"""
     status_code = 400

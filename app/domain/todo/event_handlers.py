@@ -12,10 +12,12 @@ from sqlmodel import Session
 from app.crud import schedule as schedule_crud
 from app.crud import tag as tag_crud
 from app.crud import todo as todo_crud
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.events import (
     ScheduleCreatedWithTodoOption,
     ScheduleDeleted,
     ScheduleTimeChanged,
+    ScheduleUnlinkedFromTodo,
 )
 from app.domain.todo.enums import TodoStatus
 from app.models.todo import Todo
@@ -23,6 +25,16 @@ from app.shared.events import EventOrigin
 from app.shared.messagebus import register
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_detach_policy(session: Session, todo: Todo, policy: SourceTodoPolicy) -> None:
+    """투영이 사라진 Todo에 클라이언트 정책 적용 + 연동 플래그 해제"""
+    if policy == SourceTodoPolicy.CLEAR_DEADLINE:
+        todo.deadline = None
+    # 터미널 상태(DONE/CANCELLED)는 덮지 않음 — 플래그 해제는 SCHEDULED에만
+    if todo.status == TodoStatus.SCHEDULED:
+        todo.status = TodoStatus.UNSCHEDULED
+    session.flush()
 
 
 @register(ScheduleTimeChanged)
@@ -51,8 +63,8 @@ def backpropagate_deadline(event: ScheduleTimeChanged, session: Session) -> None
 
 
 @register(ScheduleDeleted)
-def reset_status_of_source_todo(event: ScheduleDeleted, session: Session) -> None:
-    """투영 삭제 → Todo·deadline 유지, status만 투영 부재 반영"""
+def apply_policy_on_projection_deleted(event: ScheduleDeleted, session: Session) -> None:
+    """투영 삭제 → 클라이언트 정책에 따라 deadline 처리 + 연동 플래그 해제"""
     if event.origin == EventOrigin.TODO:
         return  # Todo발 삭제/정리는 Todo 쪽 흐름이 이미 상태를 관리
     if event.source_todo_id is None:
@@ -62,10 +74,20 @@ def reset_status_of_source_todo(event: ScheduleDeleted, session: Session) -> Non
     if todo is None:
         return
 
-    # 터미널 상태(DONE/CANCELLED)는 덮지 않음 — 자동화는 SCHEDULED에만 작용
-    if todo.status == TodoStatus.SCHEDULED:
-        todo.status = TodoStatus.UNSCHEDULED
-        session.flush()
+    # 내부 자동 삭제 경로는 policy가 없을 수 있음 → 데이터 보존 쪽 선택
+    _apply_detach_policy(session, todo, event.policy or SourceTodoPolicy.KEEP_DEADLINE)
+
+
+@register(ScheduleUnlinkedFromTodo)
+def apply_policy_on_projection_unlinked(
+        event: ScheduleUnlinkedFromTodo, session: Session
+) -> None:
+    """반복 전환으로 연결 해제 → 클라이언트 정책에 따라 deadline 처리 + 플래그 해제"""
+    todo = todo_crud.get_todo(session, event.source_todo_id, event.owner_id)
+    if todo is None:
+        return
+
+    _apply_detach_policy(session, todo, event.policy)
 
 
 @register(ScheduleCreatedWithTodoOption)

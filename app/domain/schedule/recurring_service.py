@@ -260,6 +260,7 @@ class RecurringScheduleService:
                 # (ScheduleService.delete_schedule을 경유하지 않는 삭제 경로이므로
                 #  접근권한 cleanup과 삭제 이벤트 수집을 여기서 직접 수행)
                 from app.crud import visibility as visibility_crud
+                from app.domain.schedule.enums import SourceTodoPolicy
                 from app.domain.schedule.events import ScheduleDeleted
                 from app.domain.visibility.enums import ResourceType
                 from app.shared.events import EventOrigin
@@ -268,11 +269,14 @@ class RecurringScheduleService:
                 visibility_crud.delete_visibility_by_resource(
                     self.session, ResourceType.SCHEDULE, parent_schedule.id
                 )
+                # 내부 자동 삭제 경로라 클라이언트에게 정책을 물을 수 없음 —
+                # 데이터 보존 쪽(KEEP_DEADLINE)을 택한다
                 collect_event(self.session, ScheduleDeleted(
                     owner_id=self.owner_id,
                     origin=EventOrigin.SCHEDULE,
                     schedule_id=parent_schedule.id,
                     source_todo_id=parent_schedule.source_todo_id,
+                    policy=SourceTodoPolicy.KEEP_DEADLINE,
                 ))
                 crud.delete_schedule(self.session, parent_schedule)
 

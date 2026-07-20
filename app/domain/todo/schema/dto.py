@@ -136,19 +136,14 @@ class TodoUpdate(CustomModel):
         """
         linked_schedule_policy는 deadline 명시적 null과 함께만 유효
 
-        - deadline: null인데 정책 누락 → 422 (서버 기본값 없음)
-        - 정책이 있는데 deadline: null이 아님 → 422 (무의미한 조합 차단)
+        필수 여부는 연결 투영 존재에 달려 있어 서비스에서 검증한다
+        (연결이 있는데 누락 → 422). 여기서는 무의미한 조합만 차단한다.
 
         MISSING sentinel: `is None` 검사는 명시적 null만 참 (MISSING은 None이 아님)
         """
         deadline_cleared = self.deadline is None
         policy_given = self.linked_schedule_policy is not MISSING
 
-        if deadline_cleared and not policy_given:
-            raise ValueError(
-                "linked_schedule_policy is required when clearing deadline "
-                "(deadline: null). Choose 'delete' or 'unlink'."
-            )
         if policy_given and not deadline_cleared:
             raise ValueError(
                 "linked_schedule_policy is only allowed together with an "

@@ -279,10 +279,10 @@ async def update_todo(
 @router.delete("/{todo_id}", status_code=status.HTTP_200_OK)
 async def delete_todo(
         todo_id: UUID,
-        linked_schedule_policy: LinkedSchedulePolicy = Query(
-            ...,
+        linked_schedule_policy: Optional[LinkedSchedulePolicy] = Query(
+            None,
             description=(
-                "연결 투영 Schedule 처리 정책 (필수, 서버 기본값 없음). "
+                "연결 투영 Schedule 처리 정책 — 연결 투영이 있는 경우 필수, 서버 기본값 없음. "
                 "delete: 투영 삭제 + 접근권한 정리 / unlink: 연결만 해제(일정 보존)"
             ),
         ),
@@ -293,7 +293,7 @@ async def delete_todo(
     Todo 삭제
 
     연결된 투영 Schedule은 `linked_schedule_policy`에 따라 처리됩니다.
-    파라미터 누락 시 422를 반환합니다.
+    연결 투영이 있는데 정책이 누락되면 422를 반환합니다.
     """
     todo_service = TodoService(session, current_user)
     todo_service.delete_todo(todo_id, linked_schedule_policy)

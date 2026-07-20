@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
 
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.shared.events import DomainEvent
 
 
@@ -29,10 +30,24 @@ class ScheduleDeleted(ScheduleEvent):
     """
     일정이 삭제됨
 
-    :param source_todo_id: 삭제 직전 스냅샷 (row가 사라져 사후 조회 불가).
-        Todo와 deadline은 유지된다 — 삭제는 캘린더 표시 제거일 뿐.
+    :param source_todo_id: 삭제 직전 스냅샷 (row가 사라져 사후 조회 불가)
+    :param policy: source-linked 일정이면 클라이언트가 명시한 source Todo
+        처리 정책. unlinked 일정 삭제면 None
     """
     source_todo_id: Optional[UUID]
+    policy: Optional[SourceTodoPolicy]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScheduleUnlinkedFromTodo(ScheduleEvent):
+    """
+    일정이 마감 투영이기를 그만둠 (반복 전환으로 연결 해제)
+
+    :param source_todo_id: 해제 직전 스냅샷
+    :param policy: 클라이언트가 명시한 source Todo 처리 정책
+    """
+    source_todo_id: UUID
+    policy: SourceTodoPolicy
 
 
 @dataclass(frozen=True, kw_only=True)

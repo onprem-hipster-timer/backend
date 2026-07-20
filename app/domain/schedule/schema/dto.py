@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
-from app.domain.schedule.enums import ScheduleState
+from app.domain.schedule.enums import ScheduleState, SourceTodoPolicy
 from app.models.visibility import VisibilityLevel
 from app.utils.validators import validate_time_order
 
@@ -121,6 +121,9 @@ class ScheduleUpdate(CustomModel):
     tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
     # source_todo_id는 공개 DTO에서 의도적으로 제외 (ScheduleCreate 주석 참조)
     state: ScheduleState | None = MISSING  # 상태
+    # source-linked 일정을 반복 일정으로 전환할 때 source Todo 처리 정책.
+    # 전환은 연결 해제를 동반하므로 명시 필수 (서버 기본값 없음)
+    source_todo_policy: SourceTodoPolicy = MISSING
 
     @field_validator("start_time", "end_time", "recurrence_end")
     @classmethod
@@ -132,6 +135,19 @@ class ScheduleUpdate(CustomModel):
     def validate_time(cls, end_time, info):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
+
+    @model_validator(mode="after")
+    def validate_source_todo_policy(self):
+        """source_todo_policy는 recurrence_rule 설정과 함께만 유효"""
+        policy_given = self.source_todo_policy is not MISSING
+        converting = (
+            self.recurrence_rule is not MISSING and self.recurrence_rule is not None
+        )
+        if policy_given and not converting:
+            raise ValueError(
+                "source_todo_policy is only allowed when setting a recurrence_rule."
+            )
+        return self
 
 
 # Forward reference 해결 (TagRead 임포트)

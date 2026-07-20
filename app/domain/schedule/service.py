@@ -28,11 +28,14 @@ from app.domain.schedule.exceptions import (
     InvalidRecurrenceRuleError,
     InvalidRecurrenceEndError,
     ScheduleAlreadyLinkedToTodoError,
+    SourceTodoPolicyRequiredError,
 )
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.events import (
     ScheduleCreatedWithTodoOption,
     ScheduleDeleted,
     ScheduleTimeChanged,
+    ScheduleUnlinkedFromTodo,
 )
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.query_service import ScheduleQueryService
@@ -177,6 +180,25 @@ class ScheduleService:
                 # start_time이 업데이트되어 기존 recurrence_end와 충돌하는 경우
                 raise InvalidRecurrenceEndError()
 
+        # source-linked 일정의 반복 전환 = 마감 투영이기를 그만두는 것 —
+        # source Todo 처리 정책이 필수이며, 전환은 연결 해제를 동반한다
+        converting_to_recurring = (
+            'recurrence_rule' in update_dict
+            and update_dict['recurrence_rule'] is not None
+        )
+        if converting_to_recurring and schedule.source_todo_id is not None:
+            policy_value = update_dict.get('source_todo_policy')
+            if policy_value is None:
+                raise SourceTodoPolicyRequiredError()
+            collect_event(self.session, ScheduleUnlinkedFromTodo(
+                owner_id=self.owner_id,
+                origin=EventOrigin.SCHEDULE,
+                schedule_id=schedule.id,
+                source_todo_id=schedule.source_todo_id,
+                policy=SourceTodoPolicy(policy_value),
+            ))
+            schedule.source_todo_id = None
+
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_dict
         if tag_ids_updated:
@@ -201,7 +223,11 @@ class ScheduleService:
 
         return updated_schedule
 
-    def delete_schedule(self, schedule_id: UUID) -> None:
+    def delete_schedule(
+            self,
+            schedule_id: UUID,
+            source_todo_policy: Optional[SourceTodoPolicy] = None,
+    ) -> None:
         """
         일정 삭제
 
@@ -217,12 +243,17 @@ class ScheduleService:
         if not schedule:
             raise ScheduleNotFoundError()
 
+        # source-linked 일정이면 source Todo 처리 정책 필수 (연결 없으면 불필요)
+        if schedule.source_todo_id is not None and source_todo_policy is None:
+            raise SourceTodoPolicyRequiredError()
+
         # source_todo_id는 row가 사라지면 조회할 수 없으므로 삭제 전에 스냅샷
         collect_event(self.session, ScheduleDeleted(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,
             schedule_id=schedule_id,
             source_todo_id=schedule.source_todo_id,
+            policy=source_todo_policy,
         ))
 
         # 접근권한 설정 삭제

@@ -1064,9 +1064,11 @@ def test_get_all_todos_sorted_by_status(test_session, sample_tag_group, test_use
     ))
     test_session.flush()
 
+    # SCHEDULED는 연동 유무 플래그 — 실제 연동(deadline→투영)이 있어야 함
     todo_scheduled = service.create_todo(TodoCreate(
         title="예정됨",
         tag_group_id=sample_tag_group.id,
+        deadline=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
         status=TodoStatus.SCHEDULED,
     ))
     test_session.flush()

@@ -619,21 +619,34 @@ def test_delete_todo_not_found_e2e(e2e_client):
 
 @pytest.mark.e2e
 def test_delete_todo_without_policy_returns_422(e2e_client):
-    """linked_schedule_policy 누락 시 422 — 실존 Todo도 삭제되지 않음"""
+    """정책은 연결 투영이 있을 때만 필수 — 있으면 422, 없으면 생략 허용"""
     group_response = e2e_client.post(
         "/v1/tags/groups", json={"name": "삭제 정책 검증 그룹", "color": "#00FF00"}
     )
     group_id = group_response.json()["id"]
-    create_response = e2e_client.post(
-        "/v1/todos", json={"title": "삭제 대상", "tag_group_id": group_id}
-    )
-    todo_id = create_response.json()["id"]
 
-    response = e2e_client.delete(f"/v1/todos/{todo_id}")
+    # 연결 투영이 있는 Todo: 정책 누락 → 422, 삭제되지 않음
+    linked = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "투영 있는 삭제 대상",
+            "tag_group_id": group_id,
+            "deadline": "2026-01-01T12:00:00Z",
+        },
+    ).json()
 
+    response = e2e_client.delete(f"/v1/todos/{linked['id']}")
     assert response.status_code == 422
-    # 정책 없이는 삭제되지 않음
-    assert e2e_client.get(f"/v1/todos/{todo_id}").status_code == 200
+    assert e2e_client.get(f"/v1/todos/{linked['id']}").status_code == 200
+
+    # 연결 투영이 없는 Todo: 정책 생략 허용
+    unlinked = e2e_client.post(
+        "/v1/todos", json={"title": "투영 없는 삭제 대상", "tag_group_id": group_id}
+    ).json()
+
+    response = e2e_client.delete(f"/v1/todos/{unlinked['id']}")
+    assert response.status_code == 200
+    assert e2e_client.get(f"/v1/todos/{unlinked['id']}").status_code == 404
 
 
 @pytest.mark.e2e
