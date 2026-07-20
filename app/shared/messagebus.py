@@ -24,6 +24,11 @@ MAX_DISPATCH_DEPTH = 10
 #: 중앙 핸들러 registry — register()로만 등록
 HANDLERS: Dict[Type[DomainEvent], List[Handler]] = {}
 
+#: @register가 기록하는 등록 명세. 모듈 import는 한 번만 데코레이터를
+#: 실행하므로, reset_handlers() 이후 register_handlers()가 이 명세를
+#: replay해 registry를 복구한다.
+_KNOWN_REGISTRATIONS: List[tuple] = []
+
 
 class MaxDispatchDepthExceededError(RuntimeError):
     """drain 루프가 MAX_DISPATCH_DEPTH를 초과 — 폭주 cascade 의심"""
@@ -45,12 +50,18 @@ def register(event_type: Type[DomainEvent]):
     """
 
     def decorator(fn: Handler) -> Handler:
-        handlers = HANDLERS.setdefault(event_type, [])
-        if fn not in handlers:
-            handlers.append(fn)
+        if (event_type, fn) not in _KNOWN_REGISTRATIONS:
+            _KNOWN_REGISTRATIONS.append((event_type, fn))
+        _add_handler(event_type, fn)
         return fn
 
     return decorator
+
+
+def _add_handler(event_type: Type[DomainEvent], fn: Handler) -> None:
+    handlers = HANDLERS.setdefault(event_type, [])
+    if fn not in handlers:
+        handlers.append(fn)
 
 
 def handle(events: Sequence[DomainEvent], session: Session) -> None:
@@ -88,15 +99,20 @@ def handle(events: Sequence[DomainEvent], session: Session) -> None:
 
 def register_handlers() -> None:
     """
-    도메인 핸들러 모듈 일괄 등록 (idempotent)
+    도메인 핸들러 일괄 등록 (idempotent, reset 후 복구 가능)
 
     앱 startup(lifespan)과 테스트 fixture 양쪽에서 호출되므로 재호출에
-    안전해야 한다. 순환 import 방지를 위해 lazy import.
+    안전해야 한다. import는 첫 호출에서만 데코레이터를 실행하므로,
+    기록된 등록 명세를 replay해 reset_handlers() 이후에도 복구한다.
+    순환 import 방지를 위해 lazy import.
     """
     import app.domain.schedule.event_handlers  # noqa: F401
     import app.domain.todo.event_handlers  # noqa: F401
 
+    for event_type, fn in _KNOWN_REGISTRATIONS:
+        _add_handler(event_type, fn)
+
 
 def reset_handlers() -> None:
-    """registry 초기화 — 테스트 전용"""
+    """registry 초기화 — 테스트 전용. register_handlers()로 복구할 수 있다."""
     HANDLERS.clear()

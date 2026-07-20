@@ -77,14 +77,19 @@ def _pong(pong_id: str = "q1") -> PongEvent:
 
 @pytest.fixture(autouse=True)
 def clean_handlers():
-    """테스트 간 핸들러 레지스트리 격리"""
-    snapshot = {k: list(v) for k, v in HANDLERS.items()}
+    """테스트 간 핸들러 레지스트리·등록 명세 격리"""
+    from app.shared.messagebus import _KNOWN_REGISTRATIONS
+
+    handlers_snapshot = {k: list(v) for k, v in HANDLERS.items()}
+    known_snapshot = list(_KNOWN_REGISTRATIONS)
     HANDLERS.clear()
     try:
         yield
     finally:
         HANDLERS.clear()
-        HANDLERS.update(snapshot)
+        HANDLERS.update(handlers_snapshot)
+        _KNOWN_REGISTRATIONS.clear()
+        _KNOWN_REGISTRATIONS.extend(known_snapshot)
 
 
 # ============================================================
@@ -318,11 +323,40 @@ class TestFlushAndDispatch:
 # ============================================================
 
 class TestRegisterHandlers:
-    def test_register_handlers_is_idempotent(self):
-        """앱 startup·테스트 fixture 양쪽에서 호출되므로 중복 호출 안전 (doc §4.3)"""
+    def test_register_handlers_populates_domain_handlers(self):
+        """실제 도메인 핸들러가 등록되는지 검증 (빈 registry 자기비교 방지)"""
+        messagebus.register_handlers()
+
+        populated = {k: list(v) for k, v in HANDLERS.items()}
+        assert populated, "도메인 핸들러가 하나도 등록되지 않음"
+        # 양방향 핸들러 모듈이 모두 반영됐는지 대표 이벤트로 확인
+        from app.domain.schedule.events import ScheduleTimeChanged
+        from app.domain.todo.events import TodoDeadlineSet
+        assert HANDLERS.get(TodoDeadlineSet), "Todo→Schedule 핸들러 누락"
+        assert HANDLERS.get(ScheduleTimeChanged), "Schedule→Todo 핸들러 누락"
+
+    def test_register_handlers_is_idempotent_on_populated_registry(self):
+        """등록된 상태에서 재호출해도 중복 등록되지 않음"""
         messagebus.register_handlers()
         first = {k: list(v) for k, v in HANDLERS.items()}
+        assert first
 
         messagebus.register_handlers()
 
         assert {k: list(v) for k, v in HANDLERS.items()} == first
+
+    def test_register_handlers_restores_after_reset(self):
+        """reset_handlers() 이후 재호출로 도메인 핸들러가 복구됨
+
+        모듈 재-import는 데코레이터를 재실행하지 않으므로, 등록 명세
+        replay가 없으면 reset 이후 동기화가 조용히 죽는다.
+        """
+        messagebus.register_handlers()
+        populated = {k: list(v) for k, v in HANDLERS.items()}
+        assert populated
+
+        reset_handlers()
+        assert HANDLERS == {}
+
+        messagebus.register_handlers()
+        assert {k: list(v) for k, v in HANDLERS.items()} == populated

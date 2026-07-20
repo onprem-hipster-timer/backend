@@ -4,7 +4,8 @@
 "할일(Todo)이 원본, 일정(Schedule)은 deadline의 캘린더 투영" 계약을
 테스트명으로 고정합니다 (#55, #61).
 
-- status 자동 불변조건: SCHEDULED ⇔ 투영 존재 (터미널 상태 예외)
+- status 자동화: status 미지정 시에만 투영 존재를 따라감 (SCHEDULED ⇔ 투영).
+  **명시 status가 항상 우선** — UNSCHEDULED+투영 공존도 명시라면 허용 (재오픈 흐름 지원)
 - linked_schedule_policy: 클라이언트 명시 필수, 서버 디폴트 없음 (#61)
 - 제목·설명은 Todo 소유 → 투영 항상 반영
 - 일정 길이는 Schedule 소유 → deadline 변경 시 보존
@@ -120,6 +121,31 @@ class TestStatusAutomation:
         )
 
         assert updated.status == TodoStatus.DONE
+
+    def test_explicit_unscheduled_with_deadline_allowed_on_create(
+            self, todo_service, test_session, sample_tag_group, test_user):
+        """명시 status는 비터미널이어도 우선 — UNSCHEDULED + 투영 공존 허용 (계약)"""
+        todo = _create_with_deadline(
+            todo_service, test_session, sample_tag_group.id,
+            status=TodoStatus.UNSCHEDULED,
+        )
+
+        assert todo.status == TodoStatus.UNSCHEDULED
+        assert len(_projections(test_session, todo.id, test_user.sub)) == 1
+
+    def test_explicit_unscheduled_with_deadline_allowed_on_update(
+            self, todo_service, test_session, sample_tag_group, test_user):
+        todo = todo_service.create_todo(
+            TodoCreate(title="명시 UNSCHEDULED", tag_group_id=sample_tag_group.id)
+        )
+
+        updated = todo_service.update_todo(
+            todo.id,
+            TodoUpdate(deadline=DEADLINE, status=TodoStatus.UNSCHEDULED),
+        )
+
+        assert updated.status == TodoStatus.UNSCHEDULED
+        assert len(_projections(test_session, todo.id, test_user.sub)) == 1
 
 
 # ============================================================

@@ -114,6 +114,46 @@ class TestScheduleTimeChangedBackpropagation:
         test_session.refresh(todo)
         assert todo.deadline == NAIVE_DEADLINE  # 역투영 안 됨
 
+    def test_origin_guard_blocks_todo_originated_events(
+            self, todo_service, test_session, sample_tag_group, test_user):
+        """origin=TODO인 ScheduleTimeChanged는 역투영되지 않음 (가드 직접 검증)
+
+        정방향 핸들러는 Schedule을 직접 수정하고 이벤트를 발행하지 않으므로,
+        이 가드는 통상 흐름에서 발화하지 않는다 — 이벤트를 수동 발행해
+        가드 단독으로 검증한다.
+        """
+        from app.domain.schedule.events import ScheduleTimeChanged
+        from app.shared.events import EventOrigin
+        from app.shared.uow import collect_event, flush_and_dispatch_events
+
+        todo, projection = _todo_with_projection(
+            todo_service, test_session, sample_tag_group.id)
+
+        # 핸들러를 거치지 않고 시간만 직접 이동 (역투영 전제 조건 구성)
+        projection.start_time = NAIVE_NEW_START
+        projection.end_time = NAIVE_NEW_START + timedelta(hours=1)
+        test_session.flush()
+
+        # origin=TODO → 가드에 걸려 deadline 미역투영
+        collect_event(test_session, ScheduleTimeChanged(
+            owner_id=test_user.sub,
+            origin=EventOrigin.TODO,
+            schedule_id=projection.id,
+        ))
+        flush_and_dispatch_events(test_session)
+        test_session.refresh(todo)
+        assert todo.deadline == NAIVE_DEADLINE
+
+        # 동일 상황에서 origin=SCHEDULE이면 역투영됨 → 가드가 유일한 차단자
+        collect_event(test_session, ScheduleTimeChanged(
+            owner_id=test_user.sub,
+            origin=EventOrigin.SCHEDULE,
+            schedule_id=projection.id,
+        ))
+        flush_and_dispatch_events(test_session)
+        test_session.refresh(todo)
+        assert todo.deadline == NAIVE_NEW_START
+
     def test_no_pingpong_on_todo_deadline_update(
             self, todo_service, test_session, sample_tag_group):
         """Todo→Schedule 정방향이 역전파를 재촉발하지 않음 (depth 폭주 없이 완료)"""

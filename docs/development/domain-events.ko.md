@@ -234,7 +234,7 @@ def handle(events, session):
 | 마감 시점 | Todo.deadline ⇔ Schedule.start_time | **양방향** (origin 가드) |
 | 일정 길이 (end−start) | **Schedule** | 전파 안 함. deadline 변경 시 start만 이동, 길이 보존. 생성 시 초기값 1시간 |
 | 태그 | **Todo** | full-replace Todo→Schedule (일정 태그는 할일 태그의 투영 — 계약) |
-| 상태 | 자동 불변조건 | `SCHEDULED` ⇔ 연결 투영 존재 (DONE/CANCELLED 터미널 상태 예외). status 변경은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
+| 상태 | 자동화 (명시가 우선) | status **미지정 시에만** 투영 존재를 따라감: 생성→`SCHEDULED`, 소멸→`UNSCHEDULED` (터미널 상태 미덮음). **명시 status는 항상 우선** — 비터미널 명시(`UNSCHEDULED`+투영 공존 등)도 허용 (재오픈 흐름 지원). status 변경은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
 | 수명주기 | **Todo 주도 + 클라이언트 정책** | `linked_schedule_policy` — 디폴트 없음, 미지정 422 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
 | 연결(source_todo_id) | **전용 흐름 전유** | 공개 Schedule Create/Update DTO에서 제외 — 일반 API로 연결/해제/재연결 불가 (단일 투영·status 불변조건 보호, `TestProjectionLinkImmutability`로 고정) |
 | 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)). 구현 시 이 인프라 위 핸들러로 추가하되, `stop_timer`가 WS에서도 불리므로 **WS 커버리지는 #49 선행 필수**(§4.5)이고 터미널 상태 가드(DONE/CANCELLED 미덮음) 패턴을 따라야 함 |

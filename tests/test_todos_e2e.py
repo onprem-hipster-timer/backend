@@ -619,10 +619,21 @@ def test_delete_todo_not_found_e2e(e2e_client):
 
 @pytest.mark.e2e
 def test_delete_todo_without_policy_returns_422(e2e_client):
-    """linked_schedule_policy 누락 시 422 (#61 — 서버 디폴트 없음)"""
-    response = e2e_client.delete(f"/v1/todos/{uuid4()}")
+    """linked_schedule_policy 누락 시 422 — 실존 Todo도 삭제되지 않음"""
+    group_response = e2e_client.post(
+        "/v1/tags/groups", json={"name": "삭제 정책 검증 그룹", "color": "#00FF00"}
+    )
+    group_id = group_response.json()["id"]
+    create_response = e2e_client.post(
+        "/v1/todos", json={"title": "삭제 대상", "tag_group_id": group_id}
+    )
+    todo_id = create_response.json()["id"]
+
+    response = e2e_client.delete(f"/v1/todos/{todo_id}")
 
     assert response.status_code == 422
+    # 정책 없이는 삭제되지 않음
+    assert e2e_client.get(f"/v1/todos/{todo_id}").status_code == 200
 
 
 @pytest.mark.e2e
