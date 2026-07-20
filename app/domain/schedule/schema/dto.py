@@ -38,9 +38,10 @@ class ScheduleCreate(CustomModel):
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
-    # source_todo_id는 공개 DTO에서 의도적으로 제외 — 투영 연결 수명주기는
-    # 전용 흐름(deadline, create_todo_options, POST /schedules/{id}/todo,
-    # linked_schedule_policy)만이 관리한다 (단일 투영 불변조건 보호)
+    # source_todo_id는 쓰기 불가 — 투영 연결 수명주기는 전용 흐름
+    # (deadline, create_todo_options, POST /schedules/{id}/todo,
+    # linked_schedule_policy)만이 관리한다. 전송 시 422로 거절 (조용한 무시 금지)
+    source_todo_id: Optional[UUID] = None
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
 
@@ -54,6 +55,17 @@ class ScheduleCreate(CustomModel):
     def validate_time(cls, end_time, info):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
+
+    @model_validator(mode="after")
+    def reject_source_todo_id(self):
+        """source_todo_id는 클라이언트가 지정할 수 없음 (전용 흐름 전유)"""
+        if "source_todo_id" in self.model_fields_set:
+            raise ValueError(
+                "source_todo_id cannot be set directly. The Todo link lifecycle "
+                "is managed by dedicated flows (deadline projection, "
+                "create_todo_options, POST /v1/schedules/{id}/todo)."
+            )
+        return self
 
 
 class ScheduleRead(CustomModel):
@@ -119,7 +131,8 @@ class ScheduleUpdate(CustomModel):
     recurrence_end: datetime | None = MISSING  # 반복 종료일
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
-    # source_todo_id는 공개 DTO에서 의도적으로 제외 (ScheduleCreate 주석 참조)
+    # source_todo_id는 쓰기 불가 — 전송 시 422 (ScheduleCreate 주석 참조)
+    source_todo_id: UUID | None = MISSING
     state: ScheduleState | None = MISSING  # 상태
     # source-linked 일정을 반복 일정으로 전환할 때 source Todo 처리 정책.
     # 전환은 연결 해제를 동반하므로 명시 필수 (서버 기본값 없음)
@@ -146,6 +159,16 @@ class ScheduleUpdate(CustomModel):
         if policy_given and not converting:
             raise ValueError(
                 "source_todo_policy is only allowed when setting a recurrence_rule."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_source_todo_id(self):
+        """source_todo_id는 클라이언트가 변경할 수 없음 (전용 흐름 전유)"""
+        if self.source_todo_id is not MISSING:
+            raise ValueError(
+                "source_todo_id cannot be modified directly. Use the dedicated "
+                "flows (linked_schedule_policy, source_todo_policy) instead."
             )
         return self
 
