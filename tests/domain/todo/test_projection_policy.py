@@ -196,6 +196,75 @@ class TestLifecyclePolicy:
 # 투영 동기화: 제목·설명(화석 3), 길이 보존(화석 7), 재생성(화석 2), 단일 투영(화석 4)
 # ============================================================
 
+class TestProjectionLinkImmutability:
+    """
+    투영 연결(source_todo_id)은 공개 API로 조작 불가 (P1 수정)
+
+    연결 수명주기는 전용 흐름(deadline, create_todo_options,
+    POST /schedules/{id}/todo, linked_schedule_policy)만이 관리한다.
+    일반 Create/Update DTO의 source_todo_id는 제거되어 무시된다.
+    """
+
+    def test_public_create_cannot_link_schedule_to_todo(
+            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+        """POST /schedules로 기존 Todo에 두 번째 투영을 붙일 수 없음 (단일성 보장)"""
+        from app.domain.schedule.schema.dto import ScheduleCreate
+
+        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+
+        # 클라이언트가 source_todo_id를 실어 보내도 무시됨 (extra ignore)
+        rogue = schedule_service.create_schedule(ScheduleCreate.model_validate({
+            "title": "위조 투영",
+            "start_time": DEADLINE.isoformat(),
+            "end_time": (DEADLINE + timedelta(hours=1)).isoformat(),
+            "source_todo_id": str(todo.id),
+        }))
+
+        assert rogue.source_todo_id is None
+        projections = _projections(test_session, todo.id, test_user.sub)
+        assert len(projections) == 1  # 원래 투영 하나뿐
+
+    def test_public_update_cannot_unlink_projection(
+            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+        """PATCH /schedules/{id}로 연결 해제 불가 → SCHEDULED인데 투영 0개인 상태 차단"""
+        from app.domain.schedule.schema.dto import ScheduleUpdate
+
+        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        [projection] = _projections(test_session, todo.id, test_user.sub)
+
+        # 클라이언트가 source_todo_id: null을 보내도 무시됨
+        schedule_service.update_schedule(
+            projection.id,
+            ScheduleUpdate.model_validate({"source_todo_id": None}),
+        )
+
+        test_session.refresh(projection)
+        assert projection.source_todo_id == todo.id  # 연결 유지
+        test_session.refresh(todo)
+        assert todo.status == TodoStatus.SCHEDULED  # 불변조건 유지 (투영 1개 + SCHEDULED)
+        assert len(_projections(test_session, todo.id, test_user.sub)) == 1
+
+    def test_public_update_cannot_relink_projection_to_other_todo(
+            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+        """PATCH로 투영을 다른 Todo에 재연결 불가"""
+        from app.domain.schedule.schema.dto import ScheduleUpdate
+
+        todo_a = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo_b = todo_service.create_todo(TodoCreate(
+            title="다른 할일", tag_group_id=sample_tag_group.id,
+        ))
+        [projection] = _projections(test_session, todo_a.id, test_user.sub)
+
+        schedule_service.update_schedule(
+            projection.id,
+            ScheduleUpdate.model_validate({"source_todo_id": str(todo_b.id)}),
+        )
+
+        test_session.refresh(projection)
+        assert projection.source_todo_id == todo_a.id  # 원래 연결 유지
+        assert _projections(test_session, todo_b.id, test_user.sub) == []
+
+
 class TestProjectionSync:
     def test_updating_title_projects_latest_title(
             self, todo_service, test_session, sample_tag_group, test_user):

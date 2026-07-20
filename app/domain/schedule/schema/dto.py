@@ -38,7 +38,9 @@ class ScheduleCreate(CustomModel):
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
-    source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
+    # source_todo_id는 공개 DTO에서 의도적으로 제외 — 투영 연결 수명주기는
+    # 전용 흐름(deadline, create_todo_options, POST /schedules/{id}/todo,
+    # linked_schedule_policy)만이 관리한다 (단일 투영 불변조건 보호)
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
 
@@ -117,7 +119,7 @@ class ScheduleUpdate(CustomModel):
     recurrence_end: datetime | None = MISSING  # 반복 종료일
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
-    source_todo_id: UUID | None = MISSING  # Todo에서 생성된 Schedule 추적
+    # source_todo_id는 공개 DTO에서 의도적으로 제외 (ScheduleCreate 주석 참조)
     state: ScheduleState | None = MISSING  # 상태
 
     @field_validator("start_time", "end_time", "recurrence_end")
