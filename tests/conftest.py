@@ -15,6 +15,21 @@ from sqlmodel import SQLModel, create_engine, Session
 from app.core.auth import CurrentUser
 
 
+# ============ Domain Event 핸들러 등록 ============
+
+@pytest.fixture(autouse=True, scope="session")
+def _register_domain_event_handlers():
+    """
+    도메인 이벤트 핸들러 일괄 등록 (doc §4.3)
+
+    서비스 단위 테스트는 app.main(lifespan)을 import하지 않으므로,
+    여기서 등록하지 않으면 투영 동기화가 조용히 누락됩니다.
+    register_handlers는 idempotent라 e2e(lifespan 경유)와 중복 호출에 안전합니다.
+    """
+    from app.shared.messagebus import register_handlers
+    register_handlers()
+
+
 # ============ DB 타입 헬퍼 함수 ============
 
 def _get_test_database_url() -> str | None:

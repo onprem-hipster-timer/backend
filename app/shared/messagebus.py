@@ -99,9 +99,7 @@ def register_handlers() -> None:
     consumer 모듈의 @register 부작용으로 등록되며, register()의 중복
     방지로 재호출에 안전합니다. 순환 import 방지를 위해 lazy import.
     """
-    # 정방향(Todo→Schedule) 핸들러 — #55에서 추가 예정
-    # import app.domain.schedule.event_handlers  # noqa: F401
-    pass
+    import app.domain.schedule.event_handlers  # noqa: F401
 
 
 def reset_handlers() -> None:

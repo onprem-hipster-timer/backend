@@ -16,8 +16,7 @@ from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
 from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
-from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead, ScheduleUpdate
-from app.domain.schedule.service import ScheduleService
+from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import TodoStatus
@@ -37,8 +36,17 @@ from app.domain.todo.schema.dto import (
     TagStat,
     TodoIncludeReason,
 )
+from app.domain.todo.events import (
+    TodoDeadlineChanged,
+    TodoDeadlineRemoved,
+    TodoDeadlineSet,
+    TodoDeleted,
+    TodoTagsChanged,
+)
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
+from app.shared.events import EventOrigin
+from app.shared.uow import collect_event, flush_and_dispatch_events
 
 
 @dataclass
@@ -175,21 +183,17 @@ class TodoService:
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
 
-        # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
+        # deadline이 있으면 투영 Schedule 생성 이벤트 발행
+        # (핸들러: app/domain/schedule/event_handlers.py — 제목·설명·태그는 Todo에서 투영)
         if data.deadline:
-            from datetime import timedelta
-            # deadline을 start_time으로, end_time은 deadline + 1시간으로 설정
-            schedule_data = ScheduleCreate(
-                title=data.title,
-                description=data.description,
-                start_time=data.deadline,
-                end_time=data.deadline + timedelta(hours=1),  # deadline + 1시간
-                source_todo_id=todo.id,
-                tag_ids=data.tag_ids,  # Todo의 태그를 Schedule에도 복사
-                # state는 기본값 PLANNED 사용
-            )
-            schedule_service = ScheduleService(self.session, self.current_user)
-            schedule_service.create_schedule(schedule_data)
+            collect_event(self.session, TodoDeadlineSet(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo.id,
+            ))
+
+        # 응답 조립 전에 dispatch → 자동 생성 리소스가 즉시 보임 (doc §2)
+        flush_and_dispatch_events(self.session)
 
         return todo
 
@@ -431,45 +435,18 @@ class TodoService:
         new_deadline = update_dict.get('deadline')
 
         if deadline_updated:
-            # 기존 Schedule 조회
-            existing_schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-
+            # 투영 동기화는 이벤트로 위임 (핸들러: schedule/event_handlers.py)
             if old_deadline and not new_deadline:
-                # deadline 제거: 기존 Schedule 삭제
-                schedule_service = ScheduleService(self.session, self.current_user)
-                for schedule in existing_schedules:
-                    schedule_service.delete_schedule(schedule.id)
+                event_type = TodoDeadlineRemoved
             elif not old_deadline and new_deadline:
-                # deadline 추가: 새 Schedule 생성
-                from datetime import timedelta
-                # Todo의 기존 태그 가져오기
-                todo_tags = self.get_todo_tags(todo.id)
-                tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
-                schedule_data = ScheduleCreate(
-                    title=todo.title,
-                    description=todo.description,
-                    start_time=new_deadline,
-                    end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
-                    source_todo_id=todo.id,
-                    tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 복사
-                    # state는 기본값 PLANNED 사용
-                )
-                schedule_service = ScheduleService(self.session, self.current_user)
-                schedule_service.create_schedule(schedule_data)
-            elif old_deadline and new_deadline:
-                # deadline 변경: 기존 Schedule 업데이트
-                if existing_schedules:
-                    from datetime import timedelta
-                    schedule_service = ScheduleService(self.session, self.current_user)
-                    # Todo의 기존 태그 가져오기
-                    todo_tags = self.get_todo_tags(todo.id)
-                    tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
-                    schedule_update = ScheduleUpdate(
-                        start_time=new_deadline,
-                        end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
-                        tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 동기화
-                    )
-                    schedule_service.update_schedule(existing_schedules[0].id, schedule_update)
+                event_type = TodoDeadlineSet
+            else:
+                event_type = TodoDeadlineChanged
+            collect_event(self.session, event_type(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+            ))
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_dict
@@ -477,15 +454,17 @@ class TodoService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_todo_tags(todo.id, update_dict['tag_ids'] or [])
-            # Todo의 Schedule이 있으면 태그도 동기화
-            schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-            if schedules:
-                schedule_service = ScheduleService(self.session, self.current_user)
-                for schedule in schedules:
-                    schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
-                    schedule_service.update_schedule(schedule.id, schedule_update)
+            # 투영 Schedule 태그 동기화는 이벤트로 위임 (D2: full-replace)
+            collect_event(self.session, TodoTagsChanged(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+            ))
         # 나머지 필드 업데이트
         todo = crud.update_todo(self.session, todo, data)
+
+        # 필드 반영 후 dispatch → 핸들러가 최신 상태를 투영 (doc §5.1)
+        flush_and_dispatch_events(self.session)
 
         return todo
 
@@ -506,13 +485,15 @@ class TodoService:
         """
         todo = self.get_todo(todo_id)
 
-        # 연관된 Schedule 명시적 삭제 (외부 캘린더 sync 고려)
-        # 이 Todo 자체에 연결된 Schedule만 삭제, 자식 Schedule은 유지
+        # 연결 Schedule ID 스냅샷 후 이벤트 발행 (핸들러가 삭제 + visibility cleanup)
+        # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는 조회 불가
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-
-        schedule_service = ScheduleService(self.session, self.current_user)
-        for schedule in schedules:
-            schedule_service.delete_schedule(schedule.id)
+        collect_event(self.session, TodoDeleted(
+            owner_id=self.owner_id,
+            origin=EventOrigin.TODO,
+            todo_id=todo_id,
+            linked_schedule_ids=tuple(s.id for s in schedules),
+        ))
 
         # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
@@ -525,6 +506,8 @@ class TodoService:
 
         # Todo 삭제
         crud.delete_todo(self.session, todo)
+
+        flush_and_dispatch_events(self.session)
 
     def get_todo_tags(self, todo_id: UUID) -> List[Tag]:
         """
