@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.07.21-c825e27] - 2026-07-21
+
 ### Added
 
 - **In-process Domain Event + Message Bus**: Cross-domain write propagation now flows through a session-scoped event queue (`app/shared/uow.py`) and a central handler registry with a queue-based drain loop (`app/shared/messagebus.py`) — same session/transaction, no external broker. Handlers run before response assembly so auto-created resources appear immediately; a handler failure rolls back the whole transaction. Cascade loops are stopped by per-chain `event_key` dedupe plus a `MAX_DISPATCH_DEPTH` bound. `get_db_transactional` now commits via `commit_with_events` (safety-net drain) and clears the event queue at rollback boundaries. Known limitation: the WebSocket per-message commit path does **not** yet drain events — WS-reachable code must not emit domain events until the WS transaction boundary is aligned ([#49](https://github.com/onprem-hipster-timer/backend/issues/49)). ([#54](https://github.com/onprem-hipster-timer/backend/issues/54))
@@ -266,7 +272,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...HEAD
+[v2026.07.21-c825e27]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...v2026.07.21-c825e27
 [v2026.06.15-552ec57]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...v2026.06.15-552ec57
 [v2026.06.15-53559c3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.12-cfa3200...v2026.06.15-53559c3
 [v2026.06.12-cfa3200]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.09-30c31db...v2026.06.12-cfa3200
