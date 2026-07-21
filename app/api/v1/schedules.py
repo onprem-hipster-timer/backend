@@ -241,7 +241,7 @@ async def delete_schedule(
     """
     service = ScheduleService(session, current_user)
     if instance_start:
-        service.delete_recurring_instance(schedule_id, instance_start)
+        service.delete_recurring_instance(schedule_id, instance_start, source_todo_policy)
     else:
         service.delete_schedule(schedule_id, source_todo_policy)
 

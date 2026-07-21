@@ -322,3 +322,118 @@ class TestScheduleCreatedWithTodoOption:
         linked = schedule_crud.get_schedules_by_source_todo_id(
             test_session, todo.id, test_user.sub)
         assert len(linked) == 1
+
+
+class TestRecurringScheduleTodoLinkContract:
+    def test_recurring_schedule_cannot_create_linked_todo_during_creation(
+            self, schedule_service, test_session, sample_tag_group, test_user):
+        """반복 일정은 단일 시점 deadline의 투영으로 생성될 수 없다."""
+        from pydantic import ValidationError
+        from sqlmodel import select
+
+        from app.core.error_handlers import DomainException
+        from app.models.schedule import Schedule
+        from app.models.todo import Todo
+
+        with pytest.raises((ValidationError, DomainException)):
+            schedule_service.create_schedule(ScheduleCreate(
+                title="반복 일정과 할일 동시 생성 금지",
+                start_time=DEADLINE,
+                end_time=DEADLINE + timedelta(hours=1),
+                recurrence_rule="FREQ=DAILY",
+                create_todo_options=CreateTodoOptions(
+                    tag_group_id=sample_tag_group.id,
+                ),
+            ))
+
+        assert list(test_session.exec(
+            select(Schedule).where(Schedule.owner_id == test_user.sub)
+        ).all()) == []
+        assert list(test_session.exec(
+            select(Todo).where(Todo.owner_id == test_user.sub)
+        ).all()) == []
+
+    def test_existing_recurring_schedule_cannot_be_linked_to_new_todo(
+            self, schedule_service, test_session, sample_tag_group, test_user):
+        """기존 반복 일정에도 Schedule→Todo 연결을 새로 만들 수 없다."""
+        from sqlmodel import select
+
+        from app.core.error_handlers import DomainException
+        from app.models.todo import Todo
+
+        recurring = schedule_service.create_schedule(ScheduleCreate(
+            title="기존 반복 일정",
+            start_time=DEADLINE,
+            end_time=DEADLINE + timedelta(hours=1),
+            recurrence_rule="FREQ=WEEKLY;BYDAY=SU",
+        ))
+
+        with pytest.raises(DomainException):
+            schedule_service.create_todo_from_schedule(
+                recurring.id,
+                sample_tag_group.id,
+            )
+
+        test_session.refresh(recurring)
+        assert recurring.source_todo_id is None
+        assert list(test_session.exec(
+            select(Todo).where(Todo.owner_id == test_user.sub)
+        ).all()) == []
+
+    def test_empty_recurrence_rule_is_rejected_without_detaching_projection(
+            self, todo_service, schedule_service, test_session, sample_tag_group):
+        """빈 RRULE은 반복 전환이 아니며 연결·deadline을 훼손해서는 안 된다."""
+        from pydantic import ValidationError
+
+        from app.core.error_handlers import DomainException
+        from app.domain.schedule.enums import SourceTodoPolicy
+
+        todo, projection = _todo_with_projection(
+            todo_service, test_session, sample_tag_group.id)
+
+        with pytest.raises((ValidationError, DomainException)):
+            schedule_service.update_schedule(
+                projection.id,
+                ScheduleUpdate(
+                    recurrence_rule="",
+                    source_todo_policy=SourceTodoPolicy.CLEAR_DEADLINE,
+                ),
+            )
+
+        test_session.refresh(projection)
+        test_session.refresh(todo)
+        assert projection.source_todo_id == todo.id
+        assert projection.recurrence_rule is None
+        assert todo.deadline == NAIVE_DEADLINE
+        assert todo.status == TodoStatus.SCHEDULED
+
+    @pytest.mark.asyncio
+    async def test_api_last_recurring_instance_delete_applies_clear_deadline_policy(
+            self, todo_service, test_session, sample_tag_group, test_user):
+        """인스턴스 삭제 분기도 명시된 source Todo 정책을 서비스에 전달한다."""
+        from app.api.v1.schedules import delete_schedule as delete_schedule_endpoint
+        from app.domain.schedule.enums import SourceTodoPolicy
+
+        todo, projection = _todo_with_projection(
+            todo_service, test_session, sample_tag_group.id)
+
+        # 마이그레이션 전 데이터 등에서 남을 수 있는 source-linked 반복 일정을
+        # 직접 구성한다. recurrence_end=start_time이므로 인스턴스는 하나뿐이다.
+        projection.recurrence_rule = "FREQ=DAILY"
+        projection.recurrence_end = projection.start_time
+        test_session.flush()
+
+        await delete_schedule_endpoint(
+            schedule_id=projection.id,
+            instance_start=DEADLINE,
+            source_todo_policy=SourceTodoPolicy.CLEAR_DEADLINE,
+            session=test_session,
+            current_user=test_user,
+        )
+
+        test_session.refresh(todo)
+        assert schedule_crud.get_schedule(
+            test_session, projection.id, test_user.sub
+        ) is None
+        assert todo.deadline is None
+        assert todo.status == TodoStatus.UNSCHEDULED

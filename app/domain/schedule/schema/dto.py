@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
+from pydantic.json_schema import SkipJsonSchema
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
@@ -40,8 +41,9 @@ class ScheduleCreate(CustomModel):
     tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
     # source_todo_id는 쓰기 불가 — 투영 연결 수명주기는 전용 흐름
     # (deadline, create_todo_options, POST /schedules/{id}/todo,
-    # linked_schedule_policy)만이 관리한다. 전송 시 422로 거절 (조용한 무시 금지)
-    source_todo_id: Optional[UUID] = None
+    # linked_schedule_policy)만이 관리한다. 전송 시 422로 거절하되,
+    # 광고하지 않는 필드이므로 OpenAPI 스키마에서는 숨긴다(SkipJsonSchema)
+    source_todo_id: SkipJsonSchema[Optional[UUID]] = None
     state: Optional[ScheduleState] = ScheduleState.PLANNED  # 상태 (기본값: PLANNED)
     create_todo_options: Optional[CreateTodoOptions] = None  # Schedule과 함께 Todo 생성 옵션
 
@@ -56,6 +58,14 @@ class ScheduleCreate(CustomModel):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
 
+    @field_validator("recurrence_rule")
+    @classmethod
+    def reject_empty_recurrence_rule(cls, v):
+        """빈 문자열은 유효한 RRULE이 아님 — 해제는 null로"""
+        if v == "":
+            raise ValueError("recurrence_rule must be a valid RRULE or null.")
+        return v
+
     @model_validator(mode="after")
     def reject_source_todo_id(self):
         """source_todo_id는 클라이언트가 지정할 수 없음 (전용 흐름 전유)"""
@@ -64,6 +74,16 @@ class ScheduleCreate(CustomModel):
                 "source_todo_id cannot be set directly. The Todo link lifecycle "
                 "is managed by dedicated flows (deadline projection, "
                 "create_todo_options, POST /v1/schedules/{id}/todo)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_recurring_with_todo_options(self):
+        """반복 일정은 시점 마감의 투영이 될 수 없음 — 연결 Todo 동시 생성 금지"""
+        if self.recurrence_rule and self.create_todo_options is not None:
+            raise ValueError(
+                "A recurring schedule cannot be created with create_todo_options: "
+                "a recurring series cannot be the projection of a point-in-time deadline."
             )
         return self
 
@@ -131,8 +151,8 @@ class ScheduleUpdate(CustomModel):
     recurrence_end: datetime | None = MISSING  # 반복 종료일
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
-    # source_todo_id는 쓰기 불가 — 전송 시 422 (ScheduleCreate 주석 참조)
-    source_todo_id: UUID | None = MISSING
+    # source_todo_id는 쓰기 불가 — 전송 시 422, OpenAPI에는 미노출 (ScheduleCreate 주석 참조)
+    source_todo_id: SkipJsonSchema[UUID | None] = MISSING
     state: ScheduleState | None = MISSING  # 상태
     # source-linked 일정을 반복 일정으로 전환할 때 source Todo 처리 정책.
     # 전환은 연결 해제를 동반하므로 명시 필수 (서버 기본값 없음)
@@ -148,6 +168,14 @@ class ScheduleUpdate(CustomModel):
     def validate_time(cls, end_time, info):
         validate_time_order(info.data.get("start_time"), end_time)
         return end_time
+
+    @field_validator("recurrence_rule")
+    @classmethod
+    def reject_empty_recurrence_rule(cls, v):
+        """빈 문자열은 유효한 RRULE이 아님 — 해제는 null로"""
+        if v == "":
+            raise ValueError("recurrence_rule must be a valid RRULE or null.")
+        return v
 
     @model_validator(mode="after")
     def validate_source_todo_policy(self):

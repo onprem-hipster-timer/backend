@@ -36,7 +36,8 @@ class TodoCreate(CustomModel):
     tag_ids: Optional[List[UUID]] = None  # 태그는 선택
     deadline: Optional[datetime] = None  # 마감기간 (선택)
     parent_id: Optional[UUID] = None  # 부모 Todo ID (트리 구조)
-    status: Optional[TodoStatus] = TodoStatus.UNSCHEDULED  # 상태 (기본값: UNSCHEDULED)
+    # 미지정 시 서버가 연동 상태(deadline 유무)로 파생 — 스키마에 정적 기본값을 두지 않는다
+    status: Optional[TodoStatus] = None
 
     @field_validator("deadline")
     @classmethod

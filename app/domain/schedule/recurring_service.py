@@ -210,6 +210,7 @@ class RecurringScheduleService:
             self,
             parent_id: UUID,
             instance_start: datetime,
+            source_todo_policy=None,
     ) -> None:
         """
         반복 일정의 특정 인스턴스 삭제
@@ -221,6 +222,8 @@ class RecurringScheduleService:
 
         :param parent_id: 원본 일정 ID
         :param instance_start: 인스턴스 시작 시간
+        :param source_todo_policy: 소진으로 원본이 삭제될 때 source Todo 처리
+            정책. 미지정 시 데이터 보존 쪽(KEEP_DEADLINE)을 택한다
         :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
         """
         # 원본 일정 조회
@@ -269,14 +272,13 @@ class RecurringScheduleService:
                 visibility_crud.delete_visibility_by_resource(
                     self.session, ResourceType.SCHEDULE, parent_schedule.id
                 )
-                # 내부 자동 삭제 경로라 클라이언트에게 정책을 물을 수 없음 —
-                # 데이터 보존 쪽(KEEP_DEADLINE)을 택한다
+                # 클라이언트가 정책을 명시했으면 그대로, 아니면 데이터 보존 쪽
                 collect_event(self.session, ScheduleDeleted(
                     owner_id=self.owner_id,
                     origin=EventOrigin.SCHEDULE,
                     schedule_id=parent_schedule.id,
                     source_todo_id=parent_schedule.source_todo_id,
-                    policy=SourceTodoPolicy.KEEP_DEADLINE,
+                    policy=source_todo_policy or SourceTodoPolicy.KEEP_DEADLINE,
                 ))
                 crud.delete_schedule(self.session, parent_schedule)
 

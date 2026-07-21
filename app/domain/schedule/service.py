@@ -27,6 +27,7 @@ from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
     InvalidRecurrenceRuleError,
     InvalidRecurrenceEndError,
+    RecurringScheduleCannotLinkTodoError,
     ScheduleAlreadyLinkedToTodoError,
     SourceTodoPolicyRequiredError,
 )
@@ -409,9 +410,12 @@ class ScheduleService:
             self,
             parent_id: UUID,
             instance_start: datetime,
+            source_todo_policy: Optional[SourceTodoPolicy] = None,
     ) -> None:
         """반복 일정의 특정 인스턴스 삭제"""
-        self._recurring.delete_recurring_instance(parent_id, instance_start)
+        self._recurring.delete_recurring_instance(
+            parent_id, instance_start, source_todo_policy
+        )
         # 마지막 인스턴스 소진으로 원본이 삭제됐다면 ScheduleDeleted가 수집돼 있음
         flush_and_dispatch_events(self.session)
 
@@ -441,6 +445,10 @@ class ScheduleService:
         # 이미 Todo와 연결된 경우 에러
         if schedule.source_todo_id is not None:
             raise ScheduleAlreadyLinkedToTodoError()
+
+        # 반복 일정은 시점 마감의 투영이 될 수 없음
+        if schedule.recurrence_rule:
+            raise RecurringScheduleCannotLinkTodoError()
 
         collect_event(self.session, ScheduleCreatedWithTodoOption(
             owner_id=self.owner_id,
