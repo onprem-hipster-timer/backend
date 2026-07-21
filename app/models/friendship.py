@@ -4,20 +4,14 @@ Friendship 모델
 사용자 간 친구 관계를 관리합니다.
 양방향 관계를 단일 레코드로 표현하며, 요청/수락 워크플로우를 지원합니다.
 """
-from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Column, Enum as SQLEnum, UniqueConstraint, Index
+from sqlalchemy import Column, UniqueConstraint, Index
 from sqlmodel import Field
 
-from app.models.base import UUIDBase, TimestampMixin
-
-
-class FriendshipStatus(str, Enum):
-    """친구 관계 상태"""
-    PENDING = "pending"  # 요청 대기 중
-    ACCEPTED = "accepted"  # 수락됨 (친구)
-    BLOCKED = "blocked"  # 차단됨
+# FriendshipStatus 재수출 포함 — 정식 정의 위치: app/domain/friend/enums.py
+from app.domain.friend.enums import FriendshipStatus  # noqa: F401
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 
 
 def _compute_pair_ids(user_a: str, user_b: str) -> tuple[str, str]:
@@ -54,11 +48,7 @@ class Friendship(UUIDBase, TimestampMixin, table=True):
     # 관계 상태
     status: FriendshipStatus = Field(
         default=FriendshipStatus.PENDING,
-        sa_column=Column(
-            SQLEnum(FriendshipStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-            default=FriendshipStatus.PENDING.value,
-        )
+        sa_column=str_enum_column(FriendshipStatus, default=FriendshipStatus.PENDING),
     )
 
     # 차단한 경우 차단한 사용자 ID (양방향 중 누가 차단했는지)

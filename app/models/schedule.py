@@ -2,11 +2,11 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, Enum as SQLEnum, Index, text
+from sqlalchemy import Column, ForeignKey, Index, text
 from sqlmodel import Field, Relationship
 
 from app.domain.schedule.enums import ScheduleState
-from app.models.base import UUIDBase, TimestampMixin
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 # ScheduleTag, ScheduleExceptionTag는 순환 참조 없이 import 가능
 # (tag.py에서 Schedule을 import하지 않으므로)
 from app.models.tag import ScheduleTag, ScheduleExceptionTag
@@ -61,10 +61,7 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     # Schedule 상태 enum
     state: ScheduleState = Field(
         default=ScheduleState.PLANNED,
-        sa_column=Column(
-            SQLEnum(ScheduleState, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-        )
+        sa_column=str_enum_column(ScheduleState),
     )
 
     # Relationship

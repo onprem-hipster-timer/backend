@@ -19,7 +19,7 @@ from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_ut
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
 from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
-from app.models.visibility import VisibilityLevel
+from app.domain.visibility.enums import VisibilityLevel
 
 
 class TodoIncludeReason(str, Enum):
