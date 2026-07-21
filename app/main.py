@@ -52,6 +52,11 @@ async def lifespan(app: FastAPI):
         # 1. 로깅 설정
         setup_logging()
 
+        # 1-1. Domain Event 핸들러 등록 (idempotent)
+        from app.shared.messagebus import register_handlers
+        register_handlers()
+        logger.info("✅ Domain event handlers registered")
+
         # 2. Rate Limit status check
         if settings.RATE_LIMIT_ENABLED:
             logger.info("✅ Rate limiting is ENABLED")

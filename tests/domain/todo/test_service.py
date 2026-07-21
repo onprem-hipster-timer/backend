@@ -12,7 +12,7 @@ from app.crud import schedule as schedule_crud
 from app.domain.schedule.enums import ScheduleState
 from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
 from app.domain.tag.service import TagService
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate, TodoIncludeReason
 from app.domain.todo.service import TodoService
@@ -438,7 +438,8 @@ def test_update_todo_deadline_removal(test_session, sample_tag_group, test_user)
     assert len(todo.schedules) == 1
 
     # 마감 시간 제거
-    update_data = TodoUpdate(deadline=None)
+    # 마감 취소: 투영 처리 정책은 클라이언트가 명시 (#61 — 서버 디폴트 없음)
+    update_data = TodoUpdate(deadline=None, linked_schedule_policy=LinkedSchedulePolicy.DELETE)
     updated_todo = service.update_todo(todo.id, update_data)
     test_session.flush()
     test_session.refresh(updated_todo)
@@ -603,7 +604,7 @@ def test_delete_todo_success(test_session, sample_todo, test_user):
     service = TodoService(test_session, test_user)
     todo_id = sample_todo.id
 
-    service.delete_todo(todo_id)
+    service.delete_todo(todo_id, LinkedSchedulePolicy.DELETE)
     test_session.flush()
 
     # 삭제 확인
@@ -630,7 +631,7 @@ def test_delete_todo_with_schedule(test_session, sample_tag_group, test_user):
     schedule_id = todo.schedules[0].id
 
     # Todo 삭제
-    service.delete_todo(todo_id)
+    service.delete_todo(todo_id, LinkedSchedulePolicy.DELETE)
     test_session.flush()
 
     # Todo가 삭제되었는지 확인
@@ -674,7 +675,7 @@ def test_delete_todo_with_children(test_session, sample_tag_group, test_user):
     child2_id = child2.id
 
     # 부모 Todo 삭제 (자식은 삭제되지 않고 루트로 승격됨)
-    service.delete_todo(parent_id)
+    service.delete_todo(parent_id, LinkedSchedulePolicy.DELETE)
     test_session.flush()
 
     # 부모만 삭제되었는지 확인
@@ -723,7 +724,7 @@ def test_delete_todo_with_children_keeps_child_schedules(test_session, sample_ta
     child_schedule_id = child_schedules[0].id
 
     # 부모 Todo 삭제
-    service.delete_todo(parent_id)
+    service.delete_todo(parent_id, LinkedSchedulePolicy.DELETE)
     test_session.flush()
 
     # 부모만 삭제되었는지 확인
@@ -750,7 +751,7 @@ def test_delete_todo_not_found(test_session, test_user):
     fake_id = uuid4()
 
     with pytest.raises(TodoNotFoundError):
-        service.delete_todo(fake_id)
+        service.delete_todo(fake_id, LinkedSchedulePolicy.DELETE)
 
 
 # ============================================================
@@ -1063,9 +1064,11 @@ def test_get_all_todos_sorted_by_status(test_session, sample_tag_group, test_use
     ))
     test_session.flush()
 
+    # SCHEDULED는 연동 유무 플래그 — 실제 연동(deadline→투영)이 있어야 함
     todo_scheduled = service.create_todo(TodoCreate(
         title="예정됨",
         tag_group_id=sample_tag_group.id,
+        deadline=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
         status=TodoStatus.SCHEDULED,
     ))
     test_session.flush()

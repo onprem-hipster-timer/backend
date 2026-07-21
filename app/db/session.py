@@ -120,6 +120,8 @@ def get_db() -> Generator[Session, None, None]:
     - GET 요청 등 읽기 작업에 사용
     - FastAPI가 자동으로 세션 close 처리
     """
+    from app.shared.uow import clear_events
+
     with _session_manager.get_session() as session:
         try:
             yield session
@@ -136,21 +138,27 @@ def get_db() -> Generator[Session, None, None]:
                     len(session.deleted),
                 )
             session.rollback()
+            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear
+            clear_events(session)
 
 
 def get_db_transactional() -> Generator[Session, None, None]:
     """
     트랜잭션 자동 관리 세션
     - POST/PUT/DELETE 등 쓰기 작업에 사용
-    - 함수 종료 성공: commit 자동
-    - 예외 발생: rollback 자동
+    - 함수 종료 성공: 미처리 도메인 이벤트 dispatch(안전망) 후 commit 자동
+    - 예외 발생: rollback 자동 + 이벤트 큐 clear
     """
+    from app.shared.uow import clear_events, commit_with_events
+
     with _session_manager.get_session() as session:
         try:
             yield session
-            session.commit()
+            commit_with_events(session)
         except Exception:
             session.rollback()
+            # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear
+            clear_events(session)
             raise
 
 
@@ -235,6 +243,8 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     - Background tasks 등에서 사용
     - 함수 종료 성공: commit 자동
     - 예외 발생: rollback 자동
+    - 도메인 이벤트 drain/clear가 없다 — 이 세션에서 collect_event 금지
+      (docs/development/domain-events.ko.md §4.5)
     """
     async with async_session_maker() as session:
         try:

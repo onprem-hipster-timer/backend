@@ -167,8 +167,14 @@ class TestWSRateLimitGuard:
     """ws_rate_limit_guard 함수 테스트"""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
-        """각 테스트 전에 스토리지와 리미터 초기화"""
+    def setup(self, monkeypatch):
+        """각 테스트 전에 스토리지와 리미터 초기화 + WS 리밋 활성화
+
+        가드는 실행 시점의 live settings를 읽으므로, 모듈 import 시점의
+        os.environ이 아니라 live 객체를 직접 패치해야 순서 무관하게 동작한다.
+        """
+        import app.core.config as app_config
+        monkeypatch.setattr(app_config.settings, "WS_RATE_LIMIT_ENABLED", True)
         reset_storage()
         reset_ws_limiter()
         yield

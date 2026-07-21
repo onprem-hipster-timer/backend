@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, ForeignKey, Enum as SQLEnum, Index, text
 from sqlmodel import Field, Relationship
 
 from app.domain.schedule.enums import ScheduleState
@@ -18,6 +18,17 @@ if TYPE_CHECKING:
 
 
 class Schedule(UUIDBase, TimestampMixin, table=True):
+    # 할일당 투영 일정은 정확히 1개 — API 입력 차단과 별개로 DB가 최종 보장
+    __table_args__ = (
+        Index(
+            "uq_schedule_source_todo_id",
+            "source_todo_id",
+            unique=True,
+            postgresql_where=text("source_todo_id IS NOT NULL"),
+            sqlite_where=text("source_todo_id IS NOT NULL"),
+        ),
+    )
+
     # 소유자 (OIDC sub claim)
     owner_id: str = Field(index=True)
 

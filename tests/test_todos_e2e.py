@@ -564,7 +564,7 @@ def test_delete_todo_e2e(e2e_client):
     todo_id = create_response.json()["id"]
 
     # Todo 삭제
-    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}")
+    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}?linked_schedule_policy=delete")
     assert delete_response.status_code == 200
     assert delete_response.json()["ok"] is True
 
@@ -596,7 +596,7 @@ def test_delete_todo_with_schedule_e2e(e2e_client):
     schedule_id = create_response.json()["schedules"][0]["id"]
 
     # Todo 삭제
-    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}")
+    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}?linked_schedule_policy=delete")
     assert delete_response.status_code == 200
 
     # Todo가 삭제되었는지 확인
@@ -612,9 +612,76 @@ def test_delete_todo_with_schedule_e2e(e2e_client):
 def test_delete_todo_not_found_e2e(e2e_client):
     """존재하지 않는 Todo 삭제 실패 E2E 테스트"""
     non_existent_id = str(uuid4())
-    response = e2e_client.delete(f"/v1/todos/{non_existent_id}")
+    response = e2e_client.delete(f"/v1/todos/{non_existent_id}?linked_schedule_policy=delete")
 
     assert response.status_code == 404
+
+
+@pytest.mark.e2e
+def test_delete_todo_without_policy_returns_422(e2e_client):
+    """정책은 연결 투영이 있을 때만 필수 — 있으면 422, 없으면 생략 허용"""
+    group_response = e2e_client.post(
+        "/v1/tags/groups", json={"name": "삭제 정책 검증 그룹", "color": "#00FF00"}
+    )
+    group_id = group_response.json()["id"]
+
+    # 연결 투영이 있는 Todo: 정책 누락 → 422, 삭제되지 않음
+    linked = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "투영 있는 삭제 대상",
+            "tag_group_id": group_id,
+            "deadline": "2026-01-01T12:00:00Z",
+        },
+    ).json()
+
+    response = e2e_client.delete(f"/v1/todos/{linked['id']}")
+    assert response.status_code == 422
+    assert e2e_client.get(f"/v1/todos/{linked['id']}").status_code == 200
+
+    # 연결 투영이 없는 Todo: 정책 생략 허용
+    unlinked = e2e_client.post(
+        "/v1/todos", json={"title": "투영 없는 삭제 대상", "tag_group_id": group_id}
+    ).json()
+
+    response = e2e_client.delete(f"/v1/todos/{unlinked['id']}")
+    assert response.status_code == 200
+    assert e2e_client.get(f"/v1/todos/{unlinked['id']}").status_code == 404
+
+
+@pytest.mark.e2e
+def test_clear_deadline_without_policy_returns_422(e2e_client):
+    """deadline: null 명시 시 linked_schedule_policy 필수 (#61)"""
+    group_response = e2e_client.post(
+        "/v1/tags/groups", json={"name": "정책 검증 그룹", "color": "#FF0000"}
+    )
+    group_id = group_response.json()["id"]
+    create_response = e2e_client.post(
+        "/v1/todos",
+        json={
+            "title": "마감 취소 대상",
+            "tag_group_id": group_id,
+            "deadline": "2026-01-01T12:00:00Z",
+        },
+    )
+    todo_id = create_response.json()["id"]
+
+    # 정책 누락 → 422
+    response = e2e_client.patch(f"/v1/todos/{todo_id}", json={"deadline": None})
+    assert response.status_code == 422
+
+    # 정책 명시(unlink) → 200, 일정은 생존
+    schedule_id = create_response.json()["schedules"][0]["id"]
+    ok_response = e2e_client.patch(
+        f"/v1/todos/{todo_id}",
+        json={"deadline": None, "linked_schedule_policy": "unlink"},
+    )
+    assert ok_response.status_code == 200
+    assert ok_response.json()["deadline"] is None
+
+    survivor = e2e_client.get(f"/v1/schedules/{schedule_id}")
+    assert survivor.status_code == 200
+    assert survivor.json()["source_todo_id"] is None
 
 
 @pytest.mark.e2e
@@ -734,7 +801,7 @@ def test_todo_workflow_e2e(e2e_client):
     assert update_response.json()["title"] == "업데이트된 Todo"
 
     # 4. Todo 삭제
-    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}")
+    delete_response = e2e_client.delete(f"/v1/todos/{todo_id}?linked_schedule_policy=delete")
     assert delete_response.status_code == 200
 
     # 5. 삭제 확인

@@ -38,6 +38,24 @@ class RecurringScheduleError(DomainException):
     detail = "This schedule is not a recurring schedule"
 
 
+class RecurringScheduleCannotLinkTodoError(DomainException):
+    """반복 일정은 시점 마감의 투영이 될 수 없음 — Todo 연결 생성 금지"""
+    status_code = 422
+    detail = (
+        "A recurring schedule cannot be linked to a Todo: a recurring series "
+        "cannot be the projection of a point-in-time deadline."
+    )
+
+
+class SourceTodoPolicyRequiredError(DomainException):
+    """source-linked 일정의 삭제·반복 전환에는 source Todo 처리 정책이 필수"""
+    status_code = 422
+    detail = (
+        "source_todo_policy is required because this schedule is linked to a Todo. "
+        "Choose 'clear_deadline' or 'keep_deadline'."
+    )
+
+
 class ScheduleAlreadyLinkedToTodoError(DomainException):
     """이미 Todo와 연결된 Schedule"""
     status_code = 400

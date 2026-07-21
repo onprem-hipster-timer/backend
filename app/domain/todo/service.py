@@ -16,17 +16,18 @@ from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
 from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
-from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead, ScheduleUpdate
-from app.domain.schedule.service import ScheduleService
+from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.domain.todo.exceptions import (
+    LinkedSchedulePolicyRequiredError,
     TodoNotFoundError,
     TodoInvalidParentError,
     TodoSelfReferenceError,
     TodoParentGroupMismatchError,
     TodoCycleError,
+    TodoStatusLinkageMismatchError,
 )
 from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import (
@@ -37,8 +38,18 @@ from app.domain.todo.schema.dto import (
     TagStat,
     TodoIncludeReason,
 )
+from app.domain.todo.events import (
+    TodoContentChanged,
+    TodoDeadlineChanged,
+    TodoDeadlineRemoved,
+    TodoDeadlineSet,
+    TodoDeleted,
+    TodoTagsChanged,
+)
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
+from app.shared.events import EventOrigin
+from app.shared.uow import collect_event, flush_and_dispatch_events
 
 
 @dataclass
@@ -156,6 +167,16 @@ class TodoService:
         # parent_id 검증 (존재/그룹 일치)
         self._validate_parent_id(data.parent_id, data.tag_group_id)
 
+        # UNSCHEDULED/SCHEDULED는 연동 유무 플래그 — 명시 값이 실제 연동 상태와
+        # 불일치하면 거부, 미지정 시 자동 계산. DONE/CANCELLED는 사용자 상태
+        derived_flag = TodoStatus.SCHEDULED if data.deadline else TodoStatus.UNSCHEDULED
+        if "status" in data.model_fields_set and data.status is not None:
+            status = data.status
+            if status in (TodoStatus.UNSCHEDULED, TodoStatus.SCHEDULED) and status != derived_flag:
+                raise TodoStatusLinkageMismatchError()
+        else:
+            status = derived_flag
+
         # Todo 모델 생성
         todo = Todo(
             owner_id=self.owner_id,
@@ -164,7 +185,7 @@ class TodoService:
             deadline=data.deadline,
             tag_group_id=data.tag_group_id,
             parent_id=data.parent_id,
-            status=data.status if data.status is not None else TodoStatus.UNSCHEDULED,
+            status=status,
         )
         todo = crud.create_todo(self.session, todo)
 
@@ -175,21 +196,15 @@ class TodoService:
             tag_service.set_todo_tags(todo.id, data.tag_ids)
             self.session.refresh(todo)
 
-        # deadline이 있으면 Schedule 생성 (태그도 함께 전달)
         if data.deadline:
-            from datetime import timedelta
-            # deadline을 start_time으로, end_time은 deadline + 1시간으로 설정
-            schedule_data = ScheduleCreate(
-                title=data.title,
-                description=data.description,
-                start_time=data.deadline,
-                end_time=data.deadline + timedelta(hours=1),  # deadline + 1시간
-                source_todo_id=todo.id,
-                tag_ids=data.tag_ids,  # Todo의 태그를 Schedule에도 복사
-                # state는 기본값 PLANNED 사용
-            )
-            schedule_service = ScheduleService(self.session, self.current_user)
-            schedule_service.create_schedule(schedule_data)
+            collect_event(self.session, TodoDeadlineSet(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo.id,
+            ))
+
+        # 응답 조립 전에 dispatch해야 자동 생성 리소스가 응답에 보인다
+        flush_and_dispatch_events(self.session)
 
         return todo
 
@@ -430,46 +445,50 @@ class TodoService:
         old_deadline = todo.deadline
         new_deadline = update_dict.get('deadline')
 
-        if deadline_updated:
-            # 기존 Schedule 조회
-            existing_schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
+        # UNSCHEDULED/SCHEDULED는 연동 유무 플래그 — 명시 값이 요청 반영 후의
+        # 연동 상태와 불일치하면 거부 (DONE/CANCELLED는 사용자 상태라 자유)
+        explicit_status = update_dict.get('status')
+        if explicit_status in (TodoStatus.UNSCHEDULED, TodoStatus.SCHEDULED):
+            if deadline_updated:
+                will_be_linked = new_deadline is not None
+            else:
+                will_be_linked = bool(schedule_crud.get_schedules_by_source_todo_id(
+                    self.session, todo_id, self.owner_id
+                ))
+            derived_flag = TodoStatus.SCHEDULED if will_be_linked else TodoStatus.UNSCHEDULED
+            if explicit_status != derived_flag:
+                raise TodoStatusLinkageMismatchError()
 
+        if deadline_updated:
             if old_deadline and not new_deadline:
-                # deadline 제거: 기존 Schedule 삭제
-                schedule_service = ScheduleService(self.session, self.current_user)
-                for schedule in existing_schedules:
-                    schedule_service.delete_schedule(schedule.id)
-            elif not old_deadline and new_deadline:
-                # deadline 추가: 새 Schedule 생성
-                from datetime import timedelta
-                # Todo의 기존 태그 가져오기
-                todo_tags = self.get_todo_tags(todo.id)
-                tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
-                schedule_data = ScheduleCreate(
-                    title=todo.title,
-                    description=todo.description,
-                    start_time=new_deadline,
-                    end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
-                    source_todo_id=todo.id,
-                    tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 복사
-                    # state는 기본값 PLANNED 사용
+                # 정책은 연결 투영이 있을 때만 필수 (없으면 정리할 대상이 없음)
+                linked = schedule_crud.get_schedules_by_source_todo_id(
+                    self.session, todo_id, self.owner_id
                 )
-                schedule_service = ScheduleService(self.session, self.current_user)
-                schedule_service.create_schedule(schedule_data)
-            elif old_deadline and new_deadline:
-                # deadline 변경: 기존 Schedule 업데이트
-                if existing_schedules:
-                    from datetime import timedelta
-                    schedule_service = ScheduleService(self.session, self.current_user)
-                    # Todo의 기존 태그 가져오기
-                    todo_tags = self.get_todo_tags(todo.id)
-                    tag_ids = [tag.id for tag in todo_tags] if todo_tags else None
-                    schedule_update = ScheduleUpdate(
-                        start_time=new_deadline,
-                        end_time=new_deadline + timedelta(hours=1),  # deadline + 1시간
-                        tag_ids=tag_ids,  # Todo의 태그를 Schedule에도 동기화
-                    )
-                    schedule_service.update_schedule(existing_schedules[0].id, schedule_update)
+                policy_value = update_dict.get('linked_schedule_policy')
+                if linked and policy_value is None:
+                    raise LinkedSchedulePolicyRequiredError()
+                if linked:
+                    collect_event(self.session, TodoDeadlineRemoved(
+                        owner_id=self.owner_id,
+                        origin=EventOrigin.TODO,
+                        todo_id=todo_id,
+                        policy=LinkedSchedulePolicy(policy_value),
+                    ))
+            else:
+                event_type = TodoDeadlineSet if not old_deadline else TodoDeadlineChanged
+                collect_event(self.session, event_type(
+                    owner_id=self.owner_id,
+                    origin=EventOrigin.TODO,
+                    todo_id=todo_id,
+                ))
+
+        if 'title' in update_dict or 'description' in update_dict:
+            collect_event(self.session, TodoContentChanged(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+            ))
 
         # 태그 업데이트 (tag_ids가 설정된 경우에만)
         tag_ids_updated = 'tag_ids' in update_dict
@@ -477,42 +496,64 @@ class TodoService:
             from app.domain.tag.service import TagService
             tag_service = TagService(self.session, self.current_user)
             tag_service.set_todo_tags(todo.id, update_dict['tag_ids'] or [])
-            # Todo의 Schedule이 있으면 태그도 동기화
-            schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-            if schedules:
-                schedule_service = ScheduleService(self.session, self.current_user)
-                for schedule in schedules:
-                    schedule_update = ScheduleUpdate(tag_ids=update_dict['tag_ids'] or [])
-                    schedule_service.update_schedule(schedule.id, schedule_update)
+            collect_event(self.session, TodoTagsChanged(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+            ))
         # 나머지 필드 업데이트
         todo = crud.update_todo(self.session, todo, data)
 
+        # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
+        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지
+        if deadline_updated and 'status' not in update_dict:
+            if new_deadline and todo.status not in (TodoStatus.DONE, TodoStatus.CANCELLED):
+                todo.status = TodoStatus.SCHEDULED
+            elif not new_deadline and todo.status == TodoStatus.SCHEDULED:
+                todo.status = TodoStatus.UNSCHEDULED
+
+        # 필드 반영 후에 dispatch해야 핸들러가 최신 상태를 투영한다
+        flush_and_dispatch_events(self.session)
+
         return todo
 
-    def delete_todo(self, todo_id: UUID) -> None:
+    def delete_todo(
+            self,
+            todo_id: UUID,
+            linked_schedule_policy: Optional[LinkedSchedulePolicy] = None,
+    ) -> None:
         """
         Todo 삭제
-        
+
         비즈니스 로직:
-        - 외부 캘린더 sync 고려: 서비스 로직에서 명시적으로 연관된 Schedule 삭제
-        - source_todo_id로 연관된 모든 Schedule 조회
-        - 각 Schedule에 대해 ScheduleService.delete_schedule() 명시적 호출
+        - 연결 투영 Schedule은 클라이언트가 명시한 정책에 따라 처리
+          - delete: 투영 삭제 + visibility cleanup
+          - unlink: 연결만 해제 — 일반 일정으로 생존
+        - 정책은 연결 투영이 있을 때만 필수 (서버 기본값 없음)
         - 자식 Todo는 삭제하지 않고 루트로 승격 (parent_id = NULL)
         - 자식의 Schedule은 유지됨
         - 그 후 Todo 삭제
-        
+
         :param todo_id: Todo ID
+        :param linked_schedule_policy: 연결 투영 처리 정책
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
+        :raises LinkedSchedulePolicyRequiredError: 연결 투영이 있는데 정책 누락
         """
         todo = self.get_todo(todo_id)
 
-        # 연관된 Schedule 명시적 삭제 (외부 캘린더 sync 고려)
-        # 이 Todo 자체에 연결된 Schedule만 삭제, 자식 Schedule은 유지
+        # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는
+        # 연결 Schedule을 조회할 수 없다 — 삭제 전에 ID를 스냅샷해 이벤트에 싣는다
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-
-        schedule_service = ScheduleService(self.session, self.current_user)
-        for schedule in schedules:
-            schedule_service.delete_schedule(schedule.id)
+        if schedules:
+            if linked_schedule_policy is None:
+                raise LinkedSchedulePolicyRequiredError()
+            collect_event(self.session, TodoDeleted(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+                linked_schedule_ids=tuple(s.id for s in schedules),
+                policy=linked_schedule_policy,
+            ))
 
         # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음
@@ -525,6 +566,8 @@ class TodoService:
 
         # Todo 삭제
         crud.delete_todo(self.session, todo)
+
+        flush_and_dispatch_events(self.session)
 
     def get_todo_tags(self, todo_id: UUID) -> List[Tag]:
         """

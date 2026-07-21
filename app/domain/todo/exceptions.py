@@ -36,3 +36,21 @@ class TodoParentGroupMismatchError(DomainException):
     """부모와 자식의 tag_group_id 불일치"""
     status_code = 400
     detail = "Parent and child Todo must belong to the same tag group"
+
+
+class TodoStatusLinkageMismatchError(DomainException):
+    """UNSCHEDULED/SCHEDULED는 연동 유무 플래그 — 실제 연동 상태와 불일치하는 명시 값 거부"""
+    status_code = 422
+    detail = (
+        "Status flag conflicts with linked schedule state: "
+        "UNSCHEDULED/SCHEDULED must match whether a linked schedule exists"
+    )
+
+
+class LinkedSchedulePolicyRequiredError(DomainException):
+    """연결 투영이 존재하는데 처리 정책이 누락됨"""
+    status_code = 422
+    detail = (
+        "linked_schedule_policy is required because linked schedules exist. "
+        "Choose 'delete' or 'unlink'."
+    )

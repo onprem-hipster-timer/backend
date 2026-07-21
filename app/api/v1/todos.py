@@ -28,6 +28,7 @@ from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import TimerRead
 from app.domain.timer.service import TimerService
+from app.domain.todo.enums import LinkedSchedulePolicy
 from app.domain.todo.schema.dto import (
     TodoCreate,
     TodoRead,
@@ -258,8 +259,9 @@ async def update_todo(
 
     deadline 변경 시:
     - deadline 추가: 새 Schedule 생성
-    - deadline 변경: 기존 Schedule 업데이트
-    - deadline 제거: 기존 Schedule 삭제
+    - deadline 변경: 기존 Schedule 시작 시간 이동 (길이 보존, 없으면 재생성)
+    - deadline 제거(null): 연결 Schedule이 있으면 linked_schedule_policy 필수
+      (delete: 삭제 / unlink: 연결만 해제)
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
@@ -278,14 +280,24 @@ async def update_todo(
 @router.delete("/{todo_id}", status_code=status.HTTP_200_OK)
 async def delete_todo(
         todo_id: UUID,
+        linked_schedule_policy: Optional[LinkedSchedulePolicy] = Query(
+            None,
+            description=(
+                "연결 투영 Schedule 처리 정책 — 연결 투영이 있는 경우 필수, 서버 기본값 없음. "
+                "delete: 투영 삭제 + 접근권한 정리 / unlink: 연결만 해제(일정 보존)"
+            ),
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 삭제
+
+    연결된 투영 Schedule은 `linked_schedule_policy`에 따라 처리됩니다.
+    연결 투영이 있는데 정책이 누락되면 422를 반환합니다.
     """
     todo_service = TodoService(session, current_user)
-    todo_service.delete_todo(todo_id)
+    todo_service.delete_todo(todo_id, linked_schedule_policy)
     return {"ok": True}
 
 

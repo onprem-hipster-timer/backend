@@ -15,6 +15,21 @@ from sqlmodel import SQLModel, create_engine, Session
 from app.core.auth import CurrentUser
 
 
+# ============ Domain Event 핸들러 등록 ============
+
+@pytest.fixture(autouse=True, scope="session")
+def _register_domain_event_handlers():
+    """
+    도메인 이벤트 핸들러 일괄 등록 (doc §4.3)
+
+    서비스 단위 테스트는 app.main(lifespan)을 import하지 않으므로,
+    여기서 등록하지 않으면 투영 동기화가 조용히 누락됩니다.
+    register_handlers는 idempotent라 e2e(lifespan 경유)와 중복 호출에 안전합니다.
+    """
+    from app.shared.messagebus import register_handlers
+    register_handlers()
+
+
 # ============ DB 타입 헬퍼 함수 ============
 
 def _get_test_database_url() -> str | None:
@@ -412,6 +427,10 @@ def e2e_client():
 
     from app.core.config import Settings
     import app.core.config as config_module
+    # 전역 settings 객체 교체는 반드시 finally에서 원본으로 복원 —
+    # 미복원 시 모듈 레벨에서 settings를 바인딩한 코드(alembic env.py 등)가
+    # 다른 객체를 보게 되어 테스트 간 간섭이 생긴다
+    original_settings = config_module.settings
     config_module.settings = Settings()
 
     # 레이트 리밋 스토리지 초기화 (이전 테스트의 카운트 제거)
@@ -439,6 +458,8 @@ def e2e_client():
         # 테스트용 엔진 정리
         SQLModel.metadata.drop_all(test_engine)
         test_engine.dispose()
+        # 전역 settings 원본 복원
+        config_module.settings = original_settings
 
 
 @pytest.fixture
@@ -471,6 +492,8 @@ def multi_user_e2e():
 
     from app.core.config import Settings
     import app.core.config as config_module
+    # 전역 settings 객체 교체는 finally에서 원본 복원 (e2e_client와 동일 이유)
+    original_settings = config_module.settings
     config_module.settings = Settings()
 
     from app.ratelimit.storage.memory import reset_storage
@@ -596,6 +619,8 @@ def multi_user_e2e():
         _session_manager.engine = original_engine
         SQLModel.metadata.drop_all(test_engine)
         test_engine.dispose()
+        # 전역 settings 원본 복원
+        config_module.settings = original_settings
 
 
 # ============ WebSocket 타이머 테스트 헬퍼 ============

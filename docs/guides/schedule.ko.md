@@ -311,6 +311,35 @@ function renderScheduleDetails(schedule: Schedule) {
 }
 ```
 
+## Todo 연동 (source-linked 일정)
+
+`source_todo_id`가 있는 일정은 **Todo의 마감(deadline)을 캘린더에 투영**한 것입니다.
+할일당 투영 일정은 정확히 1개이며(DB 제약), 연동 규칙은 다음과 같습니다.
+
+| 필드 | 원본 | 동작 |
+|------|------|------|
+| 제목·설명·태그 | Todo | Todo 변경이 항상 투영에 반영 (태그는 전체 교체) |
+| 시작 시간 | 양방향 | 일정 시간 이동 → Todo `deadline` 역반영, deadline 변경 → 시작 시간 이동 |
+| 일정 길이 | Schedule | 사용자가 조정한 길이는 deadline 변경에도 보존 |
+
+!!! danger "source-linked 일정의 삭제·반복 전환에는 `source_todo_policy` 필수"
+    투영이 마감 표시이기를 그만두는 두 경우 모두 source Todo 처리를 클라이언트가
+    명시합니다 (**서버 기본값 없음**, 누락 시 `422`):
+
+    - `DELETE /v1/schedules/{id}?source_todo_policy=clear_deadline|keep_deadline`
+    - 반복 전환: `PATCH` body에 `recurrence_rule`과 함께 `source_todo_policy` 전송 —
+      마감은 시점이므로 반복 시리즈가 될 수 없어 **자동으로 연결이 해제**된 뒤 적용됩니다
+
+    | 값 | 동작 |
+    |----|------|
+    | `clear_deadline` | Todo의 `deadline`도 제거 |
+    | `keep_deadline` | `deadline` 유지 (연동 플래그만 `UNSCHEDULED`로 해제) |
+
+!!! warning "`source_todo_id`는 쓰기 불가"
+    `POST/PATCH /v1/schedules` payload에 `source_todo_id`를 실으면 `422`입니다.
+    연결 생성은 전용 흐름만 사용하세요: Todo의 deadline 설정, `create_todo_options`,
+    `POST /v1/schedules/{id}/todo`. (상세: [Todo 가이드](todo.md)의 프론트엔드 마이그레이션 가이드)
+
 ## 주의사항
 
 1. **가상 인스턴스는 DB에 저장되지 않습니다**

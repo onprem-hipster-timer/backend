@@ -11,14 +11,14 @@ from enum import Enum
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.models.visibility import VisibilityLevel
 
 
@@ -36,7 +36,8 @@ class TodoCreate(CustomModel):
     tag_ids: Optional[List[UUID]] = None  # 태그는 선택
     deadline: Optional[datetime] = None  # 마감기간 (선택)
     parent_id: Optional[UUID] = None  # 부모 Todo ID (트리 구조)
-    status: Optional[TodoStatus] = TodoStatus.UNSCHEDULED  # 상태 (기본값: UNSCHEDULED)
+    # 미지정 시 서버가 연동 상태(deadline 유무)로 파생 — 스키마에 정적 기본값을 두지 않는다
+    status: Optional[TodoStatus] = None
 
     @field_validator("deadline")
     @classmethod
@@ -45,7 +46,7 @@ class TodoCreate(CustomModel):
 
         해외 출장 등으로 클라이언트가 자기 타임존이 붙은 aware datetime을 보낼 수 있다.
         DB는 naive UTC(TIMESTAMP WITHOUT TIME ZONE)로 저장하므로,
-        aware datetime은 UTC로 변환 후 naive로 저장한다. (#41 동일 버그 클래스 방지)
+        aware datetime은 UTC로 변환 후 naive로 저장한다.
         """
         return ensure_utc_naive(v) if v is not None else None
 
@@ -122,12 +123,34 @@ class TodoUpdate(CustomModel):
     deadline: datetime | None = MISSING  # 마감기간 변경
     parent_id: UUID | None = MISSING  # 부모 Todo 변경
     status: TodoStatus | None = MISSING  # 상태 변경
+    # 마감 취소(deadline: null) 시 연결 투영 처리 정책 — 명시 필수, 서버 기본값 없음
+    linked_schedule_policy: LinkedSchedulePolicy = MISSING
 
     @field_validator("deadline")
     @classmethod
     def ensure_utc_naive_datetime(cls, v):
-        """deadline을 UTC naive로 변환 (aware 입력 → UTC naive 저장, #41 방지)"""
+        """deadline을 UTC naive로 변환 (aware 입력 → UTC naive 저장)"""
         return ensure_utc_naive(v) if v is not None else None
+
+    @model_validator(mode="after")
+    def validate_linked_schedule_policy(self):
+        """
+        linked_schedule_policy는 deadline 명시적 null과 함께만 유효
+
+        필수 여부는 연결 투영 존재에 달려 있어 서비스에서 검증한다
+        (연결이 있는데 누락 → 422). 여기서는 무의미한 조합만 차단한다.
+
+        MISSING sentinel: `is None` 검사는 명시적 null만 참 (MISSING은 None이 아님)
+        """
+        deadline_cleared = self.deadline is None
+        policy_given = self.linked_schedule_policy is not MISSING
+
+        if policy_given and not deadline_cleared:
+            raise ValueError(
+                "linked_schedule_policy is only allowed together with an "
+                "explicit 'deadline': null."
+            )
+        return self
 
 
 class TagStat(CustomModel):
