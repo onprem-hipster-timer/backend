@@ -8,11 +8,11 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, ForeignKey
 from sqlmodel import Field, Relationship
 
 from app.domain.todo.enums import TodoStatus
-from app.models.base import UUIDBase, TimestampMixin
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 from app.models.tag import TodoTag
 
 if TYPE_CHECKING:
@@ -55,11 +55,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     # Status enum
     status: TodoStatus = Field(
         default=TodoStatus.UNSCHEDULED,
-        sa_column=Column(
-            SQLEnum(TodoStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-            default=TodoStatus.UNSCHEDULED.value,
-        )
+        sa_column=str_enum_column(TodoStatus, default=TodoStatus.UNSCHEDULED),
     )
 
     # Relationships

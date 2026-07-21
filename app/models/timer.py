@@ -6,7 +6,7 @@ from sqlalchemy import Column, ForeignKey, JSON
 from sqlmodel import Field, Relationship
 
 from app.core.constants import TimerStatus
-from app.models.base import UUIDBase, TimestampMixin
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 from app.models.tag import TimerTag
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
     elapsed_time: int = 0  # 경과 시간 (초 단위)
 
     # 상태 및 시간 추적
-    status: TimerStatus
+    status: TimerStatus = Field(sa_column=str_enum_column(TimerStatus))
     started_at: Optional[datetime] = None
     paused_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None

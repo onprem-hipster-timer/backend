@@ -7,10 +7,10 @@ ResourceVisibility 모델
 from enum import Enum
 from uuid import UUID
 
-from sqlalchemy import Column, Enum as SQLEnum, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import Column, ForeignKey, UniqueConstraint, Index
 from sqlmodel import Field
 
-from app.models.base import UUIDBase, TimestampMixin
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 
 
 class VisibilityLevel(str, Enum):
@@ -45,10 +45,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
 
     # 리소스 타입
     resource_type: ResourceType = Field(
-        sa_column=Column(
-            SQLEnum(ResourceType, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-        )
+        sa_column=str_enum_column(ResourceType),
     )
 
     # 리소스 ID (외래 키 없음 - 다형성 지원)
@@ -60,11 +57,7 @@ class ResourceVisibility(UUIDBase, TimestampMixin, table=True):
     # 접근권한 레벨
     level: VisibilityLevel = Field(
         default=VisibilityLevel.PRIVATE,
-        sa_column=Column(
-            SQLEnum(VisibilityLevel, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-            default=VisibilityLevel.PRIVATE.value,
-        )
+        sa_column=str_enum_column(VisibilityLevel, default=VisibilityLevel.PRIVATE),
     )
 
     __table_args__ = (

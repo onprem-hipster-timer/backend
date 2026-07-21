@@ -1,14 +1,46 @@
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional, Type
 
 from pydantic.experimental.missing_sentinel import MISSING
-from sqlalchemy import inspect
+from sqlalchemy import Column, Enum as SAEnum, inspect
 from sqlmodel import SQLModel, Field
 
 
 def utc_now_naive() -> datetime:
     """UTC 현재 시간을 timezone-naive로 반환 (PostgreSQL TIMESTAMP WITHOUT TIME ZONE 호환)"""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def str_enum_column(
+        enum_cls: Type[Enum],
+        *,
+        default: Optional[Enum] = None,
+        nullable: bool = False,
+        index: bool = False,
+) -> Column:
+    """
+    도메인 enum을 VARCHAR로 저장하는 표준 컬럼
+
+    네이티브 DB enum(Postgres `CREATE TYPE`)은 값 추가마다 `ALTER TYPE`
+    마이그레이션이 필요하고 SQLite와 이식성이 깨지므로 금지한다
+    (`native_enum=False`). 저장 값은 멤버 이름이 아니라 `.value`다.
+    정책 고정: tests/models/test_enum_columns.py
+
+    :param enum_cls: (str, Enum) 도메인 enum 클래스
+    :param default: 컬럼 기본값 (enum 멤버로 전달)
+    """
+    return Column(
+        SAEnum(
+            enum_cls,
+            native_enum=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=nullable,
+        index=index,
+        default=default.value if default is not None else None,
+    )
 
 
 class TimestampMixin(SQLModel):

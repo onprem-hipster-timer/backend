@@ -7,10 +7,10 @@ Friendship 모델
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Column, Enum as SQLEnum, UniqueConstraint, Index
+from sqlalchemy import Column, UniqueConstraint, Index
 from sqlmodel import Field
 
-from app.models.base import UUIDBase, TimestampMixin
+from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 
 
 class FriendshipStatus(str, Enum):
@@ -54,11 +54,7 @@ class Friendship(UUIDBase, TimestampMixin, table=True):
     # 관계 상태
     status: FriendshipStatus = Field(
         default=FriendshipStatus.PENDING,
-        sa_column=Column(
-            SQLEnum(FriendshipStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
-            nullable=False,
-            default=FriendshipStatus.PENDING.value,
-        )
+        sa_column=str_enum_column(FriendshipStatus, default=FriendshipStatus.PENDING),
     )
 
     # 차단한 경우 차단한 사용자 ID (양방향 중 누가 차단했는지)
