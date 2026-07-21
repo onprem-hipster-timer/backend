@@ -138,6 +138,17 @@ class ScheduleTimeChanged(ScheduleEvent):  # ScheduleEvent가 schedule_id + even
 | `flush_and_dispatch_events(session)` | `flush → drain/handle loop → flush` (commit 없음) |
 | `commit_with_events(session)` | 위를 한 번 더 보장 후 commit |
 
+!!! note "collect ≠ 발행 — 수집과 실행의 2박자 분리"
+    `collect_event`는 큐에 `append`만 하고 **핸들러를 부르지 않습니다**. 실제 실행은
+    use-case 메서드 끝의 `flush_and_dispatch_events`(→ `messagebus.handle`)가 담당합니다.
+    통상의 "발행(publish)"이 이 코드에서는 **collect(적재) + dispatch(실행)** 두 박자로
+    쪼개져 있는 것입니다. 분리 이유:
+
+    1. **타이밍 제어** — dispatch를 "필드 반영 후 · 응답 조립 전"이라는 정확한 지점에
+       고정합니다. collect가 즉시 핸들러를 부르면 `crud.update` 전의 옛 상태를 투영하게 됩니다.
+    2. **캐스케이드 통합** — 핸들러가 실행 중 collect한 후속 이벤트를 같은 drain 루프가
+       재수집(§4.3)할 수 있는 것은 수집과 실행이 분리돼 있기 때문입니다.
+
 !!! important "`session.info`는 트랜잭션 aware가 아님"
     DB rollback이 돼도 `session.info`의 이벤트 큐는 자동으로 비워지지 않습니다. SAVEPOINT/내부 예외와 섞이면 이미 취소된 변경의 이벤트가 남을 수 있으므로, **rollback 경계에서 반드시 `clear_events(session)`**를 호출하고, **SAVEPOINT(`begin_nested`) 내부에서는 이벤트를 수집하지 않습니다** (§4.5).
 
@@ -184,6 +195,21 @@ def handle(events, session):
 
 - `register(event_type)` 데코레이터로 consumer 모듈이 핸들러를 등록합니다. 누가 들을지는 **중앙 registry**가 정하며, 이벤트 발행자는 모릅니다.
 - `register_handlers()`는 **idempotent**해야 합니다(앱 startup·테스트 fixture 양쪽에서 호출되므로). 테스트용 `reset_handlers()`도 제공합니다.
+
+#### 등록 메커니즘
+
+- **`HANDLERS`** (`dict[type[DomainEvent], list[Handler]]`): "이벤트 클래스 → 핸들러 리스트"
+  라우팅 표. `handle`이 `HANDLERS.get(type(event), [])`로 조회해 등록 순서대로 실행하며,
+  등록된 핸들러가 없는 이벤트는 조용히 통과합니다.
+- **`@register`는 모듈 import 시점에 발화**합니다 — `register_handlers()`가
+  `app/domain/*/event_handlers.py`를 import하는 순간 각 데코레이터가 실행되어 표가
+  채워집니다. 함수 자체는 변형하지 않고(등록 부수효과만) 그대로 반환합니다.
+- **`_KNOWN_REGISTRATIONS` (복구 장부)**: 파이썬 모듈 캐싱 때문에 재-import로는
+  데코레이터가 재실행되지 않습니다. 따라서 `reset_handlers()` 후의 복구는 데코레이터
+  발화 시 기록해 둔 등록 명세를 `register_handlers()`가 replay하는 방식으로 보장합니다.
+  프로덕션에서는 startup 1회 등록 이후 replay가 no-op이며, 이 장부는 테스트 전용
+  `reset_handlers()`를 "불러도 안전한 API"로 만드는 안전장치입니다
+  (`tests/shared/test_messagebus.py::test_register_handlers_restores_after_reset`가 계약 고정).
 
 ### 4.4 cascade 무한루프 방지
 
@@ -272,8 +298,12 @@ def handle(events, session):
 
 ### 5.0 전파 토폴로지
 
-발행자는 Service, 수신자는 상대 도메인의 `event_handlers`입니다. 핸들러는
-대상 행을 **직접 수정하고 이벤트를 발행하지 않으므로** 반대 방향이 재발화하지
+발행자는 Service, 수신자는 상대 도메인의 `event_handlers`입니다 — **핸들러는 받는 쪽
+도메인에 삽니다** ("변환 책임은 받는 쪽"). 두 도메인을 잇는 것은 런타임의 `HANDLERS`
+표뿐이라 발행자와 수신자 사이에 코드 의존이 없고, 새 구독자가 필요하면 수신 도메인에
+`@register` 핸들러 하나를 추가하면 됩니다 — **발행자는 무변경**입니다.
+
+핸들러는 대상 행을 **직접 수정하고 이벤트를 발행하지 않으므로** 반대 방향이 재발화하지
 않습니다 — 왕복(A→B→A)은 구조적으로 차단되고, origin 가드는 이중 안전장치입니다.
 
 ```mermaid
