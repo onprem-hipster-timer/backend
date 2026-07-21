@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import ConfigDict, field_validator, model_validator
 
 from app.core.base_model import CustomModel
-from app.models.friendship import FriendshipStatus
+from app.domain.friend.enums import FriendshipStatus
 
 
 class FriendRequest(CustomModel):

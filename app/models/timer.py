@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import Column, ForeignKey, JSON
 from sqlmodel import Field, Relationship
 
-from app.core.constants import TimerStatus
+from app.domain.timer.enums import TimerStatus
 from app.models.base import UUIDBase, TimestampMixin, str_enum_column
 from app.models.tag import TimerTag
 

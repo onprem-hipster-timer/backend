@@ -4,30 +4,14 @@ ResourceVisibility 모델
 리소스(Schedule, Timer, Todo)의 접근권한을 관리합니다.
 다형성 패턴을 사용하여 모든 리소스 타입에 동일한 접근권한 로직을 적용합니다.
 """
-from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import Column, ForeignKey, UniqueConstraint, Index
 from sqlmodel import Field
 
+# VisibilityLevel·ResourceType 재수출 포함 — 정식 정의 위치: app/domain/visibility/enums.py
+from app.domain.visibility.enums import ResourceType, VisibilityLevel  # noqa: F401
 from app.models.base import UUIDBase, TimestampMixin, str_enum_column
-
-
-class VisibilityLevel(str, Enum):
-    """접근권한 레벨"""
-    PRIVATE = "private"  # 본인만 (기본값)
-    FRIENDS = "friends"  # 모든 친구
-    SELECTED_FRIENDS = "selected"  # 선택한 친구만
-    ALLOWED_EMAILS = "allowed_emails"  # 허용된 이메일/도메인만
-    PUBLIC = "public"  # 전체 공개
-
-
-class ResourceType(str, Enum):
-    """리소스 타입"""
-    SCHEDULE = "schedule"
-    TIMER = "timer"
-    TODO = "todo"
-    MEETING = "meeting"
 
 
 class ResourceVisibility(UUIDBase, TimestampMixin, table=True):

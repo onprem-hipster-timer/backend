@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select, and_
 
-from app.core.constants import TimerStatus
+from app.domain.timer.enums import TimerStatus
 from app.models.timer import TimerSession
 
 

@@ -8,12 +8,11 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from app.domain.visibility.enums import ResourceType, VisibilityLevel
 from app.models.visibility import (
     ResourceVisibility,
     VisibilityAllowList,
     VisibilityAllowEmail,
-    VisibilityLevel,
-    ResourceType,
 )
 
 

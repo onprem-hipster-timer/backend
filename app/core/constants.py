@@ -1,19 +1,8 @@
 # 상수 정의
 from enum import Enum
 
-# 일정 상태 (필요시 확장)
-SCHEDULE_STATUS_PENDING = "pending"
-SCHEDULE_STATUS_CONFIRMED = "confirmed"
-SCHEDULE_STATUS_CANCELLED = "cancelled"
-
-
-class TimerStatus(str, Enum):
-    """타이머 상태"""
-    NOT_STARTED = "NOT_STARTED"
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
-    COMPLETED = "COMPLETED"
-    CANCELLED = "CANCELLED"
+# 하위호환 재수출 — 정식 정의 위치: app/domain/timer/enums.py
+from app.domain.timer.enums import TimerStatus  # noqa: F401
 
 
 class TagIncludeMode(str, Enum):

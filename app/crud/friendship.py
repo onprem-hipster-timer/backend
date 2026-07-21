@@ -8,7 +8,8 @@ from uuid import UUID
 
 from sqlmodel import Session, select, or_, and_
 
-from app.models.friendship import Friendship, FriendshipStatus
+from app.domain.friend.enums import FriendshipStatus
+from app.models.friendship import Friendship
 
 
 def _compute_pair_ids(user_a: str, user_b: str) -> tuple[str, str]:

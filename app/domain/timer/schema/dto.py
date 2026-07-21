@@ -14,11 +14,12 @@ from pydantic import ConfigDict, field_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
-from app.core.constants import TagIncludeMode, TimerStatus
+from app.core.constants import TagIncludeMode
+from app.domain.timer.enums import TimerStatus
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.schema.dto import TagRead
-from app.models.visibility import VisibilityLevel
+from app.domain.visibility.enums import VisibilityLevel
 
 if TYPE_CHECKING:
     from app.domain.todo.schema.dto import TodoRead

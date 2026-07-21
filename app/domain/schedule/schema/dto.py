@@ -17,7 +17,7 @@ from pydantic.json_schema import SkipJsonSchema
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.enums import ScheduleState, SourceTodoPolicy
-from app.models.visibility import VisibilityLevel
+from app.domain.visibility.enums import VisibilityLevel
 from app.utils.validators import validate_time_order
 
 if TYPE_CHECKING:

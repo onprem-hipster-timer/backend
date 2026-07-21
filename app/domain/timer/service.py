@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
-from app.core.constants import TimerStatus
+from app.domain.timer.enums import TimerStatus
 from app.crud import timer as crud, schedule as schedule_crud, todo as todo_crud
 from app.crud import visibility as visibility_crud
 from app.domain.dateutil.service import ensure_utc_naive

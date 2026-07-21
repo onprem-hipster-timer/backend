@@ -96,7 +96,7 @@ async def timer_websocket(
     # 활성 타이머 자동 동기화 (항상 수행)
     with _session_manager.get_session() as session:
         try:
-            from app.core.constants import TimerStatus
+            from app.domain.timer.enums import TimerStatus
             from app.domain.timer.service import TimerService
             from app.domain.timer.schema.ws import TimerData, TimerWSMessageType
 

@@ -12,7 +12,7 @@ from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone
-from app.models.visibility import VisibilityLevel
+from app.domain.visibility.enums import VisibilityLevel
 
 
 class MeetingCreate(CustomModel):
