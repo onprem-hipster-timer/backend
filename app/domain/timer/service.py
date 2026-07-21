@@ -109,7 +109,7 @@ class TimerService:
             "description": data.description,
             "allocated_duration": data.allocated_duration,
             "elapsed_time": 0,
-            "status": TimerStatus.RUNNING.value,
+            "status": TimerStatus.RUNNING,
             "started_at": now,
             "pause_history": [{"action": "start", "at": now.isoformat()}],
         }
@@ -139,7 +139,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer.status == TimerStatus.RUNNING and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -162,7 +162,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer.status == TimerStatus.RUNNING and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -220,7 +220,7 @@ class TimerService:
 
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in accessible_timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            if timer.status == TimerStatus.RUNNING and timer.started_at:
                 self._add_running_segment_to_elapsed(timer, now)
 
         return accessible_timers
@@ -236,7 +236,7 @@ class TimerService:
 
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            if timer.status == TimerStatus.RUNNING and timer.started_at:
                 self._add_running_segment_to_elapsed(timer, now)
 
         return timers
@@ -250,7 +250,7 @@ class TimerService:
         """
         timer = crud.get_active_timer(self.session, schedule_id, self.owner_id)
 
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer and timer.status == TimerStatus.RUNNING and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -267,7 +267,7 @@ class TimerService:
 
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            if timer.status == TimerStatus.RUNNING and timer.started_at:
                 self._add_running_segment_to_elapsed(timer, now)
 
         return timers
@@ -281,7 +281,7 @@ class TimerService:
         """
         timer = crud.get_active_timer_by_todo(self.session, todo_id, self.owner_id)
 
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer and timer.status == TimerStatus.RUNNING and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -314,7 +314,7 @@ class TimerService:
 
         now = ensure_utc_naive(datetime.now(UTC))
         for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+            if timer.status == TimerStatus.RUNNING and timer.started_at:
                 self._add_running_segment_to_elapsed(timer, now)
 
         return timers
@@ -329,7 +329,7 @@ class TimerService:
         """
         timer = crud.get_user_active_timer(self.session, self.owner_id)
 
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer and timer.status == TimerStatus.RUNNING and timer.started_at:
             now = ensure_utc_naive(datetime.now(UTC))
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -354,7 +354,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        if timer.status != TimerStatus.RUNNING.value:
+        if timer.status != TimerStatus.RUNNING:
             raise InvalidTimerStatusError(
                 detail=f"Cannot pause timer with status {timer.status}"
             )
@@ -364,7 +364,7 @@ class TimerService:
             self._add_running_segment_to_elapsed(timer, now)
 
         # 상태 변경
-        timer.status = TimerStatus.PAUSED.value
+        timer.status = TimerStatus.PAUSED
         timer.paused_at = now
 
         # pause_history에 pause 이벤트 추가
@@ -399,14 +399,14 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        if timer.status != TimerStatus.PAUSED.value:
+        if timer.status != TimerStatus.PAUSED:
             raise InvalidTimerStatusError(
                 detail=f"Cannot resume timer with status {timer.status}"
             )
 
         # 상태 변경
         now = ensure_utc_naive(datetime.now(UTC))
-        timer.status = TimerStatus.RUNNING.value
+        timer.status = TimerStatus.RUNNING
         timer.started_at = now  # 재개 시간으로 재설정
         timer.paused_at = None
 
@@ -441,17 +441,17 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
+        if timer.status not in [TimerStatus.RUNNING, TimerStatus.PAUSED]:
             raise InvalidTimerStatusError(
                 detail=f"Cannot stop timer with status {timer.status}"
             )
 
         now = ensure_utc_naive(datetime.now(UTC))
-        if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+        if timer.status == TimerStatus.RUNNING and timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
 
         # 상태 변경
-        timer.status = TimerStatus.COMPLETED.value
+        timer.status = TimerStatus.COMPLETED
         timer.ended_at = now
 
         # pause_history에 stop 이벤트 추가
@@ -484,7 +484,7 @@ class TimerService:
             raise TimerNotFoundError()
 
         now = ensure_utc_naive(datetime.now(UTC))
-        timer.status = TimerStatus.CANCELLED.value
+        timer.status = TimerStatus.CANCELLED
         timer.ended_at = now
 
         # pause_history에 cancel 이벤트 추가

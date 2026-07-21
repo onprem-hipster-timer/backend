@@ -108,8 +108,8 @@ def get_active_timer(
         .where(TimerSession.schedule_id == schedule_id)
         .where(
             TimerSession.status.in_([
-                TimerStatus.RUNNING.value,
-                TimerStatus.PAUSED.value,
+                TimerStatus.RUNNING,
+                TimerStatus.PAUSED,
             ])
         )
         .order_by(TimerSession.created_at.desc())
@@ -162,8 +162,8 @@ def get_active_timer_by_todo(
         .where(TimerSession.todo_id == todo_id)
         .where(
             TimerSession.status.in_([
-                TimerStatus.RUNNING.value,
-                TimerStatus.PAUSED.value,
+                TimerStatus.RUNNING,
+                TimerStatus.PAUSED,
             ])
         )
         .order_by(TimerSession.created_at.desc())
@@ -274,8 +274,8 @@ def get_user_active_timer(
         .where(TimerSession.owner_id == owner_id)
         .where(
             TimerSession.status.in_([
-                TimerStatus.RUNNING.value,
-                TimerStatus.PAUSED.value,
+                TimerStatus.RUNNING,
+                TimerStatus.PAUSED,
             ])
         )
         .order_by(TimerSession.created_at.desc())
@@ -360,8 +360,8 @@ def get_user_active_timer(
         .where(TimerSession.owner_id == owner_id)
         .where(
             TimerSession.status.in_([
-                TimerStatus.RUNNING.value,
-                TimerStatus.PAUSED.value,
+                TimerStatus.RUNNING,
+                TimerStatus.PAUSED,
             ])
         )
         .order_by(TimerSession.created_at.desc())

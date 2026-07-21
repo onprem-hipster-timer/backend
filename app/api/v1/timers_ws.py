@@ -101,7 +101,7 @@ async def timer_websocket(
             from app.domain.timer.schema.ws import TimerData, TimerWSMessageType
 
             timer_service = TimerService(session, current_user)
-            active_timers = timer_service.get_all_timers(status=[TimerStatus.RUNNING.value, TimerStatus.PAUSED.value])
+            active_timers = timer_service.get_all_timers(status=[TimerStatus.RUNNING, TimerStatus.PAUSED])
 
             # 타임존 변환 적용
             timer_list = []
