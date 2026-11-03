@@ -148,6 +148,20 @@ KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 - 넘기는 요청 헤더는 `Cookie`, `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
 
+#### 메일 발송 (courier 잡)
+
+Kratos 메일은 Cloud Run 잡이 보냅니다. 가입, 인증·복구 코드 요청, 설정 변경 제출이 성공하면 backend가 백그라운드에서 `COURIER_REQUEUE_JOB`을 실행해 성공을 기다린 뒤 `KRATOS_COURIER_JOB`을 실행합니다.
+
+```bash
+COURIER_REQUEUE_JOB=projects/<project>/locations/<region>/jobs/courier-requeue
+KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
+```
+
+- `kratos-courier`가 이미 실행 중이면 둘 다 건너뜁니다. 30초 안의 반복 요청도 건너뜁니다.
+- 실패해도 요청은 실패하지 않습니다. 로그에만 남습니다.
+- 런타임 서비스 계정에 두 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
+- 컨테이너가 `cpu_idle=true`(요청 중에만 CPU 할당)이면 응답 뒤 requeue를 기다리는 동안 CPU가 줄어 메일이 늦어질 수 있습니다.
+
 > 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 
 ---

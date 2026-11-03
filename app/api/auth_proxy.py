@@ -13,11 +13,13 @@ OIDC 가입 요청에서 클라이언트가 보낸 traits.email을 버리는 처
 추가한다 (infra README "backend가 지켜야 할 것" 2번).
 """
 import logging
+import re
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from app.core import courier
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,8 @@ DROP_RESPONSE_HEADERS = {
     "content-length",
     "content-encoding",
 }
+# 성공하면 메일을 큐에 넣을 수 있는 제출 (가입, 인증·복구 코드 요청, 설정 변경)
+MAIL_FLOW_SUBMIT = re.compile(r"self-service/(registration|verification|recovery|settings)")
 
 router = APIRouter(include_in_schema=False)
 
@@ -74,6 +78,9 @@ async def kratos_proxy(path: str, request: Request) -> Response:
     except httpx.HTTPError:
         logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
         return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
+
+    if request.method == "POST" and upstream.status_code in (200, 303) and MAIL_FLOW_SUBMIT.fullmatch(path):
+        courier.trigger()
 
     response = Response(content=upstream.content, status_code=upstream.status_code)
     for name, value in upstream.headers.multi_items():

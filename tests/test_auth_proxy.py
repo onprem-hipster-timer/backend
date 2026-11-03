@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import auth_proxy
+from app.core import courier
 from app.core.config import Settings
 
 UPSTREAM = "http://kratos.test"
@@ -130,6 +131,29 @@ def test_upstream_unreachable_returns_502(client, upstream):
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Authentication service unavailable"}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "status", "triggered"),
+    [
+        ("POST", "/auth/self-service/registration?flow=f", 200, True),
+        ("POST", "/auth/self-service/verification?flow=f", 200, True),
+        ("POST", "/auth/self-service/recovery?flow=f", 200, True),
+        ("POST", "/auth/self-service/settings?flow=f", 200, True),
+        ("POST", "/auth/self-service/registration?flow=f", 303, True),
+        ("POST", "/auth/self-service/registration?flow=f", 400, False),
+        ("POST", "/auth/self-service/login?flow=f", 200, False),
+        ("GET", "/auth/self-service/registration/api", 200, False),
+    ],
+)
+def test_triggers_courier_only_after_mail_flow_submit(client, upstream, monkeypatch, method, path, status, triggered):
+    calls = []
+    monkeypatch.setattr(courier, "trigger", lambda: calls.append(True))
+    upstream.handler = lambda request: httpx.Response(status, json={})
+
+    client.request(method, path, json={} if method == "POST" else None, follow_redirects=False)
+
+    assert bool(calls) is triggered
 
 
 def test_not_configured_returns_404(client, upstream, monkeypatch):

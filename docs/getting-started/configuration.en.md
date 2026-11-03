@@ -95,6 +95,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS` | Public JWKS JSON. When set, tokens are verified with these keys instead of discovery (issuers without discovery, such as Kratos) | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | Kratos public API that `/auth/*` is proxied to. When empty, `/auth/*` returns 404 | - |
+| `COURIER_REQUEUE_JOB` | Cloud Run job that requeues mail stuck in processing (`projects/…/jobs/…`) | - |
+| `KRATOS_COURIER_JOB` | Cloud Run job that sends Kratos mail. When empty, no mail job is run | - |
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)
 

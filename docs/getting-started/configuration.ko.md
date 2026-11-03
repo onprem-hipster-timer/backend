@@ -95,6 +95,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS` | 공개 JWKS JSON. 설정하면 discovery 대신 이 키로 검증 (Kratos처럼 discovery가 없는 발급자) | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | `/auth/*`를 프록시할 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 | - |
+| `COURIER_REQUEUE_JOB` | 처리 중에 멈춘 메일을 되돌리는 Cloud Run 잡 이름 (`projects/…/jobs/…`) | - |
+| `KRATOS_COURIER_JOB` | Kratos 메일을 보내는 Cloud Run 잡 이름. 비우면 메일 잡을 실행하지 않음 | - |
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
 

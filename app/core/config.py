@@ -64,6 +64,9 @@ class Settings(BaseSettings):
 
     # Kratos 공개 API (사이드카). /auth/*를 이 주소로 프록시하며, 비어 있으면 /auth/*는 404
     KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
+    # Kratos courier Cloud Run 잡 (전체 리소스 이름). KRATOS_COURIER_JOB이 비어 있으면 실행하지 않음
+    COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
+    KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
     # Rate Limit 설정
     RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
