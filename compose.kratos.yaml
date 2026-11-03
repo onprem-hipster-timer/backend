@@ -1,0 +1,52 @@
+# 로컬 개발용 Kratos 스택 (infra와 같은 v26.2.0 이미지). 운영 배포에는 쓰지 않는다.
+#
+# 사용법:
+#   1. 서명 키 생성: python scripts/gen_dev_jwks.py  (출력된 공개 JWKS를 backend OIDC_JWKS에 넣는다)
+#   2. 시작:         docker compose -f compose.kratos.yaml up -d
+#   3. backend:      아래 환경 변수로 포트 2614에서 실행
+#   4. 메일 확인:    http://localhost:8025 (mailpit)
+#   종료:            docker compose -f compose.kratos.yaml down -v
+#
+# backend 환경 변수:
+#   OIDC_ENABLED=true
+#   OIDC_ISSUER_URL=http://localhost:2614/auth/
+#   OIDC_AUDIENCE=http://localhost:2614
+#   OIDC_JWKS=<gen_dev_jwks.py가 출력한 값>
+#   KRATOS_PUBLIC_URL=http://127.0.0.1:4433
+#   CORS_ALLOWED_ORIGINS=http://localhost:3100
+# 메일은 Kratos가 --watch-courier로 직접 보내므로 courier 잡 변수는 비워 둔다.
+
+# 디렉터리 이름(backend)을 쓰면 docker-compose.test.yaml의 postgres와 한 프로젝트로 묶인다
+name: kratos-dev
+
+x-kratos: &kratos
+  image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+  environment:
+    DSN: sqlite:///var/lib/sqlite/db.sqlite?_fk=true&mode=rwc
+  volumes:
+    - kratos-sqlite:/var/lib/sqlite
+    - ./dev/kratos:/etc/config/kratos:ro
+
+services:
+  kratos-migrate:
+    <<: *kratos
+    command: migrate sql -e --yes
+
+  kratos:
+    <<: *kratos
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    ports:
+      - "127.0.0.1:4433:4433"
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  kratos-sqlite:
