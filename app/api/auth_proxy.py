@@ -34,8 +34,11 @@ FORWARD_REQUEST_HEADERS = (
     "x-forwarded-proto",
     "cf-connecting-ip",
 )
-# hop-by-hop 헤더, 그리고 httpx가 본문을 풀면서 맞지 않게 된 길이·인코딩 헤더
+# hop-by-hop 헤더, httpx가 본문을 풀면서 맞지 않게 된 길이·인코딩 헤더,
+# 그리고 uvicorn이 따로 붙이는 date·server (그대로 두면 두 번 나간다)
 DROP_RESPONSE_HEADERS = {
+    "date",
+    "server",
     "connection",
     "keep-alive",
     "transfer-encoding",

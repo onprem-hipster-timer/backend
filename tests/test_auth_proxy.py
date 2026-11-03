@@ -110,6 +110,19 @@ def test_keeps_each_set_cookie(client, upstream):
     assert response.headers.get_list("set-cookie") == ["a=1; Path=/; HttpOnly", "b=2; Path=/"]
 
 
+def test_drops_upstream_date_and_server_headers(client, upstream):
+    """uvicorn이 붙이는 date·server와 겹치지 않게 upstream 것은 버린다"""
+    upstream.handler = lambda request: httpx.Response(
+        200, headers={"date": "Tue, 03 Nov 2026 00:00:00 GMT", "server": "kratos"}, json={}
+    )
+
+    response = client.get("/auth/sessions/whoami")
+
+    # 서버(uvicorn)가 자기 것을 붙이므로 프록시는 upstream 것을 넘기지 않는다
+    assert response.headers.get_list("date") == []
+    assert "server" not in response.headers
+
+
 def test_passes_redirect_through(client, upstream):
     upstream.handler = lambda request: httpx.Response(
         303, headers={"location": "https://app.example.com/login?flow=f1"}
