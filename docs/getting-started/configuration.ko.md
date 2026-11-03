@@ -94,6 +94,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_DISCOVERY_URL` | 사용자 지정 Discovery 엔드포인트 | 자동 생성 |
 | `OIDC_JWKS` | 공개 JWKS JSON. 설정하면 discovery 대신 이 키로 검증 (Kratos처럼 discovery가 없는 발급자) | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL | `3600` |
+| `KRATOS_PUBLIC_URL` | `/auth/*`를 프록시할 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 | - |
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
 

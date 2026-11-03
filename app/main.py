@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import auth_proxy
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
@@ -193,6 +194,9 @@ app.add_middleware(AuthMiddleware)
 
 # API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)
+
+# Kratos 공개 API 프록시 (/auth/*). KRATOS_PUBLIC_URL이 비어 있으면 404
+app.include_router(auth_proxy.router)
 
 
 # Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)

@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     OIDC_JWKS: str = ""  # 공개 JWKS JSON. 설정하면 discovery 없이 이 키로 검증 (Kratos처럼 discovery가 없는 발급자)
     OIDC_JWKS_CACHE_TTL_SECONDS: int = 3600  # JWKS 캐시 TTL (기본 1시간)
 
+    # Kratos 공개 API (사이드카). /auth/*를 이 주소로 프록시하며, 비어 있으면 /auth/*는 404
+    KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
+
     # Rate Limit 설정
     RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)

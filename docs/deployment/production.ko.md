@@ -130,6 +130,24 @@ OIDC_AUDIENCE=your-client-id
 OIDC_JWKS_CACHE_TTL_SECONDS=3600
 ```
 
+### Kratos 연동
+
+Kratos를 사이드카로 함께 띄우면 backend가 `/auth/*`를 Kratos 공개 API로 프록시하고, Kratos 세션 토크나이저가 발급한 JWT를 검증합니다.
+
+```bash
+# Kratos public base_url과 같은 값 (끝 슬래시 포함)
+OIDC_ISSUER_URL=https://api.example.com/auth/
+OIDC_AUDIENCE=https://api.example.com
+# Kratos 서명 키의 공개 JWKS (Kratos는 discovery가 없어 이 값으로 검증)
+OIDC_JWKS='{"keys":[...]}'
+# /auth/* 프록시 대상. 비우면 /auth/*는 404
+KRATOS_PUBLIC_URL=http://127.0.0.1:4433
+```
+
+- `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
+- 넘기는 요청 헤더는 `Cookie`, `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
+- CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
+
 > 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 
 ---
