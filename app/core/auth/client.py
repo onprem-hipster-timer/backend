@@ -4,6 +4,7 @@ OIDC 클라이언트
 joserfc를 사용한 OIDC discovery, JWKS 캐싱, JWT Access Token 검증.
 이 서버는 OIDC Resource Server(Relying Party)로서 외부 Provider 발급 토큰을 검증한다.
 """
+import json
 import logging
 from typing import Any
 
@@ -79,12 +80,21 @@ class OIDCClient:
         """
         JWKS (JSON Web Key Set) 조회 (캐싱됨)
 
+        OIDC_JWKS가 설정되어 있으면 그 공개 키를, 없으면 discovery의 jwks_uri를 쓴다.
+
         Returns:
             joserfc KeySet 객체
         """
         cache_key = "jwks"
         if cache_key in self._jwks_cache:
             return self._jwks_cache[cache_key]
+
+        if settings.OIDC_JWKS:
+            # discovery가 없는 발급자(Kratos)는 공개 JWKS를 환경 변수로 받는다
+            jwks = KeySet.import_key_set(json.loads(settings.OIDC_JWKS))
+            self._jwks_cache[cache_key] = jwks
+            logger.info("JWKS loaded from OIDC_JWKS")
+            return jwks
 
         metadata = await self.get_metadata()
         jwks_uri = metadata.get("jwks_uri")

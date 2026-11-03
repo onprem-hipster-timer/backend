@@ -92,6 +92,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_ISSUER_URL` | OIDC Provider issuer URL | - |
 | `OIDC_AUDIENCE` | Client ID for token validation | - |
 | `OIDC_DISCOVERY_URL` | Custom discovery endpoint | Auto-generated |
+| `OIDC_JWKS` | Public JWKS JSON. When set, tokens are verified with these keys instead of discovery (issuers without discovery, such as Kratos) | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)

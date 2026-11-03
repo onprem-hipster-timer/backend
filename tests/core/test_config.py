@@ -1,9 +1,11 @@
 """
 CORS 환경변수 설정 테스트
 """
+import logging
 import os
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import Settings
 
@@ -174,3 +176,21 @@ class TestCORSSettings:
         assert settings.cors_methods == ["GET", "POST", "PUT"]
         assert settings.cors_headers == ["Content-Type", "Authorization"]
         assert settings.CORS_ALLOW_CREDENTIALS is True
+
+
+class TestOIDCJwksSetting:
+    """OIDC_JWKS 형식 검증 (잘못된 시크릿은 기동 시 실패)"""
+
+    def test_accepts_jwks_json(self):
+        jwks = '{"keys": [{"kty": "EC", "crv": "P-256", "kid": "k", "x": "x", "y": "y"}]}'
+        assert Settings(OIDC_JWKS=jwks).OIDC_JWKS == jwks
+
+    @pytest.mark.parametrize("value", ["not-json", '{"kid": "k"}', "[]"])
+    def test_rejects_non_jwks(self, value):
+        with pytest.raises(ValidationError, match="OIDC_JWKS"):
+            Settings(OIDC_JWKS=value)
+
+    def test_empty_keys_logs_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
+            Settings(OIDC_JWKS='{"keys": []}')
+        assert "OIDC_JWKS" in caplog.text
