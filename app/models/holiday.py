@@ -5,6 +5,7 @@ SQLModel을 사용한 데이터베이스 모델 정의
 """
 from datetime import datetime
 
+from pydantic import NaiveDatetime
 from sqlmodel import Field, Column, String, UniqueConstraint
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -20,8 +21,8 @@ class HolidayModel(UUIDBase, TimestampMixin, table=True):
     """
     __tablename__ = "holidays"
 
-    start_date: datetime = Field(index=True)  # 시작 날짜 (한국 표준시 기준 날짜의 시작, UTC naive)
-    end_date: datetime = Field(index=True)  # 종료 날짜 (한국 표준시 기준 날짜의 종료, UTC naive)
+    start_date: NaiveDatetime = Field(index=True)  # 시작 날짜 (한국 표준시 기준 날짜의 시작, UTC naive)
+    end_date: NaiveDatetime = Field(index=True)  # 종료 날짜 (한국 표준시 기준 날짜의 종료, UTC naive)
     dateName: str  # 국경일 명칭
     isHoliday: bool = Field(default=False)  # 공공기관 휴일 여부
     dateKind: str = Field(

@@ -1,7 +1,7 @@
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
+from pydantic import NaiveDatetime
 from sqlalchemy import Column, ForeignKey, Enum as SQLEnum, Index, text
 from sqlmodel import Field, Relationship
 
@@ -34,12 +34,12 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
 
     title: str
     description: Optional[str] = None
-    start_time: datetime
-    end_time: datetime
+    start_time: NaiveDatetime
+    end_time: NaiveDatetime
 
     # 반복 일정 필드
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
-    recurrence_end: Optional[datetime] = None  # 반복 종료일
+    recurrence_end: Optional[NaiveDatetime] = None  # 반복 종료일
     parent_id: Optional[UUID] = None  # 원본 일정 ID (예외 인스턴스용)
 
     # Todo 그룹 직접 연결 (레거시, 선택사항)
@@ -90,13 +90,13 @@ class ScheduleException(UUIDBase, TimestampMixin, table=True):
             nullable=False
         )
     )
-    exception_date: datetime  # 예외가 발생한 날짜
+    exception_date: NaiveDatetime  # 예외가 발생한 날짜
     is_deleted: bool = False  # 삭제된 인스턴스인지
     # 수정된 경우: 새로운 일정 데이터
     title: Optional[str] = None
     description: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: Optional[NaiveDatetime] = None
+    end_time: Optional[NaiveDatetime] = None
 
     # 태그 관계 (다대다)
     tags: List["Tag"] = Relationship(

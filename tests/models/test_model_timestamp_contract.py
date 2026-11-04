@@ -117,3 +117,19 @@ def test_timestampless_tables_do_not_have_timestamp_columns(table_name):
     assert not issubclass(model, TimestampMixin)
     assert "created_at" not in model.__table__.c
     assert "updated_at" not in model.__table__.c
+
+
+def test_datetime_columns_store_naive_utc():
+    """앱은 UTC naive로 저장하고 DB 컬럼은 TIMESTAMP WITHOUT TIME ZONE이다.
+
+    sqlmodel 0.0.48부터 평범한 datetime 필드는 시간대 있는 값만 받는 컬럼이 되므로,
+    table 모델의 datetime 필드는 NaiveDatetime으로 표시한다.
+    """
+    timezone_columns = [
+        f"{model.__table__.name}.{column.name}"
+        for model in _iter_app_table_models()
+        for column in model.__table__.columns
+        if getattr(column.type, "timezone", False)
+    ]
+
+    assert timezone_columns == []
