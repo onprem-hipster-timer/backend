@@ -528,8 +528,10 @@ class TestStaticJwks:
         """iss는 Kratos public base_url과 끝 슬래시까지 정확히 같아야 한다"""
         from app.core.auth import OIDCClient
 
+        client = OIDCClient()
+        token = create_kratos_token(iss=KRATOS_ISSUER.rstrip("/"))
         with pytest.raises(HTTPException) as exc_info:
-            await OIDCClient().verify_token(create_kratos_token(iss=KRATOS_ISSUER.rstrip("/")))
+            await client.verify_token(token)
 
         assert exc_info.value.status_code == 401
         assert "issuer" in exc_info.value.detail.lower()
@@ -540,8 +542,10 @@ class TestStaticJwks:
         from app.core.auth import OIDCClient
 
         other_key = ECKey.generate_key("P-256", parameters={"kid": "kratos-test", "use": "sig"}, private=True)
+        client = OIDCClient()
+        token = create_kratos_token(key=other_key)
         with pytest.raises(HTTPException) as exc_info:
-            await OIDCClient().verify_token(create_kratos_token(key=other_key))
+            await client.verify_token(token)
 
         assert exc_info.value.status_code == 401
 
@@ -551,8 +555,10 @@ class TestStaticJwks:
         from app.core.auth import OIDCClient
 
         kratos_settings.OIDC_JWKS = '{"keys": []}'
+        client = OIDCClient()
+        token = create_kratos_token()
         with pytest.raises(HTTPException) as exc_info:
-            await OIDCClient().verify_token(create_kratos_token())
+            await client.verify_token(token)
 
         assert exc_info.value.status_code == 401
 
