@@ -4,10 +4,10 @@ Todo 모델
 Todo는 독립적인 엔티티로 Schedule과 분리됩니다.
 deadline이 있으면 별도의 Schedule을 생성할 수 있습니다.
 """
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
 from uuid import UUID
 
+from pydantic import NaiveDatetime
 from sqlalchemy import Column, ForeignKey, Enum as SQLEnum
 from sqlmodel import Field, Relationship
 
@@ -30,7 +30,7 @@ class Todo(UUIDBase, TimestampMixin, table=True):
 
     title: str
     description: Optional[str] = None
-    deadline: Optional[datetime] = None  # 마감기간
+    deadline: Optional[NaiveDatetime] = None  # 마감기간
 
     # TagGroup 참조 (필수)
     tag_group_id: UUID = Field(

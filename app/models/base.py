@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+from pydantic import NaiveDatetime
 from pydantic.experimental.missing_sentinel import MISSING
 from sqlalchemy import inspect
 from sqlmodel import SQLModel, Field
@@ -12,10 +13,10 @@ def utc_now_naive() -> datetime:
 
 
 class TimestampMixin(SQLModel):
-    created_at: datetime = Field(
+    created_at: NaiveDatetime = Field(
         default_factory=utc_now_naive
     )
-    updated_at: datetime = Field(
+    updated_at: NaiveDatetime = Field(
         default_factory=utc_now_naive,
         sa_column_kwargs={"onupdate": utc_now_naive},
     )

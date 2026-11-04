@@ -1,7 +1,7 @@
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List, Any
 from uuid import UUID
 
+from pydantic import NaiveDatetime
 from sqlalchemy import Column, ForeignKey, JSON
 from sqlmodel import Field, Relationship
 
@@ -50,9 +50,9 @@ class TimerSession(UUIDBase, TimestampMixin, table=True):
 
     # 상태 및 시간 추적
     status: TimerStatus
-    started_at: Optional[datetime] = None
-    paused_at: Optional[datetime] = None
-    ended_at: Optional[datetime] = None
+    started_at: Optional[NaiveDatetime] = None
+    paused_at: Optional[NaiveDatetime] = None
+    ended_at: Optional[NaiveDatetime] = None
 
     # 일시정지/재개 이력 (WebSocket 기반 멀티 플랫폼 동기화용)
     # 예시: [

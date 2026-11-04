@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Naive UTC datetime columns**: sqlmodel 0.0.48 maps plain `datetime` fields to a timezone-aware column type that rejects naive values, so every insert with `created_at` failed with 500. Table model datetime fields (`TimestampMixin` and 14 model fields) are now annotated with Pydantic `NaiveDatetime`, which keeps `TIMESTAMP WITHOUT TIME ZONE` and the existing UTC naive storage. A model test fails if any table column becomes timezone-aware again.
 
 ---
 
