@@ -107,8 +107,7 @@ class VisibilityService:
             return crud.is_user_in_allow_list(self.session, visibility.id, self.user_id)
 
         if level == VisibilityLevel.ALLOWED_EMAILS:
-            # 현재 사용자의 이메일 확인 (OIDC 클레임에서 추출)
-            user_email = self.current_user.email
+            user_email = self._verified_email
             if not user_email:
                 return False
             # 이메일 허용 목록 확인
@@ -116,6 +115,15 @@ class VisibilityService:
 
         # PRIVATE
         return False
+
+    @property
+    def _verified_email(self) -> str | None:
+        """허용 이메일 규칙에 쓸 이메일. IdP가 검증한(email_verified) 이메일만 믿는다.
+
+        Kratos는 가입 직후 이메일 인증 전에도 세션을 준다. 검증 안 된 이메일을 믿으면
+        남의 이메일이나 도메인으로 가입만 해서 그 이메일에 공유된 항목을 볼 수 있다.
+        """
+        return self.current_user.email if self.current_user.email_verified else None
 
     def _is_blocked_relation(self, other_user_id: str) -> bool:
         """차단 관계 확인 (양방향)"""
@@ -404,7 +412,7 @@ class VisibilityService:
             if v.level == VisibilityLevel.ALLOWED_EMAILS
         ]
         email_allow_list_map: dict[UUID, list] = {}  # {visibility_id: [email_entries]}
-        user_email = self.current_user.email
+        user_email = self._verified_email
         user_email_domain = user_email.split("@")[-1] if user_email and "@" in user_email else None
 
         for v_id in allowed_email_visibility_ids:
