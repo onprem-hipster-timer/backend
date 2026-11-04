@@ -3,6 +3,8 @@
 
 실제 Kratos 대신 httpx.MockTransport가 upstream 역할을 하고, 받은 요청을 기록한다.
 """
+import json
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -413,3 +415,102 @@ def test_allowed_settings_submit_drops_other_session_header(client, upstream):
     sent = settings_forwarded(upstream)[0]
     assert sent.headers["x-session-token"] == "ory_st_recovery"
     assert "authorization" not in sent.headers
+
+
+def test_settings_body_with_keys_differing_only_in_case_is_rejected(client, upstream):
+    """Kratos는 JSON 키를 대소문자 구분 없이 읽어 Method도 method로 받는다"""
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = client.post(
+        SETTINGS_SUBMIT,
+        content=b'{"method": "password", "Method": "profile"}',
+        headers={"X-Session-Token": "ory_st_recovery", "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
+
+
+# --- 소셜 로그인 제출의 traits.email 제거 ---
+
+
+def forwarded_json(upstream):
+    return json.loads(upstream.requests[-1].content)
+
+
+@pytest.mark.parametrize("flow", ["registration", "login"])
+def test_oidc_submit_drops_client_email(client, upstream, flow):
+    """처음 쓰는 소셜 계정이면 로그인 제출도 가입이 되므로 둘 다 지운다"""
+    client.post(
+        f"/auth/self-service/{flow}?flow=f1",
+        json={"method": "oidc", "provider": "google", "traits": {"email": "other@example.com", "name": "A"}},
+    )
+
+    assert forwarded_json(upstream) == {"method": "oidc", "provider": "google", "traits": {"name": "A"}}
+
+
+def test_oidc_submit_drops_email_under_differently_cased_keys(client, upstream):
+    client.post(
+        "/auth/self-service/registration?flow=f1",
+        json={"Method": "oidc", "provider": "google", "Traits": {"Email": "other@example.com"}},
+    )
+
+    assert forwarded_json(upstream) == {"Method": "oidc", "provider": "google", "Traits": {}}
+
+
+def test_oidc_submit_drops_traits_that_are_not_an_object(client, upstream):
+    client.post(
+        "/auth/self-service/registration?flow=f1",
+        json={"method": "oidc", "provider": "google", "traits": '{"email": "other@example.com"}'},
+    )
+
+    assert forwarded_json(upstream) == {"method": "oidc", "provider": "google"}
+
+
+def test_oidc_form_submit_drops_client_email(client, upstream):
+    client.post(
+        "/auth/self-service/registration?flow=f1",
+        content=b"method=oidc&provider=google&traits.email=other%40example.com&traits.name=A",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert upstream.requests[-1].content == b"method=oidc&provider=google&traits.name=A"
+
+
+@pytest.mark.parametrize("path", ["/auth/self-service/registration/", "/auth/self-service/Registration"])
+def test_oidc_submit_path_variants_are_also_cleaned(client, upstream, path):
+    client.post(f"{path}?flow=f1", json={"method": "oidc", "provider": "google", "traits": {"email": "v@example.com"}})
+
+    assert forwarded_json(upstream) == {"method": "oidc", "provider": "google", "traits": {}}
+
+
+def test_password_registration_keeps_email(client, upstream):
+    body = b'{"method": "password", "password": "Pass-123456", "traits": {"email": "me@example.com"}}'
+
+    client.post(
+        "/auth/self-service/registration?flow=f1",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert upstream.requests[-1].content == body
+
+
+@pytest.mark.parametrize(
+    "content, content_type",
+    [
+        (b'{"method": "password", "method": "oidc", "traits": {"email": "v@example.com"}}', "application/json"),
+        (b'{"method": "password", "Method": "oidc", "traits": {"email": "v@example.com"}}', "application/json"),
+        (b"method=password&method=oidc&traits.email=v%40example.com", "application/x-www-form-urlencoded"),
+        (b"not json", "application/json"),
+    ],
+)
+def test_ambiguous_or_unreadable_registration_body_is_rejected(client, upstream, content, content_type):
+    response = client.post(
+        "/auth/self-service/registration?flow=f1",
+        content=content,
+        headers={"Content-Type": content_type},
+    )
+
+    assert response.status_code == 400
+    assert upstream.requests == []

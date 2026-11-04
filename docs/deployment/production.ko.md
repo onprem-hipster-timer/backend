@@ -148,6 +148,7 @@ KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
 - 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다.
+- 소셜 로그인·가입 제출(`method: oidc`)에서는 클라이언트가 보낸 `traits.email`을 버립니다. 이메일은 제공자가 검증해 준 값만 씁니다. 키가 겹쳐 `method`를 하나로 읽을 수 없는 본문은 400으로 거절합니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
 
 #### 메일 발송 (courier 잡)

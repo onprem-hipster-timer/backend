@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Security
+
+- **Social sign-up email**: the `/auth` proxy drops `traits.email` from social (OIDC) login and registration submissions, so social accounts only use the email the provider verified. Submissions whose `method` can't be read unambiguously (duplicate keys, also keys that differ only in case) are rejected with 400.
 
 ---
 
