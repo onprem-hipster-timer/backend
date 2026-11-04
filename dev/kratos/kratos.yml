@@ -33,6 +33,10 @@ selfservice:
     login:
       ui_url: http://localhost:3100/login
       lifespan: 10m
+      after:
+        password:
+          hooks:
+            - hook: require_verified_address
     registration:
       enabled: true
       ui_url: http://localhost:3100/signup
@@ -40,11 +44,14 @@ selfservice:
       after:
         password:
           hooks:
-            - hook: session
             - hook: show_verification_ui
     settings:
       ui_url: http://localhost:3100/mypage
       privileged_session_max_age: 15m
+      after:
+        password:
+          hooks:
+            - hook: revoke_active_sessions
     verification:
       enabled: true
       use: code
@@ -55,6 +62,10 @@ selfservice:
       enabled: true
       use: code
       ui_url: http://localhost:3100/forgot-password
+      lifespan: 15m
+      after:
+        hooks:
+          - hook: revoke_active_sessions
     logout:
       after:
         default_browser_return_url: http://localhost:3100/login
