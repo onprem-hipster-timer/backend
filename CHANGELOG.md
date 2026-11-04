@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.04-5b27507] - 2026-11-04
+
 ### Added
 
 - **Cloud Run auto deploy**: `.github/workflows/deploy.yml` deploys every successful `main` image build to Cloud Run through Workload Identity Federation (no keys). The image is pinned by digest, the `app-migrate` job runs first, then the `api` service is updated. A manual run takes a version tag for redeploys and rollbacks. The workflow is skipped until the repository variables `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_DEPLOY_WIF_PROVIDER` and `GCP_DEPLOYER_SA` are set. Images are now also tagged `sha-<commit sha>`.
@@ -274,7 +280,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...HEAD
+[v2026.11.04-5b27507]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...v2026.11.04-5b27507
 [v2026.07.21-c825e27]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...v2026.07.21-c825e27
 [v2026.06.15-552ec57]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...v2026.06.15-552ec57
 [v2026.06.15-53559c3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.12-cfa3200...v2026.06.15-53559c3
