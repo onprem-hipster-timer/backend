@@ -20,6 +20,7 @@ from app.core.logging import setup_logging
 from app.db.keepalive import DatabaseKeepAliveTask
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
+from app.middleware.origin_verify import OriginVerifyMiddleware
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.ratelimit.cloudflare import get_cloudflare_manager, get_trusted_proxy_manager
 from app.ratelimit.middleware import RateLimitMiddleware
@@ -190,6 +191,10 @@ app.add_middleware(RateLimitMiddleware)
 # 3. Auth - 가장 먼저 실행되어 request.state.current_user 설정
 #    RateLimitMiddleware와 엔드포인트에서 중복 토큰 검증 없이 재사용
 app.add_middleware(AuthMiddleware)
+
+# 4. Origin Verify - 가장 바깥. 프록시를 건너뛴 요청(HTTP, WebSocket)을 다른 처리 전에 403으로 거부
+#    ORIGIN_VERIFY_HEADER/SECRET 미설정 시 비활성, /health는 예외(startup probe)
+app.add_middleware(OriginVerifyMiddleware)
 
 # API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)

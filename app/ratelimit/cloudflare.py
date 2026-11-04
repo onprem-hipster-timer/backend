@@ -12,6 +12,7 @@ from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network, ip_add
 import httpx
 
 from app.core import config as app_config
+from app.middleware.origin_verify import is_valid_origin_header, origin_verify_enabled
 from app.ratelimit.exceptions import ProxyEnforcementError
 
 logger = logging.getLogger(__name__)
@@ -323,8 +324,8 @@ async def get_real_client_ip(
 
     # 3. Origin Verify 검증 (프록시에서 온 경우만, 설정된 경우만)
     if is_from_proxy:
-        if app_config.settings.ORIGIN_VERIFY_HEADER and app_config.settings.ORIGIN_VERIFY_SECRET:
-            if origin_verify_header != app_config.settings.ORIGIN_VERIFY_SECRET:
+        if origin_verify_enabled():
+            if not is_valid_origin_header(origin_verify_header):
                 raise ProxyEnforcementError("Origin 검증 헤더가 올바르지 않습니다.")
 
     # 4. 클라이언트 IP 추출
