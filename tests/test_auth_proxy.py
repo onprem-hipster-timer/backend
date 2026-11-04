@@ -79,7 +79,7 @@ def test_forwards_only_allowlisted_headers(client, upstream):
     assert sent["x-forwarded-host"] == "api.example.com"
     assert sent["x-forwarded-proto"] == "https"
     assert sent["cf-connecting-ip"] == "203.0.113.7"
-    assert sent["cookie"] == "ory_kratos_session=s1"
+    assert "cookie" not in sent  # 인증은 쿠키가 아니라 세션 토큰과 JWT
     assert "x-origin-verify" not in sent
     assert sent["host"] == "kratos.test"
 
@@ -98,16 +98,17 @@ def test_forwards_method_and_body(client, upstream):
     assert sent.content == b'{"session_token":"ory_st_abc"}'
 
 
-def test_keeps_each_set_cookie(client, upstream):
+def test_drops_set_cookie(client, upstream):
     upstream.handler = lambda request: httpx.Response(
         200,
         headers=[("set-cookie", "a=1; Path=/; HttpOnly"), ("set-cookie", "b=2; Path=/")],
         json={},
     )
 
-    response = client.get("/auth/self-service/login/browser")
+    response = client.get("/auth/self-service/login/api")
 
-    assert response.headers.get_list("set-cookie") == ["a=1; Path=/; HttpOnly", "b=2; Path=/"]
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
 
 
 def test_drops_upstream_date_and_server_headers(client, upstream):
@@ -187,16 +188,6 @@ def app_client(upstream):
     from app.main import app
 
     return TestClient(app)
-
-
-def test_full_app_keeps_each_set_cookie(app_client, upstream):
-    upstream.handler = lambda request: httpx.Response(
-        200, headers=[("set-cookie", "a=1; Path=/"), ("set-cookie", "b=2; Path=/")], json={}
-    )
-
-    response = app_client.get("/auth/self-service/login/browser")
-
-    assert response.headers.get_list("set-cookie") == ["a=1; Path=/", "b=2; Path=/"]
 
 
 def test_full_app_answers_cors_preflight_for_auth(app_client, upstream):

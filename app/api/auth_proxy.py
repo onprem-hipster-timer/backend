@@ -5,7 +5,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 /auth/* 요청을 /auth 접두사를 뗀 경로로 KRATOS_PUBLIC_URL에 그대로 넘긴다.
 
 - 요청 헤더는 허용 목록만 넘긴다 (Host, X-Origin-Verify 등은 Kratos에 넘기지 않는다)
-- 응답의 Set-Cookie는 합치지 않고 하나씩 돌려준다
+- 쿠키는 오가지 않는다. 인증은 세션 토큰과 JWT로만 하므로 요청의 Cookie는 넘기지 않고
+  응답의 Set-Cookie는 버린다 (Kratos API 플로우는 Cookie가 붙은 요청을 400으로 거부한다)
 - 리다이렉트는 따라가지 않고 클라이언트에 그대로 돌려준다
 - admin API에는 닿지 않는다. 요청은 KRATOS_PUBLIC_URL 한 곳으로만 간다
 
@@ -24,7 +25,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Cookie는 여러 줄로 올 수 있어 따로 합친다
 FORWARD_REQUEST_HEADERS = (
     "x-session-token",
     "authorization",
@@ -35,8 +35,9 @@ FORWARD_REQUEST_HEADERS = (
     "cf-connecting-ip",
 )
 # hop-by-hop 헤더, httpx가 본문을 풀면서 맞지 않게 된 길이·인코딩 헤더,
-# 그리고 uvicorn이 따로 붙이는 date·server (그대로 두면 두 번 나간다)
+# uvicorn이 따로 붙이는 date·server (그대로 두면 두 번 나간다), 그리고 쓰지 않는 쿠키
 DROP_RESPONSE_HEADERS = {
+    "set-cookie",
     "date",
     "server",
     "connection",
@@ -69,9 +70,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
         raise HTTPException(status_code=404)
 
     headers = {name: value for name in FORWARD_REQUEST_HEADERS if (value := request.headers.get(name))}
-    if cookies := request.headers.getlist("cookie"):
-        headers["cookie"] = "; ".join(cookies)
-    url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
+    url =f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
 
     try:
         async with _make_client() as client:

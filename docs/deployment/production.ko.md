@@ -145,7 +145,8 @@ KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 ```
 
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
-- 넘기는 요청 헤더는 `Cookie`, `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
+- 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
+- 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
 
 #### 메일 발송 (courier 잡)
