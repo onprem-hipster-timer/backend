@@ -70,7 +70,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
         raise HTTPException(status_code=404)
 
     headers = {name: value for name in FORWARD_REQUEST_HEADERS if (value := request.headers.get(name))}
-    url =f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
+    url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
 
     try:
         async with _make_client() as client:
