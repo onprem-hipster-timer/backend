@@ -77,10 +77,10 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.ref }}
         run: |
-          gcloud run jobs update app-migrate --region "$REGION" --image "$IMAGE" --quiet
+          gcloud run jobs update app-migrate --region "$REGION" --image "$IMAGE"
           gcloud run jobs execute app-migrate --region "$REGION" --wait
 
       - name: Deploy api
         env:
           IMAGE: ${{ steps.image.outputs.ref }}
-        run: gcloud run services update api --region "$REGION" --container api --image "$IMAGE" --quiet
+        run: gcloud run services update api --region "$REGION" --container api --image "$IMAGE"
