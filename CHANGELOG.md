@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.04-71e4266] - 2026-11-04
+
 ### Fixed
 
 - **Naive UTC datetime columns**: sqlmodel 0.0.48 maps plain `datetime` fields to a timezone-aware column type that rejects naive values, so every insert with `created_at` failed with 500. Table model datetime fields (`TimestampMixin` and 14 model fields) are now annotated with Pydantic `NaiveDatetime`, which keeps `TIMESTAMP WITHOUT TIME ZONE` and the existing UTC naive storage. A model test fails if any table column becomes timezone-aware again.
@@ -290,7 +296,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...HEAD
+[v2026.11.04-71e4266]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...v2026.11.04-71e4266
 [v2026.11.04-42359ab]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...v2026.11.04-42359ab
 [v2026.11.04-5b27507]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...v2026.11.04-5b27507
 [v2026.07.21-c825e27]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...v2026.07.21-c825e27
