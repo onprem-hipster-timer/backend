@@ -26,6 +26,18 @@ selfservice:
       enabled: true
     code:
       enabled: true
+    oidc:
+      # dev/kratos/google.env가 있을 때만 켜진다. 그 파일이 클라이언트 ID와 secret도 환경 변수로
+      # 넣는다(google.env.example). infra도 secret을 같은 이름의 환경 변수로 넣는다.
+      enabled: false
+      config:
+        providers:
+          - id: google
+            provider: google
+            client_id: set-by-env
+            client_secret: set-by-env
+            mapper_url: file:///etc/config/kratos/oidc.google.jsonnet
+            scope: ["openid", "email", "profile"]
 
   flows:
     error:
@@ -45,6 +57,9 @@ selfservice:
         password:
           hooks:
             - hook: show_verification_ui
+        oidc:
+          hooks:
+            - hook: session
     settings:
       ui_url: http://localhost:3100/mypage
       privileged_session_max_age: 15m

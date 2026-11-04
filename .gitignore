@@ -315,3 +315,6 @@ test-results/
 
 # 로컬 Kratos 서명 키 (scripts/gen_dev_jwks.py)
 dev/kratos/jwks.private.json
+
+# 로컬 Google OAuth 클라이언트 값 (dev/kratos/google.env.example 참고)
+dev/kratos/google.env

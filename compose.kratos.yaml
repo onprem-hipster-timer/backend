@@ -35,6 +35,9 @@ services:
   kratos:
     <<: *kratos
     command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    env_file: # Google 로그인 실측용, 없으면 Google은 꺼진 채로 뜬다 (dev/kratos/google.env.example)
+      - path: ./dev/kratos/google.env
+        required: false
     depends_on:
       kratos-migrate:
         condition: service_completed_successfully
