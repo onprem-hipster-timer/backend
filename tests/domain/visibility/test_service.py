@@ -3,11 +3,13 @@ VisibilityService 테스트
 
 접근권한 및 접근 제어 비즈니스 로직 테스트
 """
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from app.core.auth import CurrentUser
+from app.crud import visibility as visibility_crud
 from app.domain.friend.service import FriendService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.exceptions import (
@@ -23,6 +25,7 @@ def second_user() -> CurrentUser:
     return CurrentUser(
         sub="second-user-id",
         email="second@example.com",
+        email_verified=True,
         name="Second User",
     )
 
@@ -33,6 +36,7 @@ def third_user() -> CurrentUser:
     return CurrentUser(
         sub="third-user-id",
         email="third@example.com",
+        email_verified=True,
         name="Third User",
     )
 
@@ -384,6 +388,7 @@ class TestCanAccess:
         specific_user = CurrentUser(
             sub="specific-user-id",
             email="specific@other.com",
+            email_verified=True,
             name="Specific User",
         )
         specific_service = VisibilityService(test_session, specific_user)
@@ -398,6 +403,7 @@ class TestCanAccess:
         non_allowed_user = CurrentUser(
             sub="non-allowed-user-id",
             email="random@random.com",
+            email_verified=True,
             name="Random User",
         )
         non_allowed_service = VisibilityService(test_session, non_allowed_user)
@@ -423,22 +429,22 @@ class TestCanAccess:
         )
 
         # company.com 도메인 사용자
-        company_user = CurrentUser(sub="company-user", email="alice@company.com", name="Alice")
+        company_user = CurrentUser(sub="company-user", email="alice@company.com", email_verified=True, name="Alice")
         company_service = VisibilityService(test_session, company_user)
         assert company_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
         # partner.org 도메인 사용자
-        partner_user = CurrentUser(sub="partner-user", email="bob@partner.org", name="Bob")
+        partner_user = CurrentUser(sub="partner-user", email="bob@partner.org", email_verified=True, name="Bob")
         partner_service = VisibilityService(test_session, partner_user)
         assert partner_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
         # vendor.net 도메인 사용자
-        vendor_user = CurrentUser(sub="vendor-user", email="charlie@vendor.net", name="Charlie")
+        vendor_user = CurrentUser(sub="vendor-user", email="charlie@vendor.net", email_verified=True, name="Charlie")
         vendor_service = VisibilityService(test_session, vendor_user)
         assert vendor_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
         # 허용되지 않은 도메인 사용자
-        other_user = CurrentUser(sub="other-user", email="dave@other.com", name="Dave")
+        other_user = CurrentUser(sub="other-user", email="dave@other.com", email_verified=True, name="Dave")
         other_service = VisibilityService(test_session, other_user)
         assert other_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is False
 
@@ -457,20 +463,20 @@ class TestCanAccess:
         )
 
         # 허용된 이메일 사용자들
-        alice = CurrentUser(sub="alice-user", email="alice@example.com", name="Alice")
+        alice = CurrentUser(sub="alice-user", email="alice@example.com", email_verified=True, name="Alice")
         alice_service = VisibilityService(test_session, alice)
         assert alice_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
-        bob = CurrentUser(sub="bob-user", email="bob@example.com", name="Bob")
+        bob = CurrentUser(sub="bob-user", email="bob@example.com", email_verified=True, name="Bob")
         bob_service = VisibilityService(test_session, bob)
         assert bob_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
-        charlie = CurrentUser(sub="charlie-user", email="charlie@different.com", name="Charlie")
+        charlie = CurrentUser(sub="charlie-user", email="charlie@different.com", email_verified=True, name="Charlie")
         charlie_service = VisibilityService(test_session, charlie)
         assert charlie_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
         # 허용되지 않은 이메일
-        dave = CurrentUser(sub="dave-user", email="dave@example.com", name="Dave")
+        dave = CurrentUser(sub="dave-user", email="dave@example.com", email_verified=True, name="Dave")
         dave_service = VisibilityService(test_session, dave)
         assert dave_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is False
 
@@ -512,12 +518,12 @@ class TestCanAccess:
         )
 
         # 정확히 example.com 도메인 - 허용
-        exact_user = CurrentUser(sub="exact-user", email="user@example.com", name="Exact User")
+        exact_user = CurrentUser(sub="exact-user", email="user@example.com", email_verified=True, name="Exact User")
         exact_service = VisibilityService(test_session, exact_user)
         assert exact_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
         # 서브도메인 sub.example.com - 불허용 (정확한 매칭만 지원)
-        subdomain_user = CurrentUser(sub="subdomain-user", email="user@sub.example.com", name="Subdomain User")
+        subdomain_user = CurrentUser(sub="subdomain-user", email="user@sub.example.com", email_verified=True, name="Subdomain User")
         subdomain_service = VisibilityService(test_session, subdomain_user)
         assert subdomain_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is False
 
@@ -738,7 +744,7 @@ class TestSetVisibility:
         )
 
         # 이전 사용자 접근 가능
-        old_user = CurrentUser(sub="old-user", email="old@example.com", name="Old User")
+        old_user = CurrentUser(sub="old-user", email="old@example.com", email_verified=True, name="Old User")
         old_service = VisibilityService(test_session, old_user)
         assert old_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
@@ -755,7 +761,7 @@ class TestSetVisibility:
         assert old_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is False
 
         # 새 사용자 접근 가능
-        new_user = CurrentUser(sub="new-user", email="new@example.com", name="New User")
+        new_user = CurrentUser(sub="new-user", email="new@example.com", email_verified=True, name="New User")
         new_service = VisibilityService(test_session, new_user)
         assert new_service.can_access(ResourceType.SCHEDULE, resource_id, test_user.sub) is True
 
@@ -874,3 +880,73 @@ class TestDeleteVisibility:
         )
 
         assert result is False
+
+
+class TestAllowedEmailsRequireVerifiedEmail:
+    """허용 이메일 규칙은 IdP가 검증한 이메일만 믿는다.
+
+    Kratos는 가입 직후 이메일 인증 전에도 세션을 준다. 검증 안 된 이메일을 믿으면
+    남의 이메일·도메인으로 가입만 해서 그 이메일에 공유된 항목을 볼 수 있다.
+    """
+
+    @staticmethod
+    def _share(session, owner, *, emails=None, domains=None):
+        resource_id = uuid4()
+        VisibilityService(session, owner).set_visibility(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            level=VisibilityLevel.ALLOWED_EMAILS,
+            allowed_emails=emails,
+            allowed_domains=domains,
+        )
+        return resource_id
+
+    @staticmethod
+    def _user(email, verified):
+        return CurrentUser(sub=f"user-{email}-{verified}", email=email, email_verified=verified)
+
+    @pytest.mark.parametrize("verified", [False, True])
+    def test_exact_email_needs_verification(self, test_session, test_user, verified):
+        resource_id = self._share(test_session, test_user, emails=["victim@example.com"])
+        viewer = self._user("victim@example.com", verified)
+
+        can_access = VisibilityService(test_session, viewer).can_access(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            owner_id=test_user.sub,
+        )
+
+        assert can_access is verified
+
+    @pytest.mark.parametrize("verified", [False, True])
+    def test_domain_needs_verification(self, test_session, test_user, verified):
+        resource_id = self._share(test_session, test_user, domains=["company.com"])
+        viewer = self._user("anyone@company.com", verified)
+
+        can_access = VisibilityService(test_session, viewer).can_access(
+            resource_type=ResourceType.SCHEDULE,
+            resource_id=resource_id,
+            owner_id=test_user.sub,
+        )
+
+        assert can_access is verified
+
+    @pytest.mark.parametrize("verified", [False, True])
+    def test_batch_filter_needs_verification(self, test_session, test_user, verified):
+        email_resource = self._share(test_session, test_user, emails=["victim@example.com"])
+        domain_resource = self._share(test_session, test_user, domains=["example.com"])
+        visibilities = [
+            visibility_crud.get_visibility_by_resource(test_session, ResourceType.SCHEDULE, rid)
+            for rid in (email_resource, domain_resource)
+        ]
+        resources = [SimpleNamespace(id=email_resource), SimpleNamespace(id=domain_resource)]
+        viewer = self._user("victim@example.com", verified)
+
+        accessible = VisibilityService(test_session, viewer).filter_accessible_resources(
+            resource_type=ResourceType.SCHEDULE,
+            visibilities=visibilities,
+            resources=resources,
+            get_resource_id=lambda r: r.id,
+        )
+
+        assert len(accessible) == (2 if verified else 0)
