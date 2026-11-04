@@ -11,14 +11,13 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - admin API에는 닿지 않는다. 요청은 KRATOS_PUBLIC_URL 한 곳으로만 간다
 - 설정 제출은 메일 코드로 본인 확인한 복구 세션의 비밀번호 변경만 넘긴다. 새어 나간 비밀번호만으로
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다
-
-OIDC 가입 요청에서 클라이언트가 보낸 traits.email을 버리는 처리는 OIDC provider를 켤 때
-추가한다 (infra README "backend가 지켜야 할 것" 2번).
+- 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
+  검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 """
 import json
 import logging
 import re
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -62,6 +61,8 @@ MAIL_FLOW_SUBMIT = re.compile(r"self-service/(registration|verification|recovery
 SETTINGS_SUBMIT_PATH = "/self-service/settings"
 # 메일로 받은 복구 코드로 만든 세션의 인증 방법 (whoami의 authentication_methods)
 EMAIL_RECOVERY_METHOD = "code_recovery"
+# 소셜 로그인 제출 경로. 처음 쓰는 소셜 계정이면 로그인 제출도 가입으로 이어진다
+OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
 
 router = APIRouter(include_in_schema=False)
 
@@ -74,7 +75,8 @@ def _make_client() -> httpx.AsyncClient:
 
 
 def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
-    keys = [key for key, _ in pairs]
+    # Kratos(Go)는 JSON 키를 대소문자 구분 없이 읽으므로 대소문자만 다른 키도 겹친 것으로 본다
+    keys = [key.lower() for key, _ in pairs]
     if len(keys) != len(set(keys)):
         raise ValueError("duplicate key")
     return dict(pairs)
@@ -94,6 +96,46 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
         return None
     method = data.get("method") if isinstance(data, dict) else None
     return method if isinstance(method, str) else None
+
+
+def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
+    """소셜 로그인 제출이면 traits.email을 뺀 본문, 아니면 본문 그대로. 읽을 수 없으면 None.
+
+    소셜 계정의 이메일은 제공자 매퍼가 준 값(제공자가 검증한 이메일)만 쓴다.
+    """
+    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+        try:
+            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+        except UnicodeDecodeError:
+            return None
+        methods = [value for key, value in pairs if key == "method"]
+        if len(methods) > 1:
+            return None
+        if methods != ["oidc"]:
+            return body
+        return urlencode([(key, value) for key, value in pairs if key != "traits.email"]).encode()
+
+    try:
+        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return body
+    if next((value for key, value in data.items() if key.lower() == "method"), None) != "oidc":
+        return body
+    for key in [key for key in data if key.lower() == "traits"]:
+        if isinstance(data[key], dict):
+            data[key] = {k: v for k, v in data[key].items() if k.lower() != "email"}
+        else:
+            del data[key]
+    return json.dumps(data).encode()
+
+
+def _unreadable_body() -> JSONResponse:
+    return JSONResponse(
+        {"error": {"id": "invalid_request_body", "code": 400, "status": "Bad Request", "reason": "요청 본문을 읽을 수 없습니다."}},
+        status_code=400,
+    )
 
 
 def _settings_forbidden() -> JSONResponse:
@@ -153,7 +195,14 @@ async def kratos_proxy(path: str, request: Request) -> Response:
         async with _make_client() as client:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
             # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
-            if request.method != "GET" and outgoing.url.path.rstrip("/").lower() == SETTINGS_SUBMIT_PATH:
+            submit_path = outgoing.url.path.rstrip("/").lower()
+            if request.method != "GET" and submit_path in OIDC_SUBMIT_PATHS:
+                cleaned = _without_oidc_email(request.headers.get("content-type", ""), body)
+                if cleaned is None:
+                    return _unreadable_body()
+                if cleaned != body:
+                    outgoing = client.build_request(request.method, url, headers=headers, content=cleaned)
+            if request.method != "GET" and submit_path == SETTINGS_SUBMIT_PATH:
                 if (rejection := await _settings_rejection(client, request, body)) is not None:
                     return rejection
                 # 검사한 X-Session-Token 세션으로만 처리되게 다른 세션 헤더는 넘기지 않는다
