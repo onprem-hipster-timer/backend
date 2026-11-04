@@ -4,10 +4,11 @@
 #
 # Copyright (c) 2026 Hipster Timer Project Contributors
 
+import json
 import logging
 from typing import Literal, Self
 
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,14 @@ class Settings(BaseSettings):
     OIDC_ISSUER_URL: str = ""  # 예: https://accounts.google.com, https://your-keycloak/realms/your-realm
     OIDC_AUDIENCE: str = ""  # Client ID (Access Token의 aud 클레임과 매칭)
     OIDC_DISCOVERY_URL: str | None = None  # 기본: OIDC_ISSUER_URL/.well-known/openid-configuration
+    OIDC_JWKS: str = ""  # 공개 JWKS JSON. 설정하면 discovery 없이 이 키로 검증 (Kratos처럼 discovery가 없는 발급자)
     OIDC_JWKS_CACHE_TTL_SECONDS: int = 3600  # JWKS 캐시 TTL (기본 1시간)
+
+    # Kratos 공개 API (사이드카). /auth/*를 이 주소로 프록시하며, 비어 있으면 /auth/*는 404
+    KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
+    # Kratos courier Cloud Run 잡 (전체 리소스 이름). KRATOS_COURIER_JOB이 비어 있으면 실행하지 않음
+    COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
+    KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
     # Rate Limit 설정
     RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
@@ -96,6 +104,22 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=True,
     )
+
+    @field_validator("OIDC_JWKS")
+    @classmethod
+    def validate_oidc_jwks(cls, value: str) -> str:
+        """OIDC_JWKS 형식을 기동 시 확인 (잘못된 시크릿이 요청마다 500을 내기 전에 기동을 실패시킨다)"""
+        if not value:
+            return value
+        try:
+            keys = json.loads(value).get("keys")
+        except (ValueError, AttributeError):
+            keys = None
+        if not isinstance(keys, list):
+            raise ValueError('OIDC_JWKS는 {"keys": [...]} 형태의 JWKS JSON이어야 합니다')
+        if not keys:
+            logger.warning("OIDC_JWKS에 키가 없습니다. 공개 키를 넣기 전까지 모든 토큰이 401로 거부됩니다.")
+        return value
 
     @model_validator(mode="after")
     def apply_production_defaults(self) -> Self:

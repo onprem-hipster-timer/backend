@@ -3,6 +3,7 @@ OIDC 인증 모듈 테스트
 
 OIDCClient, CurrentUser, get_current_user dependency 테스트
 """
+import json
 import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from joserfc import jwt
-from joserfc.jwk import KeySet, RSAKey
+from joserfc.jwk import ECKey, KeySet, RSAKey
 
 
 # ============================================================================
@@ -250,6 +251,7 @@ class TestOIDCClient:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
+            mock_settings.OIDC_JWKS = ""
 
             client = OIDCClient()
 
@@ -288,6 +290,7 @@ class TestOIDCClient:
             mock_settings.OIDC_ISSUER_URL = "https://issuer.example.com"
             mock_settings.OIDC_DISCOVERY_URL = None
             mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
+            mock_settings.OIDC_JWKS = ""
 
             client = OIDCClient()
 
@@ -442,6 +445,122 @@ class TestOIDCClient:
 
                 assert exc_info.value.status_code == 503
                 assert "unavailable" in exc_info.value.detail.lower()
+
+
+# ============================================================================
+# 정적 JWKS(OIDC_JWKS) 테스트: Kratos 세션 토크나이저가 발급한 ES256 JWT
+# ============================================================================
+
+KRATOS_ISSUER = "https://api.momeet.date/auth/"
+KRATOS_AUDIENCE = "https://api.momeet.date"
+KRATOS_KEY = ECKey.generate_key("P-256", parameters={"kid": "kratos-test", "use": "sig"}, private=True)
+KRATOS_PUBLIC_JWKS = json.dumps({"keys": [KRATOS_KEY.as_dict(private=False)]})
+
+
+def create_kratos_token(
+        key: ECKey = KRATOS_KEY,
+        iss: str = KRATOS_ISSUER,
+        name: str | None = "Kratos User",
+) -> str:
+    """Kratos tokenizer(api 템플릿)가 내는 모양의 JWT.
+
+    Kratos가 iss, sub, sid, iat, nbf, exp, jti를 넣고, claims mapper가
+    aud, email, email_verified, name(trait이 있을 때만)을 넣는다.
+    """
+    now = int(time.time())
+    claims = {
+        "iss": iss,
+        "sub": "9f1c3a52-6a0e-4c2b-9d3f-1b2c3d4e5f60",
+        "sid": "5d0f8c1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 600,
+        "jti": "0c9b8a7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d",
+        "aud": KRATOS_AUDIENCE,
+        "email": "kratos@example.com",
+        "email_verified": True,
+    }
+    if name is not None:
+        claims["name"] = name
+    return jwt.encode({"alg": "ES256", "kid": "kratos-test"}, claims, key, algorithms=["ES256"])
+
+
+class TestStaticJwks:
+    """OIDC_JWKS로 받은 공개 키로 검증 (discovery 없음)"""
+
+    @pytest.fixture
+    def kratos_settings(self):
+        with patch("app.core.auth.client.settings") as mock_settings:
+            mock_settings.OIDC_ISSUER_URL = KRATOS_ISSUER
+            mock_settings.OIDC_AUDIENCE = KRATOS_AUDIENCE
+            mock_settings.OIDC_DISCOVERY_URL = None
+            mock_settings.OIDC_JWKS = KRATOS_PUBLIC_JWKS
+            mock_settings.OIDC_JWKS_CACHE_TTL_SECONDS = 3600
+            yield mock_settings
+
+    @pytest.mark.asyncio
+    async def test_kratos_token_verified_without_discovery(self, kratos_settings):
+        """Kratos 모양의 ES256 토큰이 discovery 호출 없이 검증되고 CurrentUser로 매핑된다"""
+        from app.core.auth import CurrentUser, OIDCClient
+
+        client = OIDCClient()
+        with patch("httpx.AsyncClient", side_effect=AssertionError("discovery를 호출하면 안 됨")):
+            claims = await client.verify_token(create_kratos_token())
+
+        user = CurrentUser.from_claims(claims)
+        assert user.sub == "9f1c3a52-6a0e-4c2b-9d3f-1b2c3d4e5f60"
+        assert user.email == "kratos@example.com"
+        assert user.email_verified is True
+        assert user.name == "Kratos User"
+        assert user.picture is None
+
+    @pytest.mark.asyncio
+    async def test_kratos_token_without_name(self, kratos_settings):
+        """name trait이 없는 계정의 토큰도 통과한다 (name은 선택 클레임)"""
+        from app.core.auth import CurrentUser, OIDCClient
+
+        claims = await OIDCClient().verify_token(create_kratos_token(name=None))
+
+        assert CurrentUser.from_claims(claims).name is None
+
+    @pytest.mark.asyncio
+    async def test_issuer_without_trailing_slash_rejected(self, kratos_settings):
+        """iss는 Kratos public base_url과 끝 슬래시까지 정확히 같아야 한다"""
+        from app.core.auth import OIDCClient
+
+        client = OIDCClient()
+        token = create_kratos_token(iss=KRATOS_ISSUER.rstrip("/"))
+        with pytest.raises(HTTPException) as exc_info:
+            await client.verify_token(token)
+
+        assert exc_info.value.status_code == 401
+        assert "issuer" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_token_signed_by_other_key_rejected(self, kratos_settings):
+        """kid가 같아도 OIDC_JWKS에 없는 키로 서명한 토큰은 거부"""
+        from app.core.auth import OIDCClient
+
+        other_key = ECKey.generate_key("P-256", parameters={"kid": "kratos-test", "use": "sig"}, private=True)
+        client = OIDCClient()
+        token = create_kratos_token(key=other_key)
+        with pytest.raises(HTTPException) as exc_info:
+            await client.verify_token(token)
+
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_empty_jwks_rejects_tokens(self, kratos_settings):
+        """infra placeholder({"keys": []}) 상태에서는 모든 토큰이 401"""
+        from app.core.auth import OIDCClient
+
+        kratos_settings.OIDC_JWKS = '{"keys": []}'
+        client = OIDCClient()
+        token = create_kratos_token()
+        with pytest.raises(HTTPException) as exc_info:
+            await client.verify_token(token)
+
+        assert exc_info.value.status_code == 401
 
 
 # ============================================================================

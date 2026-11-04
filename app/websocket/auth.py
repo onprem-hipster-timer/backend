@@ -32,11 +32,7 @@ async def authenticate_websocket(websocket: WebSocket) -> CurrentUser:
     # OIDC 비활성화 시 테스트 사용자 사용
     if not settings.OIDC_ENABLED:
         logger.warning("OIDC disabled - using test user for WebSocket")
-        return CurrentUser(
-            sub="test-user-id",
-            email="test@example.com",
-            name="Test User",
-        )
+        return CurrentUser.mock()
 
     # Sec-WebSocket-Protocol에서만 토큰 추출 (보안상 쿼리 파라미터 미지원)
     token = None
@@ -64,12 +60,7 @@ async def authenticate_websocket(websocket: WebSocket) -> CurrentUser:
                 reason="Token missing 'sub' claim"
             )
 
-        return CurrentUser(
-            sub=sub,
-            email=claims.get("email"),
-            name=claims.get("name"),
-            raw_claims=claims,
-        )
+        return CurrentUser.from_claims(claims)
     except Exception as e:
         logger.error(f"WebSocket token verification failed: {e}")
         raise WebSocketException(

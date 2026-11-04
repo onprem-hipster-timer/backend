@@ -312,3 +312,6 @@ pyrightconfig.json
 
 # Python version compatibility test results
 test-results/
+
+# 로컬 Kratos 서명 키 (scripts/gen_dev_jwks.py)
+dev/kratos/jwks.private.json

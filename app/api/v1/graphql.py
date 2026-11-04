@@ -46,11 +46,7 @@ async def get_context(request: Request) -> dict:
 
     if not settings.OIDC_ENABLED:
         # 인증 비활성화 시 테스트용 사용자 반환
-        current_user = CurrentUser(
-            sub="test-user-id",
-            email="test@example.com",
-            name="Test User",
-        )
+        current_user = CurrentUser.mock()
     else:
         # Authorization 헤더에서 토큰 추출
         auth_header = request.headers.get("Authorization")
@@ -60,12 +56,7 @@ async def get_context(request: Request) -> dict:
                 claims = await oidc_client.verify_token(token)
                 sub = claims.get("sub")
                 if sub:
-                    current_user = CurrentUser(
-                        sub=sub,
-                        email=claims.get("email"),
-                        name=claims.get("name"),
-                        raw_claims=claims,
-                    )
+                    current_user = CurrentUser.from_claims(claims)
             except HTTPException:
                 # 토큰 검증 실패 시 current_user는 None
                 pass

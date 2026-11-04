@@ -36,3 +36,7 @@ LICENSE
 docs/
 mkdocs.yml
 *.md
+
+# 로컬 개발용 Kratos 스택 (서명 키 포함, 운영 이미지에 넣지 않음)
+dev/
+compose.kratos.yaml
