@@ -329,6 +329,18 @@ CORS_ALLOWED_ORIGINS=https://app.example.com,wss://api.example.com
 docker compose -f compose.production.yaml up -d
 ```
 
+### Cloud Run 자동 배포 (GitHub Actions)
+
+`main`에서 이미지 빌드(`Build and Push Docker Image`)가 성공하면 `.github/workflows/deploy.yml`이 그 커밋의 이미지를 Cloud Run에 배포합니다. 이미지에는 커밋 sha 태그(`sha-<커밋 sha>`)가 붙고, 배포는 이 태그의 digest로 고정합니다.
+
+1. `app-migrate` 잡의 이미지를 바꾸고 실행해 끝날 때까지 기다립니다.
+2. `api` 서비스의 `api` 컨테이너 이미지를 바꿉니다.
+
+- GCP 로그인은 Workload Identity Federation(키 없음)입니다. infra가 `main`의 이 파일 하나만 배포 계정(`gha-backend-deployer`)을 쓰게 허용하므로 경로나 이름을 바꾸면 로그인이 거부됩니다.
+- 저장소 변수 `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_DEPLOY_WIF_PROVIDER`, `GCP_DEPLOYER_SA`가 없으면 배포를 건너뜁니다. 값과 배포 계정의 권한 범위는 infra README "CI 배포"에 있습니다.
+- 다시 배포하거나 되돌릴 때는 Actions에서 `Deploy to Cloud Run`을 수동 실행하고 버전 태그(예: `v2026.11.04-fcb420a`)를 줍니다.
+- `main`에 머지하면 배포되므로 `main` 보호 규칙을 켜 둡니다.
+
 ---
 
 ## 보안 체크리스트

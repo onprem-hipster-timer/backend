@@ -60,8 +60,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # sha-<커밋 전체 sha>: 배포 워크플로(deploy.yml)가 빌드한 커밋의 이미지를 찾는 태그
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,format=long
             ${{ github.event_name == 'push' && 'type=raw,value=latest' || '' }}
             ${{ github.event_name == 'schedule' && 'type=raw,value=weekly' || '' }}
 

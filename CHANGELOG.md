@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Cloud Run auto deploy**: `.github/workflows/deploy.yml` deploys every successful `main` image build to Cloud Run through Workload Identity Federation (no keys). The image is pinned by digest, the `app-migrate` job runs first, then the `api` service is updated. A manual run takes a version tag for redeploys and rollbacks. The workflow is skipped until the repository variables `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_DEPLOY_WIF_PROVIDER` and `GCP_DEPLOYER_SA` are set. Images are now also tagged `sha-<commit sha>`.
 
 ---
 
