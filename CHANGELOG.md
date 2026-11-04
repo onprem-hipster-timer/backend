@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.04-42359ab] - 2026-11-04
+
 ### Security
 
 - **Social sign-up email**: the `/auth` proxy drops `traits.email` from social (OIDC) login and registration submissions, so social accounts only use the email the provider verified. Submissions whose `method` can't be read unambiguously (duplicate keys, also keys that differ only in case) are rejected with 400.
@@ -282,7 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...HEAD
+[v2026.11.04-42359ab]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...v2026.11.04-42359ab
 [v2026.11.04-5b27507]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...v2026.11.04-5b27507
 [v2026.07.21-c825e27]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-552ec57...v2026.07.21-c825e27
 [v2026.06.15-552ec57]: https://github.com/onprem-hipster-timer/backend/compare/v2026.06.15-53559c3...v2026.06.15-552ec57
