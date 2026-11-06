@@ -92,6 +92,7 @@ nav:
   - Deployment:
     - Docker: deployment/docker.md
     - Production: deployment/production.md
+    - Release: deployment/release.md
   - Development:
     - Domain Events & Read/Write: development/domain-events.md
     - Realtime Delivery: development/realtime-adapter.md

@@ -91,11 +91,24 @@ jobs:
       actions: write
 
     steps:
+      # main은 PR만 받는다(ruleset). CHANGELOG 커밋은 조직 GitHub App(RELEASE_APP_ID, 시크릿
+      # RELEASE_APP_PRIVATE_KEY, backend 저장소에만 contents: write)으로 push하고, ruleset이 이 App만
+      # 예외로 둔다. 변수·시크릿이 없으면 CHANGELOG 갱신을 건너뛰고 Release만 만든다.
+      - name: Release bot token
+        id: app
+        if: vars.RELEASE_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          token: ${{ steps.app.outputs.token || github.token }}
 
       - name: Update CHANGELOG [Unreleased] to actual version
+        if: vars.RELEASE_APP_ID != ''
         env:
           VERSION: ${{ needs.build.outputs.version }}
           REPO_URL: https://github.com/${{ github.repository }}
