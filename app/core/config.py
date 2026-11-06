@@ -117,6 +117,9 @@ class Settings(BaseSettings):
             keys = None
         if not isinstance(keys, list):
             raise ValueError('OIDC_JWKS는 {"keys": [...]} 형태의 JWKS JSON이어야 합니다')
+        # /auth/.well-known/jwks.json으로 그대로 공개되므로 비밀 키가 섞이면 기동을 막는다
+        if any(not isinstance(k, dict) or "d" in k or k.get("kty") == "oct" for k in keys):
+            raise ValueError("OIDC_JWKS에는 공개 키만 넣어야 합니다 (비밀 키 성분 d 또는 대칭 키 발견)")
         if not keys:
             logger.warning("OIDC_JWKS에 키가 없습니다. 공개 키를 넣기 전까지 모든 토큰이 401로 거부됩니다.")
         return value

@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth_proxy
+from app.api import auth_proxy, oidc_discovery
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
@@ -199,6 +199,9 @@ app.add_middleware(OriginVerifyMiddleware)
 
 # API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)
+
+# OIDC discovery·JWKS (/auth/.well-known/*). /auth/* 프록시보다 먼저 등록해야 한다
+app.include_router(oidc_discovery.router)
 
 # Kratos 공개 API 프록시 (/auth/*). KRATOS_PUBLIC_URL이 비어 있으면 404
 app.include_router(auth_proxy.router)
