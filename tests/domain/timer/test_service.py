@@ -101,7 +101,7 @@ def test_get_timer_not_found(test_session, test_user):
 
 
 def test_get_timer_running_elapsed_time_calculation(test_session, sample_schedule, test_user):
-    """RUNNING 상태 타이머의 경과 시간 실시간 계산 테스트"""
+    """RUNNING 상태 타이머 조회는 저장된 경과 시간을 반환 (현재 구간은 클라이언트가 더함)"""
     timer_data = TimerCreate(
         schedule_id=sample_schedule.id,
         allocated_duration=1800,
@@ -113,8 +113,9 @@ def test_get_timer_running_elapsed_time_calculation(test_session, sample_schedul
 
     # 시간 경과 시뮬레이션 (실제로는 시간이 경과하지 않지만 로직 확인)
     retrieved = service.get_timer(timer.id)
-    # RUNNING 상태이므로 경과 시간이 계산되어야 함
+    # RUNNING 상태여도 조회는 저장값을 그대로 반환
     assert retrieved.status == TimerStatus.RUNNING.value
+    assert retrieved.elapsed_time == initial_elapsed
 
 
 def test_pause_timer_success(test_session, sample_timer, test_user):
@@ -1738,7 +1739,12 @@ class TestElapsedTimeAccumulation:
             assert stopped.elapsed_time == 120  # pause 중이므로 추가 없음
 
     def test_get_timer_running_after_resume_accumulates(self, test_session, test_user):
-        """resume 후 get_timer 조회 시 누적 + 현재 세그먼트가 반환되어야 함"""
+        """resume 후 get_timer 조회는 저장된 누적값만 반환해야 함
+
+        조회가 현재 세그먼트를 세션의 객체에 더하면 GET 트랜잭션이 커밋하면서
+        elapsed_time이 부풀고 updated_at이 바뀐다. 그래서 조회는 저장값을 반환하고,
+        RUNNING 타이머의 표시값은 클라이언트가 elapsed_time + (now - started_at)으로 계산한다.
+        """
         from unittest.mock import patch
         from datetime import datetime, timedelta
 
@@ -1767,13 +1773,13 @@ class TestElapsedTimeAccumulation:
             mock_dt.now = lambda tz=None: base_time + timedelta(seconds=70)
             service.resume_timer(timer.id)
 
-        # 20초 후 조회 → 누적 60 + 현재 세그먼트 20 = 80
+        # 20초 후 조회 → 저장된 누적 60 (현재 세그먼트 20은 더하지 않음)
         with patch("app.domain.timer.service.datetime") as mock_dt:
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             mock_dt.now = lambda tz=None: base_time + timedelta(seconds=90)
 
             retrieved = service.get_timer(timer.id)
-            assert retrieved.elapsed_time == 80
+            assert retrieved.elapsed_time == 60
 
     def test_pause_history_elapsed_matches_elapsed_time(self, test_session, test_user):
         """pause_history의 elapsed 값이 해당 시점의 elapsed_time과 일치해야 함"""
