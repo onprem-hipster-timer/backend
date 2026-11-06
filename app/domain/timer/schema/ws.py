@@ -36,6 +36,9 @@ class TimerAction(str, Enum):
     PAUSE = "pause"
     RESUME = "resume"
     STOP = "stop"
+    CANCEL = "cancel"
+    UPDATE = "update"
+    DELETE = "delete"
     SYNC = "sync"
 
 

@@ -29,7 +29,9 @@ from app.domain.timer.exceptions import (
     InvalidTimerStatusError,
 )
 from app.domain.timer.model import TimerSession
+from app.domain.timer.realtime import enqueue_timer_event
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
+from app.domain.timer.schema.ws import TimerAction
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
@@ -50,6 +52,19 @@ class TimerService:
         self.session = session
         self.current_user = current_user
         self.owner_id = current_user.sub
+
+    def _realtime_recipients(self, timer_id: UUID) -> set[str]:
+        """소유자 본인(다른 기기)과 공개 범위상 실시간으로 받는 친구"""
+        visibility_service = VisibilityService(self.session, self.current_user)
+        return {self.owner_id} | visibility_service.get_realtime_recipients(
+            ResourceType.TIMER, timer_id, self.owner_id
+        )
+
+    def _enqueue_realtime(self, action: TimerAction, timer: TimerSession) -> None:
+        """flush된 타이머 상태를 커밋 후 실시간 이벤트로 적재 (app/domain/timer/realtime.py)"""
+        enqueue_timer_event(
+            self.session, self.current_user, action, self._realtime_recipients(timer.id), timer=timer
+        )
 
     @staticmethod
     def _add_running_segment_to_elapsed(timer: TimerSession, now: datetime) -> None:
@@ -122,6 +137,7 @@ class TimerService:
             # 태그 설정 후 relationship 갱신
             self.session.refresh(timer)
 
+        self._enqueue_realtime(TimerAction.START, timer)
         return timer
 
     def get_timer(self, timer_id: UUID) -> TimerSession:
@@ -337,6 +353,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.PAUSE, timer)
         return timer
 
     def resume_timer(self, timer_id: UUID) -> TimerSession:
@@ -379,6 +396,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.RESUME, timer)
         return timer
 
     def stop_timer(self, timer_id: UUID) -> TimerSession:
@@ -424,6 +442,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.STOP, timer)
         return timer
 
     def cancel_timer(self, timer_id: UUID) -> TimerSession:
@@ -457,6 +476,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.CANCEL, timer)
         return timer
 
     def get_pause_history(self, timer_id: UUID) -> list[dict]:
@@ -536,6 +556,7 @@ class TimerService:
         if tag_ids_updated:
             self.session.refresh(timer)
 
+        self._enqueue_realtime(TimerAction.UPDATE, timer)
         return timer
 
     def delete_timer(self, timer_id: UUID) -> None:
@@ -549,12 +570,18 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        # 수신자는 접근권한 설정을 지우기 전에 계산한다
+        recipients = self._realtime_recipients(timer_id)
+
         # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TIMER, timer_id
         )
 
         crud.delete_timer(self.session, timer)
+        enqueue_timer_event(
+            self.session, self.current_user, TimerAction.DELETE, recipients, timer_id=timer_id
+        )
 
     def to_read_dto(
             self,
