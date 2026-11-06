@@ -1,310 +1,156 @@
 # WebSocket API
 
-Timer creation and control operations are handled via WebSocket for real-time synchronization across devices and shared users.
+A **receive-only** socket for real-time timer changes. Timer commands (create, pause, resume, stop, update, delete) go through the [REST API](../guides/timer.md); once committed, each change is delivered over this socket to the owner's other devices and to friends who may see the timer.
+
+For the deployment structure and the full contract, see [Realtime Delivery](../development/realtime-adapter.md) (Korean).
 
 ## Connection
 
 ### Endpoint
 
-```
-Development: ws://localhost:2614/v1/ws/timers
-Production:  wss://your-domain.com/v1/ws/timers
-```
+The address depends on the deployment mode (`REALTIME_BACKEND`). The message format is the same.
+
+| Mode | Address |
+|------|---------|
+| `inprocess` (default, on-premises) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
+| `cloudflare` (hosted) | `wss://your-domain.com/realtime/ws` |
 
 ### Test Links
 
-**WebSocket Playground** (development only):
+**WebSocket Playground** (development only, `inprocess`):
 
 - **WebSocket Playground**: [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground)
 
-Open the link above in your browser and enter your JWT to test the Timer WebSocket API. (Enabled only in development, like Swagger UI.)
+Enter your JWT and connect to see incoming messages and send `ping`. Call the REST timer commands (e.g. from Swagger UI) and their events show up there.
 
-For direct connection:
-
-- **Connection URL**: `ws://localhost:2614/v1/ws/timers`
-- **With timezone**: `ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul`
-
-You can also use [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat), etc., with Bearer token in the `Sec-WebSocket-Protocol` header. See [Example Usage](#example-usage) below.
-
-Optional query parameter:
-- `timezone`: Timezone for response timestamps (e.g., `Asia/Seoul`, `+09:00`)
+You can also connect directly with [wscat](https://github.com/websockets/wscat) or similar, putting the token in the `Sec-WebSocket-Protocol` header.
 
 ### Authentication
 
 !!! warning "Warning"
-    **Security**: Authentication via query parameter is NOT supported due to log exposure risks.
+    **Security**: Query parameter authentication is not supported due to log exposure risks.
 
-Authentication is done via `Sec-WebSocket-Protocol` header:
+Authentication is performed via the `Sec-WebSocket-Protocol` header:
 
 ```
 Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 ```
 
-The server will echo back the same subprotocol in the response to complete the WebSocket handshake.
+The server echoes the same subprotocol in its response to complete the handshake. The JWT is verified only when connecting.
 
 !!! warning "Warning"
-    **Important**: For WebSocket connections to work, you must add WebSocket URLs to `CORS_ALLOWED_ORIGINS`:
+    **Important**: You must add WebSocket URLs to `CORS_ALLOWED_ORIGINS` for WebSocket connections to work:
     - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
     - Production: `wss://your-domain.com`
 
-## Message Types
+## Messages
 
 ### Client → Server
 
-| Message Type | Description | Payload |
-|--------------|-------------|---------|
-| `timer.create` | Create and start a new timer | `{ allocated_duration, schedule_id?, todo_id?, title?, description?, tag_ids? }` |
-| `timer.pause` | Pause a running timer | `{ timer_id }` |
-| `timer.resume` | Resume a paused timer | `{ timer_id }` |
-| `timer.stop` | Stop and complete a timer | `{ timer_id }` |
-| `timer.sync` | Sync timers from server | `{ timer_id?, scope? }` |
+| Message | Description |
+|---------|-------------|
+| `ping` (string) | Keep-alive. The server replies with `pong` |
+
+Any other message is ignored.
 
 ### Server → Client
 
-| Message Type | Description | Payload |
-|--------------|-------------|---------|
-| `connected` | Connection accepted | `{ user_id, message }` |
-| `timer.created` | Timer created | `{ timer: TimerDTO, action: "start" }` |
-| `timer.updated` | Timer updated | `{ timer: TimerDTO \| null, action: "pause" \| "resume" \| "stop" \| "sync" }` |
-| `timer.sync_result` | Timer list synced | `{ timers: TimerDTO[], count: number }` |
-| `timer.friend_activity` | Friend timer activity notification | `{ friend_id, display_name?, action, timer_id, timer_title? }` |
-| `error` | Error occurred | `{ code: string, message: string }` |
-
-## Message Format
-
-All messages are JSON:
+Every message uses the same envelope:
 
 ```json
 {
-  "type": "timer.create",
+  "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
+  "type": "timer.updated",
+  "from_user": "<actor sub>",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
-    "schedule_id": "uuid-here",
-    "allocated_duration": 3600
+    "action": "pause",
+    "actor_name": "Jane Doe",
+    "timer": { "id": "…", "status": "PAUSED", "elapsed_time": 1800, "…": "…" }
   }
 }
 ```
 
-!!! note "Field names"
-    WebSocket payload fields use the same `snake_case` names as the server DTOs. Examples: `allocated_duration`, `timer_id`, `schedule_id`.
+| `type` | `payload` |
+|--------|-----------|
+| `connected` | `{}` — once, right after connecting |
+| `timer.created` | `{ action: "start", actor_name, timer }` |
+| `timer.updated` | `{ action: "pause" \| "resume" \| "stop" \| "cancel" \| "update", actor_name, timer }` |
+| `timer.deleted` | `{ action: "delete", actor_name, timer: null, timer_id }` |
+
+- `id`: message ID. Drop a message you have already handled.
+- `from_user`: `sub` of the user who made the change (`null` for `connected`). If it is not your `sub`, it is a friend's activity.
+- `timer`: the committed timer. All times are UTC, in the same format as REST responses (`timezone=UTC`). `elapsed_time` is the stored total (for RUNNING timers, add `now - started_at` when displaying).
+
+!!! note "Field Names"
+    Payload fields use `snake_case`, the same as the server DTOs. Examples: `elapsed_time`, `timer_id`, `actor_name`.
+
+## Resynchronization
+
+The socket does not resend messages from before the connection or while it was down. Clients should:
+
+1. Reload timers over REST right after every connect and reconnect (`timezone=UTC`).
+2. Drop duplicates by `id`.
+3. Drop an event whose `timer.updated_at` is older than the one you hold; apply it when equal or newer. Use the same rule for REST responses.
+4. Drop earlier events for a timer you received `timer.deleted` for.
 
 ## Example Usage
 
 ### JavaScript/TypeScript
 
 ```javascript
-// Authentication via Sec-WebSocket-Protocol header
-const accessToken = 'your-jwt-token';
 const ws = new WebSocket(
   'ws://localhost:2614/v1/ws/timers',
-  [`authorization.bearer.${accessToken}`]  // Subprotocol for auth
+  [`authorization.bearer.${accessToken}`]  // subprotocol for authentication
 );
 
 ws.onopen = () => {
-  console.log('WebSocket connected');
-  
-  // Create a timer
-  ws.send(JSON.stringify({
-    type: 'timer.create',
-    payload: {
-      schedule_id: 'schedule-uuid',
-      allocated_duration: 3600 // 1 hour in seconds
-    }
-  }));
+  resyncTimersFromRest();  // reload over REST
 };
 
 ws.onmessage = (event) => {
+  if (event.data === 'pong') return;
   const message = JSON.parse(event.data);
-  
+
   switch (message.type) {
     case 'timer.created':
-      console.log('Timer created:', message.payload.timer);
-      break;
     case 'timer.updated':
-      console.log('Timer updated:', message.payload.timer);
+      applyTimer(message);  // check id and updated_at before applying
       break;
-    case 'error':
-      console.error('Error:', message.payload.message);
+    case 'timer.deleted':
+      removeTimer(message.payload.timer_id);
       break;
   }
 };
 
-ws.onerror = (error) => {
-  console.error('WebSocket error:', error);
-};
-
-ws.onclose = () => {
-  console.log('WebSocket disconnected');
-};
+// keep-alive
+setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), 45000);
 ```
-
-### With Timezone
-
-```javascript
-const ws = new WebSocket(
-  'ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul',
-  [`authorization.bearer.${accessToken}`]
-);
-```
-
-### Create Timer
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.create',
-  payload: {
-    schedule_id: 'schedule-uuid',
-    allocated_duration: 3600 // seconds
-  }
-}));
-```
-
-### Pause Timer
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.pause',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### Resume Timer
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.resume',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### Stop Timer
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.stop',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### Sync Active Timers
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.sync',
-  payload: {}
-}));
-```
-
-When `scope` is omitted, the server treats it as `"active"`, so `payload: {}` and `payload: { scope: 'active' }` are equivalent.
-
-## Error Handling
-
-Errors are returned as messages:
-
-```json
-{
-  "type": "error",
-  "payload": {
-    "code": "TIMER_NOT_FOUND",
-    "message": "Timer not found"
-  }
-}
-```
-
-Common error codes:
-
-- `INVALID_MESSAGE` - Invalid JSON or message schema
-- `UNKNOWN_TYPE` - Unknown message type
-- `CREATE_FAILED` - Timer creation failed
-- `PAUSE_FAILED` - Timer pause failed
-- `RESUME_FAILED` - Timer resume failed
-- `STOP_FAILED` - Timer stop failed
-- `SYNC_FAILED` - Timer sync failed
-- `HANDLER_ERROR` - Unexpected error while handling a message
-- `RATE_LIMIT_EXCEEDED` - Rate limit exceeded
-
-Authentication failures close the WebSocket with close code `1008` instead of returning an error message.
 
 ## Rate Limiting
 
-WebSocket connections and messages are subject to rate limiting:
-
-- **Connection**: 10 connections per 60 seconds
-- **Messages**: 120 messages per 60 seconds
+The `inprocess` socket limits connections (default: 10 per 60 seconds, `WS_CONNECT_MAX`/`WS_CONNECT_WINDOW`). Beyond that, the server closes with `4029`.
 
 > 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.md)
 
 ## Close Codes
 
-List of close codes returned by the server when terminating a WebSocket connection. Clients should use these codes to determine whether to reconnect.
-
 | Close Code | Name | Description | Reconnect |
 |-----------|------|-------------|-----------|
-| `1000` | Normal Closure | Graceful shutdown | Optional |
-| `1008` | Policy Violation | Authentication failure (missing token, expired token, invalid token, missing `sub` claim) | :x: Do NOT reconnect — refresh token first |
-| `1011` | Internal Error | Server internal error | :white_check_mark: Retry with exponential backoff |
-| `4029` | Rate Limit Exceeded | Connection rate limit exceeded (default: 10 per 60s) | :white_check_mark: Retry with exponential backoff |
+| `1000` | Normal Closure | Normal closure | Optional |
+| `1006` | Abnormal Closure | Handshake failed. `inprocess` rejects failed authentication with HTTP 403, which browsers report as this code | Refresh the token, then retry with exponential backoff |
+| `1008` | Policy Violation | Authentication failed (`cloudflare`: missing, expired, or invalid token) | :x: Retry after refreshing the token |
+| `1011` | Internal Error | Server error | :white_check_mark: Retry with exponential backoff |
+| `4000` | Reconnect | Socket lifetime (24 hours) expired (`cloudflare`) | :white_check_mark: Reconnect immediately |
+| `4029` | Rate Limit Exceeded | Connection rate limit exceeded (`inprocess`) | :white_check_mark: Retry with exponential backoff |
 
 !!! tip "Frontend Implementation Guide"
-    - **`1008` (Auth failure)**: Do NOT reconnect. Retrying with an expired token causes unnecessary server load. Refresh the token before reconnecting.
-    - **`4029` (Rate limit)**: Reconnect with exponential backoff.
-    - **`1011` (Server error)**: Reconnect with exponential backoff.
-    - **`1000` (Normal closure)**: Server intentionally closed the connection. Reconnect if needed.
+    - **`1008`**: Do not reconnect until you have refreshed the token.
+    - **`4000`**: Reconnect right away.
+    - **Others**: Reconnect with exponential backoff and jitter.
+    - After reconnecting, reload over REST.
 
-## Reconnection
+## Detailed Guides
 
-It's recommended to implement automatic reconnection:
-
-```javascript
-class TimerWebSocket {
-  constructor(url, token) {
-    this.url = url;
-    this.token = token;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.connect();
-  }
-
-  connect() {
-    // Use Sec-WebSocket-Protocol for authentication (NOT query parameter)
-    this.ws = new WebSocket(
-      this.url,
-      [`authorization.bearer.${this.token}`]
-    );
-
-    this.ws.onclose = (event) => {
-      if (event.code === 1008) {
-        // Auth failure - do NOT reconnect, refresh token first
-        console.error('Authentication failed:', event.reason);
-        this.onAuthFailure?.(event.reason);
-        return;
-      }
-
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
-
-      if (event.code === 4029 || event.code === 1011) {
-        // Rate limit or server error - exponential backoff
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
-        setTimeout(() => this.connect(), delay);
-      } else {
-        // Other disconnect - reconnect
-        setTimeout(() => this.connect(), 1000);
-      }
-      this.reconnectAttempts++;
-    };
-
-    this.ws.onopen = () => {
-      this.reconnectAttempts = 0; // Reset on successful connection
-    };
-  }
-}
-```
-
-## Detailed Guide
-
-For comprehensive WebSocket API documentation, see the [Timer Guide](../guides/timer.md).
+- [Timer Guide](../guides/timer.md) — REST commands and the data model
+- [Realtime Delivery](../development/realtime-adapter.md) — modes, contract, and recipient rules (Korean)

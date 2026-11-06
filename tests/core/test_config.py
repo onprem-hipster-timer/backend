@@ -194,3 +194,12 @@ class TestOIDCJwksSetting:
         with caplog.at_level(logging.WARNING, logger="app.core.config"):
             Settings(OIDC_JWKS='{"keys": []}')
         assert "OIDC_JWKS" in caplog.text
+
+    @pytest.mark.parametrize("key", [
+        '{"kty": "EC", "crv": "P-256", "kid": "k", "x": "x", "y": "y", "d": "secret"}',
+        '{"kty": "oct", "kid": "k", "k": "secret"}',
+    ])
+    def test_rejects_private_or_symmetric_keys(self, key):
+        """OIDC_JWKS는 /auth/.well-known/jwks.json으로 공개되므로 비밀 키가 있으면 기동 실패"""
+        with pytest.raises(ValidationError, match="OIDC_JWKS"):
+            Settings(OIDC_JWKS='{"keys": [' + key + ']}')

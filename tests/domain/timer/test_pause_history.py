@@ -3,6 +3,7 @@ Timer pause_history 테스트
 
 타이머의 일시정지/재개 이력이 올바르게 저장되는지 테스트합니다.
 """
+from datetime import datetime, timedelta
 
 from app.domain.timer.schema.dto import TimerCreate
 from app.domain.timer.service import TimerService
@@ -241,3 +242,15 @@ class TestPauseHistoryDTO:
         assert dto.pause_history is not None
         assert len(dto.pause_history) == 1
         assert dto.pause_history[0]["action"] == "start"
+
+    def test_to_timezone_converts_pause_history(self, test_session, sample_timer, test_user):
+        """to_timezone은 pause_history의 at도 같은 타임존의 시각으로 바꾼다"""
+        service = TimerService(test_session, test_user)
+        timer = service.pause_timer(sample_timer.id)
+
+        dto = service.to_read_dto(timer).to_timezone("+09:00", validate=False)
+
+        stored = [datetime.fromisoformat(h["at"]) for h in timer.pause_history]
+        converted = [datetime.fromisoformat(h["at"]) for h in dto.pause_history]
+        assert [c.utcoffset() for c in converted] == [timedelta(hours=9)] * 2
+        assert [c.replace(tzinfo=None) - timedelta(hours=9) for c in converted] == stored

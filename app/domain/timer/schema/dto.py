@@ -24,6 +24,19 @@ if TYPE_CHECKING:
     from app.domain.todo.schema.dto import TodoRead
 
 
+def pause_history_to_timezone(history: list[dict[str, Any]], tz: timezone | str) -> list[dict[str, Any]]:
+    """pause_history 각 항목의 at(UTC ISO 문자열)을 tz의 ISO 문자열로 바꾼 사본"""
+    converted = []
+    for event in history:
+        event_copy = dict(event)
+        at = event_copy.get("at")
+        if at:
+            at_dt = datetime.fromisoformat(at.replace("Z", "+00:00")) if isinstance(at, str) else at
+            event_copy["at"] = convert_utc_naive_to_timezone(ensure_utc_naive(at_dt), tz).isoformat()
+        converted.append(event_copy)
+    return converted
+
+
 class TimerCreate(CustomModel):
     """타이머 생성 DTO
     
@@ -172,6 +185,10 @@ class TimerRead(CustomModel):
                 # dict인 경우 ScheduleRead로 변환 후 변환 (model_construct 사용하여 validator 우회)
                 schedule_read = ScheduleRead.model_construct(**schedule_value)
                 update_data["schedule"] = schedule_read.to_timezone(tz, validate=False)
+
+        # pause_history의 시각 변환
+        if self.pause_history:
+            update_data["pause_history"] = pause_history_to_timezone(self.pause_history, tz)
 
         # todo 필드는 그대로 유지 (TodoRead에는 to_timezone이 없음)
         # 필요 시 TodoRead.to_timezone 추가 가능

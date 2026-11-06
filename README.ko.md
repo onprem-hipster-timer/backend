@@ -253,7 +253,7 @@ hipster-timer-backend/
 │   │   │   └── exceptions.py      # 도메인 예외
 │   │   ├── timer/
 │   │   │   ├── service.py         # 비즈니스 로직
-│   │   │   ├── ws_handler.py      # WebSocket 핸들러
+│   │   │   ├── realtime.py        # 실시간 이벤트 봉투
 │   │   │   └── schema/
 │   │   │       ├── dto.py         # REST DTO
 │   │   │       └── ws.py          # WebSocket 스키마
@@ -763,8 +763,6 @@ OIDC_AUDIENCE=my-frontend-app
 | `WS_RATE_LIMIT_ENABLED` | WebSocket Rate Limit 활성화 | `True` |
 | `WS_CONNECT_WINDOW` | 연결 제한 윈도우 (초) | `60` |
 | `WS_CONNECT_MAX` | 윈도우당 최대 연결 횟수 | `10` |
-| `WS_MESSAGE_WINDOW` | 메시지 제한 윈도우 (초) | `60` |
-| `WS_MESSAGE_MAX` | 윈도우당 최대 메시지 수 | `120` |
 
 **빠른 설정:**
 

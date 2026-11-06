@@ -92,13 +92,25 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_ISSUER_URL` | OIDC Provider issuer URL | - |
 | `OIDC_AUDIENCE` | Client ID for token validation | - |
 | `OIDC_DISCOVERY_URL` | Custom discovery endpoint | Auto-generated |
-| `OIDC_JWKS` | Public JWKS JSON. When set, tokens are verified with these keys instead of discovery (issuers without discovery, such as Kratos) | - |
+| `OIDC_JWKS` | Public JWKS JSON. When set, tokens are verified with these keys instead of discovery (issuers without discovery, such as Kratos). Served at `GET /auth/.well-known/jwks.json`, so startup fails if it contains private key material | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | Kratos public API that `/auth/*` is proxied to. When empty, `/auth/*` returns 404 | - |
 | `COURIER_REQUEUE_JOB` | Cloud Run job that requeues mail stuck in processing (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Cloud Run job that sends Kratos mail. When empty, no mail job is run | - |
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)
+
+## Realtime Delivery
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `REALTIME_BACKEND` | `inprocess`: deliver over this process's `/v1/ws/timers` sockets, `cloudflare`: push to the realtime Worker | `inprocess` |
+| `REALTIME_PUSH_URL` | `cloudflare`: the Worker's push endpoint (e.g. `https://api.example.com/realtime/push`). When empty, nothing is pushed | - |
+| `REALTIME_PUSH_SECRET` | `cloudflare`: same value as the Worker's `PUSH_SECRET` | - |
+
+With `ENVIRONMENT=production` and `REALTIME_BACKEND=cloudflare`, startup fails if `REALTIME_PUSH_URL` or `REALTIME_PUSH_SECRET` is empty.
+
+> 📖 **Detailed Guide**: [Realtime Delivery](../development/realtime-adapter.md) (Korean)
 
 !!! note "Verified email storage"
     When a token contains `email_verified=true` and an `email` claim, the backend stores the
@@ -123,8 +135,6 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `WS_RATE_LIMIT_ENABLED` | Enable WebSocket rate limiting | `True` |
 | `WS_CONNECT_WINDOW` | Connection limit window (seconds) | `60` |
 | `WS_CONNECT_MAX` | Max connections per window | `10` |
-| `WS_MESSAGE_WINDOW` | Message limit window (seconds) | `60` |
-| `WS_MESSAGE_MAX` | Max messages per window | `120` |
 
 > 📖 **Detailed Guide**: [Rate Limiting Guide](../development/rate-limit.ko.md)
 

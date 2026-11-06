@@ -308,37 +308,25 @@ PUT /v1/visibility/meeting/{meeting_id}
 }
 ```
 
-#### 예시: Timer 생성 + 접근권한 설정 (WebSocket → REST)
+#### 예시: Timer 생성 + 접근권한 설정
 
-!!! info "Timer는 WebSocket으로 생성됩니다"
-    Timer는 REST가 아닌 **WebSocket**으로 생성되며, WS 페이로드에는 `visibility` 필드가 없습니다.
-    접근권한을 설정하려면 WS 응답에서 `timer.id`를 받은 후 **별도의 REST 호출**이 필요합니다.
+!!! info "Timer 생성 본문에는 접근권한이 없습니다"
+    `POST /v1/timers` 본문에는 `visibility` 필드가 없습니다.
+    접근권한을 설정하려면 생성 응답의 `id`로 **별도의 REST 호출**을 합니다.
 
-**1단계: Timer 생성 (WebSocket)**
+**1단계: Timer 생성 (REST)**
 
+```http
+POST /v1/timers
+```
 ```json
-// → 서버로 전송
 {
-  "type": "timer.create",
-  "payload": {
-    "title": "집중 모드",
-    "allocated_duration": 3600
-  }
-}
-
-// ← 서버 응답 (timer.created)
-{
-  "type": "timer.created",
-  "payload": {
-    "timer": {
-      "id": "timer-uuid",
-      "title": "집중 모드",
-      "status": "RUNNING",
-      ...
-    }
-  }
+  "title": "집중 모드",
+  "allocated_duration": 3600
 }
 ```
+
+응답(201)의 `id`가 타이머 ID입니다.
 
 **2단계: 접근권한 설정 (REST)**
 
@@ -357,13 +345,13 @@ PUT /v1/visibility/timer/{timer-uuid}
     `PUT /v1/visibility/timer/{id}`를 호출하는 **Lazy 방식**을 권장합니다.
 
     ```
-    Timer 생성 (WS)  →  기본 PRIVATE으로 사용
+    POST /v1/timers  →  기본 PRIVATE으로 사용
                          └→ 사용자가 "공유" 클릭 시에만  →  PUT /v1/visibility/timer/{id}
     ```
 
     **장점:**
 
-    - WS 생성 직후 REST 호출 실패에 대한 에러 처리가 불필요
+    - 생성 직후 두 번째 REST 호출 실패에 대한 에러 처리가 불필요
     - 대부분의 타이머는 비공개로 사용되므로 불필요한 API 호출 제거
     - UX 흐름이 단순해짐 (생성 → 바로 타이머 시작)
 
@@ -658,23 +646,23 @@ const schedule = await createScheduleWithVisibility(
 );
 ```
 
-### Timer 접근권한 설정 (WS 생성 후 REST)
+### Timer 접근권한 설정 (생성 후 REST)
 
 ```typescript
-// Timer는 WebSocket으로 생성되므로 visibility 설정은 별도 REST 호출
-function setupTimerVisibility(ws: WebSocket) {
-  ws.addEventListener("message", async (event) => {
-    const msg = JSON.parse(event.data);
-
-    if (msg.type === "timer.created") {
-      const timerId = msg.payload.timer.id;
-
-      // 사용자가 공유를 원하는 경우에만 호출 (Lazy 패턴)
-      if (userWantsToShare) {
-        await setVisibility("timer", timerId, { level: "friends" });
-      }
-    }
+// Timer 생성 본문에는 visibility가 없으므로 접근권한은 별도 REST 호출
+async function startTimer(data: TimerCreate): Promise<Timer> {
+  const response = await fetch("/v1/timers?timezone=UTC", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
   });
+  const timer = await response.json();
+
+  // 사용자가 공유를 원하는 경우에만 호출 (Lazy 패턴)
+  if (userWantsToShare) {
+    await setVisibility("timer", timer.id, { level: "friends" });
+  }
+  return timer;
 }
 ```
 

@@ -1,7 +1,7 @@
 """
 WebSocket Rate Limit 테스트
 
-WebSocket 연결 및 메시지 레이트 리밋 테스트
+WebSocket 연결 레이트 리밋 테스트
 """
 import os
 from unittest.mock import patch, AsyncMock
@@ -64,33 +64,6 @@ class TestWebSocketRateLimiter:
         assert result.current_count == config.connect_max
 
     @pytest.mark.asyncio
-    async def test_message_rate_limit_allowed(self):
-        """메시지 레이트 리밋 - 허용"""
-        limiter = get_ws_limiter()
-        user_id = "test-user-3"
-
-        result = await limiter.check_message(user_id)
-
-        assert result.allowed is True
-        assert result.current_count == 1
-
-    @pytest.mark.asyncio
-    async def test_message_rate_limit_exceeded(self):
-        """메시지 레이트 리밋 - 초과"""
-        limiter = get_ws_limiter()
-        user_id = "test-user-4"
-        config = get_ws_rate_limit_config()
-
-        # 최대 메시지 수만큼 전송
-        for _ in range(config.message_max):
-            await limiter.check_message(user_id)
-
-        # 다음 메시지는 차단되어야 함
-        result = await limiter.check_message(user_id)
-
-        assert result.allowed is False
-
-    @pytest.mark.asyncio
     async def test_get_connection_remaining(self):
         """남은 연결 횟수 조회"""
         limiter = get_ws_limiter()
@@ -107,41 +80,20 @@ class TestWebSocketRateLimiter:
         assert remaining == config.connect_max - 1
 
     @pytest.mark.asyncio
-    async def test_get_message_remaining(self):
-        """남은 메시지 횟수 조회"""
-        limiter = get_ws_limiter()
-        user_id = "test-user-6"
-        config = get_ws_rate_limit_config()
-
-        # 초기 상태
-        remaining = await limiter.get_message_remaining(user_id)
-        assert remaining == config.message_max
-
-        # 메시지 후
-        await limiter.check_message(user_id)
-        remaining = await limiter.get_message_remaining(user_id)
-        assert remaining == config.message_max - 1
-
-    @pytest.mark.asyncio
     async def test_reset_user(self):
         """사용자 레이트 리밋 초기화"""
         limiter = get_ws_limiter()
         user_id = "test-user-7"
         config = get_ws_rate_limit_config()
 
-        # 연결 및 메시지 사용
+        # 연결 사용
         await limiter.check_connection(user_id)
-        await limiter.check_message(user_id)
 
         # 초기화
         await limiter.reset_user(user_id)
 
         # 초기화 후 다시 전체 사용 가능
-        conn_remaining = await limiter.get_connection_remaining(user_id)
-        msg_remaining = await limiter.get_message_remaining(user_id)
-
-        assert conn_remaining == config.connect_max
-        assert msg_remaining == config.message_max
+        assert await limiter.get_connection_remaining(user_id) == config.connect_max
 
     @pytest.mark.asyncio
     async def test_independent_user_limits(self):
@@ -187,22 +139,7 @@ class TestWSRateLimitGuard:
         mock_websocket = AsyncMock()
         user_id = "guard-user-1"
 
-        allowed, error = await ws_rate_limit_guard(
-            mock_websocket, user_id, check_type="connect"
-        )
-
-        assert allowed is True
-        assert error is None
-
-    @pytest.mark.asyncio
-    async def test_guard_allows_message(self):
-        """가드 함수 - 메시지 허용"""
-        mock_websocket = AsyncMock()
-        user_id = "guard-user-2"
-
-        allowed, error = await ws_rate_limit_guard(
-            mock_websocket, user_id, check_type="message"
-        )
+        allowed, error = await ws_rate_limit_guard(mock_websocket, user_id)
 
         assert allowed is True
         assert error is None
@@ -216,36 +153,14 @@ class TestWSRateLimitGuard:
 
         # 한도 소진
         for _ in range(config.connect_max):
-            await ws_rate_limit_guard(mock_websocket, user_id, check_type="connect")
+            await ws_rate_limit_guard(mock_websocket, user_id)
 
         # 다음 연결 차단
-        allowed, error = await ws_rate_limit_guard(
-            mock_websocket, user_id, check_type="connect"
-        )
+        allowed, error = await ws_rate_limit_guard(mock_websocket, user_id)
 
         assert allowed is False
         assert error is not None
         assert "연결" in error
-
-    @pytest.mark.asyncio
-    async def test_guard_blocks_message_on_limit(self):
-        """가드 함수 - 메시지 차단"""
-        mock_websocket = AsyncMock()
-        user_id = "guard-user-4"
-        config = get_ws_rate_limit_config()
-
-        # 한도 소진
-        for _ in range(config.message_max):
-            await ws_rate_limit_guard(mock_websocket, user_id, check_type="message")
-
-        # 다음 메시지 차단
-        allowed, error = await ws_rate_limit_guard(
-            mock_websocket, user_id, check_type="message"
-        )
-
-        assert allowed is False
-        assert error is not None
-        assert "메시지" in error
 
     @pytest.mark.asyncio
     async def test_guard_disabled_when_setting_off(self):
@@ -258,9 +173,7 @@ class TestWSRateLimitGuard:
             mock_settings.WS_RATE_LIMIT_ENABLED = False
 
             # 항상 허용
-            allowed, error = await ws_rate_limit_guard(
-                mock_websocket, user_id, check_type="connect"
-            )
+            allowed, error = await ws_rate_limit_guard(mock_websocket, user_id)
 
             assert allowed is True
             assert error is None
@@ -275,20 +188,14 @@ class TestWSRateLimitConfig:
 
         assert config.connect_window > 0
         assert config.connect_max > 0
-        assert config.message_window > 0
-        assert config.message_max > 0
 
     def test_config_from_settings(self):
         """설정에서 값 로드"""
         with patch("app.ratelimit.websocket.app_config.settings") as mock_settings:
             mock_settings.WS_CONNECT_WINDOW = 120
             mock_settings.WS_CONNECT_MAX = 20
-            mock_settings.WS_MESSAGE_WINDOW = 30
-            mock_settings.WS_MESSAGE_MAX = 60
 
             config = get_ws_rate_limit_config()
 
             assert config.connect_window == 120
             assert config.connect_max == 20
-            assert config.message_window == 30
-            assert config.message_max == 60

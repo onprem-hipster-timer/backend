@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth_proxy
+from app.api import auth_proxy, oidc_discovery
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
@@ -25,6 +25,8 @@ from app.middleware.origin_verify import OriginVerifyMiddleware
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.ratelimit.cloudflare import get_cloudflare_manager, get_trusted_proxy_manager
 from app.ratelimit.middleware import RateLimitMiddleware
+from app.realtime.publisher import Publisher, as_after_commit_sink, create_publisher
+from app.shared.uow import set_after_commit_sink
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ holiday_task = HolidayBackgroundTask()
 keepalive_task = DatabaseKeepAliveTask()
 _asyncio_task: asyncio.Task | None = None
 _keepalive_asyncio_task: asyncio.Task | None = None
+_publisher: Publisher | None = None
 
 
 @asynccontextmanager
@@ -45,7 +48,7 @@ async def lifespan(app: FastAPI):
     
     이 패턴으로 startup/shutdown 로직 연결 가능
     """
-    global _asyncio_task, _keepalive_asyncio_task
+    global _asyncio_task, _keepalive_asyncio_task, _publisher
 
     # ============ STARTUP ============
     logger.info("🌍 Starting FastAPI application")
@@ -58,6 +61,11 @@ async def lifespan(app: FastAPI):
         from app.shared.messagebus import register_handlers
         register_handlers()
         logger.info("✅ Domain event handlers registered")
+
+        # 1-2. 실시간 publisher를 커밋 후 큐의 sink로 연결
+        _publisher = create_publisher(asyncio.get_running_loop())
+        set_after_commit_sink(as_after_commit_sink(_publisher))
+        logger.info("✅ Realtime publisher: %s", settings.REALTIME_BACKEND)
 
         # 2. Rate Limit status check
         if settings.RATE_LIMIT_ENABLED:
@@ -150,6 +158,11 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 logger.info("✅ DB keep-alive task stopped")
 
+        # 3. 실시간 publisher 해제
+        if _publisher:
+            set_after_commit_sink(None)
+            _publisher.close()
+
     except Exception as e:
         logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
 
@@ -199,6 +212,9 @@ app.add_middleware(OriginVerifyMiddleware)
 
 # API Router 등록 (REST + GraphQL + WebSocket 모두 포함)
 app.include_router(api_router)
+
+# OIDC discovery·JWKS (/auth/.well-known/*). /auth/* 프록시보다 먼저 등록해야 한다
+app.include_router(oidc_discovery.router)
 
 # Kratos 공개 API 프록시 (/auth/*). KRATOS_PUBLIC_URL이 비어 있으면 404
 app.include_router(auth_proxy.router)

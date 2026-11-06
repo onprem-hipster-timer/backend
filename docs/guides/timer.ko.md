@@ -1,8 +1,5 @@
 # Timer API 가이드 (프론트엔드 개발자용)
 
-> **최종 업데이트**: 2026-01-28
-> **중요 변경**: 타이머 제어 작업이 WebSocket 기반으로 전환되었습니다.
-
 ## 개요
 
 Timer API는 **일정(Schedule)**, **할 일(Todo)**, 또는 **독립적으로** 타이머를 생성하고 관리할 수 있습니다.
@@ -15,53 +12,18 @@ Timer API는 **일정(Schedule)**, **할 일(Todo)**, 또는 **독립적으로**
 | **Schedule** | 캘린더 일정. 타이머를 통해 작업 시간 측정 가능. |
 | **Todo** | 할 일 항목. 타이머를 통해 작업 시간 측정 가능. |
 
----
-
-## 아키텍처 변경 (2026-01-28)
-
-### 변경 이유
-
-1. **일시정지 이력 추적**: 단일 `paused_at` 컬럼으로는 여러 번의 일시정지/재개 이력 저장 불가
-2. **멀티 플랫폼 동기화**: REST 폴링 방식으로는 실시간 동기화 어려움
-3. **친구 알림**: 친구의 타이머 활동을 실시간으로 알림
-
-### 새로운 아키텍처
+### 명령과 실시간 수신
 
 ```mermaid
-flowchart TD
-    subgraph clients["클라이언트"]
-        Web[Web]
-        Mobile[Mobile]
-        Desktop[Desktop]
-    end
-
-    WS[/"WebSocket /v1/ws/timers"/]
-
-    subgraph sync["실시간 동기화"]
-        MyDevice[내 기기 동기화]
-        OtherDevice[다른 기기 동기화]
-        FriendNotify[친구 알림]
-    end
-
-    Web --> WS
-    Mobile --> WS
-    Desktop --> WS
-    WS --> MyDevice
-    WS --> OtherDevice
-    WS --> FriendNotify
+flowchart LR
+    App[앱] -- "명령·조회 (REST /v1/timers)" --> API[backend]
+    API -- "커밋된 변경" --> Socket[/"실시간 소켓 (수신 전용)"/]
+    Socket --> Mine[내 다른 기기]
+    Socket --> Friends[공개 범위상 볼 수 있는 친구]
 ```
 
-### API 변경 요약
-
-| 작업 | 이전 (REST) | 현재 (WebSocket) |
-|------|-------------|------------------|
-| 타이머 생성 | `POST /v1/timers` | `timer.create` 메시지 |
-| 일시정지 | `PATCH /v1/timers/{id}/pause` | `timer.pause` 메시지 |
-| 재개 | `PATCH /v1/timers/{id}/resume` | `timer.resume` 메시지 |
-| 종료 | `POST /v1/timers/{id}/stop` | `timer.stop` 메시지 |
-| 조회 | `GET /v1/timers/*` | **유지** (REST) |
-| 삭제 | `DELETE /v1/timers/{id}` | **유지** (REST) |
-| 업데이트 | `PATCH /v1/timers/{id}` | **유지** (REST) |
+- 생성·일시정지·재개·종료·수정·삭제와 조회는 모두 **REST**입니다. 명령 응답에 바뀐 타이머가 들어 있습니다.
+- 커밋된 변경은 **수신 전용 WebSocket**으로 내 다른 기기와 친구에게 전달됩니다 (아래 "실시간 수신").
 
 ---
 
@@ -77,12 +39,12 @@ interface Timer {
   title?: string;               // 타이머 제목
   description?: string;         // 타이머 설명
   allocated_duration: number;   // 할당 시간 (초 단위)
-  elapsed_time: number;         // 경과 시간 (초 단위)
+  elapsed_time: number;         // 누적 경과 시간 (초, 저장값). RUNNING이면 클라이언트가 now - started_at을 더해 표시
   status: TimerStatus;          // 상태
   started_at?: string;          // 시작 시간 (ISO 8601)
   paused_at?: string;           // 마지막 일시정지 시간 (ISO 8601)
   ended_at?: string;            // 종료 시간 (ISO 8601)
-  pause_history: PauseEvent[];  // 일시정지/재개 이력 (NEW!)
+  pause_history: PauseEvent[];  // 일시정지/재개 이력
   created_at: string;           // 생성 시간 (ISO 8601)
   updated_at: string;           // 수정 시간 (ISO 8601)
   schedule?: Schedule;          // Schedule 정보
@@ -125,131 +87,60 @@ interface PauseEvent {
 
 ---
 
-## WebSocket API
+### elapsed_time 계산 규칙
 
-### 연결
+`elapsed_time`은 **저장된 누적값**입니다. 서버는 조회할 때 값을 바꾸지 않고, `pause`·`stop` 같은 상태 전이 때만 실행 중이던 구간을 더해 저장합니다. 따라서 RUNNING 타이머의 화면 표시는 클라이언트가 계산합니다.
 
-**중요: 보안상 JWT는 반드시 `Sec-WebSocket-Protocol` 헤더로 전달해야 합니다.**
-
-**개발 환경:**
-```javascript
-const ws = new WebSocket(
-  'ws://localhost:8000/v1/ws/timers?timezone=Asia/Seoul',
-  ['authorization.bearer.' + jwtToken]
-);
-```
-
-**프로덕션 환경:**
-```javascript
-const ws = new WebSocket(
-  'wss://your-domain.com/v1/ws/timers?timezone=Asia/Seoul',
-  ['authorization.bearer.' + jwtToken]
-);
-```
-
-**쿼리 파라미터:**
-- `timezone`: 타임존 (선택, 예: `UTC`, `+09:00`, `Asia/Seoul`)
-  - 지정하지 않으면 UTC naive datetime으로 반환
-  - 지정하면 모든 응답의 datetime 필드가 해당 타임존으로 변환됨
-
-**인증:**
-- `Sec-WebSocket-Protocol` 헤더: `authorization.bearer.<JWT_TOKEN>` (필수)
-- WebSocket 생성자의 두 번째 인자(subprotocols)로 전달
-
-### 연결 후 자동 동기화 (NEW!) 🔥
-
-**연결 즉시 활성 타이머가 자동으로 전송됩니다!**
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    Client->>Server: WebSocket 연결
-    Server->>Client: 1. connected 메시지
-    Server->>Client: 2. timer.sync_result (자동 전송)
-    Note over Client: 즉시 타이머 상태 동기화 완료!
-```
-
-**특징:**
-- ✅ **자동 전송**: 연결 즉시 활성 타이머(RUNNING/PAUSED) 자동 수신
-- ✅ **빠른 초기화**: 별도 sync 요청 불필요
-- ✅ **멀티 디바이스**: 새 기기 연결 시 즉시 동기화
-
-### 중요: CORS 설정
-
-WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
-
-=== "개발 환경"
-    ```bash
-    CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
-    ```
-
-=== "프로덕션 환경"
-    ```bash
-    CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
-    ```
-
-!!! tip "팁"
-    `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
-
-### 연결 성공 응답
-
-**1. 연결 확인 메시지:**
-
-```json
-{
-  "type": "connected",
-  "payload": {
-    "user_id": "user-uuid",
-    "message": "Connected to timer WebSocket"
-  },
-  "timestamp": "2026-01-28T10:00:00Z"
+```typescript
+function displayElapsed(timer: Timer, now: Date = new Date()): number {
+  if (timer.status !== 'RUNNING' || !timer.started_at) return timer.elapsed_time;
+  const running = Math.floor((now.getTime() - new Date(timer.started_at).getTime()) / 1000);
+  return timer.elapsed_time + Math.max(0, running);
 }
 ```
 
-**2. 자동 동기화 메시지 (즉시 전송):**
-
-```json
-{
-  "type": "timer.sync_result",
-  "payload": {
-    "timers": [
-      {
-        "id": "timer-uuid",
-        "title": "작업 중인 타이머",
-        "status": "RUNNING",
-        "elapsed_time": 1234,
-        ...
-      }
-    ],
-    "count": 1
-  },
-  "from_user": "user-uuid",
-  "timestamp": "2026-01-28T10:00:00Z"
-}
-```
-
-> **참고**: `timers` 배열이 비어있으면(`count: 0`) 활성 타이머가 없는 상태입니다.
+- `started_at`은 마지막 `resume` 시각으로 갱신되므로 위 식이 그대로 맞습니다.
+- 매 렌더마다 다시 계산하세요. "1초마다 +1"로 누적하면 백그라운드 탭에서 틀어집니다.
+- PAUSED·COMPLETED·CANCELLED는 `elapsed_time`을 그대로 씁니다.
 
 ---
 
-### 클라이언트 → 서버 메시지
+## REST API
 
-#### 타이머 생성 (timer.create)
+### Base URL
 
-```json
+```
+/v1
+```
+
+명령 엔드포인트는 모두 다음 쿼리 파라미터를 받고, 응답은 `Timer`입니다.
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---------|------|--------|------|
+| `include_schedule` | boolean | false | Schedule 정보 포함 |
+| `include_todo` | boolean | false | Todo 정보 포함 |
+| `tag_include_mode` | string | none | 태그 포함 모드 |
+| `timezone` | string | UTC | 응답 시각의 타임존 (`pause_history[].at` 포함). 실시간 이벤트와 맞추려면 `UTC` |
+
+상태 전이가 맞지 않으면 **400**, 타이머가 없거나 내 것이 아니면 **404**입니다.
+
+### 타이머 생성
+
+```http
+POST /v1/timers
+Content-Type: application/json
+
 {
-  "type": "timer.create",
-  "payload": {
-    "allocated_duration": 3600,
-    "title": "작업 타이머",
-    "description": "프로젝트 작업",
-    "schedule_id": "uuid-or-null",
-    "todo_id": "uuid-or-null",
-    "tag_ids": ["tag-uuid-1"]
-  }
+  "allocated_duration": 3600,
+  "title": "작업 타이머",
+  "description": "프로젝트 작업",
+  "schedule_id": "uuid-or-null",
+  "todo_id": "uuid-or-null",
+  "tag_ids": ["tag-uuid-1"]
 }
 ```
+
+**201 Created**. 생성과 동시에 RUNNING으로 시작합니다.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
@@ -260,154 +151,31 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 | `todo_id` | UUID | ❌ | Todo ID |
 | `tag_ids` | UUID[] | ❌ | 태그 ID 리스트 |
 
-#### 타이머 일시정지 (timer.pause)
+- `todo_id`만 주면 그 Todo의 첫 Schedule이, `schedule_id`만 주면 그 Schedule의 원본 Todo가 함께 연결됩니다.
 
-```json
-{
-  "type": "timer.pause",
-  "payload": {
-    "timer_id": "timer-uuid"
-  }
-}
+### 타이머 일시정지
+
+```http
+PATCH /v1/timers/{timer_id}/pause
 ```
 
-#### 타이머 재개 (timer.resume)
+RUNNING → PAUSED. 실행 중이던 구간을 `elapsed_time`에 더해 저장합니다.
 
-```json
-{
-  "type": "timer.resume",
-  "payload": {
-    "timer_id": "timer-uuid"
-  }
-}
+### 타이머 재개
+
+```http
+PATCH /v1/timers/{timer_id}/resume
 ```
 
-#### 타이머 종료 (timer.stop)
+PAUSED → RUNNING. `started_at`을 재개 시각으로 바꿉니다.
 
-```json
-{
-  "type": "timer.stop",
-  "payload": {
-    "timer_id": "timer-uuid"
-  }
-}
+### 타이머 종료
+
+```http
+POST /v1/timers/{timer_id}/stop
 ```
 
-#### 타이머 동기화 요청 (timer.sync)
-
-**수동 동기화가 필요한 경우에만 사용:**
-
-```json
-{
-  "type": "timer.sync",
-  "payload": {
-    "timer_id": "timer-uuid",  // 선택: 특정 타이머 조회
-    "scope": "active"           // 선택: "active" (기본값) | "all"
-  }
-}
-```
-
-| 필드 | 타입 | 기본값 | 설명 |
-|------|------|--------|------|
-| `timer_id` | UUID | - | 특정 타이머 ID (생략 시 목록 조회) |
-| `scope` | string | active | `active`: 활성 타이머만, `all`: 모든 타이머 |
-
-**응답:**
-
-- 단건 조회 (timer_id 지정): `timer.updated` 메시지
-  - 타이머가 없으면 `payload.timer`는 `null`
-- 목록 조회 (timer_id 생략): `timer.sync_result` 메시지
-
-> **💡 Tip**: 연결 시 자동 동기화가 되므로, 수동 sync는 **재연결 후 상태 확인**이 필요한 경우에만 사용하세요.
-
----
-
-### 서버 → 클라이언트 메시지
-
-#### 타이머 생성됨 (timer.created)
-
-```json
-{
-  "type": "timer.created",
-  "payload": {
-    "timer": { /* Timer 객체 */ },
-    "action": "start"
-  },
-  "from_user": "user-uuid",
-  "timestamp": "2026-01-28T10:00:00Z"
-}
-```
-
-#### 타이머 업데이트됨 (timer.updated)
-
-```json
-{
-  "type": "timer.updated",
-  "payload": {
-    "timer": { /* Timer 객체 */ },  // 또는 null (sync 단건 조회에서 타이머 없음)
-    "action": "pause"  // "pause" | "resume" | "stop" | "sync"
-  },
-  "from_user": "user-uuid",
-  "timestamp": "2026-01-28T10:30:00Z"
-}
-```
-
-#### 타이머 동기화 결과 (timer.sync_result)
-
-```json
-{
-  "type": "timer.sync_result",
-  "payload": {
-    "timers": [ /* Timer 객체 배열 */ ],
-    "count": 2
-  },
-  "from_user": "user-uuid",
-  "timestamp": "2026-01-28T10:30:00Z"
-}
-```
-
-#### 친구 활동 알림 (timer.friend_activity)
-
-```json
-{
-  "type": "timer.friend_activity",
-  "payload": {
-    "friend_id": "friend-user-uuid",
-    "display_name": "친구 이름",
-    "action": "start",
-    "timer_id": "timer-uuid",
-    "timer_title": "친구의 작업"
-  },
-  "from_user": "friend-user-uuid",
-  "timestamp": "2026-01-28T10:00:00Z"
-}
-```
-
-#### 에러 (error)
-
-```json
-{
-  "type": "error",
-  "payload": {
-    "code": "PAUSE_FAILED",
-    "message": "Cannot pause timer with status completed"
-  },
-  "timestamp": "2026-01-28T10:00:00Z"
-}
-```
-
----
-
-## REST API (조회/삭제만)
-
-!!! warning "주의"
-    타이머 생성, 일시정지, 재개, 종료는 WebSocket으로만 가능합니다.
-
-### Base URL
-
-```
-/v1
-```
+RUNNING·PAUSED → COMPLETED. RUNNING이었다면 실행 중이던 구간을 더해 저장합니다.
 
 ### 타이머 목록 조회
 
@@ -464,6 +232,74 @@ DELETE /v1/timers/{timer_id}
 
 ---
 
+## 실시간 수신 (WebSocket)
+
+소켓은 **수신 전용**입니다. 명령은 보내지 않습니다. 프로토콜 전체는 [WebSocket API](../api/websocket.md)를 참고하세요.
+
+### 연결
+
+**중요: 보안상 JWT는 반드시 `Sec-WebSocket-Protocol` 헤더로 전달해야 합니다.**
+
+```javascript
+const ws = new WebSocket(
+  'wss://your-domain.com/v1/ws/timers',  // 호스팅 모드는 /realtime/ws
+  ['authorization.bearer.' + jwtToken]
+);
+```
+
+- 연결 직후 `connected` 메시지가 옵니다. 타이머 목록은 오지 않으므로 **연결·재연결 직후 REST로 다시 조회**합니다.
+- 클라이언트가 보낼 수 있는 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답합니다.
+
+### 중요: CORS 설정
+
+WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS` 환경변수에 WebSocket URL을 반드시 추가**해야 합니다:
+
+=== "개발 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
+    ```
+
+=== "프로덕션 환경"
+    ```bash
+    CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
+    ```
+
+!!! tip "팁"
+    `ws://`는 HTTP용, `wss://`는 HTTPS용입니다. 프로덕션에서는 반드시 `wss://`를 사용하세요.
+
+### 이벤트
+
+```json
+{
+  "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
+  "type": "timer.updated",
+  "from_user": "<행위자 sub>",
+  "timestamp": "2026-11-06T10:30:00+0000",
+  "payload": {
+    "action": "pause",
+    "actor_name": "홍길동",
+    "timer": { /* Timer 객체 (UTC) */ }
+  }
+}
+```
+
+| `type` | `action` | 발생 |
+|--------|----------|------|
+| `timer.created` | `start` | 생성 |
+| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정 |
+| `timer.deleted` | `delete` | 삭제 (`timer`는 `null`, `payload.timer_id`로 식별) |
+
+이벤트를 받는 사람은 **소유자 본인**(명령을 보낸 기기 포함)과, 타이머 공개 범위가 `FRIENDS`·`PUBLIC`이면 소유자의 친구 전원, `SELECTED_FRIENDS`이면 허용 목록에 있는 친구입니다.
+
+### 반영 규칙
+
+- `id`로 중복을 버립니다.
+- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. 이벤트의 시각은 REST 응답(`timezone=UTC`)과 같은 형식이므로 REST 응답에도 같은 규칙을 씁니다.
+- `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
+- 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다. 표시명은 `payload.actor_name`입니다.
+
+---
+
 ## TypeScript 타입 정의
 
 ```typescript
@@ -472,18 +308,15 @@ DELETE /v1/timers/{timer_id}
 // ============================================================
 
 export type TimerStatus = "RUNNING" | "PAUSED" | "COMPLETED" | "CANCELLED";
-export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "sync";
-export type WSMessageType = 
-  | "timer.create" | "timer.pause" | "timer.resume" | "timer.stop" | "timer.sync"
-  | "timer.created" | "timer.updated" | "timer.deleted" | "timer.sync_result" | "timer.friend_activity"
-  | "connected" | "error";
+export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "update" | "delete";
+export type TimerEventType = "timer.created" | "timer.updated" | "timer.deleted";
 
 // ============================================================
 // Timer Types
 // ============================================================
 
 export interface PauseEvent {
-  action: TimerAction;
+  action: "start" | "pause" | "resume" | "stop" | "cancel";
   at: string;
   elapsed?: number;
 }
@@ -520,42 +353,22 @@ export interface TimerCreate {
 }
 
 // ============================================================
-// WebSocket Messages
+// 실시간 이벤트
 // ============================================================
 
-export interface WSClientMessage {
-  type: WSMessageType;
-  payload: Record<string, unknown>;
+export interface TimerEventPayload {
+  action: TimerAction;
+  actor_name: string | null;
+  timer: Timer | null;   // timer.deleted에서 null
+  timer_id?: string;     // timer.deleted에만
 }
 
-export interface WSServerMessage {
-  type: WSMessageType;
-  payload: Record<string, unknown>;
-  from_user?: string;
+export interface ServerMessage {
+  id: string;
+  type: TimerEventType | "connected";
+  from_user: string | null;
   timestamp: string;
-}
-
-export interface TimerUpdatedPayload {
-  timer: Timer | null;
-  action: TimerAction;
-}
-
-export interface FriendActivityPayload {
-  friend_id: string;
-  display_name?: string | null;
-  action: TimerAction;
-  timer_id: string;
-  timer_title?: string;
-}
-
-export interface TimerSyncResultPayload {
-  timers: Timer[];
-  count: number;
-}
-
-export interface ErrorPayload {
-  code: string;
-  message: string;
+  payload: TimerEventPayload | Record<string, never>;
 }
 ```
 
@@ -563,273 +376,82 @@ export interface ErrorPayload {
 
 ## 사용 예시
 
-### WebSocket 연결 및 타이머 제어
+### REST 명령
 
 ```typescript
-class TimerWebSocket {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  
-  constructor(
-    private token: string,
-    private onMessage: (msg: WSServerMessage) => void,
-    private onError?: (error: Event) => void,
-    private timezone?: string,  // 타임존 (예: "Asia/Seoul", "+09:00")
-  ) {}
+const API = '/v1/timers';
+const UTC = '?timezone=UTC';
 
-  connect(): void {
-    // 환경에 따라 ws:// 또는 wss:// 사용
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host; // 또는 명시적으로 API 서버 주소 지정
-    
-    // timezone만 쿼리 파라미터로 (토큰은 헤더로)
-    const params = new URLSearchParams();
-    if (this.timezone) {
-      params.append('timezone', this.timezone);
-    }
-    const queryString = params.toString();
-    const wsUrl = `${protocol}//${host}/v1/ws/timers${queryString ? '?' + queryString : ''}`;
-    
-    // 🔐 토큰은 반드시 Sec-WebSocket-Protocol 헤더로 전달 (보안)
-    this.ws = new WebSocket(wsUrl, [
-      `authorization.bearer.${this.token}`
-    ]);
-
-    this.ws.onopen = () => {
-      console.log('Timer WebSocket connected');
-      this.reconnectAttempts = 0;
-    };
-
-    this.ws.onmessage = (event) => {
-      const message: WSServerMessage = JSON.parse(event.data);
-      this.onMessage(message);
-    };
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      this.onError?.(error);
-    };
-
-    this.ws.onclose = () => {
-      console.log('WebSocket closed');
-      this.attemptReconnect();
-    };
-  }
-
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      const delay = Math.pow(2, this.reconnectAttempts) * 1000;
-      setTimeout(() => this.connect(), delay);
-    }
-  }
-
-  private send(message: WSClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    }
-  }
-
-  createTimer(data: TimerCreate): void {
-    this.send({
-      type: 'timer.create',
-      payload: data,
-    });
-  }
-
-  pauseTimer(timerId: string): void {
-    this.send({
-      type: 'timer.pause',
-      payload: { timer_id: timerId },
-    });
-  }
-
-  resumeTimer(timerId: string): void {
-    this.send({
-      type: 'timer.resume',
-      payload: { timer_id: timerId },
-    });
-  }
-
-  stopTimer(timerId: string): void {
-    this.send({
-      type: 'timer.stop',
-      payload: { timer_id: timerId },
-    });
-  }
-
-  syncTimer(timerId?: string): void {
-    this.send({
-      type: 'timer.sync',
-      payload: timerId ? { timer_id: timerId } : {},
-    });
-  }
-
-  syncTimers(scope: 'active' | 'all' = 'active'): void {
-    this.send({
-      type: 'timer.sync',
-      payload: { scope },
-    });
-  }
-
-  disconnect(): void {
-    this.ws?.close();
-    this.ws = null;
-  }
+async function call(method: string, path: string, body?: unknown): Promise<Timer> {
+  const res = await fetch(`${API}${path}${UTC}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json();
 }
+
+export const createTimer = (data: TimerCreate) => call('POST', '', data);
+export const pauseTimer = (id: string) => call('PATCH', `/${id}/pause`);
+export const resumeTimer = (id: string) => call('PATCH', `/${id}/resume`);
+export const stopTimer = (id: string) => call('POST', `/${id}/stop`);
 ```
 
-### React Hook 예시
+### 실시간 수신과 반영
 
 ```typescript
-import { useState, useEffect, useCallback, useRef } from 'react';
+class TimerStore {
+  private timers = new Map<string, Timer>();
+  private seen = new Set<string>();
+  private deleted = new Set<string>();
 
-function useTimerWebSocket(token: string, timezone?: string) {
-  const [activeTimers, setActiveTimers] = useState<Timer[]>([]);
-  const [friendActivity, setFriendActivity] = useState<FriendActivityPayload | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [synced, setSynced] = useState(false);  // 초기 동기화 완료 여부
-  const [error, setError] = useState<string | null>(null);
-  const wsRef = useRef<TimerWebSocket | null>(null);
+  // REST 응답과 이벤트 모두 이 함수로 반영
+  apply(timer: Timer): void {
+    if (this.deleted.has(timer.id)) return;
+    const held = this.timers.get(timer.id);
+    if (held && Date.parse(timer.updated_at) < Date.parse(held.updated_at)) return;
+    this.timers.set(timer.id, timer);
+  }
 
-  useEffect(() => {
-    const handleMessage = (msg: WSServerMessage) => {
-      switch (msg.type) {
-        case 'connected':
-          setConnected(true);
-          break;
-        case 'timer.sync_result':
-          // 자동 동기화 또는 수동 sync 응답
-          const syncPayload = msg.payload as TimerSyncResultPayload;
-          setActiveTimers(syncPayload.timers);
-          setSynced(true);
-          break;
-        case 'timer.created':
-        case 'timer.updated':
-          const payload = msg.payload as TimerUpdatedPayload;
-          if (!payload.timer) {
-            return;
-          }
-          // 활성 타이머 목록 업데이트
-          setActiveTimers(prev => {
-            const filtered = prev.filter(t => t.id !== payload.timer.id);
-            if (payload.timer.status === 'RUNNING' || payload.timer.status === 'PAUSED') {
-              return [...filtered, payload.timer];
-            }
-            return filtered;
-          });
-          break;
-        case 'timer.friend_activity':
-          setFriendActivity(msg.payload as FriendActivityPayload);
-          setTimeout(() => setFriendActivity(null), 3000);
-          break;
-        case 'error':
-          const errorPayload = msg.payload as ErrorPayload;
-          setError(errorPayload.message);
-          break;
-      }
-    };
+  onMessage(message: ServerMessage, mySub: string): void {
+    if (message.type === 'connected' || this.seen.has(message.id)) return;
+    this.seen.add(message.id);
+    const payload = message.payload as TimerEventPayload;
 
-    wsRef.current = new TimerWebSocket(token, handleMessage, undefined, timezone);
-    wsRef.current.connect();
-
-    return () => {
-      wsRef.current?.disconnect();
-    };
-  }, [token, timezone]);
-
-  const createTimer = useCallback((data: TimerCreate) => {
-    wsRef.current?.createTimer(data);
-  }, []);
-
-  const pauseTimer = useCallback((timerId: string) => {
-    wsRef.current?.pauseTimer(timerId);
-  }, []);
-
-  const resumeTimer = useCallback((timerId: string) => {
-    wsRef.current?.resumeTimer(timerId);
-  }, []);
-
-  const stopTimer = useCallback((timerId: string) => {
-    wsRef.current?.stopTimer(timerId);
-  }, []);
-
-  const syncTimer = useCallback((scope: 'active' | 'all' = 'active') => {
-    wsRef.current?.syncTimers(scope);
-  }, []);
-
-  return {
-    activeTimers,  // 활성 타이머 목록
-    friendActivity,
-    connected,
-    synced,  // 초기 동기화 완료 여부
-    error,
-    createTimer,
-    pauseTimer,
-    resumeTimer,
-    stopTimer,
-    syncTimer,
-  };
+    if (message.type === 'timer.deleted') {
+      this.deleted.add(payload.timer_id!);
+      this.timers.delete(payload.timer_id!);
+    } else if (payload.timer) {
+      this.apply(payload.timer);
+    }
+    if (message.from_user !== mySub) {
+      showFriendActivity(payload.actor_name, payload.action);
+    }
+  }
 }
 
-// 사용 예시
-function TimerComponent() {
-  const {
-    activeTimers,
-    friendActivity,
-    connected,
-    synced,
-    createTimer,
-    pauseTimer,
-    resumeTimer,
-    stopTimer,
-  } = useTimerWebSocket(authToken, 'Asia/Seoul');  // 타임존 지정
+function connect(store: TimerStore, token: string, mySub: string): WebSocket {
+  const ws = new WebSocket('wss://your-domain.com/v1/ws/timers', [`authorization.bearer.${token}`]);
+  const keepAlive = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), 45000);
 
-  if (!connected) return <div>연결 중...</div>;
-  if (!synced) return <div>동기화 중...</div>;
-
-  return (
-    <div>
-      {friendActivity && (
-        <div className="notification">
-          친구 {friendActivity.friend_id}가 타이머를 {friendActivity.action}했습니다!
-        </div>
-      )}
-
-      {activeTimers.length > 0 ? (
-        <div>
-          <h3>활성 타이머 ({activeTimers.length}개)</h3>
-          {activeTimers.map(timer => (
-            <div key={timer.id}>
-              <h4>{timer.title || '타이머'}</h4>
-              <p>상태: {timer.status}</p>
-              <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
-              {/* datetime 필드는 이미 Asia/Seoul 타임존으로 변환됨 */}
-              <p>시작: {new Date(timer.started_at).toLocaleString('ko-KR')}</p>
-              
-              {timer.status === 'RUNNING' && (
-                <button onClick={() => pauseTimer(timer.id)}>일시정지</button>
-              )}
-              {timer.status === 'PAUSED' && (
-                <>
-                  <button onClick={() => resumeTimer(timer.id)}>재개</button>
-                  <button onClick={() => stopTimer(timer.id)}>종료</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <button onClick={() => createTimer({
-          allocated_duration: 1800,
-          title: '포모도로'
-        })}>
-          타이머 시작
-        </button>
-      )}
-    </div>
-  );
+  ws.onopen = async () => {
+    // 연결·재연결 직후 REST로 다시 맞춤
+    const res = await fetch('/v1/timers?status=RUNNING&status=PAUSED&timezone=UTC', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    (await res.json()).forEach((t: Timer) => store.apply(t));
+  };
+  ws.onmessage = (event) => {
+    if (event.data !== 'pong') store.onMessage(JSON.parse(event.data), mySub);
+  };
+  ws.onclose = (event) => {
+    clearInterval(keepAlive);
+    if (event.code === 1008) return;            // 토큰 갱신 후 다시 연결
+    const delay = event.code === 4000 ? 0 : backoffWithJitter();
+    setTimeout(() => connect(store, token, mySub), delay);
+  };
+  return ws;
 }
 ```
 
@@ -837,10 +459,10 @@ function TimerComponent() {
 
 ## 주의사항
 
-### 1. WebSocket 연결 필수
+### 1. 명령은 REST, 소켓은 수신 전용
 
-타이머 제어 작업(생성, 일시정지, 재개, 종료)은 **WebSocket 연결이 필수**입니다.
-REST API로는 조회/삭제/메타데이터 업데이트만 가능합니다.
+타이머 명령은 모두 REST로 보냅니다. 소켓으로 보낸 명령 메시지는 무시됩니다.
+명령 응답은 커밋이 끝난 뒤에 오므로, 응답을 받은 직후 조회해도 변경이 보입니다.
 
 ### 2. 🔐 보안: JWT 전달 방법
 
@@ -849,7 +471,7 @@ REST API로는 조회/삭제/메타데이터 업데이트만 가능합니다.
 ```javascript
 // ✅ 올바른 방법: Sec-WebSocket-Protocol 헤더 사용
 const ws = new WebSocket(
-  'wss://api.example.com/v1/ws/timers?timezone=Asia/Seoul',
+  'wss://api.example.com/v1/ws/timers',
   ['authorization.bearer.' + jwtToken]
 );
 
@@ -863,45 +485,19 @@ const ws = new WebSocket(
 - Referer 헤더를 통한 JWT 유출 가능
 - 프록시/게이트웨이 로그에 기록됨
 
-### 4. CORS 설정 필수
-
-WebSocket 연결이 작동하지 않는다면 **백엔드의 CORS 설정을 확인하세요**:
-
-**문제 증상:**
-- WebSocket 연결 시 에러 코드 1006 (비정상 종료)
-- 브라우저 콘솔에 CORS 에러
-- 연결이 즉시 끊김
-
-**해결 방법:**
-
-백엔드 서버의 `.env` 파일 또는 환경변수에서 `CORS_ALLOWED_ORIGINS`를 설정하세요:
-
-=== "개발 환경"
-    ```bash
-    CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000,ws://localhost:8000,ws://127.0.0.1:8000
-    ```
-
-=== "프로덕션 환경"
-    ```bash
-    CORS_ALLOWED_ORIGINS=https://example.com,https://app.example.com,wss://api.example.com
-    ```
-
-!!! tip "팁"
-    WebSocket URL(`ws://` 또는 `wss://`)도 반드시 포함해야 합니다!
-
-### 5. 멀티 플랫폼 동기화
+### 3. 멀티 플랫폼 동기화
 
 같은 사용자가 여러 기기에서 접속한 경우:
-- 한 기기에서 타이머를 일시정지하면 다른 기기에도 즉시 반영됩니다
-- **새 기기 연결 시 자동으로 활성 타이머가 전송됩니다** (수동 sync 불필요)
-- WebSocket 연결이 끊어진 기기는 재연결 시 자동 동기화로 상태를 복구합니다
+- 한 기기에서 타이머를 일시정지하면 다른 기기에도 이벤트로 반영됩니다 (명령을 보낸 기기도 같은 이벤트를 받으므로 `id`·`updated_at` 규칙으로 중복을 거릅니다)
+- 소켓이 끊긴 동안의 변경은 다시 오지 않습니다. 재연결 직후 REST로 다시 조회합니다
 
-### 6. 친구 알림
+### 4. 친구 알림
 
-- 친구가 타이머를 시작/일시정지/재개/종료하면 `timer.friend_activity` 메시지를 받습니다
-- 알림은 WebSocket에 연결된 온라인 친구에게만 전송됩니다
+- 친구가 타이머를 바꾸면, 그 타이머를 볼 수 있는 친구에게 `from_user`가 그 친구인 이벤트가 옵니다
+- 공개 범위가 `PRIVATE`이거나 설정되지 않은 타이머는 친구에게 가지 않습니다
+- 이벤트는 소켓에 연결된 동안에만 받습니다
 
-### 7. pause_history 활용
+### 5. pause_history 활용
 
 ```typescript
 // 총 작업 시간 계산
@@ -928,29 +524,26 @@ function getPauseCount(history: PauseEvent[]): number {
 }
 ```
 
-### 8. 연결 재시도
+### 6. 연결 재시도
 
-WebSocket 연결이 끊어진 경우 지수 백오프로 재연결을 시도하세요:
+닫힘 코드에 따라 재연결합니다: `1008`은 토큰 갱신 후, `4000`은 바로, 그 외는 지수 백오프와 지터를 둡니다 ([Close Codes](../api/websocket.md#close-codes)).
 
-```typescript
-const delay = Math.pow(2, attempt) * 1000;  // 2초, 4초, 8초, 16초...
-```
-
-### 9. 타이머 상태 전이
+### 7. 타이머 상태 전이
 
 ```mermaid
 stateDiagram-v2
     [*] --> RUNNING
     RUNNING --> PAUSED: pause
     PAUSED --> RUNNING: resume
+    RUNNING --> COMPLETED: stop
     PAUSED --> COMPLETED: stop
     RUNNING --> CANCELLED: cancel
 ```
 
-### 10. 접근권한(Visibility) 설정
+### 8. 접근권한(Visibility) 설정
 
-타이머의 접근권한은 **WebSocket이 아닌 별도의 REST API**로 설정합니다.
-`timer.create` 페이로드에는 `visibility` 필드가 없으므로, 생성 후 필요한 경우에만 호출합니다.
+타이머의 접근권한은 **별도의 REST API**로 설정합니다.
+`POST /v1/timers` 본문에는 `visibility` 필드가 없으므로, 생성 후 필요한 경우에만 호출합니다.
 
 ```http
 PUT /v1/visibility/timer/{timer_id}
@@ -965,32 +558,20 @@ PUT /v1/visibility/timer/{timer_id}
     타이머는 개인 집중 도구이므로 기본값 `PRIVATE`이 자연스럽습니다.
     생성 시점에 즉시 설정하기보다, 사용자가 "공유" 버튼을 누를 때만 호출하세요.
 
-자세한 내용은 [Visibility API 가이드](./visibility.ko.md#예시-timer-생성--접근권한-설정-websocket--rest)를 참고하세요.
+자세한 내용은 [Visibility API 가이드](./visibility.ko.md)를 참고하세요.
 
 ---
 
 ## API 요약
 
-### WebSocket API
-
-| 방향 | 메시지 타입 | 설명 |
-|------|-------------|------|
-| → | `timer.create` | 타이머 생성 |
-| → | `timer.pause` | 타이머 일시정지 |
-| → | `timer.resume` | 타이머 재개 |
-| → | `timer.stop` | 타이머 종료 |
-| → | `timer.sync` | 타이머 동기화 요청 |
-| ← | `connected` | 연결 성공 |
-| ← | `timer.sync_result` | 타이머 목록 (자동/수동) |
-| ← | `timer.created` | 타이머 생성됨 |
-| ← | `timer.updated` | 타이머 업데이트됨 |
-| ← | `timer.friend_activity` | 친구 활동 알림 |
-| ← | `error` | 에러 |
-
 ### REST API
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
+| POST | `/v1/timers` | 타이머 생성 및 시작 |
+| PATCH | `/v1/timers/{id}/pause` | 타이머 일시정지 |
+| PATCH | `/v1/timers/{id}/resume` | 타이머 재개 |
+| POST | `/v1/timers/{id}/stop` | 타이머 종료 |
 | GET | `/v1/timers` | 타이머 목록 조회 |
 | GET | `/v1/timers/active` | 현재 활성 타이머 조회 |
 | GET | `/v1/timers/{id}` | 타이머 상세 조회 |
@@ -1002,10 +583,23 @@ PUT /v1/visibility/timer/{timer_id}
 | GET | `/v1/visibility/timer/{id}` | 타이머 접근권한 조회 |
 | DELETE | `/v1/visibility/timer/{id}` | 타이머 접근권한 삭제 (PRIVATE 복귀) |
 
+### WebSocket (수신 전용)
+
+| 방향 | 메시지 | 설명 |
+|------|--------|------|
+| → | `ping` | 연결 유지 |
+| ← | `pong` | `ping` 응답 |
+| ← | `connected` | 연결 성공 |
+| ← | `timer.created` | 타이머 생성됨 |
+| ← | `timer.updated` | 타이머 상태·내용 바뀜 |
+| ← | `timer.deleted` | 타이머 삭제됨 |
+
 ---
 
 ## 관련 문서
 
+- [WebSocket API](../api/websocket.md) - 수신 전용 소켓 프로토콜
+- [실시간 전달](../development/realtime-adapter.ko.md) - 배포 모드와 계약
 - [Visibility API 가이드](./visibility.ko.md) - 접근권한 설정 상세 가이드
 - [Schedule API 가이드](./schedule.ko.md) - 일정 관리
 - [Todo API 가이드](./todo.ko.md) - 할 일 관리

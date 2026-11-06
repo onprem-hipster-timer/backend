@@ -92,13 +92,25 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_ISSUER_URL` | OIDC Provider Issuer URL | - |
 | `OIDC_AUDIENCE` | 토큰 검증용 Client ID | - |
 | `OIDC_DISCOVERY_URL` | 사용자 지정 Discovery 엔드포인트 | 자동 생성 |
-| `OIDC_JWKS` | 공개 JWKS JSON. 설정하면 discovery 대신 이 키로 검증 (Kratos처럼 discovery가 없는 발급자) | - |
+| `OIDC_JWKS` | 공개 JWKS JSON. 설정하면 discovery 대신 이 키로 검증 (Kratos처럼 discovery가 없는 발급자). `GET /auth/.well-known/jwks.json`으로 공개되므로 비밀 키 성분이 있으면 기동 실패 | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | `/auth/*`를 프록시할 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 | - |
 | `COURIER_REQUEUE_JOB` | 처리 중에 멈춘 메일을 되돌리는 Cloud Run 잡 이름 (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Kratos 메일을 보내는 Cloud Run 잡 이름. 비우면 메일 잡을 실행하지 않음 | - |
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
+
+## 실시간 전달
+
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `REALTIME_BACKEND` | `inprocess`: 이 프로세스의 `/v1/ws/timers` 소켓으로 전달, `cloudflare`: realtime Worker로 push | `inprocess` |
+| `REALTIME_PUSH_URL` | `cloudflare`: Worker의 push 엔드포인트 (예: `https://api.example.com/realtime/push`). 비우면 push하지 않음 | - |
+| `REALTIME_PUSH_SECRET` | `cloudflare`: Worker의 `PUSH_SECRET`과 같은 값 | - |
+
+`ENVIRONMENT=production`에서 `REALTIME_BACKEND=cloudflare`인데 `REALTIME_PUSH_URL`이나 `REALTIME_PUSH_SECRET`이 비어 있으면 기동이 실패합니다.
+
+> 📖 **상세 가이드**: [실시간 전달](../development/realtime-adapter.ko.md)
 
 !!! note "검증 이메일 저장"
     토큰에 `email_verified=true`와 `email` 클레임이 있으면, 백엔드는 이메일 기반 친구 추가를 위해
@@ -122,8 +134,6 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `WS_RATE_LIMIT_ENABLED` | WebSocket Rate Limiting 활성화 | `True` |
 | `WS_CONNECT_WINDOW` | 연결 제한 윈도우 (초) | `60` |
 | `WS_CONNECT_MAX` | 윈도우당 최대 연결 수 | `10` |
-| `WS_MESSAGE_WINDOW` | 메시지 제한 윈도우 (초) | `60` |
-| `WS_MESSAGE_MAX` | 윈도우당 최대 메시지 수 | `120` |
 
 > 📖 **상세 가이드**: [Rate Limiting 가이드](../development/rate-limit.ko.md)
 

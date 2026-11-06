@@ -1,33 +1,29 @@
 # WebSocket API
 
-타이머 생성 및 제어 작업은 기기 간, 공유 사용자 간 실시간 동기화를 위해 WebSocket을 통해 처리됩니다.
+타이머 변경을 실시간으로 **받기만** 하는 소켓입니다. 타이머 명령(생성·일시정지·재개·종료·수정·삭제)은 [REST API](../guides/timer.ko.md)로 보내고, 커밋된 변경은 이 소켓으로 소유자의 다른 기기와 공개 범위상 받을 수 있는 친구에게 전달됩니다.
+
+배포 구조와 계약 전체는 [실시간 전달](../development/realtime-adapter.ko.md)을 참고하세요.
 
 ## 연결
 
 ### 엔드포인트
 
-```
-개발: ws://localhost:2614/v1/ws/timers
-프로덕션: wss://your-domain.com/v1/ws/timers
-```
+배포 모드(`REALTIME_BACKEND`)에 따라 주소가 다릅니다. 메시지 형식은 같습니다.
+
+| 모드 | 주소 |
+|------|------|
+| `inprocess` (기본, 온프레미스) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
+| `cloudflare` (호스팅) | `wss://your-domain.com/realtime/ws` |
 
 ### 테스트 링크
 
-**자체 WebSocket Playground** (개발 모드 전용):
+**자체 WebSocket Playground** (개발 모드 전용, `inprocess`):
 
 - **WebSocket Playground**: [http://localhost:2614/ws-playground](http://localhost:2614/ws-playground)
 
-브라우저에서 위 링크로 접속한 뒤 JWT를 입력하면 타이머 WebSocket API를 바로 테스트할 수 있습니다. (Swagger UI처럼 개발 환경에서만 활성화됩니다.)
+JWT를 입력하고 연결하면 받은 메시지가 표시되고 `ping`을 보낼 수 있습니다. 타이머 명령을 Swagger UI 등으로 REST 호출하면 그 이벤트가 표시됩니다.
 
-직접 연결할 때 사용할 주소:
-
-- **연결 URL**: `ws://localhost:2614/v1/ws/timers`
-- **쿼리 예시 (타임존)**: `ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul`
-
-Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.com/websockets/wscat) 등으로 `Sec-WebSocket-Protocol` 헤더에 Bearer 토큰을 넣어 연결할 수도 있습니다. 동작 예제는 아래 사용 예시를 참고하세요.
-
-선택적 쿼리 매개변수:
-- `timezone`: 응답 타임스탬프의 타임존 (예: `Asia/Seoul`, `+09:00`)
+[wscat](https://github.com/websockets/wscat) 등으로 `Sec-WebSocket-Protocol` 헤더에 토큰을 넣어 직접 연결할 수도 있습니다.
 
 ### 인증
 
@@ -40,271 +36,121 @@ Playground 외에 [Postman](https://www.postman.com/), [wscat](https://github.co
 Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 ```
 
-서버는 WebSocket 핸드셰이크를 완료하기 위해 응답에 동일한 서브프로토콜을 반환합니다.
+서버는 WebSocket 핸드셰이크를 완료하기 위해 응답에 동일한 서브프로토콜을 반환합니다. JWT는 연결할 때만 검증합니다.
 
 !!! warning "주의"
     **중요**: WebSocket 연결이 작동하려면 `CORS_ALLOWED_ORIGINS`에 WebSocket URL을 추가해야 합니다:
     - 개발: `ws://localhost:2614,ws://127.0.0.1:2614`
     - 프로덕션: `wss://your-domain.com`
 
-## 메시지 유형
+## 메시지
 
 ### 클라이언트 → 서버
 
-| 메시지 유형 | 설명 | 페이로드 |
-|-------------|------|----------|
-| `timer.create` | 새 타이머 생성 및 시작 | `{ allocated_duration, schedule_id?, todo_id?, title?, description?, tag_ids? }` |
-| `timer.pause` | 실행 중인 타이머 일시정지 | `{ timer_id }` |
-| `timer.resume` | 일시정지된 타이머 재개 | `{ timer_id }` |
-| `timer.stop` | 타이머 중지 및 완료 | `{ timer_id }` |
-| `timer.sync` | 서버에서 타이머 동기화 | `{ timer_id?, scope? }` |
+| 메시지 | 설명 |
+|--------|------|
+| `ping` (문자열) | 연결 유지. 서버가 `pong`으로 답합니다 |
+
+그 외 메시지는 무시합니다.
 
 ### 서버 → 클라이언트
 
-| 메시지 유형 | 설명 | 페이로드 |
-|-------------|------|----------|
-| `connected` | 연결 성공 | `{ user_id, message }` |
-| `timer.created` | 타이머 생성됨 | `{ timer: TimerDTO, action: "start" }` |
-| `timer.updated` | 타이머 수정됨 | `{ timer: TimerDTO \| null, action: "pause" \| "resume" \| "stop" \| "sync" }` |
-| `timer.sync_result` | 타이머 목록 동기화됨 | `{ timers: TimerDTO[], count: number }` |
-| `timer.friend_activity` | 친구의 타이머 활동 알림 | `{ friend_id, display_name?, action, timer_id, timer_title? }` |
-| `error` | 오류 발생 | `{ code: string, message: string }` |
-
-## 메시지 형식
-
-모든 메시지는 JSON 형식입니다:
+모든 메시지는 같은 봉투입니다:
 
 ```json
 {
-  "type": "timer.create",
+  "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
+  "type": "timer.updated",
+  "from_user": "<행위자 sub>",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
-    "schedule_id": "uuid-here",
-    "allocated_duration": 3600
+    "action": "pause",
+    "actor_name": "홍길동",
+    "timer": { "id": "…", "status": "PAUSED", "elapsed_time": 1800, "…": "…" }
   }
 }
 ```
 
+| `type` | `payload` |
+|--------|-----------|
+| `connected` | `{}` — 연결 직후 한 번 |
+| `timer.created` | `{ action: "start", actor_name, timer }` |
+| `timer.updated` | `{ action: "pause" \| "resume" \| "stop" \| "cancel" \| "update", actor_name, timer }` |
+| `timer.deleted` | `{ action: "delete", actor_name, timer: null, timer_id }` |
+
+- `id`: 메시지 ID. 같은 메시지를 두 번 받으면 버립니다.
+- `from_user`: 변경을 일으킨 사용자의 `sub` (`connected`는 `null`). 내 `sub`가 아니면 친구의 활동입니다.
+- `timer`: 커밋된 타이머. 시각은 모두 UTC이고 REST 응답(`timezone=UTC`)과 같은 형식입니다. `elapsed_time`은 저장된 누적값입니다(RUNNING이면 `now - started_at`을 더해 표시).
+
 !!! note "필드 이름"
-    WebSocket 페이로드 필드는 서버 DTO와 동일하게 `snake_case`를 사용합니다. 예: `allocated_duration`, `timer_id`, `schedule_id`.
+    페이로드 필드는 서버 DTO와 동일하게 `snake_case`를 사용합니다. 예: `elapsed_time`, `timer_id`, `actor_name`.
+
+## 재동기화
+
+소켓은 연결 전이나 끊긴 동안의 메시지를 다시 보내지 않습니다. 클라이언트는 다음을 지킵니다.
+
+1. 연결·재연결 직후 REST로 타이머를 다시 조회합니다 (`timezone=UTC`).
+2. `id`로 중복을 버립니다.
+3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
+4. `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 
 ## 사용 예시
 
 ### JavaScript/TypeScript
 
 ```javascript
-// Sec-WebSocket-Protocol 헤더를 통한 인증
-const accessToken = 'your-jwt-token';
 const ws = new WebSocket(
   'ws://localhost:2614/v1/ws/timers',
   [`authorization.bearer.${accessToken}`]  // 인증용 서브프로토콜
 );
 
 ws.onopen = () => {
-  console.log('WebSocket 연결됨');
-  
-  // 타이머 생성
-  ws.send(JSON.stringify({
-    type: 'timer.create',
-    payload: {
-      schedule_id: 'schedule-uuid',
-      allocated_duration: 3600 // 1시간(초)
-    }
-  }));
+  resyncTimersFromRest();  // REST로 다시 맞춤
 };
 
 ws.onmessage = (event) => {
+  if (event.data === 'pong') return;
   const message = JSON.parse(event.data);
-  
+
   switch (message.type) {
     case 'timer.created':
-      console.log('타이머 생성됨:', message.payload.timer);
-      break;
     case 'timer.updated':
-      console.log('타이머 수정됨:', message.payload.timer);
+      applyTimer(message);  // id 중복·updated_at 확인 후 반영
       break;
-    case 'error':
-      console.error('오류:', message.payload.message);
+    case 'timer.deleted':
+      removeTimer(message.payload.timer_id);
       break;
   }
 };
 
-ws.onerror = (error) => {
-  console.error('WebSocket 오류:', error);
-};
-
-ws.onclose = () => {
-  console.log('WebSocket 연결 해제됨');
-};
+// 연결 유지
+setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), 45000);
 ```
-
-### 타임존 지정
-
-```javascript
-const ws = new WebSocket(
-  'ws://localhost:2614/v1/ws/timers?timezone=Asia/Seoul',
-  [`authorization.bearer.${accessToken}`]
-);
-```
-
-### 타이머 생성
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.create',
-  payload: {
-    schedule_id: 'schedule-uuid',
-    allocated_duration: 3600 // 초
-  }
-}));
-```
-
-### 타이머 일시정지
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.pause',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### 타이머 재개
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.resume',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### 타이머 중지
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.stop',
-  payload: {
-    timer_id: 'timer-uuid'
-  }
-}));
-```
-
-### 활성 타이머 동기화
-
-```javascript
-ws.send(JSON.stringify({
-  type: 'timer.sync',
-  payload: {}
-}));
-```
-
-`scope`를 생략하면 서버는 `"active"`로 처리하므로 `payload: {}`와 `payload: { scope: 'active' }`는 같은 요청입니다.
-
-## 에러 처리
-
-에러는 메시지로 반환됩니다:
-
-```json
-{
-  "type": "error",
-  "payload": {
-    "code": "TIMER_NOT_FOUND",
-    "message": "타이머를 찾을 수 없습니다"
-  }
-}
-```
-
-일반적인 에러 코드:
-
-- `INVALID_MESSAGE` - JSON 형식 또는 메시지 스키마가 올바르지 않음
-- `UNKNOWN_TYPE` - 알 수 없는 메시지 타입
-- `CREATE_FAILED` - 타이머 생성 실패
-- `PAUSE_FAILED` - 타이머 일시정지 실패
-- `RESUME_FAILED` - 타이머 재개 실패
-- `STOP_FAILED` - 타이머 중지 실패
-- `SYNC_FAILED` - 타이머 동기화 실패
-- `HANDLER_ERROR` - 메시지 처리 중 예기치 않은 오류
-- `RATE_LIMIT_EXCEEDED` - 요청 한도 초과
-
-인증 실패는 에러 메시지가 아니라 WebSocket close code `1008`로 연결이 종료됩니다.
 
 ## Rate Limiting
 
-WebSocket 연결과 메시지는 Rate Limiting이 적용됩니다:
-
-- **연결**: 60초당 10회 연결
-- **메시지**: 60초당 120개 메시지
+`inprocess` 소켓은 연결 수에 제한이 있습니다 (기본: 60초당 10회, `WS_CONNECT_MAX`/`WS_CONNECT_WINDOW`). 넘으면 `4029`로 닫습니다.
 
 > 📖 **상세 가이드**: [Rate Limiting 가이드](../development/rate-limit.ko.md)
 
 ## Close Codes
 
-서버가 WebSocket 연결을 종료할 때 반환하는 close code 목록입니다. 클라이언트는 이 코드를 기반으로 재연결 여부를 판단해야 합니다.
-
 | Close Code | 이름 | 설명 | 재연결 |
 |-----------|------|------|--------|
 | `1000` | Normal Closure | 정상 종료 | 선택적 |
-| `1008` | Policy Violation | 인증 실패 (토큰 누락, 토큰 만료, 무효 토큰, `sub` 클레임 누락) | :x: 재연결 금지 — 토큰 갱신 후 재시도 |
+| `1006` | Abnormal Closure | 핸드셰이크 실패. `inprocess`는 인증 실패를 HTTP 403으로 거부하므로 브라우저에는 이 코드로 보입니다 | 토큰 갱신 후 지수 백오프로 재시도 |
+| `1008` | Policy Violation | 인증 실패 (`cloudflare`: 토큰 누락·만료·무효) | :x: 토큰 갱신 후 재시도 |
 | `1011` | Internal Error | 서버 내부 오류 | :white_check_mark: 지수 백오프 후 재시도 |
-| `4029` | Rate Limit Exceeded | 연결 Rate Limit 초과 (기본: 60초당 10회) | :white_check_mark: 지수 백오프 후 재시도 |
+| `4000` | Reconnect | 소켓 수명(24시간) 만료 (`cloudflare`) | :white_check_mark: 바로 재연결 |
+| `4029` | Rate Limit Exceeded | 연결 Rate Limit 초과 (`inprocess`) | :white_check_mark: 지수 백오프 후 재시도 |
 
 !!! tip "프론트엔드 구현 가이드"
-    - **`1008` (인증 실패)**: 재연결하지 마세요. 만료된 토큰으로 반복 연결을 시도하면 서버에 불필요한 부하가 발생합니다. 토큰을 갱신한 후 재연결하세요.
-    - **`4029` (Rate Limit)**: 지수 백오프(exponential backoff)를 적용하여 재연결하세요.
-    - **`1011` (서버 오류)**: 지수 백오프를 적용하여 재연결하세요.
-    - **`1000` (정상 종료)**: 서버가 의도적으로 연결을 종료한 경우입니다. 필요에 따라 재연결하세요.
-
-## 재연결
-
-자동 재연결 구현을 권장합니다:
-
-```javascript
-class TimerWebSocket {
-  constructor(url, token) {
-    this.url = url;
-    this.token = token;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.connect();
-  }
-
-  connect() {
-    // 인증 시 Sec-WebSocket-Protocol 사용 (쿼리 매개변수 아님)
-    this.ws = new WebSocket(
-      this.url,
-      [`authorization.bearer.${this.token}`]
-    );
-
-    this.ws.onclose = (event) => {
-      if (event.code === 1008) {
-        // 인증 실패 - 재연결 금지, 토큰 갱신 필요
-        console.error('인증 실패:', event.reason);
-        this.onAuthFailure?.(event.reason);
-        return;
-      }
-
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) return;
-
-      if (event.code === 4029 || event.code === 1011) {
-        // Rate limit 또는 서버 오류 - 지수 백오프
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
-        setTimeout(() => this.connect(), delay);
-      } else {
-        // 기타 연결 해제 - 재연결
-        setTimeout(() => this.connect(), 1000);
-      }
-      this.reconnectAttempts++;
-    };
-
-    this.ws.onopen = () => {
-      this.reconnectAttempts = 0; // 성공적 연결 시 리셋
-    };
-  }
-}
-```
+    - **`1008`**: 재연결하지 마세요. 토큰을 갱신한 후 재연결하세요.
+    - **`4000`**: 바로 재연결하세요.
+    - **그 외**: 지수 백오프와 지터를 두고 재연결하세요.
+    - 재연결에 성공하면 REST로 다시 맞추세요.
 
 ## 상세 가이드
 
-전체 WebSocket API 문서는 [타이머 가이드](../guides/timer.ko.md)를 참조하세요.
+- [타이머 가이드](../guides/timer.ko.md) — REST 명령과 데이터 모델
+- [실시간 전달](../development/realtime-adapter.ko.md) — 두 모드, 계약, 받는 사람 규칙

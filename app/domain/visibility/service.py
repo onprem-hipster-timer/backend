@@ -132,6 +132,36 @@ class VisibilityService:
                 or friendship_crud.is_blocked(self.session, other_user_id, self.user_id)
         )
 
+    def get_realtime_recipients(
+            self,
+            resource_type: ResourceType,
+            resource_id: UUID,
+            owner_id: str,
+    ) -> set[str]:
+        """
+        리소스 변경을 실시간으로 받을 사용자 ID (소유자 제외)
+
+        실시간 전달은 소유자의 친구까지만 한다. 결과는 can_access가 허용하는 사용자의 부분집합이다.
+        - 설정 없음·PRIVATE·ALLOWED_EMAILS → 없음
+        - FRIENDS·PUBLIC → 친구 전원
+        - SELECTED_FRIENDS → 친구 ∩ 허용 목록
+
+        테스트: tests/domain/visibility/test_realtime_recipients.py
+        """
+        visibility = crud.get_visibility_by_resource(self.session, resource_type, resource_id)
+        if not visibility or visibility.level not in (
+                VisibilityLevel.FRIENDS,
+                VisibilityLevel.PUBLIC,
+                VisibilityLevel.SELECTED_FRIENDS,
+        ):
+            return set()
+
+        recipients = set(friendship_crud.get_friend_ids(self.session, owner_id))
+        if visibility.level == VisibilityLevel.SELECTED_FRIENDS:
+            recipients &= set(crud.get_allowed_user_ids(self.session, visibility.id))
+        recipients.discard(owner_id)
+        return recipients
+
     def require_access(
             self,
             resource_type: ResourceType,

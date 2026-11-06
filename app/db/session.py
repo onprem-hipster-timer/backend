@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncGenerator, Generator
 from urllib.parse import urlparse
 
+from fastapi import Depends
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlmodel import SQLModel, create_engine, Session
@@ -160,6 +161,30 @@ def get_db_transactional() -> Generator[Session, None, None]:
             # session.info는 트랜잭션 aware가 아님 → rollback 경계에서 clear
             clear_events(session)
             raise
+
+
+def get_db_committing(
+        session: Session = Depends(get_db_transactional),
+) -> Generator[Session, None, None]:
+    """
+    응답 전에 커밋하는 쓰기 세션 — 라우트에서 `session: Session = CommittingSession`으로 쓴다
+
+    - 세션은 get_db_transactional이 만든 요청 세션 그대로다 (get_current_user_synced와 공유)
+    - scope="function"이면 엔드포인트가 반환한 직후, 응답을 보내기 전에 커밋한다.
+      응답을 받은 클라이언트가 곧바로 조회해도 변경이 보이고, 커밋 후 큐
+      (app/shared/uow.py, 실시간 push)도 응답 전에 처리된다
+    - 예외가 나면 커밋하지 않는다. rollback은 get_db_transactional이 한다
+    - get_db_transactional 자체에 scope="function"을 주면 캐시 키가 달라져 세션이 둘로 나뉜다
+
+    테스트: tests/db/test_get_db_committing.py
+    """
+    from app.shared.uow import commit_with_events
+
+    yield session
+    commit_with_events(session)
+
+
+CommittingSession = Depends(get_db_committing, scope="function")  # NOSONAR python:S930 FastAPI 0.142의 scope 인자
 
 
 # ============ 비동기 세션 (제한적 사용) ============

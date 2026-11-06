@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Realtime timer delivery**: committed timer changes are delivered to the owner's other devices and to the friends the timer's visibility allows (`FRIENDS`/`PUBLIC`: all friends, `SELECTED_FRIENDS`: allow-listed friends; nobody else for `PRIVATE`, `ALLOWED_EMAILS` or timers without a visibility row). `REALTIME_BACKEND=inprocess` (default) delivers over this process's `/v1/ws/timers` sockets; `REALTIME_BACKEND=cloudflare` pushes to the realtime Worker (`POST REALTIME_PUSH_URL` with `Authorization: Bearer REALTIME_PUSH_SECRET`, users split into batches of 40, one retry on connection errors and 5xx, about 2 seconds per event, failures logged as `realtime_push_failed`). In production, the `cloudflare` mode fails startup without the URL or secret. See `docs/development/realtime-adapter.ko.md`.
+- **Realtime message envelope**: `{id, type, from_user, timestamp, payload: {action, actor_name, timer}}` with `timer.created` (`start`), `timer.updated` (`pause`, `resume`, `stop`, `cancel`, `update`) and `timer.deleted` (`delete`, `timer: null` plus `timer_id`). Times are UTC in the same format as REST responses (`2026-11-06T10:30:00+0000`), so the same timer state has the same `updated_at` in an event and in a REST response; `elapsed_time` is the stored value.
+- **OIDC discovery and JWKS**: `GET /auth/.well-known/jwks.json` serves `OIDC_JWKS` and `GET /auth/.well-known/openid-configuration` a minimal discovery document, so services outside the backend can verify Kratos JWTs. Both send `Cache-Control: public, max-age=3600`, return 404 when `OIDC_JWKS` is empty, and also answer under `/auth//.well-known/...`. Startup now fails if `OIDC_JWKS` contains private (`d`) or symmetric keys.
+- **Timer REST commands**: `POST /v1/timers` (201), `PATCH /v1/timers/{timer_id}/pause`, `PATCH /v1/timers/{timer_id}/resume` and `POST /v1/timers/{timer_id}/stop`, taking the same `include_schedule`, `include_todo`, `tag_include_mode` and `timezone` query parameters as the read endpoints. Invalid transitions return 400.
+
+### Changed
+
+- **Timer writes commit before the response**: timer create, pause, resume, stop, update and delete commit and hand off their realtime events before the response is sent, so a read made right after the response sees the change.
+- **`/v1/ws/timers` is receive-only**: on connect the server sends `{"id", "type": "connected", "from_user": null, "timestamp", "payload": {}}` and afterwards only timer events. The only client message is the text `ping`, answered with `pong`; anything else is ignored. Clients reload timers over REST after every connect and reconnect. The `timezone` query parameter is no longer read (events are always UTC), and every server message now carries an `id` and a UTC-aware `timestamp`.
+- **WebSocket Playground** (development only) shows incoming messages and sends `ping`.
+
+### Removed
+
+- **WebSocket timer commands**: the `timer.create`, `timer.pause`, `timer.resume`, `timer.stop` and `timer.sync` messages, the `timer.sync_result` sent on connect, `error` messages, and `timer.friend_activity`, which went to every online friend regardless of the timer's visibility. Use the REST commands; friends now receive the timer events their visibility allows. `GET /ws-playground/schema` is gone as well.
+- **WebSocket message rate limit** and its `WS_MESSAGE_WINDOW`/`WS_MESSAGE_MAX` settings (the connection limit stays). Remove these keys from `.env` files, where unknown keys fail settings validation; environment variables are ignored.
+
+### Fixed
+
+- **Timer `pause_history` timezone in REST**: the `timezone` query parameter now also converts `pause_history[].at` in REST timer responses, like the other timer timestamps.
+- **Timer reads no longer write**: timer read endpoints (`GET /v1/timers`, `/v1/timers/active`, `/v1/timers/{timer_id}`, and the schedule and todo timer lists and active timer) added the running segment to `elapsed_time` on the session's object, and the request's transaction committed it. Each read inflated the stored `elapsed_time` and bumped `updated_at`, even when a friend read a shared timer, and clients that add `now - started_at` themselves counted the segment twice. Reads now return the stored `elapsed_time`; pause and stop still add the running segment.
 
 ---
 

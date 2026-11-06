@@ -4,6 +4,7 @@ WebSocket 연결 관리자
 사용자별 연결 관리 및 브로드캐스트 기능 제공
 """
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -20,8 +21,7 @@ class ConnectionManager:
 
     기능:
     - 사용자별 다중 연결 관리 (멀티 플랫폼 지원)
-    - 사용자 전체 연결 브로드캐스트
-    - 친구 그룹 브로드캐스트
+    - 사용자 전체 연결 브로드캐스트 (InProcessPublisher가 사용)
     """
 
     def __init__(self):
@@ -76,30 +76,23 @@ class ConnectionManager:
 
             return user_id
 
-    async def send_to_user(
-            self,
-            user_id: str,
-            message: WSServerMessage,
-            exclude_websocket: Optional[WebSocket] = None,
-    ) -> int:
+    async def send_to_user(self, user_id: str, message: dict) -> int:
         """
         특정 사용자의 모든 연결에 메시지 전송
 
         :param user_id: 대상 사용자 ID
-        :param message: 전송할 메시지
-        :param exclude_websocket: 제외할 연결 (발신자 본인 제외용)
+        :param message: 전송할 메시지 봉투 (그대로 JSON으로 보낸다)
         :return: 전송 성공한 연결 수
         """
+        text = json.dumps(message, ensure_ascii=False)
+
         async with self._lock:
             connections = self._connections.get(user_id, []).copy()
 
         sent_count = 0
         for ws in connections:
-            if ws == exclude_websocket:
-                continue
-
             try:
-                await ws.send_text(message.to_json())
+                await ws.send_text(text)
                 sent_count += 1
             except Exception as e:
                 logger.warning(f"Failed to send to user {user_id}: {e}")
@@ -125,25 +118,6 @@ class ConnectionManager:
         except Exception as e:
             logger.warning(f"Failed to send message: {e}")
             return False
-
-    async def broadcast_to_friends(
-            self,
-            friend_ids: list[str],
-            message: WSServerMessage,
-    ) -> int:
-        """
-        친구들에게 메시지 브로드캐스트
-
-        :param friend_ids: 친구 ID 목록
-        :param message: 전송할 메시지
-        :return: 전송 성공한 총 연결 수
-        """
-        total_sent = 0
-        for friend_id in friend_ids:
-            sent = await self.send_to_user(friend_id, message)
-            total_sent += sent
-
-        return total_sent
 
     def get_user_connection_count(self, user_id: str) -> int:
         """사용자의 현재 연결 수 반환"""

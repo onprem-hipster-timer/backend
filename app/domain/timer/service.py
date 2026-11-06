@@ -29,7 +29,9 @@ from app.domain.timer.exceptions import (
     InvalidTimerStatusError,
 )
 from app.domain.timer.model import TimerSession
+from app.domain.timer.realtime import enqueue_timer_event
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
+from app.domain.timer.schema.ws import TimerAction
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
@@ -50,6 +52,19 @@ class TimerService:
         self.session = session
         self.current_user = current_user
         self.owner_id = current_user.sub
+
+    def _realtime_recipients(self, timer_id: UUID) -> set[str]:
+        """소유자 본인(다른 기기)과 공개 범위상 실시간으로 받는 친구"""
+        visibility_service = VisibilityService(self.session, self.current_user)
+        return {self.owner_id} | visibility_service.get_realtime_recipients(
+            ResourceType.TIMER, timer_id, self.owner_id
+        )
+
+    def _enqueue_realtime(self, action: TimerAction, timer: TimerSession) -> None:
+        """flush된 타이머 상태를 커밋 후 실시간 이벤트로 적재 (app/domain/timer/realtime.py)"""
+        enqueue_timer_event(
+            self.session, self.current_user, action, self._realtime_recipients(timer.id), timer=timer
+        )
 
     @staticmethod
     def _add_running_segment_to_elapsed(timer: TimerSession, now: datetime) -> None:
@@ -122,6 +137,7 @@ class TimerService:
             # 태그 설정 후 relationship 갱신
             self.session.refresh(timer)
 
+        self._enqueue_realtime(TimerAction.START, timer)
         return timer
 
     def get_timer(self, timer_id: UUID) -> TimerSession:
@@ -129,7 +145,7 @@ class TimerService:
         타이머 조회 (본인 소유만)
         
         비즈니스 로직:
-        - 경과 시간을 실시간으로 계산 (status가 RUNNING인 경우)
+        - elapsed_time은 저장값 그대로 반환 (RUNNING이면 클라이언트가 now - started_at을 더함)
         
         :param timer_id: 타이머 ID
         :return: 타이머
@@ -138,10 +154,6 @@ class TimerService:
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
-
-        if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            now = ensure_utc_naive(datetime.now(UTC))
-            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -161,10 +173,6 @@ class TimerService:
         timer = crud.get_timer_by_id(self.session, timer_id)
         if not timer:
             raise TimerNotFoundError()
-
-        if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            now = ensure_utc_naive(datetime.now(UTC))
-            self._add_running_segment_to_elapsed(timer, now)
 
         # 본인 소유인 경우
         if timer.owner_id == self.owner_id:
@@ -188,7 +196,6 @@ class TimerService:
         1. visibility 후보 목록 조회
         2. 리소스 배치 조회
         3. 배치 권한 필터링
-        4. RUNNING 상태 경과 시간 계산
 
         :return: 공유된 타이머 리스트
         """
@@ -218,11 +225,6 @@ class TimerService:
             get_resource_id=lambda t: t.id,
         )
 
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in accessible_timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                self._add_running_segment_to_elapsed(timer, now)
-
         return accessible_timers
 
     def get_timers_by_schedule(self, schedule_id: UUID) -> list[TimerSession]:
@@ -233,11 +235,6 @@ class TimerService:
         :return: 타이머 리스트
         """
         timers = crud.get_timers_by_schedule(self.session, schedule_id, self.owner_id)
-
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                self._add_running_segment_to_elapsed(timer, now)
 
         return timers
 
@@ -250,10 +247,6 @@ class TimerService:
         """
         timer = crud.get_active_timer(self.session, schedule_id, self.owner_id)
 
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            now = ensure_utc_naive(datetime.now(UTC))
-            self._add_running_segment_to_elapsed(timer, now)
-
         return timer
 
     def get_timers_by_todo(self, todo_id: UUID) -> list[TimerSession]:
@@ -265,11 +258,6 @@ class TimerService:
         """
         timers = crud.get_timers_by_todo(self.session, todo_id, self.owner_id)
 
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                self._add_running_segment_to_elapsed(timer, now)
-
         return timers
 
     def get_active_timer_by_todo(self, todo_id: UUID) -> TimerSession | None:
@@ -280,10 +268,6 @@ class TimerService:
         :return: 활성 타이머 또는 None
         """
         timer = crud.get_active_timer_by_todo(self.session, todo_id, self.owner_id)
-
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            now = ensure_utc_naive(datetime.now(UTC))
-            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -312,11 +296,6 @@ class TimerService:
             end_date=end_date,
         )
 
-        now = ensure_utc_naive(datetime.now(UTC))
-        for timer in timers:
-            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
-                self._add_running_segment_to_elapsed(timer, now)
-
         return timers
 
     def get_user_active_timer(self) -> TimerSession | None:
@@ -328,10 +307,6 @@ class TimerService:
         :return: 활성 타이머 또는 None
         """
         timer = crud.get_user_active_timer(self.session, self.owner_id)
-
-        if timer and timer.status == TimerStatus.RUNNING.value and timer.started_at:
-            now = ensure_utc_naive(datetime.now(UTC))
-            self._add_running_segment_to_elapsed(timer, now)
 
         return timer
 
@@ -378,6 +353,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.PAUSE, timer)
         return timer
 
     def resume_timer(self, timer_id: UUID) -> TimerSession:
@@ -420,6 +396,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.RESUME, timer)
         return timer
 
     def stop_timer(self, timer_id: UUID) -> TimerSession:
@@ -465,6 +442,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.STOP, timer)
         return timer
 
     def cancel_timer(self, timer_id: UUID) -> TimerSession:
@@ -498,6 +476,7 @@ class TimerService:
 
         self.session.flush()
         self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.CANCEL, timer)
         return timer
 
     def get_pause_history(self, timer_id: UUID) -> list[dict]:
@@ -577,6 +556,7 @@ class TimerService:
         if tag_ids_updated:
             self.session.refresh(timer)
 
+        self._enqueue_realtime(TimerAction.UPDATE, timer)
         return timer
 
     def delete_timer(self, timer_id: UUID) -> None:
@@ -590,12 +570,18 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        # 수신자는 접근권한 설정을 지우기 전에 계산한다
+        recipients = self._realtime_recipients(timer_id)
+
         # 접근권한 설정 삭제
         visibility_crud.delete_visibility_by_resource(
             self.session, ResourceType.TIMER, timer_id
         )
 
         crud.delete_timer(self.session, timer)
+        enqueue_timer_event(
+            self.session, self.current_user, TimerAction.DELETE, recipients, timer_id=timer_id
+        )
 
     def to_read_dto(
             self,

@@ -253,7 +253,7 @@ hipster-timer-backend/
 │   │   │   └── exceptions.py      # Domain exceptions
 │   │   ├── timer/
 │   │   │   ├── service.py         # Business logic
-│   │   │   ├── ws_handler.py      # WebSocket handler
+│   │   │   ├── realtime.py        # Realtime event envelope
 │   │   │   └── schema/
 │   │   │       ├── dto.py         # REST DTOs
 │   │   │       └── ws.py          # WebSocket schemas
@@ -783,8 +783,6 @@ OIDC_AUDIENCE=my-frontend-app
 | `WS_RATE_LIMIT_ENABLED` | Enable WebSocket rate limiting | `True` |
 | `WS_CONNECT_WINDOW` | Connection limit window (seconds) | `60` |
 | `WS_CONNECT_MAX` | Max connections per window | `10` |
-| `WS_MESSAGE_WINDOW` | Message limit window (seconds) | `60` |
-| `WS_MESSAGE_MAX` | Max messages per window | `120` |
 
 **Quick Setup:**
 
