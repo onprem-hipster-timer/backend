@@ -154,13 +154,13 @@ enqueue_after_commit(session, {"users": {"<sub>", ...}, "message": envelope_dict
 
 ```python
 # 라우트: 응답 전에 커밋
-session: Session = Depends(get_db_committing, scope="function")
+session: Session = CommittingSession
 ```
 
 - `enqueue_after_commit`의 항목은 **루트 트랜잭션이 커밋된 뒤에만** sink로 넘어갑니다. rollback·close면 버려집니다.
 - SAVEPOINT(`begin_nested`) 안에서는 적재하지 않습니다. SAVEPOINT만 rollback돼도 항목이 남아 바깥 커밋 때 나갑니다.
 - 도메인 이벤트 큐(`collect_event`, 커밋 전에 같은 트랜잭션에서 처리)와는 별개입니다 ([도메인 이벤트](domain-events.ko.md)).
-- 쓰기 라우트는 `Depends(get_db_committing, scope="function")`를 씁니다. `scope="function"`이 빠지면 커밋과 publish가 응답 뒤로 밀립니다. `get_db_transactional` 자체에 `scope`를 주면 세션이 둘로 나뉘므로 그러지 않습니다.
+- 쓰기 라우트는 `CommittingSession`(`Depends(get_db_committing, scope="function")`, `app/db/session.py`)을 씁니다. `scope="function"`이 빠지면 커밋과 publish가 응답 뒤로 밀립니다. `get_db_transactional` 자체에 `scope`를 주면 세션이 둘로 나뉘므로 그러지 않습니다.
 - `message`는 JSON 그대로 보낼 수 있는 dict여야 합니다 (`WSServerMessage(...).model_dump(mode="json")`). 타이머 이벤트 조립은 `app/domain/timer/realtime.py`를 참고합니다.
 - sink는 lifespan에서 `REALTIME_BACKEND`에 맞는 publisher로 연결됩니다 (`app/main.py`). 테스트에서는 `after_commit_items` fixture(`tests/conftest.py`)가 sink를 기록용 리스트로 바꿉니다.
 

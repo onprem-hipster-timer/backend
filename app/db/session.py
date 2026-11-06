@@ -167,7 +167,7 @@ def get_db_committing(
         session: Session = Depends(get_db_transactional),
 ) -> Generator[Session, None, None]:
     """
-    응답 전에 커밋하는 쓰기 세션 — 라우트에서 `Depends(get_db_committing, scope="function")`로 쓴다
+    응답 전에 커밋하는 쓰기 세션 — 라우트에서 `session: Session = CommittingSession`으로 쓴다
 
     - 세션은 get_db_transactional이 만든 요청 세션 그대로다 (get_current_user_synced와 공유)
     - scope="function"이면 엔드포인트가 반환한 직후, 응답을 보내기 전에 커밋한다.
@@ -182,6 +182,9 @@ def get_db_committing(
 
     yield session
     commit_with_events(session)
+
+
+CommittingSession = Depends(get_db_committing, scope="function")  # NOSONAR python:S930 FastAPI 0.142의 scope 인자
 
 
 # ============ 비동기 세션 (제한적 사용) ============

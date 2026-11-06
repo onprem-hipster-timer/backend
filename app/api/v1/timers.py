@@ -15,8 +15,7 @@ FastAPI Best Practices:
   - TimerService.to_read_dto(): 검증된 DTO를 주입받아 최종 DTO 생성
 
 [명령과 실시간 전달]
-- 생성·일시정지·재개·종료·수정·삭제는 `Depends(get_db_committing, scope="function")`로
-  응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
+- 생성·일시정지·재개·종료·수정·삭제는 `CommittingSession`으로 응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
 - 테스트: tests/test_timers_rest_commands.py
 """
 from datetime import datetime
@@ -29,7 +28,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import TagIncludeMode, ResourceScope
 from app.crud import schedule as schedule_crud
-from app.db.session import get_db_committing, get_db_transactional
+from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import (
@@ -131,7 +130,7 @@ async def create_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -415,7 +414,7 @@ async def update_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -464,7 +463,7 @@ async def pause_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -513,7 +512,7 @@ async def resume_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -562,7 +561,7 @@ async def stop_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -594,7 +593,7 @@ async def stop_timer(
 @router.delete("/{timer_id}", status_code=status.HTTP_200_OK)
 async def delete_timer(
         timer_id: UUID,
-        session: Session = Depends(get_db_committing, scope="function"),
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
