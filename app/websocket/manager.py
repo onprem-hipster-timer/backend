@@ -4,6 +4,7 @@ WebSocket 연결 관리자
 사용자별 연결 관리 및 브로드캐스트 기능 제공
 """
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -79,17 +80,22 @@ class ConnectionManager:
     async def send_to_user(
             self,
             user_id: str,
-            message: WSServerMessage,
+            message: WSServerMessage | dict,
             exclude_websocket: Optional[WebSocket] = None,
     ) -> int:
         """
         특정 사용자의 모든 연결에 메시지 전송
 
         :param user_id: 대상 사용자 ID
-        :param message: 전송할 메시지
+        :param message: 전송할 메시지 (dict는 그대로 JSON으로 보낸다)
         :param exclude_websocket: 제외할 연결 (발신자 본인 제외용)
         :return: 전송 성공한 연결 수
         """
+        if isinstance(message, WSServerMessage):
+            text = message.to_json()
+        else:
+            text = json.dumps(message, ensure_ascii=False)
+
         async with self._lock:
             connections = self._connections.get(user_id, []).copy()
 
@@ -99,7 +105,7 @@ class ConnectionManager:
                 continue
 
             try:
-                await ws.send_text(message.to_json())
+                await ws.send_text(text)
                 sent_count += 1
             except Exception as e:
                 logger.warning(f"Failed to send to user {user_id}: {e}")

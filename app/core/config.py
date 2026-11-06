@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
+    # 실시간 전달 (docs/development/realtime-adapter.ko.md)
+    REALTIME_BACKEND: Literal["inprocess", "cloudflare"] = "inprocess"  # inprocess: /v1/ws/timers 연결로 전달, cloudflare: realtime Worker로 push
+    REALTIME_PUSH_URL: str = ""  # cloudflare: Worker의 push 엔드포인트 (예: https://api.example.com/realtime/push)
+    REALTIME_PUSH_SECRET: str = ""  # cloudflare: Worker의 PUSH_SECRET과 같은 값
+
     # Rate Limit 설정
     RATE_LIMIT_ENABLED: bool = True  # False로 설정하면 레이트 리밋 비활성화
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # 기본 윈도우 크기 (초)
@@ -152,6 +157,17 @@ class Settings(BaseSettings):
                 "(ORIGIN_VERIFY_HEADER, ORIGIN_VERIFY_SECRET)"
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def validate_realtime(self) -> Self:
+        """프로덕션에서 cloudflare 모드인데 push 주소·시크릿이 없으면 기동 실패 (이벤트가 조용히 사라지지 않게)"""
+        if (
+                self.ENVIRONMENT == "production"
+                and self.REALTIME_BACKEND == "cloudflare"
+                and not (self.REALTIME_PUSH_URL and self.REALTIME_PUSH_SECRET)
+        ):
+            raise ValueError("REALTIME_BACKEND=cloudflare에는 REALTIME_PUSH_URL과 REALTIME_PUSH_SECRET이 필요합니다")
         return self
 
     @property
