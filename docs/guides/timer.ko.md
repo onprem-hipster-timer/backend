@@ -77,7 +77,7 @@ interface Timer {
   title?: string;               // 타이머 제목
   description?: string;         // 타이머 설명
   allocated_duration: number;   // 할당 시간 (초 단위)
-  elapsed_time: number;         // 경과 시간 (초 단위)
+  elapsed_time: number;         // 누적 경과 시간 (초, 저장값). RUNNING이면 클라이언트가 now - started_at을 더해 표시
   status: TimerStatus;          // 상태
   started_at?: string;          // 시작 시간 (ISO 8601)
   paused_at?: string;           // 마지막 일시정지 시간 (ISO 8601)
@@ -124,6 +124,22 @@ interface PauseEvent {
 ```
 
 ---
+
+### elapsed_time 계산 규칙
+
+`elapsed_time`은 **저장된 누적값**입니다. 서버는 조회할 때 값을 바꾸지 않고, `pause`·`stop` 같은 상태 전이 때만 실행 중이던 구간을 더해 저장합니다. 따라서 RUNNING 타이머의 화면 표시는 클라이언트가 계산합니다.
+
+```typescript
+function displayElapsed(timer: Timer, now: Date = new Date()): number {
+  if (timer.status !== 'RUNNING' || !timer.started_at) return timer.elapsed_time;
+  const running = Math.floor((now.getTime() - new Date(timer.started_at).getTime()) / 1000);
+  return timer.elapsed_time + Math.max(0, running);
+}
+```
+
+- `started_at`은 마지막 `resume` 시각으로 갱신되므로 위 식이 그대로 맞습니다.
+- 매 렌더마다 다시 계산하세요. "1초마다 +1"로 누적하면 백그라운드 탭에서 틀어집니다.
+- PAUSED·COMPLETED·CANCELLED는 `elapsed_time`을 그대로 씁니다.
 
 ## WebSocket API
 
@@ -804,7 +820,8 @@ function TimerComponent() {
             <div key={timer.id}>
               <h4>{timer.title || '타이머'}</h4>
               <p>상태: {timer.status}</p>
-              <p>경과: {Math.floor(timer.elapsed_time / 60)}분</p>
+              {/* elapsed_time은 저장값. RUNNING이면 현재 구간을 더해 표시 */}
+              <p>경과: {Math.floor(displayElapsed(timer) / 60)}분</p>
               {/* datetime 필드는 이미 Asia/Seoul 타임존으로 변환됨 */}
               <p>시작: {new Date(timer.started_at).toLocaleString('ko-KR')}</p>
               

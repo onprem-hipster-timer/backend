@@ -16,11 +16,11 @@
 
 ## 1. 배경
 
-현재 구조에는 두 가지 결합 문제가 있습니다.
+현재 구조에는 다음 결합 문제가 있습니다.
 
 | 문제 | 현재 동작 | 영향 |
 |------|-----------|------|
-| 읽기가 DB를 변경 | GET이 `get_db_transactional`(commit 세션)을 사용. Timer 조회는 `elapsed_time`을 ORM에 누적 | RUNNING 타이머를 조회할 때마다 경과시간이 누적 커밋 ([#51](https://github.com/onprem-hipster-timer/backend/issues/51)) |
+| 읽기가 commit 세션을 사용 | GET이 `get_db_transactional`을 사용. 조회 경로에서 ORM 객체를 건드리면 그대로 커밋된다 | 조회 메서드는 ORM을 변경하지 않아야 한다(아래 3.1). 세션을 read-only로 바꾸는 작업은 [#52](https://github.com/onprem-hipster-timer/backend/issues/52) |
 | 도메인 간 직접 호출 | `TodoService` ↔ `ScheduleService`를 서로 직접 호출 | 강결합, 순환 import, 양방향 전파 누락 ([#44](https://github.com/onprem-hipster-timer/backend/issues/44)) |
 
 목표는 **공개 동작(계약)을 바꾸지 않고 구현 결합도만 낮추는** 것입니다.
@@ -63,9 +63,7 @@ flowchart TD
 
 GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 read-only 전환 전에 정리해야 합니다.
 
-- **Timer `elapsed_time`**: 조회 시 ORM을 변경하지 않습니다. 계산을 둘로 나눕니다.
-    - `calculate_display_elapsed(timer, now)` — read-only 표시용 계산
-    - `accumulate_elapsed_until(timer, now)` — pause/stop 등 **write transition 전용** 누적
+- **Timer `elapsed_time`**: 조회 메서드는 ORM을 변경하지 않습니다. 조회 응답의 `elapsed_time`은 저장값이고, RUNNING 타이머의 현재 구간(`now - started_at`)은 클라이언트가 더합니다. 누적은 `pause_timer`/`stop_timer` 같은 **write transition**에서만 합니다(`_add_running_segment_to_elapsed`). 조회가 DB를 쓰지 않는다는 보장은 `tests/test_timers_read_no_write.py`가 지킵니다.
 - **인증 parent dependency**: 모든 인증 라우터에 걸린 `get_current_user_synced`가 자체 `get_db_transactional` + 프로필 JIT sync를 엽니다. **auth-only 게이트**와 **profile-sync write 경로**로 분리해야 GET이 진짜 read-only가 됩니다.
 
 !!! tip "쓰기 경로 구현이 읽기 전환에 주는 순풍"
@@ -350,7 +348,7 @@ flowchart LR
 
 | 파트 | 내용 | 이슈 | 상태 |
 |------|------|------|------|
-| 1 | 읽기가 DB를 바꾸는 문제 수정 (Timer `elapsed_time`) | [#51](https://github.com/onprem-hipster-timer/backend/issues/51) | 미착수 |
+| 1 | 읽기가 DB를 바꾸는 문제 수정 (Timer `elapsed_time`) | [#51](https://github.com/onprem-hipster-timer/backend/issues/51) | ✅ 완료 |
 | 2 | GET을 진짜 read-only로 (인증 의존성 분리 포함) | [#52](https://github.com/onprem-hipster-timer/backend/issues/52) | 미착수 |
 | 3 | 읽기 조립을 Read Facade로 | [#53](https://github.com/onprem-hipster-timer/backend/issues/53) | 미착수 |
 | 4 | 이벤트 버스를 테스트로 고정 | [#54](https://github.com/onprem-hipster-timer/backend/issues/54) | ✅ 완료 |
