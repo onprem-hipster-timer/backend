@@ -30,6 +30,19 @@ def _register_domain_event_handlers():
     register_handlers()
 
 
+# ============ 커밋 후 큐 ============
+
+@pytest.fixture
+def after_commit_items():
+    """커밋 후 큐의 sink를 기록용 리스트로 바꾼다 (루트 커밋마다 넘어간 항목이 순서대로 쌓인다)"""
+    from app.shared.uow import set_after_commit_sink
+
+    items: list[dict] = []
+    previous = set_after_commit_sink(items.append)
+    yield items
+    set_after_commit_sink(previous)
+
+
 # ============ DB 타입 헬퍼 함수 ============
 
 def _get_test_database_url() -> str | None:
