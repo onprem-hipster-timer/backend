@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Timer reads no longer write**: timer read endpoints (`GET /v1/timers`, `/v1/timers/active`, `/v1/timers/{timer_id}`, the schedule and todo timer lists and active timer, and the WebSocket sync) added the running segment to `elapsed_time` on the session's object, and the request's transaction committed it. Each read inflated the stored `elapsed_time` and bumped `updated_at`, even when a friend read a shared timer, and clients that add `now - started_at` themselves counted the segment twice. Reads now return the stored `elapsed_time`; pause and stop still add the running segment.
 
 ---
 
