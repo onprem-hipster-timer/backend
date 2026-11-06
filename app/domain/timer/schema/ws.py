@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
+from app.domain.timer.schema.dto import pause_history_to_timezone
 
 
 class TimerWSMessageType(str, Enum):
@@ -111,20 +112,7 @@ class TimerData(BaseModel):
 
         # pause_history의 타임스탬프 변환
         if self.pause_history:
-            converted_history = []
-            for event in self.pause_history:
-                event_copy = event.copy()
-                if "at" in event_copy and event_copy["at"]:
-                    # ISO 문자열을 datetime으로 파싱
-                    if isinstance(event_copy["at"], str):
-                        at_dt = datetime.fromisoformat(event_copy["at"].replace("Z", "+00:00"))
-                    else:
-                        at_dt = event_copy["at"]
-                    at_naive = ensure_utc_naive(at_dt)
-                    converted_at = convert_utc_naive_to_timezone(at_naive, tz)
-                    event_copy["at"] = converted_at.isoformat()
-                converted_history.append(event_copy)
-            update_data["pause_history"] = converted_history
+            update_data["pause_history"] = pause_history_to_timezone(self.pause_history, tz)
 
         # model_copy를 사용하여 새 인스턴스 생성
         return self.model_copy(update=update_data)
