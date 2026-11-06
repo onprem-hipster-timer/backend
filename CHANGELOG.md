@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.06-039b759] - 2026-11-06
+
 ### Added
 
 - **Realtime timer delivery**: committed timer changes are delivered to the owner's other devices and to the friends the timer's visibility allows (`FRIENDS`/`PUBLIC`: all friends, `SELECTED_FRIENDS`: allow-listed friends; nobody else for `PRIVATE`, `ALLOWED_EMAILS` or timers without a visibility row). `REALTIME_BACKEND=inprocess` (default) delivers over this process's `/v1/ws/timers` sockets; `REALTIME_BACKEND=cloudflare` pushes to the realtime Worker (`POST REALTIME_PUSH_URL` with `Authorization: Bearer REALTIME_PUSH_SECRET`, users split into batches of 40, one retry on connection errors and 5xx, about 2 seconds per event, failures logged as `realtime_push_failed`). In production, the `cloudflare` mode fails startup without the URL or secret. See `docs/development/realtime-adapter.ko.md`.
@@ -317,7 +323,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...HEAD
+[v2026.11.06-039b759]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...v2026.11.06-039b759
 [v2026.11.04-71e4266]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...v2026.11.04-71e4266
 [v2026.11.04-42359ab]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...v2026.11.04-42359ab
 [v2026.11.04-5b27507]: https://github.com/onprem-hipster-timer/backend/compare/v2026.07.21-c825e27...v2026.11.04-5b27507
