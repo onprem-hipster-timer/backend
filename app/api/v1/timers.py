@@ -14,11 +14,10 @@ FastAPI Best Practices:
   - TodoService.get_todo_with_access_check(): Todo 권한 검증
   - TimerService.to_read_dto(): 검증된 DTO를 주입받아 최종 DTO 생성
 
-[WebSocket 전환 - 2026-01-28]
-타이머 제어 작업(생성, 일시정지, 재개, 종료)은 WebSocket 기반으로 전환되었습니다.
-- WebSocket 엔드포인트: /ws/timers
-- 이유: 멀티 플랫폼 실시간 동기화, 일시정지 이력 추적, 친구 알림 지원
-- REST API는 조회/삭제/업데이트만 지원
+[명령과 실시간 전달]
+- 생성·일시정지·재개·종료·수정·삭제는 `Depends(get_db_committing, scope="function")`로
+  응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
+- 테스트: tests/test_timers_rest_commands.py
 """
 from datetime import datetime
 from typing import Optional, List
@@ -30,10 +29,11 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import TagIncludeMode, ResourceScope
 from app.crud import schedule as schedule_crud
-from app.db.session import get_db_transactional
+from app.db.session import get_db_committing, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import (
+    TimerCreate,
     TimerRead,
     TimerUpdate,
 )
@@ -111,9 +111,59 @@ def _build_timer_read_with_relations(
     )
 
 
-# [WebSocket 전환] 타이머 생성은 WebSocket으로 이동
-# 엔드포인트: /ws/timers
-# 메시지: { "type": "timer.create", "payload": { ... } }
+@router.post("", response_model=TimerRead, status_code=status.HTTP_201_CREATED)
+async def create_timer(
+        data: TimerCreate,
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tag_include_mode: TagIncludeMode = Query(
+            TagIncludeMode.NONE,
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_committing, scope="function"),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    새 타이머 생성 및 시작
+
+    schedule_id, todo_id 모두 Optional:
+    - 둘 다 없으면: 독립 타이머
+    - schedule_id만: Schedule에 연결된 타이머
+    - todo_id만: Todo에 연결된 타이머
+    - 둘 다 있으면: Schedule과 Todo 모두에 연결된 타이머
+    """
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+
+    timer = timer_service.create_timer(data)
+
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
+        timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
+        is_shared=False,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
+        tag_include_mode=tag_include_mode,
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.get("", response_model=List[TimerRead])
@@ -365,7 +415,7 @@ async def update_timer(
             alias="timezone",
             description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
         ),
-        session: Session = Depends(get_db_transactional),
+        session: Session = Depends(get_db_committing, scope="function"),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
@@ -394,18 +444,157 @@ async def update_timer(
     return timer_read.to_timezone(tz_obj, validate=False)
 
 
-# [WebSocket 전환] 타이머 제어 작업은 WebSocket으로 이동
-# 엔드포인트: /ws/timers
-# 메시지:
-#   - 일시정지: { "type": "timer.pause", "payload": { "timer_id": "uuid" } }
-#   - 재개: { "type": "timer.resume", "payload": { "timer_id": "uuid" } }
-#   - 종료: { "type": "timer.stop", "payload": { "timer_id": "uuid" } }
+@router.patch("/{timer_id}/pause", response_model=TimerRead)
+async def pause_timer(
+        timer_id: UUID,
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tag_include_mode: TagIncludeMode = Query(
+            TagIncludeMode.NONE,
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_committing, scope="function"),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    타이머 일시정지 (RUNNING → PAUSED)
+    """
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+
+    timer = timer_service.pause_timer(timer_id)
+
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
+        timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
+        is_shared=False,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
+        tag_include_mode=tag_include_mode,
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)
+
+
+@router.patch("/{timer_id}/resume", response_model=TimerRead)
+async def resume_timer(
+        timer_id: UUID,
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tag_include_mode: TagIncludeMode = Query(
+            TagIncludeMode.NONE,
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_committing, scope="function"),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    타이머 재개 (PAUSED → RUNNING)
+    """
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+
+    timer = timer_service.resume_timer(timer_id)
+
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
+        timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
+        is_shared=False,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
+        tag_include_mode=tag_include_mode,
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)
+
+
+@router.post("/{timer_id}/stop", response_model=TimerRead)
+async def stop_timer(
+        timer_id: UUID,
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tag_include_mode: TagIncludeMode = Query(
+            TagIncludeMode.NONE,
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_committing, scope="function"),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    타이머 종료 (RUNNING·PAUSED → COMPLETED)
+    """
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+
+    timer = timer_service.stop_timer(timer_id)
+
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
+        timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
+        is_shared=False,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
+        tag_include_mode=tag_include_mode,
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)
 
 
 @router.delete("/{timer_id}", status_code=status.HTTP_200_OK)
 async def delete_timer(
         timer_id: UUID,
-        session: Session = Depends(get_db_transactional),
+        session: Session = Depends(get_db_committing, scope="function"),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
