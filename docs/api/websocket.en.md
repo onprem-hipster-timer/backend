@@ -62,7 +62,7 @@ Every message uses the same envelope:
   "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
   "type": "timer.updated",
   "from_user": "<actor sub>",
-  "timestamp": "2026-11-06T10:30:00.123456Z",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
     "action": "pause",
     "actor_name": "Jane Doe",
@@ -80,7 +80,7 @@ Every message uses the same envelope:
 
 - `id`: message ID. Drop a message you have already handled.
 - `from_user`: `sub` of the user who made the change (`null` for `connected`). If it is not your `sub`, it is a friend's activity.
-- `timer`: the committed timer. All times are UTC, and `elapsed_time` is the stored total (for RUNNING timers, add `now - started_at` when displaying).
+- `timer`: the committed timer. All times are UTC, in the same format as REST responses (`timezone=UTC`). `elapsed_time` is the stored total (for RUNNING timers, add `now - started_at` when displaying).
 
 !!! note "Field Names"
     Payload fields use `snake_case`, the same as the server DTOs. Examples: `elapsed_time`, `timer_id`, `actor_name`.
@@ -91,7 +91,7 @@ The socket does not resend messages from before the connection or while it was d
 
 1. Reload timers over REST right after every connect and reconnect (`timezone=UTC`).
 2. Drop duplicates by `id`.
-3. Drop an event whose `timer.updated_at` is older than the one you hold (compare as instants).
+3. Drop an event whose `timer.updated_at` is older than the one you hold; apply it when equal or newer. Use the same rule for REST responses.
 4. Drop earlier events for a timer you received `timer.deleted` for.
 
 ## Example Usage

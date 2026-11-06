@@ -62,7 +62,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
   "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
   "type": "timer.updated",
   "from_user": "<행위자 sub>",
-  "timestamp": "2026-11-06T10:30:00.123456Z",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
     "action": "pause",
     "actor_name": "홍길동",
@@ -80,7 +80,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 - `id`: 메시지 ID. 같은 메시지를 두 번 받으면 버립니다.
 - `from_user`: 변경을 일으킨 사용자의 `sub` (`connected`는 `null`). 내 `sub`가 아니면 친구의 활동입니다.
-- `timer`: 커밋된 타이머. 시각은 모두 UTC이고, `elapsed_time`은 저장된 누적값입니다(RUNNING이면 `now - started_at`을 더해 표시).
+- `timer`: 커밋된 타이머. 시각은 모두 UTC이고 REST 응답(`timezone=UTC`)과 같은 형식입니다. `elapsed_time`은 저장된 누적값입니다(RUNNING이면 `now - started_at`을 더해 표시).
 
 !!! note "필드 이름"
     페이로드 필드는 서버 DTO와 동일하게 `snake_case`를 사용합니다. 예: `elapsed_time`, `timer_id`, `actor_name`.
@@ -91,7 +91,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 1. 연결·재연결 직후 REST로 타이머를 다시 조회합니다 (`timezone=UTC`).
 2. `id`로 중복을 버립니다.
-3. `timer.updated_at`이 가진 값보다 이전이면 버립니다 (시각으로 비교).
+3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
 4. `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 
 ## 사용 예시

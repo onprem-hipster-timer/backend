@@ -66,11 +66,11 @@ sequenceDiagram
   "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
   "type": "timer.updated",
   "from_user": "<행위자 sub>",
-  "timestamp": "2026-11-06T10:30:00.123456Z",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
     "action": "pause",
     "actor_name": "<행위자 표시명 또는 null>",
-    "timer": { "id": "…", "status": "PAUSED", "elapsed_time": 1800, "updated_at": "2026-11-06T10:30:00.120000Z", "…": "…" }
+    "timer": { "id": "…", "status": "PAUSED", "elapsed_time": 1800, "updated_at": "2026-11-06T10:30:00+0000", "…": "…" }
   }
 }
 ```
@@ -80,7 +80,7 @@ sequenceDiagram
 | `id` | 메시지 ID (UUID). 클라이언트가 중복 제거에 씁니다 |
 | `type` | 아래 표 |
 | `from_user` | 변경을 일으킨 사용자의 `sub`. `connected`는 `null` |
-| `timestamp` | 메시지를 만든 시각 (ISO 8601, UTC) |
+| `timestamp` | 메시지를 만든 시각 (UTC) |
 | `payload.action` | 아래 표 |
 | `payload.actor_name` | 행위자의 표시명 (JWT `name` 클레임). 없으면 `null` |
 | `payload.timer` | 커밋된 타이머 (`app/domain/timer/schema/ws.py` `TimerData`). 시각은 모두 UTC |
@@ -93,6 +93,7 @@ sequenceDiagram
 | `timer.deleted` | `delete` | `null` (`timer_id`로 식별) |
 | `connected` | — | — (`payload`는 `{}`) |
 
+- 시각은 REST 응답(`timezone=UTC`)과 같은 형식(`2026-11-06T10:30:00+0000`, `CustomModel`)으로 직렬화합니다. 같은 타이머 상태면 이벤트와 REST 응답의 `updated_at` 문자열이 같습니다.
 - `elapsed_time`은 저장된 누적값입니다. RUNNING이면 클라이언트가 `now - started_at`을 더해 표시합니다 ([타이머 가이드](../guides/timer.ko.md)의 elapsed_time 계산 규칙).
 - 클라이언트 → 서버 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답합니다. 그 외는 무시합니다.
 - 연결 직후 서버가 `connected`를 보냅니다. 연결 시 타이머 목록을 보내지 않으므로 클라이언트가 REST로 맞춥니다 (5장).
@@ -169,7 +170,7 @@ session: Session = Depends(get_db_committing, scope="function")
 
 - **연결·재연결 직후 REST로 다시 맞춥니다.** 소켓은 연결 전이나 끊긴 동안의 메시지를 다시 보내지 않습니다.
 - `id`가 이미 처리한 메시지면 버립니다.
-- `payload.timer.updated_at`이 가진 값보다 이전이면 버립니다. 문자열이 아니라 시각으로 비교합니다. REST 응답의 시각은 초 단위(`2026-11-06T10:30:00+0000`)이고 이벤트는 마이크로초까지(`…00.120000Z`) 있습니다.
+- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
 - 모든 타이머 REST 호출에 `timezone=UTC`를 붙입니다. 이벤트의 시각은 항상 UTC입니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다.
@@ -200,7 +201,7 @@ session: Session = Depends(get_db_committing, scope="function")
 | 응답 전 커밋, 같은 세션 공유 | `tests/db/test_get_db_committing.py` |
 | publisher (inprocess 전달, push 형식·분할·재시도·기한) | `tests/realtime/test_publisher.py` |
 | 받는 사람과 `can_access`의 일치 | `tests/domain/visibility/test_realtime_recipients.py` |
-| 타이머 이벤트 봉투와 받는 사람 | `tests/domain/timer/test_realtime_events.py` |
+| 타이머 이벤트 봉투와 받는 사람, REST 응답과 같은 시각 형식 | `tests/domain/timer/test_realtime_events.py` |
 | REST 명령, 라우트의 `scope="function"`, 응답 시작 전 publish | `tests/test_timers_rest_commands.py` |
 | 수신 전용 소켓 (`connected`, `ping`/`pong`, 이벤트 수신) | `tests/test_websocket_timers.py` |
 | OIDC discovery·JWKS | `tests/test_oidc_discovery.py` |

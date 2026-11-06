@@ -274,7 +274,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
   "id": "6f1c0c1e-8a53-4d6e-9d0a-2b1f5f0c9a11",
   "type": "timer.updated",
   "from_user": "<행위자 sub>",
-  "timestamp": "2026-11-06T10:30:00.123456Z",
+  "timestamp": "2026-11-06T10:30:00+0000",
   "payload": {
     "action": "pause",
     "actor_name": "홍길동",
@@ -294,7 +294,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 ### 반영 규칙
 
 - `id`로 중복을 버립니다.
-- `payload.timer.updated_at`이 가진 값보다 이전이면 버립니다 (문자열이 아니라 시각으로 비교).
+- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. 이벤트의 시각은 REST 응답(`timezone=UTC`)과 같은 형식이므로 REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다. 표시명은 `payload.actor_name`입니다.
 

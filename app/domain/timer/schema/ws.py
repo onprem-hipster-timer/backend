@@ -9,8 +9,9 @@ from enum import Enum
 from typing import Optional, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
+from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.timer.schema.dto import pause_history_to_timezone
 
@@ -33,8 +34,8 @@ class TimerAction(str, Enum):
     DELETE = "delete"
 
 
-class TimerData(BaseModel):
-    """타이머 데이터 (응답용)"""
+class TimerData(CustomModel):
+    """타이머 데이터 (이벤트용). 시각은 REST TimerRead와 같은 형식으로 직렬화된다 (CustomModel)"""
     id: UUID
     schedule_id: Optional[UUID] = None
     todo_id: Optional[UUID] = None

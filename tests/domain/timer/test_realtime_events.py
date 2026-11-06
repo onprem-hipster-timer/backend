@@ -176,3 +176,23 @@ def test_rollback_sends_nothing(session, after_commit_items):
     session.rollback()
 
     assert after_commit_items == []
+
+
+@pytest.mark.e2e
+def test_event_datetimes_equal_rest_response(e2e_client, after_commit_items):
+    """같은 상태면 이벤트와 REST 응답(timezone=UTC)의 시각 문자열이 같다 (updated_at 비교가 맞게)"""
+    created = e2e_client.post(
+        "/v1/timers", params={"timezone": "UTC"}, json={"title": "형식", "allocated_duration": 60}
+    ).json()
+    paused = e2e_client.patch(f"/v1/timers/{created['id']}/pause", params={"timezone": "UTC"}).json()
+    fetched = e2e_client.get(f"/v1/timers/{created['id']}", params={"timezone": "UTC"}).json()
+
+    events = [item["message"] for item in after_commit_items]
+    assert len(events) == 2
+    for response, event in zip([created, paused], events):
+        timer = event["payload"]["timer"]
+        for field in ("started_at", "paused_at", "ended_at", "created_at", "updated_at"):
+            assert timer[field] == response[field], field
+        assert timer["pause_history"] == response["pause_history"]
+        assert datetime.strptime(event["timestamp"], "%Y-%m-%dT%H:%M:%S%z").utcoffset() == timedelta(0)
+    assert events[-1]["payload"]["timer"]["updated_at"] == fetched["updated_at"]
