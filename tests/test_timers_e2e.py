@@ -3,19 +3,14 @@ Timer E2E Tests
 
 HTTP API를 통한 타이머 E2E 테스트
 
-[WebSocket 전환 - 2026-01-28]
-타이머 생성/일시정지/재개/종료는 WebSocket으로 이동되었습니다.
-- WebSocket 테스트: tests/test_websocket_timers.py
-- REST API는 조회/업데이트/삭제만 테스트
-
-[Context Manager - 2026-01-29]
-WebSocket 타이머 작업은 conftest.py의 timer_ws_client context manager를 사용합니다.
+타이머 생성·제어는 conftest.py의 TimerCommands(REST 명령 헬퍼)를 사용합니다.
+명령 자체의 테스트: tests/test_timers_rest_commands.py
 """
 from uuid import uuid4
 
 import pytest
 
-from tests.conftest import timer_ws_client
+from tests.conftest import TimerCommands
 
 
 # ============================================================
@@ -36,13 +31,13 @@ def test_get_timer_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="조회 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="조회 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 타이머 조회 (REST API)
@@ -78,12 +73,12 @@ def test_get_timer_with_include_schedule_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
     schedule_title = schedule_response.json()["title"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. include_schedule=True로 조회
@@ -125,13 +120,13 @@ def test_update_timer_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="원본 제목",
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="원본 제목",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 타이머 업데이트 (REST API)
@@ -162,12 +157,12 @@ def test_update_timer_tags_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="태그 업데이트 테스트 타이머",
-            allocated_duration=1800,
-        )
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="태그 업데이트 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 2. 그룹 및 태그 생성
@@ -225,12 +220,12 @@ def test_delete_timer_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 타이머 삭제 (REST API)
@@ -261,16 +256,16 @@ def test_list_timers_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 여러 타이머 생성 (WebSocket)
+    # 2. 여러 타이머 생성
     timer_ids = []
-    with timer_ws_client(e2e_client) as ws:
-        for i in range(3):
-            timer_data = ws.create_timer(
-                schedule_id=schedule_id,
-                title=f"타이머 {i + 1}",
-                allocated_duration=1800 * (i + 1),
-            )
-            timer_ids.append(timer_data["id"])
+    commands = TimerCommands(e2e_client)
+    for i in range(3):
+        timer_data = commands.create_timer(
+            schedule_id=schedule_id,
+            title=f"타이머 {i + 1}",
+            allocated_duration=1800 * (i + 1),
+        )
+        timer_ids.append(timer_data["id"])
 
     # 3. 타이머 목록 조회 (REST API)
     response = e2e_client.get("/v1/timers")
@@ -300,31 +295,31 @@ def test_list_timers_with_status_filter_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. RUNNING 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        running_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Running 타이머",
-            allocated_duration=1800,
-        )
-        running_id = running_data["id"]
+    commands = TimerCommands(e2e_client)
+    running_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Running 타이머",
+        allocated_duration=1800,
+    )
+    running_id = running_data["id"]
 
-        # 3. PAUSED 타이머 생성
-        paused_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Paused 타이머",
-            allocated_duration=1800,
-        )
-        paused_id = paused_data["id"]
-        ws.pause_timer(paused_id)
+    # 3. PAUSED 타이머 생성
+    paused_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Paused 타이머",
+        allocated_duration=1800,
+    )
+    paused_id = paused_data["id"]
+    commands.pause_timer(paused_id)
 
-        # 4. COMPLETED 타이머 생성
-        completed_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Completed 타이머",
-            allocated_duration=1800,
-        )
-        completed_id = completed_data["id"]
-        ws.stop_timer(completed_id)
+    # 4. COMPLETED 타이머 생성
+    completed_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Completed 타이머",
+        allocated_duration=1800,
+    )
+    completed_id = completed_data["id"]
+    commands.stop_timer(completed_id)
 
     # 5. RUNNING 상태만 조회
     running_response = e2e_client.get("/v1/timers", params={"status": "RUNNING"})
@@ -365,12 +360,12 @@ def test_list_timers_with_uppercase_status_filter_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. RUNNING 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Running 타이머",
-            allocated_duration=1800,
-        )
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Running 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 대문자 "RUNNING"으로 조회 (프론트엔드 방식)
@@ -396,31 +391,31 @@ def test_list_timers_with_mixed_case_status_filter_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. RUNNING 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        running_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Running 타이머",
-            allocated_duration=1800,
-        )
-        running_id = running_data["id"]
+    commands = TimerCommands(e2e_client)
+    running_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Running 타이머",
+        allocated_duration=1800,
+    )
+    running_id = running_data["id"]
 
-        # 3. PAUSED 타이머 생성
-        paused_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Paused 타이머",
-            allocated_duration=1800,
-        )
-        paused_id = paused_data["id"]
-        ws.pause_timer(paused_id)
+    # 3. PAUSED 타이머 생성
+    paused_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Paused 타이머",
+        allocated_duration=1800,
+    )
+    paused_id = paused_data["id"]
+    commands.pause_timer(paused_id)
 
-        # 4. COMPLETED 타이머 생성
-        completed_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Completed 타이머",
-            allocated_duration=1800,
-        )
-        completed_id = completed_data["id"]
-        ws.stop_timer(completed_id)
+    # 4. COMPLETED 타이머 생성
+    completed_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Completed 타이머",
+        allocated_duration=1800,
+    )
+    completed_id = completed_data["id"]
+    commands.stop_timer(completed_id)
 
     # 5. 대소문자 혼합 "Running"으로 조회
     response = e2e_client.get("/v1/timers", params={"status": "Running"})
@@ -465,31 +460,31 @@ def test_list_timers_with_multiple_status_filter_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. RUNNING 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        running_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Running 타이머",
-            allocated_duration=1800,
-        )
-        running_id = running_data["id"]
+    commands = TimerCommands(e2e_client)
+    running_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Running 타이머",
+        allocated_duration=1800,
+    )
+    running_id = running_data["id"]
 
-        # 3. PAUSED 타이머 생성
-        paused_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Paused 타이머",
-            allocated_duration=1800,
-        )
-        paused_id = paused_data["id"]
-        ws.pause_timer(paused_id)
+    # 3. PAUSED 타이머 생성
+    paused_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Paused 타이머",
+        allocated_duration=1800,
+    )
+    paused_id = paused_data["id"]
+    commands.pause_timer(paused_id)
 
-        # 4. COMPLETED 타이머 생성
-        completed_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Completed 타이머",
-            allocated_duration=1800,
-        )
-        completed_id = completed_data["id"]
-        ws.stop_timer(completed_id)
+    # 4. COMPLETED 타이머 생성
+    completed_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Completed 타이머",
+        allocated_duration=1800,
+    )
+    completed_id = completed_data["id"]
+    commands.stop_timer(completed_id)
 
     # 5. 복수 상태로 조회 (RUNNING, PAUSED)
     response = e2e_client.get("/v1/timers", params=[("status", "RUNNING"), ("status", "PAUSED")])
@@ -519,20 +514,20 @@ def test_list_timers_with_type_filter_independent_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. 독립 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        independent_data = ws.create_timer(
-            title="독립 타이머",
-            allocated_duration=600,
-        )
-        independent_id = independent_data["id"]
+    commands = TimerCommands(e2e_client)
+    independent_data = commands.create_timer(
+        title="독립 타이머",
+        allocated_duration=600,
+    )
+    independent_id = independent_data["id"]
 
-        # 3. Schedule 연결 타이머 생성
-        linked_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="연결된 타이머",
-            allocated_duration=1800,
-        )
-        linked_id = linked_data["id"]
+    # 3. Schedule 연결 타이머 생성
+    linked_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="연결된 타이머",
+        allocated_duration=1800,
+    )
+    linked_id = linked_data["id"]
 
     # 4. 독립 타이머만 조회
     response = e2e_client.get("/v1/timers", params={"type": "independent"})
@@ -558,20 +553,20 @@ def test_list_timers_with_type_filter_schedule_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. Schedule 연결 타이머 생성
-    with timer_ws_client(e2e_client) as ws:
-        schedule_timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Schedule 연결 타이머",
-            allocated_duration=1800,
-        )
-        schedule_timer_id = schedule_timer_data["id"]
+    commands = TimerCommands(e2e_client)
+    schedule_timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Schedule 연결 타이머",
+        allocated_duration=1800,
+    )
+    schedule_timer_id = schedule_timer_data["id"]
 
-        # 3. 독립 타이머 생성
-        independent_data = ws.create_timer(
-            title="독립 타이머",
-            allocated_duration=600,
-        )
-        independent_id = independent_data["id"]
+    # 3. 독립 타이머 생성
+    independent_data = commands.create_timer(
+        title="독립 타이머",
+        allocated_duration=600,
+    )
+    independent_id = independent_data["id"]
 
     # 4. Schedule 연결 타이머만 조회
     response = e2e_client.get("/v1/timers", params={"type": "schedule"})
@@ -597,13 +592,13 @@ def test_list_timers_with_include_schedule_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
     schedule_title = schedule_response.json()["title"]
 
-    # 2. Schedule에 연결된 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="include_schedule 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 2. Schedule에 연결된 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="include_schedule 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. include_schedule=True로 목록 조회
@@ -654,12 +649,12 @@ def test_get_user_active_timer_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. 타이머 생성 (RUNNING 상태)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="활성 타이머",
-            allocated_duration=1800,
-        )
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="활성 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 사용자 활성 타이머 조회
@@ -684,15 +679,15 @@ def test_get_user_active_timer_paused_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 후 일시정지 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="일시정지 타이머",
-            allocated_duration=1800,
-        )
-        timer_id = timer_data["id"]
-        ws.pause_timer(timer_id)
+    # 2. 타이머 생성 후 일시정지
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="일시정지 타이머",
+        allocated_duration=1800,
+    )
+    timer_id = timer_data["id"]
+    commands.pause_timer(timer_id)
 
     # 3. 사용자 활성 타이머 조회
     response = e2e_client.get("/v1/timers/active")
@@ -716,14 +711,14 @@ def test_get_user_active_timer_not_found_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 후 종료 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
-        timer_id = timer_data["id"]
-        ws.stop_timer(timer_id)
+    # 2. 타이머 생성 후 종료
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
+    timer_id = timer_data["id"]
+    commands.stop_timer(timer_id)
 
     # 3. 사용자 활성 타이머 조회 (404 반환)
     response = e2e_client.get("/v1/timers/active")
@@ -746,12 +741,12 @@ def test_get_user_active_timer_with_include_schedule_e2e(e2e_client):
     schedule_title = schedule_response.json()["title"]
 
     # 2. Schedule에 연결된 타이머 생성 (RUNNING 상태)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="활성 include_schedule 테스트 타이머",
-            allocated_duration=1800,
-        )
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="활성 include_schedule 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. include_schedule=True로 활성 타이머 조회
@@ -795,12 +790,12 @@ def test_timer_with_timezone_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 타이머 조회 (타임존 포함)
@@ -832,16 +827,16 @@ def test_get_schedule_timers_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 여러 타이머 생성 (WebSocket)
+    # 2. 여러 타이머 생성
     timer_ids = []
-    with timer_ws_client(e2e_client) as ws:
-        for i in range(3):
-            timer_data = ws.create_timer(
-                schedule_id=schedule_id,
-                title=f"타이머 {i + 1}",
-                allocated_duration=1800 * (i + 1),
-            )
-            timer_ids.append(timer_data["id"])
+    commands = TimerCommands(e2e_client)
+    for i in range(3):
+        timer_data = commands.create_timer(
+            schedule_id=schedule_id,
+            title=f"타이머 {i + 1}",
+            allocated_duration=1800 * (i + 1),
+        )
+        timer_ids.append(timer_data["id"])
 
     # 3. 일정의 모든 타이머 조회
     response = e2e_client.get(f"/v1/schedules/{schedule_id}/timers")
@@ -871,11 +866,11 @@ def test_get_schedule_active_timer_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. 타이머 생성 (RUNNING 상태)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 활성 타이머 조회
@@ -900,14 +895,14 @@ def test_get_schedule_active_timer_not_found_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 후 종료 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-        )
-        timer_id = timer_data["id"]
-        ws.stop_timer(timer_id)
+    # 2. 타이머 생성 후 종료
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+    )
+    timer_id = timer_data["id"]
+    commands.stop_timer(timer_id)
 
     # 3. 활성 타이머 조회 (404 반환)
     response = e2e_client.get(f"/v1/schedules/{schedule_id}/timers/active")
@@ -945,13 +940,13 @@ def test_get_timer_with_tag_include_mode_none_e2e(e2e_client):
     )
     tag_id = tag_response.json()["id"]
 
-    # 3. 타이머 생성 시 태그 설정 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-            tag_ids=[tag_id],
-        )
+    # 3. 타이머 생성 시 태그 설정
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+        tag_ids=[tag_id],
+    )
     timer_id = timer_data["id"]
 
     # 4. 타이머 조회 (tag_include_mode=none)
@@ -993,13 +988,13 @@ def test_get_timer_with_tag_include_mode_timer_only_e2e(e2e_client):
     tag_id = tag_response.json()["id"]
     tag_name = tag_response.json()["name"]
 
-    # 3. 타이머 생성 시 태그 설정 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            allocated_duration=1800,
-            tag_ids=[tag_id],
-        )
+    # 3. 타이머 생성 시 태그 설정
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        allocated_duration=1800,
+        tag_ids=[tag_id],
+    )
     timer_id = timer_data["id"]
 
     # 4. 타이머 조회 (tag_include_mode=timer_only)
@@ -1041,21 +1036,21 @@ def test_list_timers_with_type_filter_todo_e2e(e2e_client):
     assert todo_response.status_code == 201
     todo_id = todo_response.json()["id"]
 
-    # 3. Todo 연결 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        todo_timer_data = ws.create_timer(
-            todo_id=todo_id,
-            title="Todo 연결 타이머",
-            allocated_duration=1800,
-        )
-        todo_timer_id = todo_timer_data["id"]
+    # 3. Todo 연결 타이머 생성
+    commands = TimerCommands(e2e_client)
+    todo_timer_data = commands.create_timer(
+        todo_id=todo_id,
+        title="Todo 연결 타이머",
+        allocated_duration=1800,
+    )
+    todo_timer_id = todo_timer_data["id"]
 
-        # 4. 독립 타이머 생성 (WebSocket)
-        independent_data = ws.create_timer(
-            title="독립 타이머",
-            allocated_duration=600,
-        )
-        independent_id = independent_data["id"]
+    # 4. 독립 타이머 생성
+    independent_data = commands.create_timer(
+        title="독립 타이머",
+        allocated_duration=600,
+    )
+    independent_id = independent_data["id"]
 
     # 5. Todo 연결 타이머만 조회
     response = e2e_client.get("/v1/timers", params={"type": "todo"})
@@ -1089,13 +1084,13 @@ def test_list_timers_with_include_todo_e2e(e2e_client):
     todo_id = todo_response.json()["id"]
     todo_title = todo_response.json()["title"]
 
-    # 3. Todo 연결 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        ws.create_timer(
-            todo_id=todo_id,
-            title="include_todo 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 3. Todo 연결 타이머 생성
+    commands = TimerCommands(e2e_client)
+    commands.create_timer(
+        todo_id=todo_id,
+        title="include_todo 테스트 타이머",
+        allocated_duration=1800,
+    )
 
     # 4. include_todo=True로 조회
     response = e2e_client.get(
@@ -1133,29 +1128,29 @@ def test_list_timers_with_combined_filters_e2e(e2e_client):
     schedule_id = schedule_response.json()["id"]
 
     # 2. Schedule 연결 RUNNING 타이머
-    with timer_ws_client(e2e_client) as ws:
-        schedule_running_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Schedule Running 타이머",
-            allocated_duration=1800,
-        )
-        schedule_running_id = schedule_running_data["id"]
+    commands = TimerCommands(e2e_client)
+    schedule_running_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Schedule Running 타이머",
+        allocated_duration=1800,
+    )
+    schedule_running_id = schedule_running_data["id"]
 
-        # 3. 독립 RUNNING 타이머
-        independent_data = ws.create_timer(
-            title="독립 Running 타이머",
-            allocated_duration=600,
-        )
-        independent_id = independent_data["id"]
+    # 3. 독립 RUNNING 타이머
+    independent_data = commands.create_timer(
+        title="독립 Running 타이머",
+        allocated_duration=600,
+    )
+    independent_id = independent_data["id"]
 
-        # 4. Schedule 연결 COMPLETED 타이머
-        schedule_completed_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="Schedule Completed 타이머",
-            allocated_duration=1800,
-        )
-        schedule_completed_id = schedule_completed_data["id"]
-        ws.stop_timer(schedule_completed_id)
+    # 4. Schedule 연결 COMPLETED 타이머
+    schedule_completed_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="Schedule Completed 타이머",
+        allocated_duration=1800,
+    )
+    schedule_completed_id = schedule_completed_data["id"]
+    commands.stop_timer(schedule_completed_id)
 
     # 5. status=RUNNING + type=schedule 조합 필터
     response = e2e_client.get(
@@ -1188,13 +1183,13 @@ def test_list_timers_with_all_options_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="모든 옵션 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="모든 옵션 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 모든 옵션으로 조회
@@ -1243,13 +1238,13 @@ def test_list_timers_active_consistency_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. RUNNING 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="활성 타이머",
-            allocated_duration=1800,
-        )
+    # 2. RUNNING 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="활성 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. /v1/timers/active 조회
@@ -1297,13 +1292,13 @@ def test_list_timers_with_date_range_filter_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        timer_data = ws.create_timer(
-            schedule_id=schedule_id,
-            title="날짜 필터 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    timer_data = commands.create_timer(
+        schedule_id=schedule_id,
+        title="날짜 필터 테스트 타이머",
+        allocated_duration=1800,
+    )
     timer_id = timer_data["id"]
 
     # 3. 오늘 날짜 범위로 조회 (타이머가 포함되어야 함)
@@ -1336,13 +1331,13 @@ def test_list_timers_with_future_date_range_filter_e2e(e2e_client):
     )
     schedule_id = schedule_response.json()["id"]
 
-    # 2. 타이머 생성 (WebSocket)
-    with timer_ws_client(e2e_client) as ws:
-        ws.create_timer(
-            schedule_id=schedule_id,
-            title="미래 날짜 필터 테스트 타이머",
-            allocated_duration=1800,
-        )
+    # 2. 타이머 생성
+    commands = TimerCommands(e2e_client)
+    commands.create_timer(
+        schedule_id=schedule_id,
+        title="미래 날짜 필터 테스트 타이머",
+        allocated_duration=1800,
+    )
 
     # 3. 미래 날짜 범위로 조회
     from datetime import datetime, timedelta, timezone

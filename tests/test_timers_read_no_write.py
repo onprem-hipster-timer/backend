@@ -15,16 +15,14 @@ from sqlmodel import Session
 
 from app.db.session import _session_manager
 from app.domain.timer.model import TimerSession
-from tests.conftest import timer_ws_client
+from tests.conftest import TimerCommands
 
 STORED_UPDATED_AT = datetime(2020, 1, 1)
 
 
 def _create_timer(client) -> str:
-    """WebSocket으로 RUNNING 타이머를 만들고 ID를 반환"""
-    client._set_user_override()
-    with timer_ws_client(client._client) as ws:
-        return ws.create_timer(title="조회 부작용 테스트")["id"]
+    """RUNNING 타이머를 만들고 ID를 반환"""
+    return TimerCommands(client).create_timer(title="조회 부작용 테스트")["id"]
 
 
 def _backdate(timer_id: str) -> None:

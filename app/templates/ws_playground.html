@@ -159,12 +159,6 @@
             flex: 1;
         }
 
-        textarea {
-            resize: vertical;
-            min-height: 200px;
-            line-height: 1.5;
-        }
-
         select {
             cursor: pointer;
         }
@@ -261,37 +255,6 @@
             }
         }
 
-        /* Message Type Selector */
-        .message-types {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 16px;
-        }
-
-        .message-type-btn {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            padding: 6px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            background: var(--bg-primary);
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .message-type-btn:hover {
-            border-color: var(--accent-blue);
-            color: var(--accent-blue);
-        }
-
-        .message-type-btn.active {
-            background: var(--accent-blue);
-            border-color: var(--accent-blue);
-            color: #fff;
-        }
-
         /* Messages Log */
         .messages-container {
             height: 400px;
@@ -375,80 +338,6 @@
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-all;
-        }
-
-        /* Schema Reference */
-        .schema-tabs {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .schema-tab {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .schema-tab:hover {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-        }
-
-        .schema-tab.active {
-            background: var(--accent-purple);
-            color: #fff;
-        }
-
-        .schema-content {
-            display: none;
-        }
-
-        .schema-content.active {
-            display: block;
-        }
-
-        .schema-field {
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .schema-field:last-child {
-            border-bottom: none;
-        }
-
-        .field-name {
-            font-family: var(--font-mono);
-            font-size: 13px;
-            color: var(--accent-blue);
-        }
-
-        .field-type {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--accent-orange);
-            margin-left: 8px;
-        }
-
-        .field-required {
-            font-size: 11px;
-            color: var(--accent-red);
-            margin-left: 8px;
-        }
-
-        .field-description {
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-top: 4px;
         }
 
         /* Empty State */
@@ -545,12 +434,6 @@
                                 🔐 토큰은 <code>Sec-WebSocket-Protocol</code> 헤더로 전달됩니다 (보안)
                             </small>
                         </div>
-                        <div class="input-group">
-                            <label for="timezone">Timezone (optional)</label>
-                            <div class="input-row">
-                                <input id="timezone" placeholder="e.g., Asia/Seoul, +09:00, UTC" type="text">
-                            </div>
-                        </div>
                         <div class="btn-group">
                             <button class="btn btn-primary" id="connect-btn">
                                 <span>⚡</span> Connect
@@ -563,26 +446,19 @@
                 </div>
             </div>
 
-            <!-- Send Message -->
+            <!-- Ping -->
             <div class="card">
                 <div class="card-header">
-                    <h2>📤 Send Message</h2>
+                    <h2>📤 Ping</h2>
                 </div>
                 <div class="card-body">
-                    <div class="message-types">
-                        <button class="message-type-btn active" data-type="timer.create">timer.create</button>
-                        <button class="message-type-btn" data-type="timer.pause">timer.pause</button>
-                        <button class="message-type-btn" data-type="timer.resume">timer.resume</button>
-                        <button class="message-type-btn" data-type="timer.stop">timer.stop</button>
-                        <button class="message-type-btn" data-type="timer.sync">timer.sync</button>
-                    </div>
-                    <textarea id="message-input" placeholder="Enter JSON message..."></textarea>
+                    <small style="color: var(--text-secondary); font-size: 12px;">
+                        수신 전용 소켓입니다. 클라이언트가 보내는 메시지는 <code>ping</code>뿐이고 서버는 <code>pong</code>으로 답합니다.
+                        타이머 명령을 REST(<code>/v1/timers</code>)로 보내면 이벤트가 여기에 표시됩니다.
+                    </small>
                     <div class="btn-group" style="margin-top: 16px;">
                         <button class="btn btn-primary" disabled id="send-btn">
-                            <span>📨</span> Send
-                        </button>
-                        <button class="btn btn-secondary" id="format-btn">
-                            <span>✨</span> Format JSON
+                            <span>📨</span> Send ping
                         </button>
                     </div>
                 </div>
@@ -592,7 +468,7 @@
         <!-- Right Column -->
         <div class="right-column">
             <!-- Messages -->
-            <div class="card" style="margin-bottom: 24px;">
+            <div class="card">
                 <div class="card-header">
                     <h2>💬 Messages</h2>
                     <button class="copy-btn" id="clear-btn">Clear</button>
@@ -603,94 +479,6 @@
                             <div class="icon">📭</div>
                             <div>No messages yet</div>
                             <div style="font-size: 13px; margin-top: 8px;">Connect to start receiving messages</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Schema Reference -->
-            <div class="card">
-                <div class="card-header">
-                    <h2>📖 Schema Reference</h2>
-                </div>
-                <div class="card-body">
-                    <div class="schema-tabs">
-                        <button class="schema-tab active" data-schema="timer.create">timer.create</button>
-                        <button class="schema-tab" data-schema="timer.pause">timer.pause</button>
-                        <button class="schema-tab" data-schema="timer.resume">timer.resume</button>
-                        <button class="schema-tab" data-schema="timer.stop">timer.stop</button>
-                        <button class="schema-tab" data-schema="timer.sync">timer.sync</button>
-                    </div>
-
-                    <!-- timer.create schema -->
-                    <div class="schema-content active" id="schema-timer.create">
-                        <div class="schema-field">
-                            <span class="field-name">allocated_duration</span>
-                            <span class="field-type">integer</span>
-                            <span class="field-required">required</span>
-                            <div class="field-description">할당 시간 (초 단위, 양수)</div>
-                        </div>
-                        <div class="schema-field">
-                            <span class="field-name">title</span>
-                            <span class="field-type">string | null</span>
-                            <div class="field-description">타이머 제목</div>
-                        </div>
-                        <div class="schema-field">
-                            <span class="field-name">description</span>
-                            <span class="field-type">string | null</span>
-                            <div class="field-description">타이머 설명</div>
-                        </div>
-                        <div class="schema-field">
-                            <span class="field-name">schedule_id</span>
-                            <span class="field-type">UUID | null</span>
-                            <div class="field-description">연결할 일정 ID</div>
-                        </div>
-                        <div class="schema-field">
-                            <span class="field-name">todo_id</span>
-                            <span class="field-type">UUID | null</span>
-                            <div class="field-description">연결할 할 일 ID</div>
-                        </div>
-                        <div class="schema-field">
-                            <span class="field-name">tag_ids</span>
-                            <span class="field-type">UUID[] | null</span>
-                            <div class="field-description">태그 ID 목록</div>
-                        </div>
-                    </div>
-
-                    <!-- timer.pause/resume/stop schema -->
-                    <div class="schema-content" id="schema-timer.pause">
-                        <div class="schema-field">
-                            <span class="field-name">timer_id</span>
-                            <span class="field-type">UUID</span>
-                            <span class="field-required">required</span>
-                            <div class="field-description">타이머 ID</div>
-                        </div>
-                    </div>
-
-                    <div class="schema-content" id="schema-timer.resume">
-                        <div class="schema-field">
-                            <span class="field-name">timer_id</span>
-                            <span class="field-type">UUID</span>
-                            <span class="field-required">required</span>
-                            <div class="field-description">타이머 ID</div>
-                        </div>
-                    </div>
-
-                    <div class="schema-content" id="schema-timer.stop">
-                        <div class="schema-field">
-                            <span class="field-name">timer_id</span>
-                            <span class="field-type">UUID</span>
-                            <span class="field-required">required</span>
-                            <div class="field-description">타이머 ID</div>
-                        </div>
-                    </div>
-
-                    <!-- timer.sync schema -->
-                    <div class="schema-content" id="schema-timer.sync">
-                        <div class="schema-field">
-                            <span class="field-name">timer_id</span>
-                            <span class="field-type">UUID | null</span>
-                            <div class="field-description">동기화할 타이머 ID (null이면 활성 타이머 전체)</div>
                         </div>
                     </div>
                 </div>
@@ -710,77 +498,9 @@
     const connectBtn = document.getElementById('connect-btn');
     const disconnectBtn = document.getElementById('disconnect-btn');
     const sendBtn = document.getElementById('send-btn');
-    const formatBtn = document.getElementById('format-btn');
     const clearBtn = document.getElementById('clear-btn');
-    const messageInput = document.getElementById('message-input');
     const messagesContainer = document.getElementById('messages');
     const connectionStatus = document.getElementById('connection-status');
-
-    // Message templates
-    const messageTemplates = {
-        'timer.create': {
-            type: 'timer.create',
-            payload: {
-                allocated_duration: 1800,
-                title: 'Test Timer'
-            }
-        },
-        'timer.pause': {
-            type: 'timer.pause',
-            payload: {
-                timer_id: '<timer-uuid>'
-            }
-        },
-        'timer.resume': {
-            type: 'timer.resume',
-            payload: {
-                timer_id: '<timer-uuid>'
-            }
-        },
-        'timer.stop': {
-            type: 'timer.stop',
-            payload: {
-                timer_id: '<timer-uuid>'
-            }
-        },
-        'timer.sync': {
-            type: 'timer.sync',
-            payload: {}
-        }
-    };
-
-    // Initialize with default template
-    messageInput.value = JSON.stringify(messageTemplates['timer.create'], null, 2);
-
-    // Message type buttons
-    document.querySelectorAll('.message-type-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.message-type-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const type = btn.dataset.type;
-            messageInput.value = JSON.stringify(messageTemplates[type], null, 2);
-        });
-    });
-
-    // Schema tabs
-    document.querySelectorAll('.schema-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.schema-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.schema-content').forEach(c => c.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById(`schema-${tab.dataset.schema}`).classList.add('active');
-        });
-    });
-
-    // Format JSON
-    formatBtn.addEventListener('click', () => {
-        try {
-            const json = JSON.parse(messageInput.value);
-            messageInput.value = JSON.stringify(json, null, 2);
-        } catch (e) {
-            addMessage('error', 'Invalid JSON: ' + e.message, 'error');
-        }
-    });
 
     // Clear messages
     clearBtn.addEventListener('click', () => {
@@ -850,13 +570,7 @@
         const baseUrl = window.location.origin.replace(/^http/, 'ws');
         const wsPath = wsUrlInput.value;
         const token = jwtTokenInput.value.trim();
-        const timezone = document.getElementById('timezone').value.trim();
-
-        // timezone만 쿼리 파라미터로 전달
-        let wsUrl = `${baseUrl}${wsPath}`;
-        if (timezone) {
-            wsUrl += `?timezone=${encodeURIComponent(timezone)}`;
-        }
+        const wsUrl = `${baseUrl}${wsPath}`;
 
         updateStatus('connecting', 'Connecting...');
         connectBtn.disabled = true;
@@ -875,16 +589,7 @@
 
         ws.onmessage = (event) => {
             try {
-                const data = JSON.parse(event.data);
-                addMessage('incoming', data);
-
-                // Auto-fill timer_id for subsequent actions
-                if (data.type === 'timer.created' && data.payload?.timer?.id) {
-                    const timerId = data.payload.timer.id;
-                    ['timer.pause', 'timer.resume', 'timer.stop'].forEach(type => {
-                        messageTemplates[type].payload.timer_id = timerId;
-                    });
-                }
+                addMessage('incoming', JSON.parse(event.data));
             } catch (e) {
                 addMessage('incoming', event.data);
             }
@@ -913,27 +618,14 @@
         }
     });
 
-    // Send message
+    // Send ping
     sendBtn.addEventListener('click', () => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             addMessage('error', 'WebSocket is not connected', 'error');
             return;
         }
-
-        try {
-            const message = JSON.parse(messageInput.value);
-            ws.send(JSON.stringify(message));
-            addMessage('outgoing', message);
-        } catch (e) {
-            addMessage('error', 'Invalid JSON: ' + e.message, 'error');
-        }
-    });
-
-    // Send on Ctrl+Enter
-    messageInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            sendBtn.click();
-        }
+        ws.send('ping');
+        addMessage('outgoing', 'ping', 'ping');
     });
 </script>
 </body>

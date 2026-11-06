@@ -82,8 +82,6 @@ class Settings(BaseSettings):
     WS_RATE_LIMIT_ENABLED: bool = True  # WebSocket 레이트 리밋 활성화
     WS_CONNECT_WINDOW: int = 60  # 연결 제한 윈도우 (초)
     WS_CONNECT_MAX: int = 10  # 윈도우 내 최대 연결 횟수
-    WS_MESSAGE_WINDOW: int = 60  # 메시지 제한 윈도우 (초)
-    WS_MESSAGE_MAX: int = 120  # 윈도우 내 최대 메시지 수
 
     # 프록시 설정
     PROXY_FORCE: bool = False  # 프록시/Cloudflare 경유 강제 (request.client.host 기준으로 프록시가 아니면 차단)

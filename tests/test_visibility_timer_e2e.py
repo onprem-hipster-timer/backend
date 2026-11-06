@@ -2,35 +2,19 @@
 Visibility - Timer 도메인 E2E 테스트
 
 Timer 접근권한 설정 및 접근 제어 통합 테스트
-
-Note: 타이머는 REST로 생성할 수 없으므로 WebSocket을 통해 생성합니다.
-      UserBoundClient는 websocket_connect를 노출하지 않으므로
-      _set_user_override() 호출 후 내부 클라이언트를 사용합니다.
 """
 import pytest
 
-from tests.conftest import timer_ws_client
+from tests.conftest import TimerCommands
 
 
 def _make_timer(client):
     """
-    WebSocket을 통해 타이머를 생성하고 ID를 반환합니다.
+    타이머를 생성하고 ID를 반환합니다.
 
     e2e_client (TestClient) 또는 UserBoundClient 모두 지원합니다.
     """
-    if hasattr(client, "_set_user_override"):
-        # UserBoundClient: WS 연결 전에 사용자 override를 명시적으로 설정
-        client._set_user_override()
-        raw_client = client._client
-    else:
-        raw_client = client
-
-    with timer_ws_client(raw_client) as ws:
-        timer_data = ws.create_timer(
-            title="테스트 타이머",
-            allocated_duration=1800,
-        )
-    return timer_data["id"]
+    return TimerCommands(client).create_timer(title="테스트 타이머", allocated_duration=1800)["id"]
 
 
 @pytest.mark.e2e
