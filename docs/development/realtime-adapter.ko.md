@@ -191,6 +191,14 @@ session: Session = CommittingSession
 - JWKS 서빙은 `OIDC_JWKS`와 `OIDC_ISSUER_URL`을 씁니다 ([설정](../getting-started/configuration.md)).
 - inprocess 소켓의 연결 한도는 `WS_CONNECT_MAX`/`WS_CONNECT_WINDOW`입니다 (넘으면 `4029`).
 
+### 6.1 `cloudflare` 모드 켜기
+
+1. [realtime-worker](https://github.com/onprem-hipster-timer/realtime-worker)를 배포합니다. Worker의 `JWKS_URL`은 이 backend의 `/auth/.well-known/jwks.json`, `JWT_ISSUER`·`JWT_AUDIENCE`는 `OIDC_ISSUER_URL`·`OIDC_AUDIENCE`와 같은 값이어야 합니다. route는 api 호스트의 `/realtime/*`입니다.
+2. backend에 `REALTIME_BACKEND=cloudflare`, `REALTIME_PUSH_URL=https://<api 호스트>/realtime/push`, `REALTIME_PUSH_SECRET=<Worker의 PUSH_SECRET>`을 넣고 다시 띄웁니다.
+3. 클라이언트는 `wss://<api 호스트>/realtime/ws`로 연결합니다. 메시지 계약은 `/v1/ws/timers`와 같습니다 (3절).
+
+Worker가 받지 못하면(배포 전, 시크릿 불일치) backend는 `realtime_push_failed`를 로그로 남기고 응답은 정상입니다. 되돌릴 때는 `REALTIME_BACKEND=inprocess`로 바꾸고 클라이언트가 `/v1/ws/timers`로 연결하면 됩니다.
+
 ---
 
 ## 7. 테스트
