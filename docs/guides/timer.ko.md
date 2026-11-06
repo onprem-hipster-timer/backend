@@ -242,7 +242,7 @@ DELETE /v1/timers/{timer_id}
 
 ```javascript
 const ws = new WebSocket(
-  'wss://your-domain.com/v1/ws/timers',  // 호스팅 모드는 /realtime/ws
+  'wss://your-domain.com/v1/ws/timers',  // cloudflare 모드는 /realtime/ws
   ['authorization.bearer.' + jwtToken]
 );
 ```
