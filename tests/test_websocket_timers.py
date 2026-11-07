@@ -83,6 +83,17 @@ def test_auth_failure_closes_with_1008_after_handshake(e2e_client, oidc_rejects_
     assert exc_info.value.reason.startswith(reason)
 
 
+def test_auth_failure_echoes_bearer_among_several_subprotocols(e2e_client, oidc_rejects_tokens):
+    with e2e_client.websocket_connect(
+        "/v1/ws/timers", subprotocols=["graphql-ws", "authorization.bearer.invalid"]
+    ) as ws:
+        assert ws.accepted_subprotocol == "authorization.bearer.invalid"
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_json()
+
+    assert exc_info.value.code == 1008
+
+
 def test_ping_pong(e2e_client):
     with e2e_client.websocket_connect("/v1/ws/timers") as ws:
         ws.receive_json()
