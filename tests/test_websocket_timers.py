@@ -111,6 +111,20 @@ def test_rate_limit_closes_with_4029_after_handshake(e2e_client, monkeypatch):
     assert exc_info.value.reason == "Connection rate limit exceeded"
 
 
+def test_rate_limited_socket_is_not_registered(e2e_client, monkeypatch):
+    async def reject(websocket, user_id):
+        return False, "limit"
+
+    monkeypatch.setattr("app.api.v1.timers_ws.ws_rate_limit_guard", reject)
+    before = connection_manager.get_total_connections()
+
+    with e2e_client.websocket_connect("/v1/ws/timers") as ws:
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()  # connected 없이 바로 닫힌다
+
+    assert connection_manager.get_total_connections() == before
+
+
 def test_ping_pong(e2e_client):
     with e2e_client.websocket_connect("/v1/ws/timers") as ws:
         ws.receive_json()
