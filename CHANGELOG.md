@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.07-c7b2408] - 2026-11-07
+
 ### Fixed
 
 - **CORS exposes `Date`**: responses to allowed origins send `Access-Control-Expose-Headers: Date`, so browser clients can read the server time from the `Date` header of REST responses.
@@ -335,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...HEAD
+[v2026.11.07-c7b2408]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...v2026.11.07-c7b2408
 [v2026.11.07-acb5673]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...v2026.11.07-acb5673
 [v2026.11.06-039b759]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...v2026.11.06-039b759
 [v2026.11.04-71e4266]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...v2026.11.04-71e4266
