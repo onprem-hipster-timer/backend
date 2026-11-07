@@ -8,12 +8,12 @@
 
 ### 엔드포인트
 
-배포 모드(`REALTIME_BACKEND`)에 따라 주소가 다릅니다. 메시지 형식은 같습니다.
+전달 모드(`REALTIME_BACKEND`)에 따라 주소가 다릅니다. 메시지 형식은 같습니다.
 
 | 모드 | 주소 |
 |------|------|
-| `inprocess` (기본, 온프레미스) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
-| `cloudflare` (호스팅) | `wss://your-domain.com/realtime/ws` |
+| `inprocess` (기본) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
+| `cloudflare` (분리된 Worker) | `wss://your-domain.com/realtime/ws` |
 
 ### 테스트 링크
 

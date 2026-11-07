@@ -8,12 +8,12 @@ For the deployment structure and the full contract, see [Realtime Delivery](../d
 
 ### Endpoint
 
-The address depends on the deployment mode (`REALTIME_BACKEND`). The message format is the same.
+The address depends on the delivery mode (`REALTIME_BACKEND`). The message format is the same.
 
 | Mode | Address |
 |------|---------|
-| `inprocess` (default, on-premises) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
-| `cloudflare` (hosted) | `wss://your-domain.com/realtime/ws` |
+| `inprocess` (default) | `ws://localhost:2614/v1/ws/timers`, `wss://your-domain.com/v1/ws/timers` |
+| `cloudflare` (separate Worker) | `wss://your-domain.com/realtime/ws` |
 
 ### Test Links
 

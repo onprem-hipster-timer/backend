@@ -49,8 +49,8 @@ sequenceDiagram
 | 소켓 수명 | 제한 없음 | 24시간. 지나면 다음 전달 때 4000으로 닫음 |
 | 추가로 필요한 것 | 없음 | realtime-worker 배포, `REALTIME_PUSH_URL`, `REALTIME_PUSH_SECRET` |
 
-- `inprocess`는 이벤트를 **명령을 처리한 프로세스에 붙은 소켓에만** 보냅니다. backend를 한 프로세스로 운영할 때의 모드입니다(온프레미스 `compose.yaml`).
-- `cloudflare`는 소켓이 backend 밖에 있으므로 backend 인스턴스 수와 무관하게 전달되고, 열린 소켓이 backend 인스턴스를 붙잡지 않습니다. Worker의 코드·배포·설정은 [realtime-worker](https://github.com/onprem-hipster-timer/realtime-worker) 저장소에 있습니다.
+- `inprocess`는 이벤트를 **명령을 처리한 프로세스에 붙은 소켓에만** 보냅니다. backend를 한 프로세스로 운영할 때 맞습니다.
+- `cloudflare`는 소켓을 분리된 메시지 서버가 들므로 backend 인스턴스 수·수명과 무관하게 전달되고, 열린 소켓이 backend 자원을 잡지 않습니다. Worker의 코드·배포·설정은 [realtime-worker](https://github.com/onprem-hipster-timer/realtime-worker) 저장소에 있습니다.
 - 모드를 바꿀 때 backend는 `REALTIME_BACKEND`(와 push 설정)만, 클라이언트는 소켓 주소만 바꿉니다.
 
 ---
