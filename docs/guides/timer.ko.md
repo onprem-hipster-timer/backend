@@ -51,6 +51,7 @@ interface Timer {
   todo?: Todo;                  // Todo 정보
   tags: Tag[];                  // 연결된 태그 목록
   owner_id?: string;            // 소유자 ID
+  visibility_level?: VisibilityLevel;  // 접근권한 레벨 (설정 없으면 null)
   is_shared: boolean;           // 공유된 타이머인지
 }
 
@@ -312,10 +313,12 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
   "payload": {
     "action": "pause",
     "actor_name": "홍길동",
-    "timer": { /* Timer 객체 (UTC) */ }
+    "timer": { /* TimerData (UTC) */ }
   }
 }
 ```
+
+`payload.timer`는 `TimerData`(`app/domain/timer/schema/ws.py`)입니다. [Timer](#timer)와 달리 `schedule`·`todo`·`tags`·`visibility_level`·`is_shared`가 없고 `owner_id`는 항상 있습니다.
 
 | `type` | `action` | 발생 |
 |--------|----------|------|
@@ -332,6 +335,13 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 - `id`로 중복을 버립니다.
 - `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. 이벤트의 시각은 REST 응답(`timezone=UTC`)과 같은 형식이므로 REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
+- 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
+- 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.
+- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제되면 이벤트 없이 `null`이 됩니다.
+- `action: update` 이벤트는 태그(`tag_ids`) 변경을 담지 못하므로 링크가 같아도 같은 GET으로 다시 받습니다.
+- 가진 적 없는 타이머의 이벤트(다른 기기에서 만든 `timer.created` 등)는 자체 필드로 넣고 같은 GET으로 관계 필드를 채웁니다.
+- 이 GET과 명령·목록 응답은 모두 REST `Timer`(`TimerRead`)이고, 관계 필드는 `include_schedule`·`include_todo`·`tag_include_mode`(기본 `none`)를 줄 때만 채워집니다 (빼면 `schedule`·`todo`는 `null`, `tags`는 `[]`). REST 응답은 가진 타이머를 통째로 바꾸므로 모든 타이머 REST 호출에 같은 값을 붙입니다.
+- REST 응답(다시 받은 GET 포함)과 이벤트 모두에 `updated_at` 비교와 `timer.deleted` 규칙을 그대로 적용합니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다. 표시명은 `payload.actor_name`입니다.
 
 ---
@@ -376,8 +386,14 @@ export interface Timer {
   todo?: Todo;
   tags: Tag[];
   owner_id?: string;
+  visibility_level?: VisibilityLevel;
   is_shared: boolean;
 }
+
+// 이벤트의 payload.timer: 관계 필드가 없고 owner_id는 항상 있음
+export type TimerData = Omit<Timer, 'schedule' | 'todo' | 'tags' | 'visibility_level' | 'is_shared'> & {
+  owner_id: string;
+};
 
 export interface TimerCreate {
   schedule_id?: string;
@@ -395,8 +411,8 @@ export interface TimerCreate {
 export interface TimerEventPayload {
   action: TimerAction;
   actor_name: string | null;
-  timer: Timer | null;   // timer.deleted에서 null
-  timer_id?: string;     // timer.deleted에만
+  timer: TimerData | null;  // timer.deleted에서 null
+  timer_id?: string;        // timer.deleted에만
 }
 
 export interface ServerMessage {
@@ -416,10 +432,11 @@ export interface ServerMessage {
 
 ```typescript
 const API = '/v1/timers';
-const UTC = '?timezone=UTC';
+// 모든 호출에 같은 쿼리. 관계 필드를 빼면 응답이 가진 schedule·todo·tags를 지움
+const QUERY = '?timezone=UTC&include_schedule=true&include_todo=true&tag_include_mode=timer_only';
 
 async function call(method: string, path: string, body?: unknown): Promise<Timer> {
-  const res = await fetch(`${API}${path}${UTC}`, {
+  const res = await fetch(`${API}${path}${QUERY}`, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
@@ -432,6 +449,7 @@ export const createTimer = (data: TimerCreate) => call('POST', '', data);
 export const pauseTimer = (id: string) => call('PATCH', `/${id}/pause`);
 export const resumeTimer = (id: string) => call('PATCH', `/${id}/resume`);
 export const stopTimer = (id: string) => call('POST', `/${id}/stop`);
+export const getTimer = (id: string) => call('GET', `/${id}`);
 export const cancelTimer = (id: string) => call('POST', `/${id}/cancel`);
 ```
 
@@ -443,12 +461,32 @@ class TimerStore {
   private seen = new Set<string>();
   private deleted = new Set<string>();
 
-  // REST 응답과 이벤트 모두 이 함수로 반영
+  // REST 응답: 관계 필드까지 통째로 바꿈
   apply(timer: Timer): void {
-    if (this.deleted.has(timer.id)) return;
-    const held = this.timers.get(timer.id);
-    if (held && Date.parse(timer.updated_at) < Date.parse(held.updated_at)) return;
+    if (this.isStale(timer)) return;
     this.timers.set(timer.id, timer);
+  }
+
+  // 이벤트: 자체 필드만 갱신하고 관계 필드는 유지
+  applyEvent(timer: TimerData, action: TimerAction): void {
+    if (this.isStale(timer)) return;
+    const held = this.timers.get(timer.id);
+    const relinked = !!held && (held.schedule_id !== timer.schedule_id || held.todo_id !== timer.todo_id);
+    // 처음 보는 타이머는 GET이 채울 때까지 관계 필드가 비어 있음
+    const merged: Timer = { tags: [], is_shared: false, ...held, ...timer };
+    if (relinked) {
+      merged.schedule = undefined;
+      merged.todo = undefined;
+    }
+    this.timers.set(timer.id, merged);
+    if (!held || relinked || action === 'update') {
+      getTimer(timer.id).then((t) => this.apply(t));
+    }
+  }
+
+  private isStale(timer: { id: string; updated_at: string }): boolean {
+    const held = this.timers.get(timer.id);
+    return this.deleted.has(timer.id) || (!!held && Date.parse(timer.updated_at) < Date.parse(held.updated_at));
   }
 
   onMessage(message: ServerMessage, mySub: string): void {
@@ -460,7 +498,7 @@ class TimerStore {
       this.deleted.add(payload.timer_id!);
       this.timers.delete(payload.timer_id!);
     } else if (payload.timer) {
-      this.apply(payload.timer);
+      this.applyEvent(payload.timer, payload.action);
     }
     if (message.from_user !== mySub) {
       showFriendActivity(payload.actor_name, payload.action);
@@ -474,7 +512,7 @@ function connect(store: TimerStore, token: string, mySub: string): WebSocket {
 
   ws.onopen = async () => {
     // 연결·재연결 직후 REST로 다시 맞춤
-    const res = await fetch('/v1/timers?status=RUNNING&status=PAUSED&timezone=UTC', {
+    const res = await fetch(`${API}${QUERY}&status=RUNNING&status=PAUSED`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     (await res.json()).forEach((t: Timer) => store.apply(t));
@@ -638,7 +676,7 @@ PUT /v1/visibility/timer/{timer_id}
 ## 관련 문서
 
 - [WebSocket API](../api/websocket.md) - 수신 전용 소켓 프로토콜
-- [실시간 전달](../development/realtime-adapter.ko.md) - 배포 모드와 계약
+- [실시간 전달](../development/realtime-adapter.ko.md) - 전달 모드와 계약
 - [Visibility API 가이드](./visibility.ko.md) - 접근권한 설정 상세 가이드
 - [Schedule API 가이드](./schedule.ko.md) - 일정 관리
 - [Todo API 가이드](./todo.ko.md) - 할 일 관리

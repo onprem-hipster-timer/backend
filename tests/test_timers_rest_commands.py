@@ -6,6 +6,7 @@ PATCH·DELETE /v1/timers/{id}
 
 - 상태 전이와 pause_history, timezone 변환
 - 응답 전에 커밋하고(get_db_committing, scope="function") 커밋된 변경이 실시간 이벤트로 나간다
+- CORS 응답이 Date 헤더를 노출한다
 """
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
@@ -346,3 +347,15 @@ def test_cancel_event_is_handed_off_before_response_start(e2e_client, after_comm
     message = after_commit_items[0]["message"]
     assert (message["type"], message["payload"]["action"]) == ("timer.updated", "cancel")
     assert message["payload"]["timer"]["status"] == "CANCELLED"
+# ============================================================
+# CORS
+# ============================================================
+
+@pytest.mark.e2e
+def test_cors_exposes_date_header(e2e_client):
+    """웹 클라이언트는 Date 응답 헤더로 서버 시각을 읽는다"""
+    response = e2e_client.get("/v1/timers", headers={"Origin": "http://localhost:3000"})
+
+    exposed = response.headers.get("access-control-expose-headers", "")
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "date" in [header.strip().lower() for header in exposed.split(",")]
