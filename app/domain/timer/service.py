@@ -24,6 +24,7 @@ from app.crud import visibility as visibility_crud
 from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.tag.service import TagService
+from app.domain.timer.events import TimerCancelled, TimerCompleted
 from app.domain.timer.exceptions import (
     TimerNotFoundError,
     InvalidTimerStatusError,
@@ -35,6 +36,8 @@ from app.domain.timer.schema.ws import TimerAction
 from app.domain.todo.exceptions import TodoNotFoundError
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService
+from app.shared.events import EventOrigin
+from app.shared.uow import collect_event, flush_and_dispatch_events
 
 
 class TimerService:
@@ -405,6 +408,7 @@ class TimerService:
         - elapsed_time을 최종 경과 시간으로 업데이트
         - status를 COMPLETED로 변경
         - ended_at을 현재 시간으로 설정
+        - 연결 Todo가 DONE·CANCELLED가 아니면 DONE으로 (TimerCompleted → app/domain/todo/event_handlers.py)
         
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
@@ -440,6 +444,14 @@ class TimerService:
         self.session.flush()
         self.session.refresh(timer)
         self._enqueue_realtime(TimerAction.STOP, timer)
+        collect_event(self.session, TimerCompleted(
+            owner_id=self.owner_id,
+            origin=EventOrigin.TIMER,
+            timer_id=timer.id,
+            todo_id=timer.todo_id,
+        ))
+        # 응답 조립 전에 dispatch해야 연결 Todo의 상태가 응답에 보인다
+        flush_and_dispatch_events(self.session)
         return timer
 
     def cancel_timer(self, timer_id: UUID) -> TimerSession:
@@ -449,6 +461,7 @@ class TimerService:
         비즈니스 로직:
         - status를 CANCELLED로 변경
         - ended_at을 현재 시간으로 설정
+        - 연결 Todo가 DONE·CANCELLED가 아니면 CANCELLED로 (TimerCancelled → app/domain/todo/event_handlers.py)
         
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
@@ -474,6 +487,13 @@ class TimerService:
         self.session.flush()
         self.session.refresh(timer)
         self._enqueue_realtime(TimerAction.CANCEL, timer)
+        collect_event(self.session, TimerCancelled(
+            owner_id=self.owner_id,
+            origin=EventOrigin.TIMER,
+            timer_id=timer.id,
+            todo_id=timer.todo_id,
+        ))
+        flush_and_dispatch_events(self.session)
         return timer
 
     def get_pause_history(self, timer_id: UUID) -> list[dict]:

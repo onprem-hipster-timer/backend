@@ -1,9 +1,10 @@
 """
-Schedule 이벤트를 받아 source Todo를 동기화하는 핸들러.
+Schedule·Timer 이벤트를 받아 Todo를 동기화하는 핸들러.
 
 역투영은 source_todo_id가 있는 일정에 한정하며, origin이 TODO인 변경은
-재전파하지 않는다. status는 직접 쓰기(이벤트 미발행)로 갱신해 drain
-재수집을 막는다.
+재전파하지 않는다. 타이머 완료·취소는 연결 Todo를 DONE·CANCELLED로 바꾸고,
+이미 DONE·CANCELLED인 Todo는 덮지 않는다. status는 직접 쓰기(이벤트 미발행)로
+갱신해 drain 재수집을 막는다.
 """
 import logging
 
@@ -19,6 +20,7 @@ from app.domain.schedule.events import (
     ScheduleTimeChanged,
     ScheduleUnlinkedFromTodo,
 )
+from app.domain.timer.events import TimerCancelled, TimerCompleted, TimerEvent
 from app.domain.todo.enums import TodoStatus
 from app.models.todo import Todo
 from app.shared.events import EventOrigin
@@ -34,6 +36,17 @@ def _apply_detach_policy(session: Session, todo: Todo, policy: SourceTodoPolicy)
     # 터미널 상태(DONE/CANCELLED)는 덮지 않음 — 플래그 해제는 SCHEDULED에만
     if todo.status == TodoStatus.SCHEDULED:
         todo.status = TodoStatus.UNSCHEDULED
+    session.flush()
+
+
+def _finish_linked_todo(session: Session, event: TimerEvent, status: TodoStatus) -> None:
+    """타이머의 연결 Todo를 터미널 상태로. 이미 DONE·CANCELLED면 그대로 둔다"""
+    if event.todo_id is None:
+        return
+    todo = todo_crud.get_todo(session, event.todo_id, event.owner_id)
+    if todo is None or todo.status in (TodoStatus.DONE, TodoStatus.CANCELLED):
+        return
+    todo.status = status
     session.flush()
 
 
@@ -123,3 +136,15 @@ def create_todo_for_schedule(
 
     schedule.source_todo_id = todo.id
     session.flush()
+
+
+@register(TimerCompleted)
+def complete_todo_of_completed_timer(event: TimerCompleted, session: Session) -> None:
+    """타이머 완료 → 연결 Todo DONE"""
+    _finish_linked_todo(session, event, TodoStatus.DONE)
+
+
+@register(TimerCancelled)
+def cancel_todo_of_cancelled_timer(event: TimerCancelled, session: Session) -> None:
+    """타이머 취소 → 연결 Todo CANCELLED"""
+    _finish_linked_todo(session, event, TodoStatus.CANCELLED)
