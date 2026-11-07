@@ -6,7 +6,7 @@
 > `app/api/oidc_discovery.py`(JWKS)
 
 타이머 변경은 소유자의 다른 기기와, 공개 범위상 받을 수 있는 친구에게 실시간으로 전달됩니다.
-명령·접근 판정·상태는 어느 배포에서나 backend가 결정하고, **소켓을 들고 메시지를 전달하는 부분만** 배포 모드에 따라 바뀝니다.
+명령·접근 판정·상태는 어느 모드에서나 backend가 결정하고, **소켓을 들고 메시지를 전달하는 부분만** 전달 모드에 따라 바뀝니다.
 클라이언트는 두 모드에서 같은 계약을 쓰고 소켓 주소만 다릅니다.
 
 ---
@@ -45,7 +45,7 @@ sequenceDiagram
 | 소켓을 드는 곳 | backend 프로세스 (`ConnectionManager`) | realtime Worker와 사용자별 Durable Object (`UserHub`) |
 | 전달 | 같은 프로세스의 연결로 보냄 | Worker에 `POST /realtime/push` |
 | JWT 검증 | backend | Worker가 `GET /auth/.well-known/jwks.json`의 키로 검증 |
-| 인증 실패 | 핸드셰이크를 HTTP 403으로 거부 (브라우저에는 close code 1006) | 101로 받은 뒤 1008로 닫음 |
+| 인증 실패 | 101로 받은 뒤 1008로 닫음 | 101로 받은 뒤 1008로 닫음 |
 | 소켓 수명 | 제한 없음 | 24시간. 지나면 다음 전달 때 4000으로 닫음 |
 | 추가로 필요한 것 | 없음 | realtime-worker 배포, `REALTIME_PUSH_URL`, `REALTIME_PUSH_SECRET` |
 
@@ -83,7 +83,7 @@ sequenceDiagram
 | `timestamp` | 메시지를 만든 시각 (UTC) |
 | `payload.action` | 아래 표 |
 | `payload.actor_name` | 행위자의 표시명 (JWT `name` 클레임). 없으면 `null` |
-| `payload.timer` | 커밋된 타이머 (`app/domain/timer/schema/ws.py` `TimerData`). 시각은 모두 UTC |
+| `payload.timer` | 커밋된 타이머. [`TimerData`](https://github.com/onprem-hipster-timer/backend/blob/main/app/domain/timer/schema/ws.py)로 타이머 자체 필드만 담고, REST `Timer`(`TimerRead`)의 관계 필드 `schedule`·`todo`·`tags`·`visibility_level`·`is_shared`는 없습니다 (반영 방법은 5장). 시각은 모두 UTC |
 | `payload.timer_id` | `timer.deleted`에만 있음 |
 
 | `type` | `action` | `payload.timer` |
@@ -172,6 +172,13 @@ session: Session = CommittingSession
 - `id`가 이미 처리한 메시지면 버립니다.
 - `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
+- 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
+- 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.
+- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제되면 이벤트 없이 `null`이 됩니다.
+- `action: update` 이벤트는 태그(`tag_ids`) 변경을 담지 못하므로 링크가 같아도 같은 GET으로 다시 받습니다.
+- 가진 적 없는 타이머의 이벤트(다른 기기에서 만든 `timer.created` 등)는 자체 필드로 넣고 같은 GET으로 관계 필드를 채웁니다.
+- 이 GET과 명령·목록 응답은 모두 REST `Timer`(`TimerRead`)이고, 관계 필드는 `include_schedule`·`include_todo`·`tag_include_mode`(기본 `none`)를 줄 때만 채워집니다 (빼면 `schedule`·`todo`는 `null`, `tags`는 `[]`). REST 응답은 가진 타이머를 통째로 바꾸므로 모든 타이머 REST 호출에 같은 값을 붙입니다.
+- REST 응답(다시 받은 GET 포함)과 이벤트 모두에 `updated_at` 비교와 `timer.deleted` 규칙을 그대로 적용합니다.
 - 모든 타이머 REST 호출에 `timezone=UTC`를 붙입니다. 이벤트의 시각은 항상 UTC입니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다.
 - 연결을 유지하려면 주기적으로 `ping`을 보냅니다.

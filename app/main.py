@@ -191,6 +191,7 @@ app.add_middleware(
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=settings.cors_methods,
     allow_headers=settings.cors_headers,
+    expose_headers=["Date"],  # 웹 클라이언트가 서버 시각을 읽는다
 )
 
 # Middleware 등록 (순서 중요: 아래에서 위로 실행됨 - 마지막 등록이 가장 먼저 실행)

@@ -138,8 +138,7 @@ The `inprocess` socket limits connections (default: 10 per 60 seconds, `WS_CONNE
 | Close Code | Name | Description | Reconnect |
 |-----------|------|-------------|-----------|
 | `1000` | Normal Closure | Normal closure | Optional |
-| `1006` | Abnormal Closure | Handshake failed. `inprocess` rejects failed authentication with HTTP 403, which browsers report as this code | Refresh the token, then retry with exponential backoff |
-| `1008` | Policy Violation | Authentication failed (`cloudflare`: missing, expired, or invalid token) | :x: Retry after refreshing the token |
+| `1008` | Policy Violation | Authentication failed (missing, expired, or invalid token) | :x: Retry after refreshing the token |
 | `1011` | Internal Error | Server error | :white_check_mark: Retry with exponential backoff |
 | `4000` | Reconnect | Socket lifetime (24 hours) expired (`cloudflare`) | :white_check_mark: Reconnect immediately |
 | `4029` | Rate Limit Exceeded | Connection rate limit exceeded (`inprocess`) | :white_check_mark: Retry with exponential backoff |
