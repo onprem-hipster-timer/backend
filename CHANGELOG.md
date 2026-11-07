@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Concurrent `POST /v1/schedules/{schedule_id}/todo` creates one Todo**: when two requests create a Todo from the same schedule at the same time, one creates and links the Todo and the other gets the same 400 as for an already linked schedule. Previously both succeeded, and the first Todo was left `SCHEDULED` with no projected schedule.
+- **No deadlock between a Todo and its projected schedule**: changing a Todo's deadline (`PATCH /v1/todos/{todo_id}`) while its projected schedule's time is changed (`PATCH /v1/schedules/{schedule_id}`) or the schedule is deleted no longer fails one request with a PostgreSQL deadlock. Both requests complete one after the other, and when the schedule remains, its start time matches the Todo's deadline.
 
 ---
 
