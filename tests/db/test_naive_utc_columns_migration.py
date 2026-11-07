@@ -69,10 +69,22 @@ def test_upgrade_from_previous_revision_on_sqlite_reaches_single_head(
     assert current == heads[0]
 
 
+def _app_table_names() -> set[str]:
+    """app.models 패키지의 테이블 (다른 테스트가 등록한 테스트용 테이블은 제외)"""
+    return {
+        mapper.class_.__table__.name
+        for mapper in SQLModel._sa_registry.mappers
+        if mapper.class_.__module__.startswith("app.models.")
+    }
+
+
 def _bootstrap_metadata() -> sa.MetaData:
-    """Today's tables with every DateTime column timezone-aware."""
+    """Today's app tables with every DateTime column timezone-aware."""
+    app_tables = _app_table_names()
     metadata = sa.MetaData()
     for table in SQLModel.metadata.sorted_tables:
+        if table.name not in app_tables:
+            continue
         copied = table.to_metadata(metadata)
         for column in copied.columns:
             if isinstance(column.type, sa.DateTime):
@@ -160,7 +172,7 @@ def test_upgrade_converts_timestamptz_to_naive_utc_and_downgrade_restores(
 
         after_upgrade = _timestamp_column_types(engine, metadata)
         assert after_upgrade.keys() == before.keys()
-        assert set(after_upgrade.values()) == {"timestamp without time zone"}
+        assert set(after_upgrade.values()) == {"timestamp without time zone"}, sorted(k for k, v in after_upgrade.items() if v != "timestamp without time zone")
         naive = stored_started_at()
         assert naive.tzinfo is None
         assert naive == started_at.replace(tzinfo=None)
