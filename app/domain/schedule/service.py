@@ -453,7 +453,10 @@ class ScheduleService:
         :raises ScheduleAlreadyLinkedToTodoError: 이미 Todo와 연결된 Schedule인 경우
         """
 
-        schedule = self.get_schedule(schedule_id)
+        # 동시 요청은 이 잠금에서 줄을 서고, 뒤에 온 요청은 앞 요청이 연결한 상태를 읽는다
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id, for_update=True)
+        if not schedule:
+            raise ScheduleNotFoundError()
 
         # 이미 Todo와 연결된 경우 에러
         if schedule.source_todo_id is not None:
