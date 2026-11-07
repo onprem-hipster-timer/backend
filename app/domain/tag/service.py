@@ -87,6 +87,7 @@ class TagService:
         비즈니스 로직:
         - Todo: 삭제 (그룹 필수이므로)
         - 일정: tag_group_id를 NULL로만 설정 (삭제 안 함)
+        - 타이머: 삭제되는 Todo와의 연결만 해제 (삭제 안 함)
         - 태그: CASCADE로 자동 삭제
         """
         tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
@@ -94,14 +95,16 @@ class TagService:
             _raise_group_not_found(group_id)
 
         # 1. 해당 그룹의 Todo 삭제 (Todo 모델 직접 사용)
-        # 그룹 삭제 = 전부 삭제 계약이므로 투영 정책은 delete 명시
+        # 그룹 삭제 = 전부 삭제 계약이므로 투영 정책은 delete 명시.
+        # 타이머는 그룹 소속이 아니므로 unlink로 독립 타이머로 남긴다
+        from app.domain.timer.enums import LinkedTimerPolicy
         from app.domain.todo.enums import LinkedSchedulePolicy
         from app.domain.todo.service import TodoService
 
         todo_service = TodoService(self.session, self.current_user)
         result = todo_service.get_all_todos(group_ids=[group_id])
         for todo in result.todos:
-            todo_service.delete_todo(todo.id, LinkedSchedulePolicy.DELETE)
+            todo_service.delete_todo(todo.id, LinkedSchedulePolicy.DELETE, LinkedTimerPolicy.UNLINK)
 
         # 2. 일정의 tag_group_id를 NULL로 설정
         from app.crud import schedule as schedule_crud

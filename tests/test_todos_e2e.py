@@ -650,6 +650,29 @@ def test_delete_todo_without_policy_returns_422(e2e_client):
 
 
 @pytest.mark.e2e
+def test_delete_todo_with_linked_timer_requires_timer_policy(e2e_client, after_commit_items):
+    """연결 타이머가 있으면 linked_timer_policy 필수 — 누락 시 422로 아무것도 지우지 않는다"""
+    group_id = e2e_client.post(
+        "/v1/tags/groups", json={"name": "타이머 정책 그룹", "color": "#0000FF"}
+    ).json()["id"]
+    todo = e2e_client.post("/v1/todos", json={"title": "타이머 있는 할 일", "tag_group_id": group_id}).json()
+    timer = e2e_client.post("/v1/timers", json={"todo_id": todo["id"], "allocated_duration": 600}).json()
+    after_commit_items.clear()
+
+    response = e2e_client.delete(f"/v1/todos/{todo['id']}")
+    assert response.status_code == 422
+    assert response.json()["error_type"] == "LinkedTimerPolicyRequiredError"
+    assert e2e_client.get(f"/v1/todos/{todo['id']}").status_code == 200
+    assert e2e_client.get(f"/v1/timers/{timer['id']}").json()["todo_id"] == todo["id"]
+    assert after_commit_items == []
+
+    response = e2e_client.delete(f"/v1/todos/{todo['id']}", params={"linked_timer_policy": "unlink"})
+    assert response.status_code == 200
+    assert e2e_client.get(f"/v1/timers/{timer['id']}").json()["todo_id"] is None
+    assert [item["message"]["type"] for item in after_commit_items] == ["timer.updated"]
+
+
+@pytest.mark.e2e
 def test_clear_deadline_without_policy_returns_422(e2e_client):
     """deadline: null 명시 시 linked_schedule_policy 필수 (#61)"""
     group_response = e2e_client.post(

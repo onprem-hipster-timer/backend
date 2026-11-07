@@ -266,7 +266,7 @@ Content-Type: application/json
 
     | 값 | 동작 |
     |----|------|
-    | `delete` | 연결 Schedule 삭제 (접근권한 설정도 함께 정리) |
+    | `delete` | 연결 Schedule 삭제 (접근권한 설정도 함께 정리). 그 일정에 걸린 타이머는 `schedule_id`만 해제됩니다 |
     | `unlink` | 연결만 해제 (`source_todo_id` → NULL). Schedule은 일반 일정으로 유지되어 메모·태그·공유 설정이 보존됩니다 |
 
 !!! warning "주의"
@@ -277,7 +277,7 @@ Content-Type: application/json
 #### Todo 삭제
 
 ```http
-DELETE /v1/todos/{todo_id}?linked_schedule_policy=delete
+DELETE /v1/todos/{todo_id}?linked_schedule_policy=delete&linked_timer_policy=unlink
 ```
 
 !!! danger "`linked_schedule_policy` query param (#61)"
@@ -289,9 +289,23 @@ DELETE /v1/todos/{todo_id}?linked_schedule_policy=delete
     | `delete` | 연결 Schedule 삭제 (접근권한 설정도 함께 정리) |
     | `unlink` | 연결만 해제 — Schedule은 일반 일정으로 유지 |
 
+!!! danger "`linked_timer_policy` query param"
+    **연결 타이머(`todo_id`가 이 Todo인 타이머)가 있는 경우** 처리 방식을 반드시 지정해야
+    합니다. **서버 기본값은 없으며**, 연결이 있는데 누락하면 `422`를 반환합니다.
+    연결이 없으면 생략할 수 있습니다.
+
+    | 값 | 동작 |
+    |----|------|
+    | `delete` | 타이머 삭제 (접근권한 설정도 함께 정리) — `timer.deleted` 이벤트 |
+    | `unlink` | 연결만 해제 (`todo_id` → NULL) — 독립 타이머로 유지, 실행 중이면 계속 실행. `timer.updated`(`action: update`) 이벤트 |
+
+    `linked_schedule_policy=delete`로 함께 삭제되는 투영 일정에 걸린 타이머는 묻지 않고
+    `schedule_id`만 해제됩니다. 이 Todo에도 연결된 타이머는 `linked_timer_policy`만 따릅니다.
+
 !!! warning "주의"
     **삭제 동작:**
     - 연결 Schedule은 `linked_schedule_policy`에 따라 처리됩니다.
+    - 연결 타이머는 `linked_timer_policy`에 따라 처리됩니다.
     - **자식 Todo는 삭제되지 않고 루트로 승격됩니다** (parent_id가 NULL로 변경)
     - 자식 Todo에 연결된 Schedule은 그대로 유지됩니다.
 
@@ -1026,6 +1040,9 @@ DELETE /v1/todos/{id}?linked_schedule_policy=delete   // 또는 unlink
 
 연결 일정이 있는 경우 필수, 없으면 생략 가능.
 
+연결 타이머가 있으면 `linked_timer_policy=delete|unlink`도 필수입니다 (없으면 생략 가능, 누락 시 `422`).
+UI 권장: *"연결된 타이머도 삭제할까요, 독립 타이머로 남길까요?"*
+
 ### 3. 연결 일정 직접 삭제 — `source_todo_policy`
 
 ```http
@@ -1033,6 +1050,7 @@ DELETE /v1/schedules/{id}?source_todo_policy=keep_deadline   // 또는 clear_dea
 ```
 
 응답의 `source_todo_id`가 있는 일정(마감 투영)에 필수. 일반 일정은 기존 그대로.
+연결 타이머가 있으면 `linked_timer_policy`도 필수입니다 ([일정 가이드](schedule.md)).
 
 ### 4. 연결 일정의 반복 전환 — 정책과 함께만 가능
 
@@ -1104,13 +1122,15 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그가 Todo의 �
 
 - **Todo 삭제**:
   - 연결된 Schedule은 `linked_schedule_policy`에 따라 처리 (delete: 삭제 / unlink: 일반 일정으로 보존)
+  - 연결된 타이머는 `linked_timer_policy`에 따라 처리 (delete: 삭제 / unlink: 독립 타이머로 보존)
   - 자식 Todo는 삭제되지 않고 루트로 승격 (parent_id → NULL)
   - 자식 Todo에 연결된 Schedule은 유지됨
 - **연결 Schedule을 직접 삭제**(`DELETE /v1/schedules/{id}`):
   - `source_todo_policy` 필수 (clear_deadline: 마감도 제거 / keep_deadline: 마감 유지)
   - 어느 쪽이든 Todo는 유지되고 연동 플래그만 `UNSCHEDULED`로 해제
+  - 연결 타이머가 있으면 `linked_timer_policy` 필수
 - **TagGroup 삭제**:
-  - 그룹 내 모든 **Todo 삭제** (Todo 삭제 규칙 연쇄 적용: 연결 Schedule 삭제, 자식 루트 승격)
+  - 그룹 내 모든 **Todo 삭제** (Todo 삭제 규칙 연쇄 적용: 연결 Schedule 삭제, 연결 타이머는 연결만 해제, 자식 루트 승격)
   - Schedule의 `tag_group_id`는 NULL로 해제 (일정 유지)
   - 그룹 내 모든 Tag 삭제 (CASCADE)
   - DB 레벨로는 `todo.tag_group_id`에 `ondelete=RESTRICT` 안전핀이 있어 서비스 우회 삭제를 차단

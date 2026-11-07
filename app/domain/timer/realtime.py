@@ -1,10 +1,12 @@
 """
 타이머 실시간 이벤트
 
-TimerService가 변경을 flush한 뒤 이벤트를 커밋 후 큐(app/shared/uow.py)에 적재한다.
-루트 트랜잭션이 커밋되면 publisher가 받는 사람에게 보낸다.
+TimerService와 연결 타이머 핸들러(app/domain/timer/event_handlers.py)가 변경을 flush한 뒤
+이벤트를 커밋 후 큐(app/shared/uow.py)에 적재한다. 루트 트랜잭션이 커밋되면 publisher가
+받는 사람에게 보낸다.
 
 - type: timer.created(start), timer.updated(pause·resume·stop·cancel·update), timer.deleted(delete)
+- 연결된 Todo·Schedule 삭제로 링크가 끊기면 update, 함께 삭제되면 delete
 - payload: action, actor_name(행위자 표시명), timer(TimerData, UTC aware). 삭제는 timer가 null이고 timer_id가 있다
 - timer.elapsed_time은 저장값이다. RUNNING이면 클라이언트가 now - started_at을 더한다
 
@@ -19,6 +21,8 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.ws import TimerAction, TimerData, TimerWSMessageType
+from app.domain.visibility.enums import ResourceType
+from app.domain.visibility.service import VisibilityService
 from app.shared.uow import enqueue_after_commit
 from app.websocket.base import WSServerMessage
 
@@ -26,6 +30,13 @@ _MESSAGE_TYPES = {
     TimerAction.START: TimerWSMessageType.CREATED,
     TimerAction.DELETE: TimerWSMessageType.DELETED,
 }
+
+
+def realtime_recipients(session: Session, owner: CurrentUser, timer_id: UUID) -> set[str]:
+    """소유자 본인(다른 기기)과 공개 범위상 실시간으로 받는 친구"""
+    return {owner.sub} | VisibilityService(session, owner).get_realtime_recipients(
+        ResourceType.TIMER, timer_id, owner.sub
+    )
 
 
 def build_timer_event(

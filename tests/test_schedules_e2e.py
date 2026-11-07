@@ -154,6 +154,29 @@ def test_delete_schedule_e2e(e2e_client):
 
 
 @pytest.mark.e2e
+def test_delete_schedule_with_linked_timer_requires_timer_policy(e2e_client, after_commit_items):
+    """연결 타이머가 있으면 linked_timer_policy 필수 — 누락 시 422로 아무것도 지우지 않는다"""
+    schedule = e2e_client.post(
+        "/v1/schedules",
+        json={"title": "타이머 있는 일정", "start_time": "2024-01-01T10:00:00Z", "end_time": "2024-01-01T12:00:00Z"},
+    ).json()
+    timer = e2e_client.post("/v1/timers", json={"schedule_id": schedule["id"], "allocated_duration": 600}).json()
+    after_commit_items.clear()
+
+    response = e2e_client.delete(f"/v1/schedules/{schedule['id']}")
+    assert response.status_code == 422
+    assert response.json()["error_type"] == "LinkedTimerPolicyRequiredError"
+    assert e2e_client.get(f"/v1/schedules/{schedule['id']}").status_code == 200
+    assert e2e_client.get(f"/v1/timers/{timer['id']}").json()["schedule_id"] == schedule["id"]
+    assert after_commit_items == []
+
+    response = e2e_client.delete(f"/v1/schedules/{schedule['id']}", params={"linked_timer_policy": "delete"})
+    assert response.status_code == 200
+    assert e2e_client.get(f"/v1/timers/{timer['id']}").status_code == 404
+    assert [item["message"]["type"] for item in after_commit_items] == ["timer.deleted"]
+
+
+@pytest.mark.e2e
 def test_schedule_flow_e2e(e2e_client):
     """HTTP를 통한 일정 전체 흐름 E2E 테스트"""
     # 1. 일정 생성

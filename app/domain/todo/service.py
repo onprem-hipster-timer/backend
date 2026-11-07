@@ -14,11 +14,13 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import schedule as schedule_crud
+from app.crud import timer as timer_crud
 from app.crud import todo as crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.tag.model import Tag
 from app.domain.tag.schema.dto import TagRead
+from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.domain.todo.exceptions import (
     LinkedSchedulePolicyRequiredError,
@@ -521,6 +523,7 @@ class TodoService:
             self,
             todo_id: UUID,
             linked_schedule_policy: Optional[LinkedSchedulePolicy] = None,
+            linked_timer_policy: Optional[LinkedTimerPolicy] = None,
     ) -> None:
         """
         Todo 삭제
@@ -529,31 +532,38 @@ class TodoService:
         - 연결 투영 Schedule은 클라이언트가 명시한 정책에 따라 처리
           - delete: 투영 삭제 + visibility cleanup
           - unlink: 연결만 해제 — 일반 일정으로 생존
-        - 정책은 연결 투영이 있을 때만 필수 (서버 기본값 없음)
+        - 연결 타이머는 linked_timer_policy에 따라 처리 (app/domain/timer/event_handlers.py)
+          - delete: 타이머 삭제 + visibility cleanup
+          - unlink: 연결만 해제 — 독립 타이머로 생존
+        - 정책은 각각 연결 대상이 있을 때만 필수 (서버 기본값 없음)
         - 자식 Todo는 삭제하지 않고 루트로 승격 (parent_id = NULL)
         - 자식의 Schedule은 유지됨
         - 그 후 Todo 삭제
 
         :param todo_id: Todo ID
         :param linked_schedule_policy: 연결 투영 처리 정책
+        :param linked_timer_policy: 연결 타이머 처리 정책
         :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
         :raises LinkedSchedulePolicyRequiredError: 연결 투영이 있는데 정책 누락
+        :raises LinkedTimerPolicyRequiredError: 연결 타이머가 있는데 정책 누락
         """
         todo = self.get_todo(todo_id)
 
-        # source_todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는
-        # 연결 Schedule을 조회할 수 없다 — 삭제 전에 ID를 스냅샷해 이벤트에 싣는다
+        # source_todo_id·todo_id가 ondelete=SET NULL이라 Todo 삭제 flush 후에는
+        # 연결 Schedule·타이머를 조회할 수 없다 — 삭제 전에 ID를 스냅샷해 이벤트에 싣는다
         schedules = schedule_crud.get_schedules_by_source_todo_id(self.session, todo_id, self.owner_id)
-        if schedules:
-            if linked_schedule_policy is None:
-                raise LinkedSchedulePolicyRequiredError()
-            collect_event(self.session, TodoDeleted(
-                owner_id=self.owner_id,
-                origin=EventOrigin.TODO,
-                todo_id=todo_id,
-                linked_schedule_ids=tuple(s.id for s in schedules),
-                policy=linked_schedule_policy,
-            ))
+        if schedules and linked_schedule_policy is None:
+            raise LinkedSchedulePolicyRequiredError()
+        timers = timer_crud.get_timers_by_todo(self.session, todo_id, self.owner_id)
+        collect_event(self.session, TodoDeleted(
+            owner_id=self.owner_id,
+            origin=EventOrigin.TODO,
+            todo_id=todo_id,
+            linked_schedule_ids=tuple(s.id for s in schedules),
+            policy=linked_schedule_policy,
+            linked_timer_ids=tuple(t.id for t in timers),
+            linked_timer_policy=linked_timer_policy,
+        ))
 
         # 자식 Todo는 루트로 승격 (parent_id를 NULL로 설정)
         # 자식 Todo와 그에 연결된 Schedule은 삭제되지 않음

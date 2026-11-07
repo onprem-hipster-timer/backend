@@ -22,6 +22,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import schedule as crud
+from app.crud import timer as timer_crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
@@ -42,6 +43,7 @@ from app.domain.schedule.model import Schedule
 from app.domain.schedule.query_service import ScheduleQueryService
 from app.domain.schedule.recurring_service import RecurringScheduleService
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
+from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.service import VisibilityService
 from app.shared.events import EventOrigin
@@ -228,6 +230,7 @@ class ScheduleService:
             self,
             schedule_id: UUID,
             source_todo_policy: Optional[SourceTodoPolicy] = None,
+            linked_timer_policy: Optional[LinkedTimerPolicy] = None,
     ) -> None:
         """
         일정 삭제
@@ -235,10 +238,16 @@ class ScheduleService:
         비즈니스 로직:
         - DB 레벨 CASCADE DELETE로 관련 예외 인스턴스 자동 삭제
         - 접근권한 설정도 함께 삭제
+        - 연결 타이머는 linked_timer_policy에 따라 처리 (app/domain/timer/event_handlers.py).
+          연결 타이머가 있을 때만 필수 (서버 기본값 없음)
         - 모든 DB 구조에서 일관성 보장
 
         :param schedule_id: 일정 ID
+        :param source_todo_policy: source Todo 처리 정책
+        :param linked_timer_policy: 연결 타이머 처리 정책
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        :raises SourceTodoPolicyRequiredError: source-linked 일정인데 정책 누락
+        :raises LinkedTimerPolicyRequiredError: 연결 타이머가 있는데 정책 누락
         """
         schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
         if not schedule:
@@ -248,13 +257,16 @@ class ScheduleService:
         if schedule.source_todo_id is not None and source_todo_policy is None:
             raise SourceTodoPolicyRequiredError()
 
-        # source_todo_id는 row가 사라지면 조회할 수 없으므로 삭제 전에 스냅샷
+        # source_todo_id와 연결 타이머는 row가 사라지면 조회할 수 없으므로 삭제 전에 스냅샷
+        timers = timer_crud.get_timers_by_schedule(self.session, schedule_id, self.owner_id)
         collect_event(self.session, ScheduleDeleted(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,
             schedule_id=schedule_id,
             source_todo_id=schedule.source_todo_id,
             policy=source_todo_policy,
+            linked_timer_ids=tuple(t.id for t in timers),
+            linked_timer_policy=linked_timer_policy,
         ))
 
         # 접근권한 설정 삭제
@@ -411,10 +423,11 @@ class ScheduleService:
             parent_id: UUID,
             instance_start: datetime,
             source_todo_policy: Optional[SourceTodoPolicy] = None,
+            linked_timer_policy: Optional[LinkedTimerPolicy] = None,
     ) -> None:
         """반복 일정의 특정 인스턴스 삭제"""
         self._recurring.delete_recurring_instance(
-            parent_id, instance_start, source_todo_policy
+            parent_id, instance_start, source_todo_policy, linked_timer_policy
         )
         # 마지막 인스턴스 소진으로 원본이 삭제됐다면 ScheduleDeleted가 수집돼 있음
         flush_and_dispatch_events(self.session)

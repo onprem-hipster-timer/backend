@@ -24,6 +24,7 @@ from app.domain.schedule.schema.dto import (
 )
 from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.service import ScheduleService
+from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.timer.schema.dto import TimerRead
 from app.domain.timer.service import TimerService
 
@@ -227,6 +228,14 @@ async def delete_schedule(
                 "서버 기본값 없음. clear_deadline: Todo의 마감도 제거 / keep_deadline: 마감 유지"
             ),
         ),
+        linked_timer_policy: LinkedTimerPolicy | None = Query(
+            None,
+            description=(
+                "연결 타이머 처리 정책 — 연결 타이머가 있는 경우 필수, 서버 기본값 없음. "
+                "delete: 타이머 삭제 + 접근권한 정리 / unlink: 연결만 해제(타이머 보존, 실행 중이면 계속 실행). "
+                "마지막 반복 인스턴스 삭제로 원본이 지워질 때는 생략하면 unlink"
+            ),
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -237,13 +246,16 @@ async def delete_schedule(
     - 일반 일정: schedule_id로 조회하여 삭제
     - 가상 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송
 
-    source-linked 일정인데 `source_todo_policy`가 누락되면 422를 반환합니다.
+    source-linked 일정인데 `source_todo_policy`가 누락되거나, 연결 타이머가 있는데
+    `linked_timer_policy`가 누락되면 422를 반환합니다.
     """
     service = ScheduleService(session, current_user)
     if instance_start:
-        service.delete_recurring_instance(schedule_id, instance_start, source_todo_policy)
+        service.delete_recurring_instance(
+            schedule_id, instance_start, source_todo_policy, linked_timer_policy
+        )
     else:
-        service.delete_schedule(schedule_id, source_todo_policy)
+        service.delete_schedule(schedule_id, source_todo_policy, linked_timer_policy)
 
     return {"ok": True}
 
