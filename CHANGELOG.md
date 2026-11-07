@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.07-acb5673] - 2026-11-07
+
 ### Added
 
 - **`linked_timer_policy` (breaking)**: Deleting a Todo (`DELETE /v1/todos/{id}`) or a Schedule (`DELETE /v1/schedules/{id}`) that has linked timers now requires `linked_timer_policy` — `delete` (remove the timers and their visibility settings, sending `timer.deleted`) or `unlink` (clear `todo_id`/`schedule_id`; the timer stays as an independent timer, keeps running if it was running, and `timer.updated` with `action: update` is sent). There is no server default; omitting it while linked timers exist returns `422`. When deleting the last instance of a recurring series removes the series, an omitted policy means `unlink`. Projected schedules removed from the Todo side (clearing a deadline, or deleting a Todo with `linked_schedule_policy=delete`) unlink their timers' `schedule_id` without asking and send `timer.updated`; timers also linked to the deleted Todo follow its `linked_timer_policy`, with one event per timer. Deleting a tag group unlinks the timers of the Todos it deletes. Previously all of these links were set to `null` with no realtime event.
@@ -325,7 +331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...HEAD
+[v2026.11.07-acb5673]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...v2026.11.07-acb5673
 [v2026.11.06-039b759]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...v2026.11.06-039b759
 [v2026.11.04-71e4266]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-42359ab...v2026.11.04-71e4266
 [v2026.11.04-42359ab]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-5b27507...v2026.11.04-42359ab
