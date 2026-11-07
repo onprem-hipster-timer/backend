@@ -121,6 +121,18 @@ class TestTimerFinishesTodo:
         assert _stored_status(test_engine, TimerSession, timer.id) == "COMPLETED"
         assert _stored_status(test_engine, Todo, todo.id) == TodoStatus.DONE
 
+    def test_stop_of_paused_timer_completes_todo(self, session, test_engine, group_id):
+        todo = _todo(session, group_id)
+        timer = _timer(session, todo_id=todo.id)
+        TimerService(session, OWNER).pause_timer(timer.id)
+        session.commit()
+
+        TimerService(session, OWNER).stop_timer(timer.id)
+        session.commit()
+
+        assert _stored_status(test_engine, TimerSession, timer.id) == "COMPLETED"
+        assert _stored_status(test_engine, Todo, todo.id) == TodoStatus.DONE
+
     def test_stop_keeps_cancelled_todo(self, session, test_engine, group_id):
         todo = _todo(session, group_id, status=TodoStatus.CANCELLED)
         timer = _timer(session, todo_id=todo.id)

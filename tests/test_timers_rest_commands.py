@@ -138,6 +138,20 @@ def test_cancel_ends_active_timer(e2e_client, setup):
 
 
 @pytest.mark.e2e
+@pytest.mark.parametrize("ended", ["stop", "cancel"])
+def test_cancel_after_end_is_400(e2e_client, ended):
+    timer_id = _create(e2e_client)["id"]
+    assert _command(e2e_client, timer_id, ended).status_code == 200
+
+    response = _command(e2e_client, timer_id, "cancel")
+
+    assert response.status_code == 400
+    assert e2e_client.get(f"/v1/timers/{timer_id}").json()["status"] == (
+        "COMPLETED" if ended == "stop" else "CANCELLED"
+    )
+
+
+@pytest.mark.e2e
 def test_cancel_others_timer_is_404(multi_user_e2e, after_commit_items):
     owner = multi_user_e2e.as_user("owner")
     other = multi_user_e2e.as_user("other")
