@@ -3,6 +3,7 @@
 
 - 연결 직후 connected, `ping` → `pong`, 그 외 메시지는 무시
 - 인증에 실패하면 핸드셰이크를 마친 뒤 1008로 닫는다
+- 연결 한도를 넘으면 핸드셰이크를 마친 뒤 4029로 닫는다
 - REST 명령이 커밋되면 받는 사람(소유자, 공개 범위상 친구)의 소켓으로 이벤트가 온다 (InProcessPublisher)
 """
 import asyncio
@@ -92,6 +93,22 @@ def test_auth_failure_echoes_bearer_among_several_subprotocols(e2e_client, oidc_
             ws.receive_json()
 
     assert exc_info.value.code == 1008
+
+
+def test_rate_limit_closes_with_4029_after_handshake(e2e_client, monkeypatch):
+    async def reject(websocket, user_id):
+        return False, "Connection rate limit exceeded"
+
+    monkeypatch.setattr("app.api.v1.timers_ws.ws_rate_limit_guard", reject)
+    protocol = "authorization.bearer.token"
+
+    with e2e_client.websocket_connect("/v1/ws/timers", subprotocols=[protocol]) as ws:
+        assert ws.accepted_subprotocol == protocol
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_json()
+
+    assert exc_info.value.code == 4029
+    assert exc_info.value.reason == "Connection rate limit exceeded"
 
 
 def test_ping_pong(e2e_client):

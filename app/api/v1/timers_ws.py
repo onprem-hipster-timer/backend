@@ -36,12 +36,13 @@ async def timer_websocket(
     """
     # 연결 Rate Limit 체크 (인증 후, 연결 수락 전)
     allowed, error_message = await ws_rate_limit_guard(websocket, current_user.sub)
+    await websocket.accept(subprotocol=get_websocket_subprotocol(websocket))
     if not allowed:
+        # 수락 전에 닫으면 핸드셰이크가 HTTP 403으로 거부되어 브라우저에는 4029가 아닌 1006으로 보인다
         logger.warning(f"WebSocket connection rate limit: user={current_user.sub}")
         await websocket.close(code=4029, reason=error_message or "Connection rate limit exceeded")
         return
 
-    await websocket.accept(subprotocol=get_websocket_subprotocol(websocket))
     await connection_manager.connect(websocket, current_user.sub)
 
     try:
