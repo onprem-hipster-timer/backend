@@ -7,8 +7,9 @@
 > 읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
 >
 > 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/{todo,schedule}/events.py` ·
-> 핸들러: `app/domain/{schedule,todo}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
-> `tests/domain/todo/test_projection_policy.py`, `tests/domain/schedule/test_backpropagation.py`
+> 핸들러: `app/domain/{schedule,todo,timer}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
+> `tests/domain/todo/test_projection_policy.py`, `tests/domain/schedule/test_backpropagation.py`,
+> `tests/domain/timer/test_linked_timer_policy.py`
 
 이 문서는 읽기 경로와 쓰기 경로의 책임을 분리하고, 도메인 간 전파를 **외부 broker 없이** in-process Message Bus로 처리하기 위한 설계를 설명합니다. 대상 환경은 **단일 프로세스 · 단일 DB · 요청당 단일 세션 · 단일 트랜잭션 · 강한 일관성**입니다.
 
@@ -236,8 +237,11 @@ def handle(events, session):
 !!! danger "핸들러에 외부 부작용 금지"
     핸들러는 **commit 전에** 실행됩니다. 트랜잭션이 rollback돼도 외부 효과는
     취소할 수 없으므로, 핸들러에서 알림 발송·메시지 브로커·외부 HTTP 호출을
-    하면 안 됩니다 — **DB 행 수정만** 허용됩니다. commit 이후 실행이 보장돼야
-    하는 부작용이 필요해지면 transactional outbox로 확장합니다 (장기 방향,
+    하면 안 됩니다 — **DB 행 수정만** 허용됩니다. 예외로 커밋 후 큐
+    (`enqueue_after_commit`, `app/shared/uow.py`)에 적재하는 것은 됩니다 — 항목은 루트
+    커밋 뒤에만 나가고 rollback이면 버려집니다 (예: `app/domain/timer/event_handlers.py`의
+    실시간 이벤트). commit 이후 실행이 보장돼야 하는 부작용이 필요해지면 transactional
+    outbox로 확장합니다 (장기 방향,
     [#50](https://github.com/onprem-hipster-timer/backend/issues/50) 참조 문서).
 
 !!! warning "SAVEPOINT 내부에서 이벤트 수집 금지"
@@ -279,6 +283,7 @@ def handle(events, session):
 |--------|------|
 | `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/schedule/event_handlers.py`) |
 | `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleUnlinkedFromTodo`, `ScheduleCreatedWithTodoOption` | ✅ 구현 (`app/domain/schedule/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
+| `TodoDeleted`, `ScheduleDeleted` (연결 타이머) | ✅ 구현 (→ 핸들러 `app/domain/timer/event_handlers.py`) |
 
 !!! note "반복 일정 × source_todo (결정)"
     마감은 시점이므로 그 투영이 반복 시리즈가 되는 것 자체가 모순 — source-linked
@@ -287,12 +292,14 @@ def handle(events, session):
     역투영 핸들러의 반복 일정 제외 가드는 이제 방어선(defense-in-depth)입니다.
     반복 시리즈 소진으로 원본이 자동 삭제되는 경로(recurring_service)는 클라이언트에게
     물을 수 없어 `KEEP_DEADLINE` 고정으로 `ScheduleDeleted`를 발행하고 접근권한
-    cleanup을 수행합니다.
+    cleanup을 수행합니다. 연결 타이머도 같은 이유로 정책이 없으면 `UNLINK`입니다.
 
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
 - `ScheduleDeleted`/`ScheduleUnlinkedFromTodo`는 클라이언트가 지정한 `source_todo_policy`(`clear_deadline`|`keep_deadline`)를 운반
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
+- `TodoDeleted`/`ScheduleDeleted`는 삭제 전 스냅샷한 `linked_timer_ids`(`TimerSession.todo_id`·`schedule_id`도 `ondelete=SET NULL`)와 클라이언트가 지정한 `linked_timer_policy`(`delete`|`unlink`)를 운반. `TodoDeleted`는 연결 투영이 없어도 항상 발행
+- 투영을 지우는 schedule 핸들러는 연결 타이머를 위해 `ScheduleDeleted(origin=TODO, 정책 없음)`를 수집 — 타이머 핸들러는 일정 연결만 해제하고, todo 핸들러는 origin 가드로 무시
 
 ### 5.0 전파 토폴로지
 
@@ -303,6 +310,8 @@ def handle(events, session):
 
 핸들러는 대상 행을 **직접 수정하고 이벤트를 발행하지 않으므로** 반대 방향이 재발화하지
 않습니다 — 왕복(A→B→A)은 구조적으로 차단되고, origin 가드는 이중 안전장치입니다.
+예외는 투영 삭제가 수집하는 `ScheduleDeleted(origin=TODO)` 하나이고, todo 핸들러는 이를
+origin 가드로 무시하며 타이머 핸들러만 처리합니다.
 
 ```mermaid
 flowchart LR
@@ -311,6 +320,11 @@ flowchart LR
 
     SS["ScheduleService<br/>(발행)"] -->|"ScheduleTimeChanged<br/>ScheduleDeleted(policy·스냅샷)<br/>ScheduleUnlinkedFromTodo(policy)<br/>ScheduleCreatedWithTodoOption"| TH["todo/event_handlers<br/>가드: origin==TODO skip<br/>반복 일정 제외 · 터미널 상태 미덮음"]
     TH -->|"직접 수정 — 이벤트 미발행"| TDB[("todo 행")]
+
+    TS -->|"TodoDeleted(timer_ids·linked_timer_policy)"| MH["timer/event_handlers<br/>정책 없으면 422<br/>origin==TODO 투영 삭제는 일정 연결만 해제"]
+    SS -->|"ScheduleDeleted(timer_ids·linked_timer_policy)"| MH
+    SH -->|"투영 삭제 시 ScheduleDeleted(origin=TODO)"| MH
+    MH -->|"직접 수정 + 커밋 후 실시간 이벤트"| MDB[("timer 행")]
 ```
 
 ### 5.1 필드 소유권 (source of record)
@@ -326,6 +340,7 @@ flowchart LR
 | 상태 | 연동 유무 플래그 (파생) | `UNSCHEDULED`/`SCHEDULED`는 연결 투영 존재에서 파생 — 미지정 시 자동 계산, **명시 값이 실제 연동 상태와 불일치하면 422** (거짓 플래그 불가, 재오픈은 일치 값으로). `DONE`/`CANCELLED`만 사용자 상태 (자동화 미덮음). 플래그 갱신은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
 | 수명주기 (Todo발) | **클라이언트 정책** | `linked_schedule_policy`(`delete`\|`unlink`) — 서버 기본값 없음, **연결 투영이 있을 때만 필수** ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
 | 수명주기 (Schedule발) | **클라이언트 정책** | 투영의 삭제·반복 전환 시 `source_todo_policy`(`clear_deadline`\|`keep_deadline`) — 서버 기본값 없음, source-linked일 때만 필수. 어느 쪽이든 연동 플래그는 해제 |
+| 수명주기 (타이머) | **클라이언트 정책** | Todo·Schedule 삭제 시 `linked_timer_policy`(`delete`\|`unlink`) — 서버 기본값 없음, 연결 타이머가 있을 때만 필수. Todo발 투영 삭제는 묻지 않고 일정 연결만 해제, 삭제되는 Todo에도 연결된 타이머는 Todo 정책만 따름 |
 | 연결(source_todo_id) | **전용 흐름 전유** | 공개 Schedule Create/Update에 실으면 **422 거절** (조용한 무시 금지). '할일당 투영 1개'는 DB partial unique index가 최종 보장 (마이그레이션 `c4d7e8f1a2b3`) |
 | 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)). 구현 시 이 인프라 위 핸들러로 추가하되, `stop_timer`가 WS에서도 불리므로 **WS 커버리지는 #49 선행 필수**(§4.5)이고 터미널 상태 가드(DONE/CANCELLED 미덮음) 패턴을 따라야 함 |
 
@@ -341,6 +356,8 @@ flowchart LR
     - **Schedule발** (투영 삭제, 반복 전환): `source_todo_policy` — `clear_deadline`
       (Todo 마감도 제거) | `keep_deadline`(마감 유지). 어느 쪽이든 Todo는 유지되고
       연동 플래그만 해제 (터미널 상태 보호)
+    - **연결 타이머** (Todo 삭제, Schedule 삭제): `linked_timer_policy` — `delete`(타이머
+      삭제 + visibility cleanup) | `unlink`(독립 타이머로 보존, 실행 상태 유지)
 
 ---
 
