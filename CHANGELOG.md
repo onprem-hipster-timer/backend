@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.07-f65a7fe] - 2026-11-07
+
 ### Added
 
 - **Timer cancel command**: `POST /v1/timers/{timer_id}/cancel` (RUNNING or PAUSED → CANCELLED) takes the same query parameters as `stop` and sends `timer.updated` with `action: cancel`. Cancelling a timer that is not running or paused returns 400. The running segment is not added to `elapsed_time`.
@@ -348,7 +354,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...HEAD
+[v2026.11.07-f65a7fe]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...v2026.11.07-f65a7fe
 [v2026.11.07-c7b2408]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...v2026.11.07-c7b2408
 [v2026.11.07-acb5673]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...v2026.11.07-acb5673
 [v2026.11.06-039b759]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.04-71e4266...v2026.11.06-039b759
