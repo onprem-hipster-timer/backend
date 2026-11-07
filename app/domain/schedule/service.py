@@ -23,6 +23,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.crud import schedule as crud
 from app.crud import timer as timer_crud
+from app.crud import todo as todo_crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
@@ -136,6 +137,25 @@ class ScheduleService:
             raise ScheduleNotFoundError()
         return schedule
 
+    def _get_schedule_for_write(self, schedule_id: UUID) -> Schedule:
+        """
+        source Todo 행 → Schedule 행 순서로 잠근 뒤 최신 값의 일정을 반환
+
+        Todo 쪽 쓰기도 Todo 행을 먼저 쓰고 투영 핸들러가 Schedule 행을 쓰므로,
+        연결된 두 행을 같은 순서로 잠가 교착을 막는다.
+
+        :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        """
+        schedule = self.get_schedule(schedule_id)
+        if schedule.source_todo_id is not None:
+            todo_crud.get_todo(
+                self.session, schedule.source_todo_id, self.owner_id, for_update=True
+            )
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id, for_update=True)
+        if not schedule:
+            raise ScheduleNotFoundError()
+        return schedule
+
     def update_schedule(
             self,
             schedule_id: UUID,
@@ -156,9 +176,7 @@ class ScheduleService:
         :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
         :raises InvalidRecurrenceEndError: 반복 종료일이 시작일 이전인 경우
         """
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
+        schedule = self._get_schedule_for_write(schedule_id)
 
         # 설정된 필드만 가져오기 (MISSING 필드는 자동 제외)
         update_dict = data.model_dump()
@@ -249,9 +267,7 @@ class ScheduleService:
         :raises SourceTodoPolicyRequiredError: source-linked 일정인데 정책 누락
         :raises LinkedTimerPolicyRequiredError: 연결 타이머가 있는데 정책 누락
         """
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
+        schedule = self._get_schedule_for_write(schedule_id)
 
         # source-linked 일정이면 source Todo 처리 정책 필수 (연결 없으면 불필요)
         if schedule.source_todo_id is not None and source_todo_policy is None:
@@ -475,7 +491,6 @@ class ScheduleService:
         flush_and_dispatch_events(self.session)
         self.session.refresh(schedule)
 
-        from app.crud import todo as todo_crud
         todo = todo_crud.get_todo(self.session, schedule.source_todo_id, self.owner_id)
         return todo
 

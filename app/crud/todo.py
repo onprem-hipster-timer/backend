@@ -26,15 +26,27 @@ STATUS_ORDER: dict[TodoStatus, int] = {
 }
 
 
-def get_todo(session: Session, todo_id: UUID, owner_id: str) -> Todo | None:
+def get_todo(
+        session: Session,
+        todo_id: UUID,
+        owner_id: str,
+        for_update: bool = False,
+) -> Todo | None:
     """
     ID로 Todo 조회 (owner_id 검증 포함)
+
+    for_update=True면 트랜잭션 끝까지 행을 잠그고(FOR NO KEY UPDATE, SQLite에서는 무시),
+    세션에 이미 올라온 객체도 잠근 뒤의 DB 값으로 덮어쓴다.
     """
     statement = (
         select(Todo)
         .where(Todo.id == todo_id)
         .where(Todo.owner_id == owner_id)
     )
+    if for_update:
+        statement = statement.with_for_update(key_share=True).execution_options(
+            populate_existing=True
+        )
     return session.exec(statement).first()
 
 
