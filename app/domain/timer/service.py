@@ -424,6 +424,17 @@ class TimerService:
                 detail=f"Cannot stop timer with status {timer.status}"
             )
 
+        self.mark_completed(timer)
+        # 응답 조립 전에 dispatch해야 연결 Todo의 상태가 응답에 보인다
+        flush_and_dispatch_events(self.session)
+        return timer
+
+    def mark_completed(self, timer: TimerSession) -> None:
+        """
+        RUNNING·PAUSED 타이머를 COMPLETED로 바꾸고 실시간 이벤트 적재, TimerCompleted 수집
+
+        상태 검증과 dispatch는 호출자 몫이다.
+        """
         now = ensure_utc_naive(datetime.now(UTC))
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
@@ -450,9 +461,6 @@ class TimerService:
             timer_id=timer.id,
             todo_id=timer.todo_id,
         ))
-        # 응답 조립 전에 dispatch해야 연결 Todo의 상태가 응답에 보인다
-        flush_and_dispatch_events(self.session)
-        return timer
 
     def cancel_timer(self, timer_id: UUID) -> TimerSession:
         """
@@ -471,6 +479,16 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        self.mark_cancelled(timer)
+        flush_and_dispatch_events(self.session)
+        return timer
+
+    def mark_cancelled(self, timer: TimerSession) -> None:
+        """
+        타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
+
+        dispatch는 호출자 몫이다.
+        """
         now = ensure_utc_naive(datetime.now(UTC))
         timer.status = TimerStatus.CANCELLED.value
         timer.ended_at = now
@@ -493,8 +511,6 @@ class TimerService:
             timer_id=timer.id,
             todo_id=timer.todo_id,
         ))
-        flush_and_dispatch_events(self.session)
-        return timer
 
     def get_pause_history(self, timer_id: UUID) -> list[dict]:
         """
