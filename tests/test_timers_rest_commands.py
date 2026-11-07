@@ -152,6 +152,20 @@ def test_cancel_others_timer_is_404(multi_user_e2e, after_commit_items):
     assert after_commit_items == []
 
 
+@pytest.mark.e2e
+@pytest.mark.parametrize("action, todo_status", [("stop", "DONE"), ("cancel", "CANCELLED")])
+def test_linked_todo_status_is_in_response(e2e_client, action, todo_status):
+    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    timer = e2e_client.post("/v1/timers", json={"todo_id": todo["id"], "allocated_duration": 1500}).json()
+
+    response = _command(e2e_client, timer["id"], action, include_todo=True)
+
+    assert response.status_code == 200
+    assert response.json()["todo"]["status"] == todo_status
+    assert e2e_client.get(f"/v1/todos/{todo['id']}").json()["status"] == todo_status
+
+
 # ============================================================
 # timezone
 # ============================================================
