@@ -27,6 +27,7 @@ from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import TimerRead
+from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.timer.service import TimerService
 from app.domain.todo.enums import LinkedSchedulePolicy
 from app.domain.todo.schema.dto import (
@@ -287,17 +288,25 @@ async def delete_todo(
                 "delete: 투영 삭제 + 접근권한 정리 / unlink: 연결만 해제(일정 보존)"
             ),
         ),
+        linked_timer_policy: Optional[LinkedTimerPolicy] = Query(
+            None,
+            description=(
+                "연결 타이머 처리 정책 — 연결 타이머가 있는 경우 필수, 서버 기본값 없음. "
+                "delete: 타이머 삭제 + 접근권한 정리 / unlink: 연결만 해제(타이머 보존, 실행 중이면 계속 실행)"
+            ),
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Todo 삭제
 
-    연결된 투영 Schedule은 `linked_schedule_policy`에 따라 처리됩니다.
-    연결 투영이 있는데 정책이 누락되면 422를 반환합니다.
+    연결된 투영 Schedule은 `linked_schedule_policy`, 연결된 타이머는
+    `linked_timer_policy`에 따라 처리됩니다. 연결 대상이 있는데 해당 정책이
+    누락되면 422를 반환합니다.
     """
     todo_service = TodoService(session, current_user)
-    todo_service.delete_todo(todo_id, linked_schedule_policy)
+    todo_service.delete_todo(todo_id, linked_schedule_policy, linked_timer_policy)
     return {"ok": True}
 
 

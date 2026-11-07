@@ -212,6 +212,32 @@ def test_delete_tag_group_cascade_todos(test_session, sample_tag_group, test_use
     assert saved_schedule.tag_group_id is None  # NULL로 설정됨
 
 
+def test_delete_tag_group_keeps_timers_of_deleted_todos(test_session, sample_tag_group, test_user):
+    """태그 그룹 삭제로 지워지는 Todo의 타이머는 연결만 해제되어 남음"""
+    from app.crud import timer as timer_crud
+    from app.domain.timer.schema.dto import TimerCreate
+    from app.domain.timer.service import TimerService
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.todo.service import TodoService
+
+    todo = TodoService(test_session, test_user).create_todo(
+        TodoCreate(title="타이머 있는 Todo", tag_group_id=sample_tag_group.id)
+    )
+    timer = TimerService(test_session, test_user).create_timer(
+        TimerCreate(todo_id=todo.id, allocated_duration=600)
+    )
+    timer_id = timer.id
+    test_session.flush()
+
+    TagService(test_session, test_user).delete_tag_group(sample_tag_group.id)
+    test_session.flush()
+    test_session.expire_all()
+
+    saved_timer = timer_crud.get_timer(test_session, timer_id, test_user.sub)
+    assert saved_timer is not None
+    assert saved_timer.todo_id is None
+
+
 # ============================================================
 # Tag CRUD Tests
 # ============================================================

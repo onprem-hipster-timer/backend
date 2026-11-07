@@ -1,10 +1,12 @@
 """
 타이머 실시간 이벤트
 
-TimerService가 변경을 flush한 뒤 이벤트를 커밋 후 큐(app/shared/uow.py)에 적재한다.
-루트 트랜잭션이 커밋되면 publisher가 받는 사람에게 보낸다.
+TimerService와 연결 타이머 핸들러(app/domain/timer/event_handlers.py)가 변경을 flush한 뒤
+이벤트를 커밋 후 큐(app/shared/uow.py)에 적재한다. 루트 트랜잭션이 커밋되면 publisher가
+받는 사람에게 보낸다.
 
 - type: timer.created(start), timer.updated(pause·resume·stop·cancel·update), timer.deleted(delete)
+- 연결된 Todo·Schedule 삭제로 링크가 끊기면 update, 함께 삭제되면 delete
 - payload: action, actor_name(행위자 표시명), timer(TimerData, UTC aware). 삭제는 timer가 null이고 timer_id가 있다
 - timer.elapsed_time은 저장값이다. RUNNING이면 클라이언트가 now - started_at을 더한다
 

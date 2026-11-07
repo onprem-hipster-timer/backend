@@ -108,6 +108,7 @@ def register_handlers() -> None:
     순환 import 방지를 위해 lazy import.
     """
     import app.domain.schedule.event_handlers  # noqa: F401
+    import app.domain.timer.event_handlers  # noqa: F401
     import app.domain.todo.event_handlers  # noqa: F401
 
     for event_type, fn in _KNOWN_REGISTRATIONS:

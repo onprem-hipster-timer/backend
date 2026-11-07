@@ -30,3 +30,12 @@ class TimerNotRunningError(DomainException):
     """실행 중이 아닌 타이머"""
     status_code = 400
     detail = "Timer is not running"
+
+
+class LinkedTimerPolicyRequiredError(DomainException):
+    """연결 타이머가 존재하는데 처리 정책이 누락됨"""
+    status_code = 422
+    detail = (
+        "linked_timer_policy is required because linked timers exist. "
+        "Choose 'delete' or 'unlink'."
+    )

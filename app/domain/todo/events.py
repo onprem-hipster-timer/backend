@@ -6,9 +6,10 @@ payload는 식별자만 담고, 수신 핸들러가 같은 트랜잭션에서 �
 스냅샷으로 운반한다.
 """
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 from uuid import UUID
 
+from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.todo.enums import LinkedSchedulePolicy
 from app.shared.events import DomainEvent
 
@@ -60,7 +61,12 @@ class TodoDeleted(TodoEvent):
     :param linked_schedule_ids: 삭제 직전 스냅샷한 연결 Schedule ID.
         `Schedule.source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush
         후에는 조회할 수 없어 이벤트가 사실로서 운반한다.
-    :param policy: 클라이언트가 명시한 연결 투영 처리 정책
+    :param policy: 클라이언트가 명시한 연결 투영 처리 정책. 연결 투영이 없으면 None일 수 있다
+    :param linked_timer_ids: 삭제 직전 스냅샷한 연결 타이머 ID
+        (`TimerSession.todo_id`도 `ondelete=SET NULL`)
+    :param linked_timer_policy: 클라이언트가 명시한 연결 타이머 처리 정책
     """
     linked_schedule_ids: Tuple[UUID, ...]
-    policy: LinkedSchedulePolicy
+    policy: Optional[LinkedSchedulePolicy]
+    linked_timer_ids: Tuple[UUID, ...]
+    linked_timer_policy: Optional[LinkedTimerPolicy] = None
