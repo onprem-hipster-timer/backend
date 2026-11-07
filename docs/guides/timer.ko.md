@@ -278,10 +278,12 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
   "payload": {
     "action": "pause",
     "actor_name": "홍길동",
-    "timer": { /* Timer 객체 (UTC) */ }
+    "timer": { /* TimerData (UTC) */ }
   }
 }
 ```
+
+`payload.timer`는 `TimerData`(`app/domain/timer/schema/ws.py`)입니다. [Timer](#timer)와 달리 `schedule`·`todo`·`tags`·`is_shared`가 없고 `owner_id`는 항상 있습니다.
 
 | `type` | `action` | 발생 |
 |--------|----------|------|
