@@ -29,7 +29,7 @@ from app.domain.timer.exceptions import (
     InvalidTimerStatusError,
 )
 from app.domain.timer.model import TimerSession
-from app.domain.timer.realtime import enqueue_timer_event
+from app.domain.timer.realtime import enqueue_timer_event, realtime_recipients
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.timer.schema.ws import TimerAction
 from app.domain.todo.exceptions import TodoNotFoundError
@@ -55,10 +55,7 @@ class TimerService:
 
     def _realtime_recipients(self, timer_id: UUID) -> set[str]:
         """소유자 본인(다른 기기)과 공개 범위상 실시간으로 받는 친구"""
-        visibility_service = VisibilityService(self.session, self.current_user)
-        return {self.owner_id} | visibility_service.get_realtime_recipients(
-            ResourceType.TIMER, timer_id, self.owner_id
-        )
+        return realtime_recipients(self.session, self.current_user, timer_id)
 
     def _enqueue_realtime(self, action: TimerAction, timer: TimerSession) -> None:
         """flush된 타이머 상태를 커밋 후 실시간 이벤트로 적재 (app/domain/timer/realtime.py)"""

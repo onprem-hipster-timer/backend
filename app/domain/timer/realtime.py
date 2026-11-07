@@ -19,6 +19,8 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.ws import TimerAction, TimerData, TimerWSMessageType
+from app.domain.visibility.enums import ResourceType
+from app.domain.visibility.service import VisibilityService
 from app.shared.uow import enqueue_after_commit
 from app.websocket.base import WSServerMessage
 
@@ -26,6 +28,13 @@ _MESSAGE_TYPES = {
     TimerAction.START: TimerWSMessageType.CREATED,
     TimerAction.DELETE: TimerWSMessageType.DELETED,
 }
+
+
+def realtime_recipients(session: Session, owner: CurrentUser, timer_id: UUID) -> set[str]:
+    """소유자 본인(다른 기기)과 공개 범위상 실시간으로 받는 친구"""
+    return {owner.sub} | VisibilityService(session, owner).get_realtime_recipients(
+        ResourceType.TIMER, timer_id, owner.sub
+    )
 
 
 def build_timer_event(
