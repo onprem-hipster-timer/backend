@@ -31,9 +31,11 @@ class ScheduleDeleted(ScheduleEvent):
     """
     일정이 삭제됨
 
+    Todo 쪽 흐름이 투영을 지울 때도 연결 타이머 정리를 위해 origin=TODO로 발행된다.
+
     :param source_todo_id: 삭제 직전 스냅샷 (row가 사라져 사후 조회 불가)
     :param policy: source-linked 일정이면 클라이언트가 명시한 source Todo
-        처리 정책. unlinked 일정 삭제면 None
+        처리 정책. unlinked 일정 삭제나 origin=TODO면 None
     :param linked_timer_ids: 삭제 직전 스냅샷한 연결 타이머 ID
         (`TimerSession.schedule_id`가 `ondelete=SET NULL`)
     :param linked_timer_policy: 클라이언트가 명시한 연결 타이머 처리 정책

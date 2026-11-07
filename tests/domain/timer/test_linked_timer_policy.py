@@ -12,6 +12,7 @@ import pytest
 from sqlmodel import Session
 
 from app.core.constants import TimerStatus
+from app.crud import schedule as schedule_crud
 from app.crud import visibility as visibility_crud
 from app.domain.friend.service import FriendService
 from app.domain.schedule.enums import SourceTodoPolicy
@@ -23,10 +24,11 @@ from app.domain.tag.service import TagService
 from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.timer.exceptions import LinkedTimerPolicyRequiredError
 from app.domain.timer.model import TimerSession
-from app.domain.timer.schema.dto import TimerCreate
+from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.timer.service import TimerService
+from app.domain.todo.enums import LinkedSchedulePolicy
 from app.domain.todo.model import Todo
-from app.domain.todo.schema.dto import TodoCreate
+from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
 from app.domain.user.service import UserProfileService
 from app.domain.visibility.enums import ResourceType, VisibilityLevel
@@ -252,3 +254,87 @@ class TestRecurringSeriesExhausted:
 
         assert _stored(test_engine, timer.id) is None
         assert [item["message"]["type"] for item in after_commit_items] == ["timer.deleted"]
+
+
+# ============================================================
+# Todo 쪽 흐름이 투영 일정을 지울 때 — 묻지 않고 일정 연결만 해제
+# ============================================================
+
+class TestProjectionDeletedByTodo:
+    def _todo_with_projection(self, session, group_id) -> tuple[Todo, UUID]:
+        todo = _todo(session, group_id, deadline=START)
+        [projection] = schedule_crud.get_schedules_by_source_todo_id(session, todo.id, OWNER.sub)
+        return todo, projection.id
+
+    def _schedule_only_timer(self, session, schedule_id) -> TimerSession:
+        timer = _timer(session, schedule_id=schedule_id)  # 투영의 Todo가 함께 연결된다
+        TimerService(session, OWNER).update_timer(timer.id, TimerUpdate(todo_id=None))
+        session.commit()
+        return timer
+
+    def test_deadline_removal_unlinks_schedule_and_keeps_todo(
+            self, session, test_engine, group_id, after_commit_items):
+        todo, projection_id = self._todo_with_projection(session, group_id)
+        timer = _timer(session, todo_id=todo.id)
+        assert timer.schedule_id == projection_id
+        after_commit_items.clear()
+
+        TodoService(session, OWNER).update_todo(
+            todo.id, TodoUpdate(deadline=None, linked_schedule_policy=LinkedSchedulePolicy.DELETE)
+        )
+        session.commit()
+
+        stored = _stored(test_engine, timer.id)
+        assert stored.schedule_id is None
+        assert stored.todo_id == todo.id
+        [item] = after_commit_items
+        assert item["message"]["type"] == "timer.updated"
+        assert item["message"]["payload"]["timer"]["schedule_id"] is None
+        assert item["message"]["payload"]["timer"]["todo_id"] == str(todo.id)
+
+    def test_todo_delete_unlinks_schedule_only_timer_without_policy(
+            self, session, test_engine, group_id, after_commit_items):
+        todo, projection_id = self._todo_with_projection(session, group_id)
+        timer = self._schedule_only_timer(session, projection_id)
+        after_commit_items.clear()
+
+        TodoService(session, OWNER).delete_todo(todo.id, LinkedSchedulePolicy.DELETE)
+        session.commit()
+
+        assert _stored(test_engine, timer.id).schedule_id is None
+        [item] = after_commit_items
+        assert item["message"]["type"] == "timer.updated"
+        assert item["message"]["payload"]["timer"]["schedule_id"] is None
+
+    @pytest.mark.parametrize("policy, todo_timer_event", [
+        (LinkedTimerPolicy.UNLINK, "timer.updated"),
+        (LinkedTimerPolicy.DELETE, "timer.deleted"),
+    ])
+    def test_todo_policy_governs_timers_linked_to_both(
+            self, session, test_engine, group_id, after_commit_items, policy, todo_timer_event):
+        """Todo에도 연결된 타이머는 Todo의 정책만 따르고 타이머마다 이벤트는 하나"""
+        todo, projection_id = self._todo_with_projection(session, group_id)
+        both = _timer(session, todo_id=todo.id)
+        schedule_only = self._schedule_only_timer(session, projection_id)
+        after_commit_items.clear()
+
+        TodoService(session, OWNER).delete_todo(todo.id, LinkedSchedulePolicy.DELETE, policy)
+        session.commit()
+
+        events = {}
+        for item in after_commit_items:
+            payload = item["message"]["payload"]
+            timer_id = payload["timer"]["id"] if payload["timer"] else payload["timer_id"]
+            assert timer_id not in events
+            events[timer_id] = item["message"]
+        assert {timer_id: m["type"] for timer_id, m in events.items()} == {
+            str(both.id): todo_timer_event,
+            str(schedule_only.id): "timer.updated",
+        }
+        if policy == LinkedTimerPolicy.UNLINK:
+            stored = _stored(test_engine, both.id)
+            assert (stored.todo_id, stored.schedule_id) == (None, None)
+            assert events[str(both.id)]["payload"]["timer"]["schedule_id"] is None
+        else:
+            assert _stored(test_engine, both.id) is None
+        assert _stored(test_engine, schedule_only.id).schedule_id is None

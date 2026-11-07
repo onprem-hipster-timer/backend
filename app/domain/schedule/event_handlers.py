@@ -4,6 +4,8 @@ Todo 이벤트를 받아 투영 Schedule을 동기화하는 핸들러.
 핸들러는 내부 projection이라 사용자 권한 검증 대신 owner 불변조건
 (변경 대상 owner_id == event.owner_id)을 강제하고, CurrentUser 없이
 low-level 연산만 사용한다. 자동 생성 리소스에 visibility는 복사하지 않는다.
+투영을 삭제할 때는 연결 타이머를 위해 ScheduleDeleted(origin=TODO)를 수집한다 —
+타이머는 묻지 않고 일정 연결만 해제되고, Todo 쪽 핸들러는 origin 가드로 무시한다.
 """
 import logging
 from datetime import timedelta
@@ -13,8 +15,10 @@ from sqlmodel import Session
 
 from app.crud import schedule as schedule_crud
 from app.crud import tag as tag_crud
+from app.crud import timer as timer_crud
 from app.crud import todo as todo_crud
 from app.crud import visibility as visibility_crud
+from app.domain.schedule.events import ScheduleDeleted
 from app.domain.todo.enums import LinkedSchedulePolicy
 from app.domain.todo.events import (
     TodoContentChanged,
@@ -27,7 +31,9 @@ from app.domain.todo.events import (
 from app.domain.visibility.enums import ResourceType
 from app.models.schedule import Schedule
 from app.models.todo import Todo
+from app.shared.events import EventOrigin
 from app.shared.messagebus import register
+from app.shared.uow import collect_event
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +91,28 @@ def _move_projection(session: Session, schedule: Schedule, todo: Todo) -> None:
     session.flush()
 
 
-def _delete_schedule_with_cleanup(session: Session, schedule: Schedule) -> None:
-    """Schedule 삭제 + 접근권한 설정 cleanup (orphan visibility 방지)"""
+def _delete_schedule_with_cleanup(
+        session: Session,
+        schedule: Schedule,
+        todo_timer_ids: tuple[UUID, ...] = (),
+) -> None:
+    """
+    Schedule 삭제 + 접근권한 설정 cleanup (orphan visibility 방지)
+
+    연결 타이머는 schedule_id가 SET NULL되기 전에 스냅샷해 ScheduleDeleted(origin=TODO,
+    정책 없음)로 넘긴다 — 타이머 핸들러가 일정 연결만 해제하고 timer.updated를 보낸다.
+    삭제되는 Todo에도 연결된 타이머(todo_timer_ids)는 그 Todo의 linked_timer_policy가
+    처리하므로 제외한다.
+    """
+    timers = timer_crud.get_timers_by_schedule(session, schedule.id, schedule.owner_id)
+    collect_event(session, ScheduleDeleted(
+        owner_id=schedule.owner_id,
+        origin=EventOrigin.TODO,
+        schedule_id=schedule.id,
+        source_todo_id=schedule.source_todo_id,
+        policy=None,
+        linked_timer_ids=tuple(t.id for t in timers if t.id not in todo_timer_ids),
+    ))
     visibility_crud.delete_visibility_by_resource(
         session, ResourceType.SCHEDULE, schedule.id
     )
@@ -194,4 +220,4 @@ def remove_projections_of_deleted_todo(event: TodoDeleted, session: Session) -> 
         if event.policy == LinkedSchedulePolicy.UNLINK:
             _unlink_schedule(session, schedule)
         else:
-            _delete_schedule_with_cleanup(session, schedule)
+            _delete_schedule_with_cleanup(session, schedule, event.linked_timer_ids)
