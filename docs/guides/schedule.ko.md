@@ -259,6 +259,19 @@ const response = await fetch(
 );
 ```
 
+!!! danger "연결 타이머가 있는 일정 삭제에는 `linked_timer_policy` 필수"
+    `schedule_id`가 이 일정인 타이머가 있으면 처리 방식을 함께 보내야 합니다
+    (**서버 기본값 없음**, 누락 시 `422`). 연결 타이머가 없으면 생략할 수 있습니다.
+
+    - `DELETE /v1/schedules/{id}?linked_timer_policy=delete|unlink`
+
+    | 값 | 동작 |
+    |----|------|
+    | `delete` | 타이머 삭제 (접근권한 설정도 함께 정리) — `timer.deleted` 이벤트 |
+    | `unlink` | 일정 연결만 해제 (`schedule_id` → NULL, `todo_id`는 유지) — 실행 중이면 계속 실행. `timer.updated`(`action: update`) 이벤트 |
+
+    반복 일정의 마지막 인스턴스를 지워 원본이 삭제될 때는 생략하면 `unlink`입니다.
+
 ## UI 표시 가이드
 
 ### 캘린더 뷰
