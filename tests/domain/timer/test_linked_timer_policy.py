@@ -5,6 +5,7 @@ Todo·Schedule을 지우면 연결 타이머를 클라이언트가 지정한 lin
 연결 타이머가 있는데 정책이 없으면 422(LinkedTimerPolicyRequiredError)이고 전체가 rollback된다.
 실시간 이벤트는 커밋된 뒤에만 sink로 넘어가므로 실제로 커밋하는 세션을 쓴다.
 """
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -13,6 +14,10 @@ from sqlmodel import Session
 from app.core.constants import TimerStatus
 from app.crud import visibility as visibility_crud
 from app.domain.friend.service import FriendService
+from app.domain.schedule.enums import SourceTodoPolicy
+from app.domain.schedule.model import Schedule
+from app.domain.schedule.schema.dto import ScheduleCreate
+from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagGroupCreate
 from app.domain.tag.service import TagService
 from app.domain.timer.enums import LinkedTimerPolicy
@@ -30,6 +35,7 @@ from tests.conftest import make_user
 
 OWNER = make_user("owner", name="Owner Name")
 FRIEND = make_user("friend")
+START = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -58,6 +64,14 @@ def _timer(session, **links) -> TimerSession:
     timer = TimerService(session, OWNER).create_timer(TimerCreate(allocated_duration=1800, **links))
     session.commit()
     return timer
+
+
+def _schedule(session, **fields) -> Schedule:
+    schedule = ScheduleService(session, OWNER).create_schedule(
+        ScheduleCreate(title="일정", start_time=START, end_time=START + timedelta(hours=1), **fields)
+    )
+    session.commit()
+    return schedule
 
 
 def _stored(test_engine, timer_id: UUID) -> TimerSession | None:
@@ -143,3 +157,98 @@ class TestDeleteTodo:
         assert message["payload"]["action"] == "delete"
         assert message["payload"]["timer"] is None
         assert message["payload"]["timer_id"] == str(timer_id)
+
+
+# ============================================================
+# Schedule 삭제
+# ============================================================
+
+class TestDeleteSchedule:
+    def test_without_policy_rejected_and_rolled_back(self, session, test_engine, after_commit_items):
+        schedule = _schedule(session)
+        timer = _timer(session, schedule_id=schedule.id)
+        after_commit_items.clear()
+
+        with pytest.raises(LinkedTimerPolicyRequiredError):
+            ScheduleService(session, OWNER).delete_schedule(schedule.id)
+        session.rollback()
+
+        with Session(test_engine) as fresh:
+            assert fresh.get(Schedule, schedule.id) is not None
+        assert _stored(test_engine, timer.id).schedule_id == schedule.id
+        assert after_commit_items == []
+
+    def test_unlink_keeps_timer_and_its_todo_link(self, session, test_engine, group_id, after_commit_items):
+        todo = _todo(session, group_id, deadline=START)
+        timer = _timer(session, todo_id=todo.id)  # 투영 일정이 함께 연결된다
+        projection_id = timer.schedule_id
+        assert projection_id is not None
+        before = timer.updated_at
+        after_commit_items.clear()
+
+        ScheduleService(session, OWNER).delete_schedule(
+            projection_id, SourceTodoPolicy.KEEP_DEADLINE, LinkedTimerPolicy.UNLINK
+        )
+        session.commit()
+
+        stored = _stored(test_engine, timer.id)
+        assert stored.schedule_id is None
+        assert stored.todo_id == todo.id
+        assert stored.status == TimerStatus.RUNNING
+        assert stored.updated_at > before
+        [item] = after_commit_items
+        message = item["message"]
+        assert message["type"] == "timer.updated"
+        assert message["payload"]["action"] == "update"
+        assert message["payload"]["timer"]["schedule_id"] is None
+        assert message["payload"]["timer"]["todo_id"] == str(todo.id)
+
+    def test_delete_removes_timer_and_visibility(self, session, test_engine, after_commit_items):
+        schedule = _schedule(session)
+        timer = _timer(session, schedule_id=schedule.id)
+        timer_id = timer.id
+        VisibilityService(session, OWNER).set_visibility(ResourceType.TIMER, timer_id, VisibilityLevel.PUBLIC)
+        session.commit()
+        after_commit_items.clear()
+
+        ScheduleService(session, OWNER).delete_schedule(schedule.id, linked_timer_policy=LinkedTimerPolicy.DELETE)
+        session.commit()
+
+        assert _stored(test_engine, timer_id) is None
+        assert visibility_crud.get_visibility_by_resource(session, ResourceType.TIMER, timer_id) is None
+        [item] = after_commit_items
+        assert item["message"]["type"] == "timer.deleted"
+        assert item["message"]["payload"]["timer_id"] == str(timer_id)
+
+
+class TestRecurringSeriesExhausted:
+    """마지막 인스턴스 삭제로 원본이 지워지는 경로 — 묻지 않고 unlink, 명시하면 그 정책"""
+
+    def _single_instance_series(self, session) -> Schedule:
+        return _schedule(session, recurrence_rule="FREQ=DAILY", recurrence_end=START + timedelta(hours=1))
+
+    def test_without_policy_unlinks_timer(self, session, test_engine, after_commit_items):
+        series = self._single_instance_series(session)
+        timer = _timer(session, schedule_id=series.id)
+        after_commit_items.clear()
+
+        ScheduleService(session, OWNER).delete_recurring_instance(series.id, START)
+        session.commit()
+
+        with Session(test_engine) as fresh:
+            assert fresh.get(Schedule, series.id) is None
+        assert _stored(test_engine, timer.id).schedule_id is None
+        assert [item["message"]["type"] for item in after_commit_items] == ["timer.updated"]
+
+    def test_explicit_delete_policy_deletes_timer(self, session, test_engine, after_commit_items):
+        series = self._single_instance_series(session)
+        timer = _timer(session, schedule_id=series.id)
+        after_commit_items.clear()
+
+        ScheduleService(session, OWNER).delete_recurring_instance(
+            series.id, START, linked_timer_policy=LinkedTimerPolicy.DELETE
+        )
+        session.commit()
+
+        assert _stored(test_engine, timer.id) is None
+        assert [item["message"]["type"] for item in after_commit_items] == ["timer.deleted"]

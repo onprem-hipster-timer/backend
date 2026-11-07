@@ -1,5 +1,5 @@
 """
-Todo 삭제 이벤트를 받아 연결 타이머를 처리하는 핸들러.
+Todo·Schedule 삭제 이벤트를 받아 연결 타이머를 처리하는 핸들러.
 
 연결 타이머는 클라이언트가 지정한 linked_timer_policy로 처리한다. 연결 타이머가
 있는데 정책이 없으면 LinkedTimerPolicyRequiredError(422)를 던져 요청 전체를
@@ -15,6 +15,7 @@ from app.core.auth import CurrentUser
 from app.crud import timer as timer_crud
 from app.crud import user_profile as user_profile_crud
 from app.crud import visibility as visibility_crud
+from app.domain.schedule.events import ScheduleDeleted
 from app.domain.timer.enums import LinkedTimerPolicy
 from app.domain.timer.exceptions import LinkedTimerPolicyRequiredError
 from app.domain.timer.model import TimerSession
@@ -79,4 +80,22 @@ def apply_policy_to_timers_of_deleted_todo(event: TodoDeleted, session: Session)
             _delete_timer(session, actor, timer)
         else:
             timer.todo_id = None
+            _publish_unlinked(session, actor, timer)
+
+
+@register(ScheduleDeleted)
+def apply_policy_to_timers_of_deleted_schedule(event: ScheduleDeleted, session: Session) -> None:
+    """Schedule 삭제 → 스냅샷된 연결 타이머를 클라이언트 정책에 따라 삭제 또는 일정 연결만 해제"""
+    timers = _owned_timers(session, event.linked_timer_ids, event.owner_id)
+    if not timers:
+        return
+    if event.linked_timer_policy is None:
+        raise LinkedTimerPolicyRequiredError()
+
+    actor = _actor(session, event.owner_id)
+    for timer in timers:
+        if event.linked_timer_policy == LinkedTimerPolicy.DELETE:
+            _delete_timer(session, actor, timer)
+        else:
+            timer.schedule_id = None
             _publish_unlinked(session, actor, timer)

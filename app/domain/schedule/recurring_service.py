@@ -211,6 +211,7 @@ class RecurringScheduleService:
             parent_id: UUID,
             instance_start: datetime,
             source_todo_policy=None,
+            linked_timer_policy=None,
     ) -> None:
         """
         반복 일정의 특정 인스턴스 삭제
@@ -224,6 +225,8 @@ class RecurringScheduleService:
         :param instance_start: 인스턴스 시작 시간
         :param source_todo_policy: 소진으로 원본이 삭제될 때 source Todo 처리
             정책. 미지정 시 데이터 보존 쪽(KEEP_DEADLINE)을 택한다
+        :param linked_timer_policy: 소진으로 원본이 삭제될 때 연결 타이머 처리
+            정책. 미지정 시 데이터 보존 쪽(UNLINK)을 택한다
         :raises ScheduleNotFoundError: 원본 일정을 찾을 수 없는 경우
         """
         # 원본 일정 조회
@@ -262,15 +265,20 @@ class RecurringScheduleService:
                 # 모든 인스턴스가 삭제되었으면 원본 일정도 삭제
                 # (ScheduleService.delete_schedule을 경유하지 않는 삭제 경로이므로
                 #  접근권한 cleanup과 삭제 이벤트 수집을 여기서 직접 수행)
+                from app.crud import timer as timer_crud
                 from app.crud import visibility as visibility_crud
                 from app.domain.schedule.enums import SourceTodoPolicy
                 from app.domain.schedule.events import ScheduleDeleted
+                from app.domain.timer.enums import LinkedTimerPolicy
                 from app.domain.visibility.enums import ResourceType
                 from app.shared.events import EventOrigin
                 from app.shared.uow import collect_event
 
                 visibility_crud.delete_visibility_by_resource(
                     self.session, ResourceType.SCHEDULE, parent_schedule.id
+                )
+                timers = timer_crud.get_timers_by_schedule(
+                    self.session, parent_schedule.id, self.owner_id
                 )
                 # 클라이언트가 정책을 명시했으면 그대로, 아니면 데이터 보존 쪽
                 collect_event(self.session, ScheduleDeleted(
@@ -279,6 +287,8 @@ class RecurringScheduleService:
                     schedule_id=parent_schedule.id,
                     source_todo_id=parent_schedule.source_todo_id,
                     policy=source_todo_policy or SourceTodoPolicy.KEEP_DEADLINE,
+                    linked_timer_ids=tuple(t.id for t in timers),
+                    linked_timer_policy=linked_timer_policy or LinkedTimerPolicy.UNLINK,
                 ))
                 crud.delete_schedule(self.session, parent_schedule)
 
