@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Datetime columns created as `timestamptz`**: databases bootstrapped with `create_all` while model datetime fields were plain `datetime` got `TIMESTAMP WITH TIME ZONE` columns, so PostgreSQL returned timezone-aware values and arithmetic with naive UTC datetimes failed with 500 (`can't subtract offset-naive and offset-aware datetimes`) on timer pause, stop and cancel and in schedule duration calculations. A migration converts these columns to `TIMESTAMP WITHOUT TIME ZONE`, keeping the same UTC instant; columns that are already naive are left as they are.
+- **Alembic accepts `%` in `DATABASE_URL`**: percent-encoded characters in the URL (for example `options=-c%20timezone=...` or an encoded password) no longer break `alembic` with a configparser interpolation error.
 
 ---
 

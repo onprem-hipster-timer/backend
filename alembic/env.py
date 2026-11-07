@@ -47,8 +47,8 @@ target_metadata = SQLModel.metadata
 # ============================================================
 from app.core.config import settings  # noqa: E402
 
-# alembic.ini의 sqlalchemy.url을 덮어쓰기
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# alembic.ini의 sqlalchemy.url을 덮어쓰기. configparser는 %를 보간 문법으로 읽으므로 %%로 적는다
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 
 def _is_sqlite() -> bool:
