@@ -601,7 +601,7 @@ PUT /v1/visibility/timer/{timer_id}
 ## 관련 문서
 
 - [WebSocket API](../api/websocket.md) - 수신 전용 소켓 프로토콜
-- [실시간 전달](../development/realtime-adapter.ko.md) - 배포 모드와 계약
+- [실시간 전달](../development/realtime-adapter.ko.md) - 전달 모드와 계약
 - [Visibility API 가이드](./visibility.ko.md) - 접근권한 설정 상세 가이드
 - [Schedule API 가이드](./schedule.ko.md) - 일정 관리
 - [Todo API 가이드](./todo.ko.md) - 할 일 관리
