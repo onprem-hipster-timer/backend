@@ -56,9 +56,9 @@ class TodoTagsChanged(TodoEvent):
 @dataclass(frozen=True, kw_only=True)
 class TodoStatusChanged(TodoEvent):
     """
-    status가 DONE 또는 CANCELLED로 바뀜
+    status가 바뀜 (연동 플래그 UNSCHEDULED↔SCHEDULED의 자동 전이 포함)
 
-    :param status: 바뀐 status (DONE 또는 CANCELLED)
+    :param status: 바뀐 status
     """
     status: TodoStatus
 

@@ -419,8 +419,8 @@ class TodoService:
         비즈니스 로직:
         - Todo 모델 직접 업데이트
         - deadline 변경 시 Schedule 생성/업데이트/삭제 처리
-        - status 업데이트 지원. DONE·CANCELLED로 바뀌면 연결된 실행 중·일시정지 타이머를
-          완료·취소 (TodoStatusChanged → app/domain/timer/event_handlers.py)
+        - status 업데이트 지원. status가 바뀌면(연동 플래그 자동 전이 포함) 연결된 실행 중·일시정지
+          타이머에 반영 (TodoStatusChanged → app/domain/timer/event_handlers.py)
         - parent_id 업데이트 지원 (트리 구조 변경)
         - 태그는 TagService.set_todo_tags() 사용
         
@@ -511,14 +511,14 @@ class TodoService:
         todo = crud.update_todo(self.session, todo, data)
 
         # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
-        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지
         if deadline_updated and 'status' not in update_dict:
             if new_deadline and todo.status not in (TodoStatus.DONE, TodoStatus.CANCELLED):
                 todo.status = TodoStatus.SCHEDULED
             elif not new_deadline and todo.status == TodoStatus.SCHEDULED:
                 todo.status = TodoStatus.UNSCHEDULED
 
-        if todo.status != old_status and todo.status in (TodoStatus.DONE, TodoStatus.CANCELLED):
+        # 명시·자동 어느 쪽이든 전이마다 하나 (연결 타이머용)
+        if todo.status != old_status:
             collect_event(self.session, TodoStatusChanged(
                 owner_id=self.owner_id,
                 origin=EventOrigin.TODO,

@@ -2,7 +2,8 @@
 타이머 완료·취소와 연결 Todo 상태 테스트
 
 - 타이머 완료 → 연결 Todo DONE, 취소 → CANCELLED (app/domain/todo/event_handlers.py)
-- Todo가 DONE·CANCELLED가 되면 실행 중·일시정지 타이머를 완료·취소 (app/domain/timer/event_handlers.py)
+- Todo가 DONE·CANCELLED가 되면 실행 중·일시정지 타이머를 완료·취소, UNSCHEDULED·SCHEDULED가
+  되면 타이머는 그대로 두고 update 이벤트만 (app/domain/timer/event_handlers.py)
 - 이미 DONE·CANCELLED인 Todo는 그대로 둔다 — 그래서 양방향 전파가 한 번에 끝난다
 실시간 이벤트는 커밋된 뒤에만 sink로 넘어가므로 실제로 커밋하는 세션을 쓴다.
 """
@@ -13,18 +14,22 @@ import pytest
 from sqlalchemy import update
 from sqlmodel import Session
 
+from app.crud import schedule as schedule_crud
+from app.domain.schedule.enums import SourceTodoPolicy
+from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagGroupCreate
 from app.domain.tag.service import TagService
 from app.domain.timer.events import TimerCancelled, TimerCompleted
 from app.domain.timer.model import TimerSession
-from app.domain.timer.schema.dto import TimerCreate
+from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
 from app.domain.timer.service import TimerService
-from app.domain.todo.enums import TodoStatus
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.domain.todo.events import TodoStatusChanged
 from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
 from app.domain.user.service import UserProfileService
+from app.shared.events import EventOrigin
 from app.shared.messagebus import HANDLERS
 from tests.conftest import make_user
 
@@ -84,6 +89,18 @@ def _set_status(session, todo_id: UUID, status: TodoStatus) -> None:
     session.commit()
 
 
+def _assert_nudged(test_engine, timer: TimerSession, before: datetime, after_commit_items: list) -> None:
+    """타이머는 실행 중 그대로, updated_at만 갱신되고 timer.updated(update)가 하나 나갔다"""
+    stored = _stored_timer(test_engine, timer.id)
+    assert stored.status == "RUNNING"
+    assert stored.updated_at > before
+    [item] = after_commit_items
+    message = item["message"]
+    assert (message["type"], message["payload"]["action"]) == ("timer.updated", "update")
+    assert message["payload"]["timer"]["id"] == str(timer.id)
+    assert message["payload"]["timer"]["status"] == "RUNNING"
+
+
 # ============================================================
 # 타이머 → Todo
 # ============================================================
@@ -132,6 +149,27 @@ class TestTimerFinishesTodo:
 
         assert _stored_status(test_engine, TimerSession, timer.id) == "CANCELLED"
         assert _stored_status(test_engine, Todo, todo.id) == TodoStatus.CANCELLED
+
+    def test_stop_completes_other_active_timer_of_todo(
+            self, session, test_engine, group_id, after_commit_items, handled):
+        """타이머 완료로 Todo가 DONE이 되면 같은 Todo의 다른 실행 중 타이머도 완료된다"""
+        todo = _todo(session, group_id)
+        stopped = _timer(session, todo_id=todo.id)
+        other = _timer(session, todo_id=todo.id)
+        after_commit_items.clear()
+
+        TimerService(session, OWNER).stop_timer(stopped.id)
+        session.commit()
+
+        assert _stored_status(test_engine, TimerSession, other.id) == "COMPLETED"
+        assert [(type(e), getattr(e, "timer_id", None)) for e in handled] == [
+            (TimerCompleted, stopped.id),
+            (TodoStatusChanged, None),
+            (TimerCompleted, other.id),
+        ]
+        assert handled[1].origin == EventOrigin.TIMER
+        assert [(i["message"]["payload"]["timer"]["id"], i["message"]["payload"]["action"])
+                for i in after_commit_items] == [(str(stopped.id), "stop"), (str(other.id), "stop")]
 
     def test_cancel_keeps_done_todo(self, session, test_engine, group_id):
         todo = _todo(session, group_id, status=TodoStatus.DONE)
@@ -206,18 +244,55 @@ class TestTodoFinishesTimers:
         (None, TodoStatus.UNSCHEDULED),
         (DEADLINE, TodoStatus.SCHEDULED),
     ])
-    def test_reopen_leaves_timer_running(
+    def test_reopen_keeps_timer_running_and_sends_update(
             self, session, test_engine, group_id, after_commit_items, handled, deadline, reopened):
         todo = _todo(session, group_id, deadline=deadline, status=TodoStatus.DONE)
         timer = _timer(session, todo_id=todo.id)
+        before = timer.updated_at
         after_commit_items.clear()
 
         _set_status(session, todo.id, reopened)
 
         assert _stored_status(test_engine, Todo, todo.id) == reopened
-        assert _stored_status(test_engine, TimerSession, timer.id) == "RUNNING"
-        assert after_commit_items == []
-        assert handled == []
+        _assert_nudged(test_engine, timer, before, after_commit_items)
+        assert [(type(e), e.status) for e in handled] == [(TodoStatusChanged, reopened)]
+
+    @pytest.mark.parametrize("update, flipped", [
+        (TodoUpdate(deadline=DEADLINE), TodoStatus.SCHEDULED),
+        (TodoUpdate(deadline=None, linked_schedule_policy=LinkedSchedulePolicy.UNLINK), TodoStatus.UNSCHEDULED),
+    ])
+    def test_deadline_flip_sends_update_once(
+            self, session, test_engine, group_id, after_commit_items, handled, update, flipped):
+        todo = _todo(session, group_id, deadline=None if flipped == TodoStatus.SCHEDULED else DEADLINE)
+        timer = _timer(session, todo_id=todo.id)
+        before = timer.updated_at
+        after_commit_items.clear()
+
+        TodoService(session, OWNER).update_todo(todo.id, update)
+        session.commit()
+
+        assert _stored_status(test_engine, Todo, todo.id) == flipped
+        _assert_nudged(test_engine, timer, before, after_commit_items)
+        assert [(type(e), e.status) for e in handled] == [(TodoStatusChanged, flipped)]
+
+    def test_projection_deleted_from_schedule_side_sends_update_once(
+            self, session, test_engine, group_id, after_commit_items, handled):
+        todo = _todo(session, group_id, deadline=DEADLINE)
+        timer = _timer(session, todo_id=todo.id)
+        TimerService(session, OWNER).update_timer(timer.id, TimerUpdate(schedule_id=None))
+        session.commit()
+        before = _stored_timer(test_engine, timer.id).updated_at
+        [projection] = schedule_crud.get_schedules_by_source_todo_id(session, todo.id, OWNER.sub)
+        after_commit_items.clear()
+
+        ScheduleService(session, OWNER).delete_schedule(projection.id, SourceTodoPolicy.KEEP_DEADLINE)
+        session.commit()
+
+        assert _stored_status(test_engine, Todo, todo.id) == TodoStatus.UNSCHEDULED
+        _assert_nudged(test_engine, timer, before, after_commit_items)
+        assert [(type(e), e.status, e.origin) for e in handled] == [
+            (TodoStatusChanged, TodoStatus.UNSCHEDULED, EventOrigin.SCHEDULE)
+        ]
 
     def test_done_again_collects_nothing(self, session, test_engine, group_id, after_commit_items, handled):
         todo = _todo(session, group_id, status=TodoStatus.DONE)
