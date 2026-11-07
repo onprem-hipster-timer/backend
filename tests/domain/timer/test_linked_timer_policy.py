@@ -123,6 +123,20 @@ class TestDeleteTodo:
         assert message["payload"]["timer"]["id"] == str(timer.id)
         assert message["payload"]["timer"]["todo_id"] is None
 
+    def test_unlink_two_timers_each_get_an_event(self, session, test_engine, group_id, after_commit_items):
+        todo = _todo(session, group_id)
+        first = _timer(session, todo_id=todo.id)
+        second = _timer(session, todo_id=todo.id)
+        after_commit_items.clear()
+
+        TodoService(session, OWNER).delete_todo(todo.id, linked_timer_policy=LinkedTimerPolicy.UNLINK)
+        session.commit()
+
+        ids = sorted(item["message"]["payload"]["timer"]["id"] for item in after_commit_items)
+        assert ids == sorted([str(first.id), str(second.id)])
+        assert _stored(test_engine, first.id).todo_id is None
+        assert _stored(test_engine, second.id).todo_id is None
+
     @pytest.mark.parametrize("pause, status", [(False, TimerStatus.RUNNING), (True, TimerStatus.PAUSED)])
     def test_unlink_keeps_active_timer_running(self, session, test_engine, group_id, pause, status):
         todo = _todo(session, group_id)
