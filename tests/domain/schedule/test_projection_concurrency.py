@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import event, text
 from sqlmodel import Session, select
 
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagGroupCreate
@@ -255,6 +256,76 @@ def test_concurrent_todo_and_schedule_time_updates_complete_without_deadlock(
         todo = session.get(Todo, todo_id)
         schedule = session.get(Schedule, schedule_id)
         projection_is_consistent = todo.deadline == schedule.start_time
+
+    assert [result["outcome"] for result in results] == ["success", "success"], results
+    assert projection_is_consistent
+
+
+def test_concurrent_todo_deadline_update_and_schedule_delete_complete_without_deadlock(
+    test_engine,
+    test_user,
+):
+    todo_id, schedule_id, original_deadline = _seed_linked_projection(
+        test_engine,
+        test_user,
+    )
+    thread_state = threading.local()
+    listener = _install_write_gate(
+        test_engine,
+        thread_state,
+        {
+            "todo": "update todo ",
+            "schedule": "delete from schedule ",
+        },
+    )
+
+    todo_deadline = original_deadline + timedelta(minutes=10)
+
+    def worker(role, start_gate):
+        thread_state.role = role
+        with Session(test_engine) as session:
+            try:
+                _set_bounded_postgresql_waits(session)
+                start_gate.wait(timeout=_START_GATE_TIMEOUT_SECONDS)
+                if role == "todo":
+                    TodoService(session, test_user).update_todo(
+                        todo_id,
+                        TodoUpdate(deadline=todo_deadline),
+                    )
+                else:
+                    ScheduleService(session, test_user).delete_schedule(
+                        schedule_id,
+                        SourceTodoPolicy.KEEP_DEADLINE,
+                    )
+                session.commit()
+                return {"outcome": "success", "role": role}
+            except Exception as exc:
+                session.rollback()
+                clear_events(session)
+                return {
+                    "outcome": "error",
+                    "role": role,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+    try:
+        results = _run_two_workers(worker, ("todo", "schedule"))
+    finally:
+        event.remove(test_engine, "after_cursor_execute", listener)
+
+    with Session(test_engine) as session:
+        todo = session.get(Todo, todo_id)
+        projections = list(
+            session.exec(
+                select(Schedule).where(Schedule.source_todo_id == todo_id)
+            ).all()
+        )
+        # Either order is valid; the Todo flag and deadline must match what survived.
+        projection_is_consistent = (
+            todo.deadline == todo_deadline
+            and (todo.status == TodoStatus.SCHEDULED) == bool(projections)
+            and all(p.start_time == todo.deadline for p in projections)
+        )
 
     assert [result["outcome"] for result in results] == ["success", "success"], results
     assert projection_is_consistent
