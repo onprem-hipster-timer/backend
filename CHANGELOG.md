@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CORS exposes `Date`**: responses to allowed origins send `Access-Control-Expose-Headers: Date`, so browser clients can read the server time from the `Date` header of REST responses.
 - **`/v1/ws/timers` authentication failures close with `1008`**: when the token is missing or invalid, the server completes the handshake (echoing the `authorization.bearer.*` subprotocol) and then closes with `1008` and a reason. Previously it rejected the handshake with HTTP 403, which browsers report as `1006`, so clients did not know to refresh the token.
+- **`/v1/ws/timers` rate-limit rejections close with `4029`**: the server completes the handshake before closing, so browsers see `4029` instead of `1006`.
 
 ---
 
