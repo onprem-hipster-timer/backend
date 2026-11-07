@@ -2,12 +2,16 @@
 타이머 WebSocket 테스트 (/v1/ws/timers, 수신 전용)
 
 - 연결 직후 connected, `ping` → `pong`, 그 외 메시지는 무시
+- 인증에 실패하면 핸드셰이크를 마친 뒤 1008로 닫는다
 - REST 명령이 커밋되면 받는 사람(소유자, 공개 범위상 친구)의 소켓으로 이벤트가 온다 (InProcessPublisher)
 """
 import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from uuid import UUID
+
+import pytest
+from starlette.websockets import WebSocketDisconnect
 
 from app.realtime.publisher import InProcessPublisher, as_after_commit_sink
 from app.shared.uow import set_after_commit_sink
@@ -49,6 +53,34 @@ def test_echoes_bearer_subprotocol(e2e_client):
     with e2e_client.websocket_connect("/v1/ws/timers", subprotocols=[protocol]) as ws:
         assert ws.accepted_subprotocol == protocol
         assert ws.receive_json()["type"] == "connected"
+
+
+@pytest.fixture
+def oidc_rejects_tokens(monkeypatch):
+    """소켓 인증을 켜고 토큰 검증은 항상 실패시킨다"""
+    async def reject(token):
+        raise ValueError("invalid token")
+
+    monkeypatch.setattr("app.websocket.auth.settings.OIDC_ENABLED", True)
+    monkeypatch.setattr("app.websocket.auth.oidc_client.verify_token", reject)
+
+
+@pytest.mark.parametrize(
+    ("subprotocols", "reason"),
+    [
+        ([], "Authentication required"),
+        (["authorization.bearer.invalid"], "Token verification failed"),
+    ],
+)
+def test_auth_failure_closes_with_1008_after_handshake(e2e_client, oidc_rejects_tokens, subprotocols, reason):
+    # 핸드셰이크 전에 닫으면 HTTP 403이 되어 브라우저에는 1008이 아닌 1006으로 보인다
+    with e2e_client.websocket_connect("/v1/ws/timers", subprotocols=subprotocols) as ws:
+        assert ws.accepted_subprotocol == (subprotocols[0] if subprotocols else None)
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_json()
+
+    assert exc_info.value.code == 1008
+    assert exc_info.value.reason.startswith(reason)
 
 
 def test_ping_pong(e2e_client):

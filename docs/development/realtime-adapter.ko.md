@@ -45,7 +45,7 @@ sequenceDiagram
 | 소켓을 드는 곳 | backend 프로세스 (`ConnectionManager`) | realtime Worker와 사용자별 Durable Object (`UserHub`) |
 | 전달 | 같은 프로세스의 연결로 보냄 | Worker에 `POST /realtime/push` |
 | JWT 검증 | backend | Worker가 `GET /auth/.well-known/jwks.json`의 키로 검증 |
-| 인증 실패 | 핸드셰이크를 HTTP 403으로 거부 (브라우저에는 close code 1006) | 101로 받은 뒤 1008로 닫음 |
+| 인증 실패 | 101로 받은 뒤 1008로 닫음 | 101로 받은 뒤 1008로 닫음 |
 | 소켓 수명 | 제한 없음 | 24시간. 지나면 다음 전달 때 4000으로 닫음 |
 | 추가로 필요한 것 | 없음 | realtime-worker 배포, `REALTIME_PUSH_URL`, `REALTIME_PUSH_SECRET` |
 

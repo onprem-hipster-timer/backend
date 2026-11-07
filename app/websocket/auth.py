@@ -75,8 +75,15 @@ async def get_ws_current_user(websocket: WebSocket) -> CurrentUser:
 
     REST의 get_current_user와 동일한 역할.
     테스트 시 app.dependency_overrides로 override 가능.
+
+    인증에 실패하면 연결을 수락한 뒤 1008로 닫는다.
+    수락 전에 닫으면 핸드셰이크가 HTTP 403으로 거부되어 브라우저에는 1006으로 보인다.
     """
-    return await authenticate_websocket(websocket)
+    try:
+        return await authenticate_websocket(websocket)
+    except WebSocketException:
+        await websocket.accept(subprotocol=get_websocket_subprotocol(websocket))
+        raise  # Starlette가 수락된 소켓을 예외의 code·reason으로 닫는다
 
 
 def get_websocket_subprotocol(websocket: WebSocket) -> Optional[str]:

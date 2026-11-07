@@ -138,8 +138,7 @@ setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('ping'), 45000);
 | Close Code | 이름 | 설명 | 재연결 |
 |-----------|------|------|--------|
 | `1000` | Normal Closure | 정상 종료 | 선택적 |
-| `1006` | Abnormal Closure | 핸드셰이크 실패. `inprocess`는 인증 실패를 HTTP 403으로 거부하므로 브라우저에는 이 코드로 보입니다 | 토큰 갱신 후 지수 백오프로 재시도 |
-| `1008` | Policy Violation | 인증 실패 (`cloudflare`: 토큰 누락·만료·무효) | :x: 토큰 갱신 후 재시도 |
+| `1008` | Policy Violation | 인증 실패 (토큰 누락·만료·무효) | :x: 토큰 갱신 후 재시도 |
 | `1011` | Internal Error | 서버 내부 오류 | :white_check_mark: 지수 백오프 후 재시도 |
 | `4000` | Reconnect | 소켓 수명(24시간) 만료 (`cloudflare`) | :white_check_mark: 바로 재연결 |
 | `4029` | Rate Limit Exceeded | 연결 Rate Limit 초과 (`inprocess`) | :white_check_mark: 지수 백오프 후 재시도 |
