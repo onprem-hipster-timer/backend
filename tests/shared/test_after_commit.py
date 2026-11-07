@@ -35,6 +35,18 @@ def test_root_commit_sends_items_in_order(engine, after_commit_items):
     assert after_commit_items == [{"n": 1}, {"n": 2}]
 
 
+def test_same_key_sends_only_last_item(engine, after_commit_items):
+    with Session(engine) as session:
+        _write(session)
+        enqueue_after_commit(session, {"n": 1}, key="a")
+        enqueue_after_commit(session, {"n": 2})
+        enqueue_after_commit(session, {"n": 3}, key="a")
+        enqueue_after_commit(session, {"n": 4}, key="b")
+        session.commit()
+
+    assert after_commit_items == [{"n": 2}, {"n": 3}, {"n": 4}]
+
+
 def test_items_sent_once(engine, after_commit_items):
     with Session(engine) as session:
         enqueue_after_commit(session, {"n": 1})
