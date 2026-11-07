@@ -142,7 +142,8 @@ class ScheduleService:
         source Todo 행 → Schedule 행 순서로 잠근 뒤 최신 값의 일정을 반환
 
         Todo 쪽 쓰기도 Todo 행을 먼저 쓰고 투영 핸들러가 Schedule 행을 쓰므로,
-        연결된 두 행을 같은 순서로 잠가 교착을 막는다.
+        연결된 두 행을 같은 순서로 잠가 교착을 막는다. 두 조회 사이에 연결 Todo가 바뀌면
+        새 Todo는 일정보다 늦게 잠긴다.
 
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
