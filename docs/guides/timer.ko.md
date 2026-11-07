@@ -67,10 +67,20 @@ interface PauseEvent {
 }
 ```
 
-!!! note "연결 리소스 삭제 시 타이머 동작 (DB 레벨 SET NULL)"
-    연결된 Schedule 또는 Todo가 삭제되면 타이머는 **삭제되지 않고**
-    `schedule_id` / `todo_id`가 `null`로 해제되어 독립 타이머로 남습니다.
-    기록(경과 시간·이력)은 보존됩니다.
+!!! note "연결 리소스 삭제 시 타이머 동작 — `linked_timer_policy`"
+    연결 타이머가 있는 Todo·Schedule을 삭제할 때는 `linked_timer_policy`를 함께 보내야 합니다
+    (**서버 기본값 없음**, 누락 시 `422`). 연결 타이머가 없으면 생략할 수 있습니다.
+
+    | 값 | 동작 | 실시간 이벤트 |
+    |----|------|---------------|
+    | `delete` | 타이머 삭제 (접근권한 설정도 함께 정리) | `timer.deleted` |
+    | `unlink` | 연결만 해제 (`todo_id`/`schedule_id` → `null`). 독립 타이머로 남고, 실행 중이면 계속 실행됩니다 | `timer.updated` (`action: update`) |
+
+    - Todo 쪽 흐름(마감 제거, Todo 삭제의 `linked_schedule_policy=delete`)이 투영 일정을 지우면
+      그 일정에 걸린 타이머는 묻지 않고 `schedule_id`만 `null`이 됩니다 (`timer.updated`).
+      삭제되는 Todo에도 연결된 타이머는 그 Todo의 `linked_timer_policy`만 따릅니다.
+    - 반복 일정의 마지막 인스턴스를 지워 원본이 삭제될 때는 생략하면 `unlink`입니다.
+    - 태그 그룹 삭제로 지워지는 Todo의 타이머는 `unlink`됩니다.
 
 ### pause_history 예시
 
@@ -286,8 +296,8 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 | `type` | `action` | 발생 |
 |--------|----------|------|
 | `timer.created` | `start` | 생성 |
-| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정 |
-| `timer.deleted` | `delete` | 삭제 (`timer`는 `null`, `payload.timer_id`로 식별) |
+| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정, 연결된 Todo·Schedule 삭제로 연결 해제 (`update`) |
+| `timer.deleted` | `delete` | 삭제, 연결된 Todo·Schedule과 함께 삭제 (`timer`는 `null`, `payload.timer_id`로 식별) |
 
 이벤트를 받는 사람은 **소유자 본인**(명령을 보낸 기기 포함)과, 타이머 공개 범위가 `FRIENDS`·`PUBLIC`이면 소유자의 친구 전원, `SELECTED_FRIENDS`이면 허용 목록에 있는 친구입니다.
 
