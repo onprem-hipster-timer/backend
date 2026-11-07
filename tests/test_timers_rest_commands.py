@@ -1,7 +1,7 @@
 """
 타이머 REST 명령 테스트
 
-POST /v1/timers, PATCH /v1/timers/{id}/pause|resume, POST /v1/timers/{id}/stop,
+POST /v1/timers, PATCH /v1/timers/{id}/pause|resume, POST /v1/timers/{id}/stop|cancel,
 PATCH·DELETE /v1/timers/{id}
 
 - 상태 전이와 pause_history, timezone 변환
@@ -33,7 +33,7 @@ def _create(client, **params) -> dict:
 
 
 def _command(client, timer_id: str, action: str, **params):
-    method = client.post if action == "stop" else client.patch
+    method = client.post if action in ("stop", "cancel") else client.patch
     return method(f"/v1/timers/{timer_id}/{action}", params=params)
 
 
@@ -99,6 +99,8 @@ def test_full_lifecycle_records_pause_history(e2e_client):
     (["pause"], "pause"),
     (["stop"], "stop"),
     (["stop"], "pause"),
+    (["stop"], "cancel"),
+    (["cancel"], "cancel"),
 ])
 def test_invalid_transition_is_400(e2e_client, after_commit_items, setup, action):
     timer_id = _create(e2e_client)["id"]
@@ -113,9 +115,41 @@ def test_invalid_transition_is_400(e2e_client, after_commit_items, setup, action
 
 
 @pytest.mark.e2e
-@pytest.mark.parametrize("action", ["pause", "resume", "stop"])
+@pytest.mark.parametrize("action", ["pause", "resume", "stop", "cancel"])
 def test_unknown_timer_is_404(e2e_client, action):
     assert _command(e2e_client, str(uuid4()), action).status_code == 404
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("setup", [[], ["pause"]])
+def test_cancel_ends_active_timer(e2e_client, setup):
+    timer_id = _create(e2e_client)["id"]
+    for step in setup:
+        assert _command(e2e_client, timer_id, step).status_code == 200
+
+    response = _command(e2e_client, timer_id, "cancel")
+
+    assert response.status_code == 200
+    cancelled = response.json()
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["ended_at"] is not None
+    assert [h["action"] for h in cancelled["pause_history"]] == ["start", *setup, "cancel"]
+    assert e2e_client.get(f"/v1/timers/{timer_id}").json()["status"] == "CANCELLED"
+
+
+@pytest.mark.e2e
+def test_cancel_others_timer_is_404(multi_user_e2e, after_commit_items):
+    owner = multi_user_e2e.as_user("owner")
+    other = multi_user_e2e.as_user("other")
+    timer_id = _create(owner)["id"]
+    after_commit_items.clear()
+
+    response = _command(other, timer_id, "cancel")
+
+    assert response.status_code == 404
+    assert response.json()["error_type"] == "TimerNotFoundError"
+    assert owner.get(f"/v1/timers/{timer_id}").json()["status"] == "RUNNING"
+    assert after_commit_items == []
 
 
 # ============================================================
@@ -223,6 +257,7 @@ COMMAND_ROUTES = {
     ("PATCH", "/timers/{timer_id}/pause"),
     ("PATCH", "/timers/{timer_id}/resume"),
     ("POST", "/timers/{timer_id}/stop"),
+    ("POST", "/timers/{timer_id}/cancel"),
     ("PATCH", "/timers/{timer_id}"),
     ("DELETE", "/timers/{timer_id}"),
 }
@@ -260,3 +295,26 @@ def test_event_is_handed_off_before_response_start(e2e_client, after_commit_item
     assert response.status_code == 201
     assert events_at_response_start == [1]
     assert UUID(after_commit_items[0]["message"]["id"])
+
+
+@pytest.mark.e2e
+def test_cancel_event_is_handed_off_before_response_start(e2e_client, after_commit_items):
+    timer_id = _create(e2e_client)["id"]
+    after_commit_items.clear()
+    events_at_response_start: list[int] = []
+
+    async def recording_app(scope, receive, send):
+        async def wrapped_send(message):
+            if message["type"] == "http.response.start":
+                events_at_response_start.append(len(after_commit_items))
+            await send(message)
+
+        await app(scope, receive, wrapped_send)
+
+    response = TestClient(recording_app).post(f"/v1/timers/{timer_id}/cancel")
+
+    assert response.status_code == 200
+    assert events_at_response_start == [1]
+    message = after_commit_items[0]["message"]
+    assert (message["type"], message["payload"]["action"]) == ("timer.updated", "cancel")
+    assert message["payload"]["timer"]["status"] == "CANCELLED"

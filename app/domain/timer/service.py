@@ -467,6 +467,7 @@ class TimerService:
         타이머 취소
         
         비즈니스 로직:
+        - status가 RUNNING 또는 PAUSED이어야 함
         - status를 CANCELLED로 변경
         - ended_at을 현재 시간으로 설정
         - 연결 Todo가 DONE·CANCELLED가 아니면 CANCELLED로 (TimerCancelled → app/domain/todo/event_handlers.py)
@@ -474,10 +475,16 @@ class TimerService:
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
+
+        if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
+            raise InvalidTimerStatusError(
+                detail=f"Cannot cancel timer with status {timer.status}"
+            )
 
         self.mark_cancelled(timer)
         flush_and_dispatch_events(self.session)
@@ -485,9 +492,9 @@ class TimerService:
 
     def mark_cancelled(self, timer: TimerSession) -> None:
         """
-        타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
+        RUNNING·PAUSED 타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
 
-        dispatch는 호출자 몫이다 (cancel_timer, app/domain/timer/event_handlers.py).
+        상태 검증과 dispatch는 호출자 몫이다 (cancel_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
         timer.status = TimerStatus.CANCELLED.value
