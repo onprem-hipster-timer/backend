@@ -433,7 +433,7 @@ class TimerService:
         """
         RUNNING·PAUSED 타이머를 COMPLETED로 바꾸고 실시간 이벤트 적재, TimerCompleted 수집
 
-        상태 검증과 dispatch는 호출자 몫이다.
+        상태 검증과 dispatch는 호출자 몫이다 (stop_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
@@ -487,7 +487,7 @@ class TimerService:
         """
         타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
 
-        dispatch는 호출자 몫이다.
+        dispatch는 호출자 몫이다 (cancel_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
         timer.status = TimerStatus.CANCELLED.value
