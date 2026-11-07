@@ -274,6 +274,12 @@ Content-Type: application/json
     - Todo의 태그 업데이트
     - 연결된 Schedule의 태그도 함께 동기화
 
+!!! note "status와 연결 타이머"
+    status가 바뀌면(마감 설정·제거로 자동으로 바뀌는 경우 포함) 이 Todo의 RUNNING·PAUSED 타이머에 반영됩니다.
+    `DONE`이면 완료, `CANCELLED`면 취소되고, `UNSCHEDULED`·`SCHEDULED`면 타이머는 그대로입니다.
+    반대로 연결 타이머를 완료·취소하면 Todo가 `DONE`·`CANCELLED`가 됩니다 (이미 `DONE`·`CANCELLED`면 그대로).
+    자세한 내용은 [타이머 가이드](timer.md)의 "연결 Todo와 상태 연동"을 참고하세요.
+
 #### Todo 삭제
 
 ```http

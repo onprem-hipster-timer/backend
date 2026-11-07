@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Timer cancel command**: `POST /v1/timers/{timer_id}/cancel` (RUNNING or PAUSED → CANCELLED) takes the same query parameters as `stop` and sends `timer.updated` with `action: cancel`. Cancelling a timer that is not running or paused returns 400. The running segment is not added to `elapsed_time`.
+
+### Changed
+
+- **Timer completion and Todo status (breaking)**: completing a timer (`stop`) sets its linked Todo to `DONE` and cancelling sets it to `CANCELLED`; a Todo that is already `DONE` or `CANCELLED` is left as is. When a Todo's status changes (`PATCH /v1/todos/{id}`, including the automatic `UNSCHEDULED`↔`SCHEDULED` change when a deadline is set or removed, and removing a projected schedule from the schedule side), its running and paused timers follow: `DONE` completes them (the running segment is added, `timer.updated` with `action: stop`), `CANCELLED` cancels them (`action: cancel`), and `UNSCHEDULED`/`SCHEDULED` leaves them running and only bumps `updated_at` (`action: update`). When completing or cancelling a timer finishes its Todo, the Todo's other running and paused timers are completed or cancelled too. `stop` and `cancel` responses with `include_todo=true` show the new Todo status. Previously timer and Todo status were independent.
+- **One `update` event per timer per transaction**: when one request produces several `timer.updated` events with `action: update` for the same timer, only the last one (the latest state) is sent.
 
 ---
 

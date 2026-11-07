@@ -93,6 +93,8 @@ sequenceDiagram
 | `timer.deleted` | `delete` | `null` (`timer_id`로 식별) |
 | `connected` | — | — (`payload`는 `{}`) |
 
+- 연결 Todo의 status가 바뀌면 그 Todo의 RUNNING·PAUSED 타이머마다 `timer.updated`가 나갑니다. `DONE`은 `stop`, `CANCELLED`는 `cancel`, `UNSCHEDULED`·`SCHEDULED`는 `update`(타이머는 그대로이고 `updated_at`만 바뀜)입니다 ([도메인 이벤트](domain-events.ko.md) §5).
+- 한 트랜잭션에서 같은 타이머의 `update`는 마지막 상태로 하나만 나갑니다.
 - 시각은 REST 응답(`timezone=UTC`)과 같은 형식(`2026-11-06T10:30:00+0000`, `CustomModel`)으로 직렬화합니다. 같은 타이머 상태면 이벤트와 REST 응답의 `updated_at` 문자열이 같습니다.
 - `elapsed_time`은 저장된 누적값입니다. RUNNING이면 클라이언트가 `now - started_at`을 더해 표시합니다 ([타이머 가이드](../guides/timer.ko.md)의 elapsed_time 계산 규칙).
 - 클라이언트 → 서버 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답합니다. 그 외는 무시합니다.
@@ -159,6 +161,7 @@ session: Session = CommittingSession
 
 - `enqueue_after_commit`의 항목은 **루트 트랜잭션이 커밋된 뒤에만** sink로 넘어갑니다. rollback·close면 버려집니다.
 - SAVEPOINT(`begin_nested`) 안에서는 적재하지 않습니다. SAVEPOINT만 rollback돼도 항목이 남아 바깥 커밋 때 나갑니다.
+- `key`를 주고 적재하면 같은 `key`로 먼저 적재된 항목은 빠지고 마지막 것만 나갑니다. 타이머 `update`는 `(update, timer_id)`를 씁니다.
 - 도메인 이벤트 큐(`collect_event`, 커밋 전에 같은 트랜잭션에서 처리)와는 별개입니다 ([도메인 이벤트](domain-events.ko.md)).
 - 쓰기 라우트는 `CommittingSession`(`Depends(get_db_committing, scope="function")`, `app/db/session.py`)을 씁니다. `scope="function"`이 빠지면 커밋과 publish가 응답 뒤로 밀립니다. `get_db_transactional` 자체에 `scope`를 주면 세션이 둘로 나뉘므로 그러지 않습니다.
 - `message`는 JSON 그대로 보낼 수 있는 dict여야 합니다 (`WSServerMessage(...).model_dump(mode="json")`). 타이머 이벤트 조립은 `app/domain/timer/realtime.py`를 참고합니다.
@@ -174,11 +177,12 @@ session: Session = CommittingSession
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
 - 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
 - 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.
-- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제되면 이벤트 없이 `null`이 됩니다.
+- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제될 때는 `linked_timer_policy`에 따라 `unlink`면 링크가 `null`인 `action: update` 이벤트, `delete`면 `timer.deleted`가 옵니다.
 - `action: update` 이벤트는 태그(`tag_ids`) 변경을 담지 못하므로 링크가 같아도 같은 GET으로 다시 받습니다.
 - 가진 적 없는 타이머의 이벤트(다른 기기에서 만든 `timer.created` 등)는 자체 필드로 넣고 같은 GET으로 관계 필드를 채웁니다.
 - 이 GET과 명령·목록 응답은 모두 REST `Timer`(`TimerRead`)이고, 관계 필드는 `include_schedule`·`include_todo`·`tag_include_mode`(기본 `none`)를 줄 때만 채워집니다 (빼면 `schedule`·`todo`는 `null`, `tags`는 `[]`). REST 응답은 가진 타이머를 통째로 바꾸므로 모든 타이머 REST 호출에 같은 값을 붙입니다.
 - REST 응답(다시 받은 GET 포함)과 이벤트 모두에 `updated_at` 비교와 `timer.deleted` 규칙을 그대로 적용합니다.
+- 연결 Todo의 status 변경은 그 Todo의 타이머의 `timer.updated`로 옵니다 (`stop`·`cancel`·`update`). 타이머와 함께 보여 주는 Todo 정보는 이때 다시 읽습니다.
 - 모든 타이머 REST 호출에 `timezone=UTC`를 붙입니다. 이벤트의 시각은 항상 UTC입니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다.
 - 연결을 유지하려면 주기적으로 `ping`을 보냅니다.

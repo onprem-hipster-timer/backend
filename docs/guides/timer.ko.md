@@ -22,7 +22,7 @@ flowchart LR
     Socket --> Friends[공개 범위상 볼 수 있는 친구]
 ```
 
-- 생성·일시정지·재개·종료·수정·삭제와 조회는 모두 **REST**입니다. 명령 응답에 바뀐 타이머가 들어 있습니다.
+- 생성·일시정지·재개·완료·취소·수정·삭제와 조회는 모두 **REST**입니다. 명령 응답에 바뀐 타이머가 들어 있습니다.
 - 커밋된 변경은 **수신 전용 WebSocket**으로 내 다른 기기와 친구에게 전달됩니다 (아래 "실시간 수신").
 
 ---
@@ -82,6 +82,22 @@ interface PauseEvent {
       삭제되는 Todo에도 연결된 타이머는 그 Todo의 `linked_timer_policy`만 따릅니다.
     - 반복 일정의 마지막 인스턴스를 지워 원본이 삭제될 때는 생략하면 `unlink`입니다.
     - 태그 그룹 삭제로 지워지는 Todo의 타이머는 `unlink`됩니다.
+
+!!! note "연결 Todo와 상태 연동"
+    타이머는 연결된 Todo의 집중 세션입니다. 타이머를 끝내면 Todo도 끝나고, Todo의 상태가 바뀌면
+    그 Todo의 RUNNING·PAUSED 타이머에 반영됩니다.
+
+    | 변경 | 결과 |
+    |------|------|
+    | 타이머 완료 (`stop`) | 연결 Todo → `DONE` |
+    | 타이머 취소 (`cancel`) | 연결 Todo → `CANCELLED` |
+    | Todo → `DONE` | 타이머 완료 (`timer.updated`, `action: stop`) |
+    | Todo → `CANCELLED` | 타이머 취소 (`timer.updated`, `action: cancel`) |
+    | Todo → `UNSCHEDULED`·`SCHEDULED` (재오픈, 마감 설정·제거 포함) | 타이머는 그대로이고 `updated_at`만 바뀝니다 (`timer.updated`, `action: update`) |
+
+    - 이미 `DONE`·`CANCELLED`인 Todo는 타이머가 끝나도 바뀌지 않습니다. 완료한 Todo에 연결된 타이머를 취소해도 Todo는 `DONE`으로 남습니다.
+    - 타이머를 끝내 Todo가 `DONE`·`CANCELLED`가 되면 같은 Todo의 다른 RUNNING·PAUSED 타이머도 함께 완료·취소됩니다.
+    - 명령 응답에 `include_todo=true`를 주면 바뀐 Todo 상태가 응답에 들어 있습니다.
 
 ### pause_history 예시
 
@@ -180,13 +196,21 @@ PATCH /v1/timers/{timer_id}/resume
 
 PAUSED → RUNNING. `started_at`을 재개 시각으로 바꿉니다.
 
-### 타이머 종료
+### 타이머 완료
 
 ```http
 POST /v1/timers/{timer_id}/stop
 ```
 
-RUNNING·PAUSED → COMPLETED. RUNNING이었다면 실행 중이던 구간을 더해 저장합니다.
+RUNNING·PAUSED → COMPLETED. RUNNING이었다면 실행 중이던 구간을 더해 저장합니다. 연결 Todo는 `DONE`이 됩니다 ("연결 Todo와 상태 연동").
+
+### 타이머 취소
+
+```http
+POST /v1/timers/{timer_id}/cancel
+```
+
+RUNNING·PAUSED → CANCELLED. 실행 중이던 구간은 `elapsed_time`에 더하지 않습니다. 연결 Todo는 `CANCELLED`가 됩니다.
 
 ### 타이머 목록 조회
 
@@ -299,8 +323,10 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 | `type` | `action` | 발생 |
 |--------|----------|------|
 | `timer.created` | `start` | 생성 |
-| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정, 연결된 Todo·Schedule 삭제로 연결 해제 (`update`) |
+| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정, 연결된 Todo·Schedule 삭제로 연결 해제 (`update`), 연결 Todo의 상태 변경 (`stop`·`cancel`·`update`) |
 | `timer.deleted` | `delete` | 삭제, 연결된 Todo·Schedule과 함께 삭제 (`timer`는 `null`, `payload.timer_id`로 식별) |
+
+한 요청에서 같은 타이머의 `update`가 여러 번 생기면 마지막 상태로 하나만 옵니다.
 
 이벤트를 받는 사람은 **소유자 본인**(명령을 보낸 기기 포함)과, 타이머 공개 범위가 `FRIENDS`·`PUBLIC`이면 소유자의 친구 전원, `SELECTED_FRIENDS`이면 허용 목록에 있는 친구입니다.
 
@@ -311,7 +337,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 - `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 - 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
 - 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.
-- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제되면 이벤트 없이 `null`이 됩니다.
+- 이벤트의 `schedule_id`·`todo_id`가 가진 값과 다르면 가진 `schedule`·`todo`는 더 이상 맞지 않으므로 버리고(`null`), `GET /v1/timers/{id}`로 다시 받습니다. 링크는 `PATCH /v1/timers/{id}`(`action: update` 이벤트)로 바뀌고, 연결된 일정·할 일이 삭제될 때는 `linked_timer_policy`에 따라 `unlink`면 링크가 `null`인 `action: update` 이벤트, `delete`면 `timer.deleted`가 옵니다.
 - `action: update` 이벤트는 태그(`tag_ids`) 변경을 담지 못하므로 링크가 같아도 같은 GET으로 다시 받습니다.
 - 가진 적 없는 타이머의 이벤트(다른 기기에서 만든 `timer.created` 등)는 자체 필드로 넣고 같은 GET으로 관계 필드를 채웁니다.
 - 이 GET과 명령·목록 응답은 모두 REST `Timer`(`TimerRead`)이고, 관계 필드는 `include_schedule`·`include_todo`·`tag_include_mode`(기본 `none`)를 줄 때만 채워집니다 (빼면 `schedule`·`todo`는 `null`, `tags`는 `[]`). REST 응답은 가진 타이머를 통째로 바꾸므로 모든 타이머 REST 호출에 같은 값을 붙입니다.
@@ -424,6 +450,7 @@ export const pauseTimer = (id: string) => call('PATCH', `/${id}/pause`);
 export const resumeTimer = (id: string) => call('PATCH', `/${id}/resume`);
 export const stopTimer = (id: string) => call('POST', `/${id}/stop`);
 export const getTimer = (id: string) => call('GET', `/${id}`);
+export const cancelTimer = (id: string) => call('POST', `/${id}/cancel`);
 ```
 
 ### 실시간 수신과 반영
@@ -586,6 +613,7 @@ stateDiagram-v2
     RUNNING --> COMPLETED: stop
     PAUSED --> COMPLETED: stop
     RUNNING --> CANCELLED: cancel
+    PAUSED --> CANCELLED: cancel
 ```
 
 ### 8. 접근권한(Visibility) 설정
@@ -619,7 +647,8 @@ PUT /v1/visibility/timer/{timer_id}
 | POST | `/v1/timers` | 타이머 생성 및 시작 |
 | PATCH | `/v1/timers/{id}/pause` | 타이머 일시정지 |
 | PATCH | `/v1/timers/{id}/resume` | 타이머 재개 |
-| POST | `/v1/timers/{id}/stop` | 타이머 종료 |
+| POST | `/v1/timers/{id}/stop` | 타이머 완료 |
+| POST | `/v1/timers/{id}/cancel` | 타이머 취소 |
 | GET | `/v1/timers` | 타이머 목록 조회 |
 | GET | `/v1/timers/active` | 현재 활성 타이머 조회 |
 | GET | `/v1/timers/{id}` | 타이머 상세 조회 |

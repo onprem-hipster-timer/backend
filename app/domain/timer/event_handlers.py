@@ -1,15 +1,21 @@
 """
-Todo·Schedule 삭제 이벤트를 받아 연결 타이머를 처리하는 핸들러.
+Todo·Schedule 삭제와 Todo 상태 변경 이벤트를 받아 연결 타이머를 처리하는 핸들러.
 
 연결 타이머는 클라이언트가 지정한 linked_timer_policy로 처리한다. 연결 타이머가
 있는데 정책이 없으면 LinkedTimerPolicyRequiredError(422)를 던져 요청 전체를
-rollback한다. 핸들러는 owner 불변조건을 강제하고 low-level 연산만 쓰며, 바뀐
+rollback한다. 삭제 핸들러는 owner 불변조건을 강제하고 low-level 연산만 쓰며, 바뀐
 타이머는 커밋 후 큐에 실시간 이벤트로 적재한다 (rollback되면 버려진다).
 
 Todo 쪽 흐름(마감 제거, Todo 삭제의 linked_schedule_policy=delete)이 투영 일정을
 지우면 그 일정에 걸린 타이머는 묻지 않고 schedule_id만 잃는다(origin=TODO, 정책 없음).
 삭제되는 Todo에도 연결된 타이머는 그 Todo의 linked_timer_policy만 따르고, 이벤트는
 타이머마다 하나다.
+
+Todo의 status가 바뀌면 실행 중·일시정지 타이머에 반영한다. DONE·CANCELLED는
+stop_timer·cancel_timer와 같은 경로(TimerService.mark_completed·mark_cancelled)로 완료·취소하고,
+이때 수집되는 TimerCompleted·TimerCancelled는 Todo가 이미 터미널 상태라 todo 핸들러가 무시한다.
+UNSCHEDULED·SCHEDULED는 타이머를 바꾸지 않고 updated_at만 갱신해 timer.updated(update)를 보낸다
+(다른 기기가 타이머를 다시 읽도록).
 """
 from typing import Iterable
 from uuid import UUID
@@ -17,6 +23,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
+from app.core.constants import TimerStatus
 from app.crud import timer as timer_crud
 from app.crud import user_profile as user_profile_crud
 from app.crud import visibility as visibility_crud
@@ -26,8 +33,9 @@ from app.domain.timer.exceptions import LinkedTimerPolicyRequiredError
 from app.domain.timer.model import TimerSession
 from app.domain.timer.realtime import enqueue_timer_event, realtime_recipients
 from app.domain.timer.schema.ws import TimerAction
-from app.domain.todo.enums import LinkedSchedulePolicy
-from app.domain.todo.events import TodoDeleted
+from app.domain.timer.service import TimerService
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
+from app.domain.todo.events import TodoDeleted, TodoStatusChanged
 from app.domain.visibility.enums import ResourceType
 from app.models.base import utc_now_naive
 from app.shared.events import EventOrigin
@@ -59,8 +67,8 @@ def _delete_timer(session: Session, actor: CurrentUser, timer: TimerSession) -> 
     enqueue_timer_event(session, actor, TimerAction.DELETE, recipients, timer_id=timer_id)
 
 
-def _publish_unlinked(session: Session, actor: CurrentUser, timer: TimerSession) -> None:
-    """연결 해제를 updated_at에 반영하고 timer.updated(update)를 적재. 상태(실행 중 등)는 그대로"""
+def _publish_update(session: Session, actor: CurrentUser, timer: TimerSession) -> None:
+    """updated_at을 갱신하고 timer.updated(update)를 적재. 상태(실행 중 등)는 그대로"""
     timer.updated_at = utc_now_naive()
     session.flush()
     enqueue_timer_event(
@@ -93,7 +101,7 @@ def apply_policy_to_timers_of_deleted_todo(event: TodoDeleted, session: Session)
             timer.todo_id = None
             if timer.schedule_id in deleted_projection_ids:
                 timer.schedule_id = None
-            _publish_unlinked(session, actor, timer)
+            _publish_update(session, actor, timer)
 
 
 @register(ScheduleDeleted)
@@ -118,4 +126,25 @@ def apply_policy_to_timers_of_deleted_schedule(event: ScheduleDeleted, session: 
             _delete_timer(session, actor, timer)
         else:
             timer.schedule_id = None
-            _publish_unlinked(session, actor, timer)
+            _publish_update(session, actor, timer)
+
+
+@register(TodoStatusChanged)
+def apply_todo_status_to_active_timers(event: TodoStatusChanged, session: Session) -> None:
+    """Todo DONE → 실행 중·일시정지 타이머 완료, CANCELLED → 취소, UNSCHEDULED·SCHEDULED → update 이벤트만"""
+    timers = [
+        timer for timer in timer_crud.get_timers_by_todo(session, event.todo_id, event.owner_id)
+        if timer.status in (TimerStatus.RUNNING.value, TimerStatus.PAUSED.value)
+    ]
+    if not timers:
+        return
+
+    actor = _actor(session, event.owner_id)
+    service = TimerService(session, actor)
+    for timer in timers:
+        if event.status == TodoStatus.DONE:
+            service.mark_completed(timer)
+        elif event.status == TodoStatus.CANCELLED:
+            service.mark_cancelled(timer)
+        else:
+            _publish_update(session, actor, timer)

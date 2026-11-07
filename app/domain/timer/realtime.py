@@ -7,6 +7,7 @@ TimerService와 연결 타이머 핸들러(app/domain/timer/event_handlers.py)�
 
 - type: timer.created(start), timer.updated(pause·resume·stop·cancel·update), timer.deleted(delete)
 - 연결된 Todo·Schedule 삭제로 링크가 끊기면 update, 함께 삭제되면 delete
+- 한 트랜잭션에서 같은 타이머의 update는 마지막 것(최신 상태) 하나만 나간다
 - payload: action, actor_name(행위자 표시명), timer(TimerData, UTC aware). 삭제는 timer가 null이고 timer_id가 있다
 - timer.elapsed_time은 저장값이다. RUNNING이면 클라이언트가 now - started_at을 더한다
 
@@ -70,5 +71,7 @@ def enqueue_timer_event(
         timer_id: UUID | None = None,
 ) -> None:
     """커밋되면 users에게 보낼 타이머 이벤트를 적재 (timer가 없으면 timer_id 필수)"""
-    message = build_timer_event(action, actor, timer, timer.id if timer else timer_id)
-    enqueue_after_commit(session, {"users": users, "message": message})
+    timer_id = timer.id if timer else timer_id
+    message = build_timer_event(action, actor, timer, timer_id)
+    key = (TimerAction.UPDATE, timer_id) if action == TimerAction.UPDATE else None
+    enqueue_after_commit(session, {"users": users, "message": message}, key=key)
