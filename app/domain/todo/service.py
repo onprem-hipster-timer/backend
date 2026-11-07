@@ -46,6 +46,7 @@ from app.domain.todo.events import (
     TodoDeadlineRemoved,
     TodoDeadlineSet,
     TodoDeleted,
+    TodoStatusChanged,
     TodoTagsChanged,
 )
 from app.domain.visibility.enums import ResourceType
@@ -418,7 +419,8 @@ class TodoService:
         비즈니스 로직:
         - Todo 모델 직접 업데이트
         - deadline 변경 시 Schedule 생성/업데이트/삭제 처리
-        - status 업데이트 지원
+        - status 업데이트 지원. status가 바뀌면(연동 플래그 자동 전이 포함) 연결된 실행 중·일시정지
+          타이머에 반영 (TodoStatusChanged → app/domain/timer/event_handlers.py)
         - parent_id 업데이트 지원 (트리 구조 변경)
         - 태그는 TagService.set_todo_tags() 사용
         
@@ -441,6 +443,8 @@ class TodoService:
             # tag_group_id도 변경될 수 있으므로 새 값 우선 사용
             effective_tag_group_id = update_dict.get('tag_group_id', todo.tag_group_id)
             self._validate_parent_id(new_parent_id, effective_tag_group_id, todo_id)
+
+        old_status = todo.status
 
         # deadline 변경 처리
         deadline_updated = 'deadline' in update_dict
@@ -507,12 +511,20 @@ class TodoService:
         todo = crud.update_todo(self.session, todo, data)
 
         # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
-        # 직접 쓰기(이벤트 미발행)로 drain 재수집을 방지
         if deadline_updated and 'status' not in update_dict:
             if new_deadline and todo.status not in (TodoStatus.DONE, TodoStatus.CANCELLED):
                 todo.status = TodoStatus.SCHEDULED
             elif not new_deadline and todo.status == TodoStatus.SCHEDULED:
                 todo.status = TodoStatus.UNSCHEDULED
+
+        # 명시·자동 어느 쪽이든 전이마다 하나 (연결 타이머용)
+        if todo.status != old_status:
+            collect_event(self.session, TodoStatusChanged(
+                owner_id=self.owner_id,
+                origin=EventOrigin.TODO,
+                todo_id=todo_id,
+                status=todo.status,
+            ))
 
         # 필드 반영 후에 dispatch해야 핸들러가 최신 상태를 투영한다
         flush_and_dispatch_events(self.session)

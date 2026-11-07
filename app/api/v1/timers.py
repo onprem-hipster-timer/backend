@@ -15,7 +15,7 @@ FastAPI Best Practices:
   - TimerService.to_read_dto(): 검증된 DTO를 주입받아 최종 DTO 생성
 
 [명령과 실시간 전달]
-- 생성·일시정지·재개·종료·수정·삭제는 `CommittingSession`으로 응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
+- 생성·일시정지·재개·종료·취소·수정·삭제는 `CommittingSession`으로 응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
 - 테스트: tests/test_timers_rest_commands.py
 """
 from datetime import datetime
@@ -572,6 +572,55 @@ async def stop_timer(
     todo_service = TodoService(session, current_user)
 
     timer = timer_service.stop_timer(timer_id)
+
+    # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
+    timer_read = _build_timer_read_with_relations(
+        timer,
+        timer_service=timer_service,
+        schedule_service=schedule_service,
+        todo_service=todo_service,
+        is_shared=False,
+        include_schedule=include_schedule,
+        include_todo=include_todo,
+        tag_include_mode=tag_include_mode,
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return timer_read.to_timezone(tz_obj, validate=False)
+
+
+@router.post("/{timer_id}/cancel", response_model=TimerRead)
+async def cancel_timer(
+        timer_id: UUID,
+        include_schedule: bool = Query(
+            False,
+            description="Schedule 정보 포함 여부 (기본값: false)"
+        ),
+        include_todo: bool = Query(
+            False,
+            description="Todo 정보 포함 여부 (기본값: false)"
+        ),
+        tag_include_mode: TagIncludeMode = Query(
+            TagIncludeMode.NONE,
+            description="태그 포함 모드: none(포함 안 함), timer_only(타이머 태그만), inherit_from_schedule(스케줄/Todo 태그 상속)"
+        ),
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = CommittingSession,
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    타이머 취소 (RUNNING·PAUSED → CANCELLED)
+    """
+    timer_service = TimerService(session, current_user)
+    schedule_service = ScheduleService(session, current_user)
+    todo_service = TodoService(session, current_user)
+
+    timer = timer_service.cancel_timer(timer_id)
 
     # 연관 리소스 조회 및 DTO 생성 (라우터에서 orchestration)
     timer_read = _build_timer_read_with_relations(

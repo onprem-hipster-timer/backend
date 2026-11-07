@@ -110,6 +110,21 @@ def test_resume_and_update_send_updated_event(session, after_commit_items):
     assert after_commit_items[1]["message"]["payload"]["timer"]["title"] == "새 제목"
 
 
+def test_updates_in_one_transaction_send_last_state_once(session, after_commit_items):
+    timer = _create(session)
+    after_commit_items.clear()
+
+    service = TimerService(session, OWNER)
+    service.update_timer(timer.id, TimerUpdate(title="첫 제목"))
+    service.pause_timer(timer.id)
+    service.update_timer(timer.id, TimerUpdate(title="둘째 제목"))
+    session.commit()
+
+    payloads = [item["message"]["payload"] for item in after_commit_items]
+    assert [p["action"] for p in payloads] == ["pause", "update"]
+    assert payloads[1]["timer"]["title"] == "둘째 제목"
+
+
 def test_event_carries_stored_elapsed_time(session, test_engine, after_commit_items):
     """이벤트의 elapsed_time은 커밋된 저장값과 같다 (RUNNING 구간은 클라이언트가 더한다)"""
     timer = _create(session)

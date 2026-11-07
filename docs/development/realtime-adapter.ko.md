@@ -93,6 +93,8 @@ sequenceDiagram
 | `timer.deleted` | `delete` | `null` (`timer_id`로 식별) |
 | `connected` | — | — (`payload`는 `{}`) |
 
+- 연결 Todo의 status가 바뀌면 그 Todo의 RUNNING·PAUSED 타이머마다 `timer.updated`가 나갑니다. `DONE`은 `stop`, `CANCELLED`는 `cancel`, `UNSCHEDULED`·`SCHEDULED`는 `update`(타이머는 그대로이고 `updated_at`만 바뀜)입니다 ([도메인 이벤트](domain-events.ko.md) §5).
+- 한 트랜잭션에서 같은 타이머의 `update`는 마지막 상태로 하나만 나갑니다.
 - 시각은 REST 응답(`timezone=UTC`)과 같은 형식(`2026-11-06T10:30:00+0000`, `CustomModel`)으로 직렬화합니다. 같은 타이머 상태면 이벤트와 REST 응답의 `updated_at` 문자열이 같습니다.
 - `elapsed_time`은 저장된 누적값입니다. RUNNING이면 클라이언트가 `now - started_at`을 더해 표시합니다 ([타이머 가이드](../guides/timer.ko.md)의 elapsed_time 계산 규칙).
 - 클라이언트 → 서버 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답합니다. 그 외는 무시합니다.
@@ -159,6 +161,7 @@ session: Session = CommittingSession
 
 - `enqueue_after_commit`의 항목은 **루트 트랜잭션이 커밋된 뒤에만** sink로 넘어갑니다. rollback·close면 버려집니다.
 - SAVEPOINT(`begin_nested`) 안에서는 적재하지 않습니다. SAVEPOINT만 rollback돼도 항목이 남아 바깥 커밋 때 나갑니다.
+- `key`를 주고 적재하면 같은 `key`로 먼저 적재된 항목은 빠지고 마지막 것만 나갑니다. 타이머 `update`는 `(update, timer_id)`를 씁니다.
 - 도메인 이벤트 큐(`collect_event`, 커밋 전에 같은 트랜잭션에서 처리)와는 별개입니다 ([도메인 이벤트](domain-events.ko.md)).
 - 쓰기 라우트는 `CommittingSession`(`Depends(get_db_committing, scope="function")`, `app/db/session.py`)을 씁니다. `scope="function"`이 빠지면 커밋과 publish가 응답 뒤로 밀립니다. `get_db_transactional` 자체에 `scope`를 주면 세션이 둘로 나뉘므로 그러지 않습니다.
 - `message`는 JSON 그대로 보낼 수 있는 dict여야 합니다 (`WSServerMessage(...).model_dump(mode="json")`). 타이머 이벤트 조립은 `app/domain/timer/realtime.py`를 참고합니다.
@@ -172,6 +175,7 @@ session: Session = CommittingSession
 - `id`가 이미 처리한 메시지면 버립니다.
 - `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
+- 연결 Todo의 status 변경은 그 Todo의 타이머의 `timer.updated`로 옵니다 (`stop`·`cancel`·`update`). 타이머와 함께 보여 주는 Todo 정보는 이때 다시 읽습니다.
 - 모든 타이머 REST 호출에 `timezone=UTC`를 붙입니다. 이벤트의 시각은 항상 UTC입니다.
 - 친구 알림은 `from_user`가 내 `sub`가 아닌 이벤트로 띄웁니다.
 - 연결을 유지하려면 주기적으로 `ping`을 보냅니다.

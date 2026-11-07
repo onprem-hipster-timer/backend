@@ -13,6 +13,7 @@ class EventOrigin(str, Enum):
     """이벤트를 촉발한 source 도메인 (왕복 전파 차단용)"""
     TODO = "todo"
     SCHEDULE = "schedule"
+    TIMER = "timer"
 
 
 @dataclass(frozen=True, kw_only=True)

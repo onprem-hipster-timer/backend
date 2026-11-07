@@ -215,6 +215,7 @@ class TestRouteConfiguration:
             ("PATCH", "/v1/timers/{timer_id}/pause"),
             ("PATCH", "/v1/timers/{timer_id}/resume"),
             ("POST", "/v1/timers/{timer_id}/stop"),
+            ("POST", "/v1/timers/{timer_id}/cancel"),
             # Schedule 연관 타이머 조회
             ("GET", "/v1/schedules/{schedule_id}/timers"),
             ("GET", "/v1/schedules/{schedule_id}/timers/active"),

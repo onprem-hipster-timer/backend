@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 from uuid import UUID
 
 from app.domain.timer.enums import LinkedTimerPolicy
-from app.domain.todo.enums import LinkedSchedulePolicy
+from app.domain.todo.enums import LinkedSchedulePolicy, TodoStatus
 from app.shared.events import DomainEvent
 
 
@@ -51,6 +51,16 @@ class TodoContentChanged(TodoEvent):
 @dataclass(frozen=True, kw_only=True)
 class TodoTagsChanged(TodoEvent):
     """태그가 변경됨"""
+
+
+@dataclass(frozen=True, kw_only=True)
+class TodoStatusChanged(TodoEvent):
+    """
+    status가 바뀜 (연동 플래그 UNSCHEDULED↔SCHEDULED의 자동 전이 포함)
+
+    :param status: 바뀐 status
+    """
+    status: TodoStatus
 
 
 @dataclass(frozen=True, kw_only=True)

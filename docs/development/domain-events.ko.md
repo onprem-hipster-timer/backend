@@ -6,10 +6,10 @@
 > [#61](https://github.com/onprem-hipster-timer/backend/issues/61) 정책 포함).
 > 읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
 >
-> 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/{todo,schedule}/events.py` ·
+> 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/{todo,schedule,timer}/events.py` ·
 > 핸들러: `app/domain/{schedule,todo,timer}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
 > `tests/domain/todo/test_projection_policy.py`, `tests/domain/schedule/test_backpropagation.py`,
-> `tests/domain/timer/test_linked_timer_policy.py`
+> `tests/domain/timer/test_linked_timer_policy.py`, `tests/domain/timer/test_todo_status.py`
 
 이 문서는 읽기 경로와 쓰기 경로의 책임을 분리하고, 도메인 간 전파를 **외부 broker 없이** in-process Message Bus로 처리하기 위한 설계를 설명합니다. 대상 환경은 **단일 프로세스 · 단일 DB · 요청당 단일 세션 · 단일 트랜잭션 · 강한 일관성**입니다.
 
@@ -100,6 +100,7 @@ GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 r
 class EventOrigin(str, Enum):
     TODO = "todo"
     SCHEDULE = "schedule"
+    TIMER = "timer"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -231,7 +232,7 @@ def handle(events, session):
 |--------|--------|-------------|------|
 | REST 쓰기 (`get_db_transactional`) | `commit_with_events` | ✅ 안전망 drain 후 commit, 예외 시 rollback + `clear_events` | 구현됨 |
 | REST 읽기 (`get_db`) | 없음 (항상 rollback) | ✅ rollback 경계에서 `clear_events` (누수 위생) | 구현됨 |
-| WebSocket per-message (`timers_ws.py`) | 맨 `session.commit()` | ❌ **drain/clear 없음** | [#49](https://github.com/onprem-hipster-timer/backend/issues/49) 범위 |
+| WebSocket (`timers_ws.py`) | 없음 — 수신 전용이라 DB 세션을 열지 않음 | 해당 없음 | 타이머 명령은 REST (`CommittingSession`) |
 | AsyncSession (`get_async_db`, background tasks) | 맨 `await session.commit()` | ❌ **drain/clear 없음** — 이벤트 발행 금지 | async 이벤트가 필요해지면 별도 async UoW 설계 |
 
 !!! danger "핸들러에 외부 부작용 금지"
@@ -256,13 +257,12 @@ def handle(events, session):
     수**입니다. 한 요청이 정당하게 많은 이벤트를 발행하는 배치성 유스케이스가
     생기면 체인 깊이와 총량을 분리해야 합니다.
 
-!!! danger "WS 경로의 이벤트 유실 함정 (#49 스코프)"
-    WS per-message 커밋은 `commit_with_events`를 타지 않습니다. 현재 WS는 타이머 연산만
-    수행하고 타이머는 이벤트를 발행하지 않아 무해하지만, **WS에서 도달하는 코드가
-    `collect_event`를 호출하는 순간 이벤트가 드레인 없이 커밋되고 세션이 닫히면서
-    조용히 유실**됩니다. WS 도달 경로에 이벤트 발행을 추가하는 변경(예: 타이머 완료
-    전파 [#62](https://github.com/onprem-hipster-timer/backend/issues/62))은
-    **#49(WS 커밋 → `commit_with_events`, rollback 경계 → `clear_events`) 선행이 필수**입니다.
+!!! danger "WS 경로에서 DB를 쓰게 되면"
+    `/v1/ws/timers`는 수신 전용이고, 타이머 명령은 REST(`CommittingSession` → `commit_with_events`)로만
+    들어옵니다. 그래서 타이머가 수집하는 `TimerCompleted`·`TimerCancelled`도 커밋 전에 dispatch됩니다.
+    WS에서 다시 DB를 쓰게 되면 그 커밋이 `commit_with_events`를 타고 rollback 경계에서 `clear_events`를
+    부르도록 먼저 맞춥니다([#49](https://github.com/onprem-hipster-timer/backend/issues/49)). 그렇지 않으면
+    거기서 수집한 이벤트가 드레인 없이 커밋되고 조용히 유실됩니다.
 
 ### 4.6 핸들러의 권한 불변조건
 
@@ -270,6 +270,10 @@ def handle(events, session):
 
 - 핸들러는 변경 대상의 `owner_id == event.owner_id`를 확인한 뒤에만 수정합니다.
 - `current_user`를 요구하는 기존 Service를 그대로 호출하지 않고, `owner_id` 기반 lower-level operation을 사용합니다.
+  예외로 Todo 상태를 타이머에 반영하는 핸들러는 소유자를 행위자로 만든 `TimerService`의
+  `mark_completed`·`mark_cancelled`를 씁니다. 완료·취소(경과 시간 확정, `pause_history`, 실시간 이벤트,
+  `TimerCompleted`·`TimerCancelled` 수집)를 `stop_timer`·`cancel_timer`와 한 경로로 두기 위해서입니다.
+  이 메서드는 권한을 검증하지 않으므로 핸들러가 `owner_id`로 조회한 타이머만 넘깁니다.
 - 자동 생성 리소스에 **visibility를 복사하지 않습니다** (생성 후 별도 `/visibility` API로 관리, 기본 PRIVATE).
 - 삭제 핸들러는 `delete_visibility_by_resource` cleanup을 유지합니다(orphan visibility 방지).
 
@@ -284,6 +288,8 @@ def handle(events, session):
 | `TodoDeadlineSet/Changed/Removed`, `TodoContentChanged`, `TodoTagsChanged`, `TodoDeleted` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/schedule/event_handlers.py`) |
 | `ScheduleTimeChanged`, `ScheduleDeleted`, `ScheduleUnlinkedFromTodo`, `ScheduleCreatedWithTodoOption` | ✅ 구현 (`app/domain/schedule/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
 | `TodoDeleted`, `ScheduleDeleted` (연결 타이머) | ✅ 구현 (→ 핸들러 `app/domain/timer/event_handlers.py`) |
+| `TodoStatusChanged` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/timer/event_handlers.py`) |
+| `TimerCompleted`, `TimerCancelled` | ✅ 구현 (`app/domain/timer/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
 
 !!! note "반복 일정 × source_todo (결정)"
     마감은 시점이므로 그 투영이 반복 시리즈가 되는 것 자체가 모순 — source-linked
@@ -300,6 +306,9 @@ def handle(events, session):
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
 - `TodoDeleted`/`ScheduleDeleted`는 삭제 전 스냅샷한 `linked_timer_ids`(`TimerSession.todo_id`·`schedule_id`도 `ondelete=SET NULL`)와 클라이언트가 지정한 `linked_timer_policy`(`delete`|`unlink`)를 운반. `TodoDeleted`는 연결 투영이 없어도 항상 발행
 - 투영을 지우는 schedule 핸들러는 연결 타이머를 위해 `ScheduleDeleted(origin=TODO, 정책 없음)`를 수집 — 타이머 핸들러는 일정 연결만 해제하고, todo 핸들러는 origin 가드로 무시
+- `TodoStatusChanged`는 status가 실제로 바뀔 때마다 하나 수집됩니다 — `update_todo`의 명시 전이와 자동 전이(마감 설정·제거), todo 핸들러의 전이(투영 삭제·반복 전환의 플래그 해제, 타이머 완료·취소). 타이머 핸들러는 그 Todo의 RUNNING·PAUSED 타이머를 `DONE`이면 완료, `CANCELLED`면 취소하고, `UNSCHEDULED`·`SCHEDULED`면 바꾸지 않고 `updated_at`만 갱신해 `timer.updated`(`update`)를 보냅니다
+- `TimerCompleted`·`TimerCancelled`는 `stop_timer`·`cancel_timer`와 위 타이머 핸들러가 수집하고, todo 핸들러가 연결 Todo를 `DONE`·`CANCELLED`로 바꿉니다. **이미 `DONE`·`CANCELLED`인 Todo면 아무것도 하지 않습니다(터미널 상태 no-op)** — 그래서 Todo `DONE` → 타이머 완료 → `TimerCompleted`에서, 타이머 완료 → Todo `DONE` → `TodoStatusChanged` → 같은 Todo의 다른 타이머 완료 → `TimerCompleted`에서 연쇄가 멈춥니다
+- 이 연쇄는 활성 타이머마다 이벤트가 하나씩 늘어 `MAX_DISPATCH_DEPTH`(총 10개)를 함께 씁니다. 한 Todo에 활성 타이머가 아홉 개를 넘으면 상한에 걸립니다
 
 ### 5.0 전파 토폴로지
 
@@ -310,8 +319,10 @@ def handle(events, session):
 
 핸들러는 대상 행을 **직접 수정하고 이벤트를 발행하지 않으므로** 반대 방향이 재발화하지
 않습니다 — 왕복(A→B→A)은 구조적으로 차단되고, origin 가드는 이중 안전장치입니다.
-예외는 투영 삭제가 수집하는 `ScheduleDeleted(origin=TODO)` 하나이고, todo 핸들러는 이를
-origin 가드로 무시하며 타이머 핸들러만 처리합니다.
+예외는 둘입니다. 투영 삭제가 수집하는 `ScheduleDeleted(origin=TODO)`는 todo 핸들러가
+origin 가드로 무시하고 타이머 핸들러만 처리합니다. Todo↔타이머 상태는 todo 핸들러가 status를
+바꾸면 `TodoStatusChanged`를, 타이머 핸들러가 완료·취소하면 `TimerCompleted`·`TimerCancelled`를
+수집하고, 터미널 상태 no-op(§5)에서 멈춥니다.
 
 ```mermaid
 flowchart LR
@@ -319,12 +330,16 @@ flowchart LR
     SH -->|"직접 수정 — 이벤트 미발행"| SDB[("schedule 행")]
 
     SS["ScheduleService<br/>(발행)"] -->|"ScheduleTimeChanged<br/>ScheduleDeleted(policy·스냅샷)<br/>ScheduleUnlinkedFromTodo(policy)<br/>ScheduleCreatedWithTodoOption"| TH["todo/event_handlers<br/>가드: origin==TODO skip<br/>반복 일정 제외 · 터미널 상태 미덮음"]
-    TH -->|"직접 수정 — 이벤트 미발행"| TDB[("todo 행")]
+    TH -->|"직접 수정 — status 전이만 TodoStatusChanged"| TDB[("todo 행")]
 
-    TS -->|"TodoDeleted(timer_ids·linked_timer_policy)"| MH["timer/event_handlers<br/>정책 없으면 422<br/>origin==TODO 투영 삭제는 일정 연결만 해제"]
+    TS -->|"TodoDeleted(timer_ids·linked_timer_policy)<br/>TodoStatusChanged"| MH["timer/event_handlers<br/>정책 없으면 422<br/>origin==TODO 투영 삭제는 일정 연결만 해제<br/>Todo 상태: 완료·취소 또는 update"]
     SS -->|"ScheduleDeleted(timer_ids·linked_timer_policy)"| MH
     SH -->|"투영 삭제 시 ScheduleDeleted(origin=TODO)"| MH
     MH -->|"직접 수정 + 커밋 후 실시간 이벤트"| MDB[("timer 행")]
+
+    MS["TimerService<br/>(발행)"] -->|"TimerCompleted · TimerCancelled"| TH
+    TH -->|"TodoStatusChanged"| MH
+    MH -->|"완료·취소 시 TimerCompleted · TimerCancelled"| TH
 ```
 
 ### 5.1 필드 소유권 (source of record)
@@ -337,12 +352,12 @@ flowchart LR
 | 마감 시점 | Todo.deadline ⇔ Schedule.start_time | **양방향** (origin 가드) |
 | 일정 길이 (end−start) | **Schedule** | 전파 안 함. deadline 변경 시 start만 이동, 길이 보존. 생성 시 초기값 1시간 |
 | 태그 | **Todo** | full-replace Todo→Schedule (일정 태그는 할일 태그의 투영 — 계약) |
-| 상태 | 연동 유무 플래그 (파생) | `UNSCHEDULED`/`SCHEDULED`는 연결 투영 존재에서 파생 — 미지정 시 자동 계산, **명시 값이 실제 연동 상태와 불일치하면 422** (거짓 플래그 불가, 재오픈은 일치 값으로). `DONE`/`CANCELLED`만 사용자 상태 (자동화 미덮음). 플래그 갱신은 핸들러 직접 쓰기(이벤트 미발행)로 drain 재수집 방지 |
+| 상태 | 연동 유무 플래그 (파생) | `UNSCHEDULED`/`SCHEDULED`는 연결 투영 존재에서 파생 — 미지정 시 자동 계산, **명시 값이 실제 연동 상태와 불일치하면 422** (거짓 플래그 불가, 재오픈은 일치 값으로). `DONE`/`CANCELLED`만 사용자 상태 (자동화 미덮음 — 타이머 완료·취소는 터미널이 아닌 Todo만 바꿈). 플래그 갱신은 핸들러 직접 쓰기이고, status 전이마다 `TodoStatusChanged`를 하나 수집 (연결 타이머용) |
 | 수명주기 (Todo발) | **클라이언트 정책** | `linked_schedule_policy`(`delete`\|`unlink`) — 서버 기본값 없음, **연결 투영이 있을 때만 필수** ([#61](https://github.com/onprem-hipster-timer/backend/issues/61)) |
 | 수명주기 (Schedule발) | **클라이언트 정책** | 투영의 삭제·반복 전환 시 `source_todo_policy`(`clear_deadline`\|`keep_deadline`) — 서버 기본값 없음, source-linked일 때만 필수. 어느 쪽이든 연동 플래그는 해제 |
 | 수명주기 (타이머) | **클라이언트 정책** | Todo·Schedule 삭제 시 `linked_timer_policy`(`delete`\|`unlink`) — 서버 기본값 없음, 연결 타이머가 있을 때만 필수. Todo발 투영 삭제는 묻지 않고 일정 연결만 해제, 삭제되는 Todo에도 연결된 타이머는 Todo 정책만 따름 |
 | 연결(source_todo_id) | **전용 흐름 전유** | 공개 Schedule Create/Update에 실으면 **422 거절** (조용한 무시 금지). '할일당 투영 1개'는 DB partial unique index가 최종 보장 (마이그레이션 `c4d7e8f1a2b3`) |
-| 완료 상태 전파 | 미정 | 별도 정책 결정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)). 구현 시 이 인프라 위 핸들러로 추가하되, `stop_timer`가 WS에서도 불리므로 **WS 커버리지는 #49 선행 필수**(§4.5)이고 터미널 상태 가드(DONE/CANCELLED 미덮음) 패턴을 따라야 함 |
+| 완료 상태 (Todo ↔ 타이머) | **양방향** | 타이머 완료·취소 → 연결 Todo `DONE`·`CANCELLED` (`TimerCompleted`·`TimerCancelled`). Todo status 전이 → 그 Todo의 RUNNING·PAUSED 타이머: `DONE` 완료, `CANCELLED` 취소, `UNSCHEDULED`·`SCHEDULED`는 `updated_at`만 갱신하고 `timer.updated`(`update`) (`TodoStatusChanged`). 이미 `DONE`·`CANCELLED`인 Todo는 바꾸지 않음 (터미널 상태 no-op). Schedule 상태 전파는 미정 ([#62](https://github.com/onprem-hipster-timer/backend/issues/62)) |
 
 !!! note "source of truth"
     Todo `deadline`이 원본, Schedule `start_time`은 그 투영입니다. `ScheduleTimeChanged`는 **`source_todo_id`가 있는(=Todo가 만든) Schedule**에 한해 Todo로 역전파하고, `origin`이 Todo면 다시 전파하지 않습니다.
@@ -386,7 +401,8 @@ flowchart LR
    자동 생성 리소스가 응답에 보입니다(§2).
 3. **핸들러** — 수신 도메인의 `app/domain/<domain>/event_handlers.py`에
    `@register(이벤트타입)` 함수 추가. 시그니처 `(event, session)`, owner 불변조건 확인,
-   low-level 연산 사용, status류 직접 쓰기는 이벤트 미발행(§4.6, §5.1).
+   low-level 연산 사용, 직접 쓰기는 이벤트 미발행(§4.6, §5.1). 예외로 Todo status 전이는
+   `TodoStatusChanged`를 수집합니다(§5).
    **DB 행 수정만 허용** — 알림·브로커·외부 HTTP 등 외부 부작용 금지(§4.5).
 4. **등록 배선** — 새 `event_handlers.py` 모듈이면
    `app/shared/messagebus.py::register_handlers()`에 lazy import 한 줄 추가.
@@ -394,7 +410,7 @@ flowchart LR
 5. **테스트** — 행동을 테스트명으로 고정(red→green). 왕복 가능성이 있으면
    origin 가드/구조적 차단을 함께 검증. 버스 자체 동작은 `tests/shared/test_messagebus.py`가
    이미 커버하므로 재검증하지 않습니다.
-6. **주의** — WS에서 도달하는 경로에 발행을 추가한다면 §4.5의 유실 함정 확인
+6. **주의** — WS에서 DB를 쓰는 경로를 만든다면 §4.5 확인
    ([#49](https://github.com/onprem-hipster-timer/backend/issues/49) 선행 필요).
 
 ---
