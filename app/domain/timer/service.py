@@ -27,6 +27,7 @@ from app.domain.tag.service import TagService
 from app.domain.timer.events import TimerCancelled, TimerCompleted
 from app.domain.timer.expiry import expired_fields
 from app.domain.timer.exceptions import (
+    AllocatedDurationTooShortError,
     TimerNotFoundError,
     InvalidTimerStatusError,
 )
@@ -568,7 +569,7 @@ class TimerService:
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
-        타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id)
+        타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id, allocated_duration)
 
         todo_id, schedule_id 동작:
         - 필드가 요청에 포함되지 않음: 기존 값 유지
@@ -576,7 +577,7 @@ class TimerService:
         - 필드가 null: 연결 해제
 
         Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
-        만료된 타이머는 만료를 먼저 확정한다.
+        만료된 타이머는 만료를 먼저 확정한다. allocated_duration은 그 뒤의 elapsed_time보다 커야 한다.
         
         :param timer_id: 타이머 ID
         :param data: 업데이트 데이터
@@ -584,6 +585,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises TodoNotFoundError: todo_id가 있지만 Todo를 찾을 수 없는 경우
         :raises ScheduleNotFoundError: schedule_id가 있지만 Schedule을 찾을 수 없는 경우
+        :raises AllocatedDurationTooShortError: allocated_duration이 elapsed_time 이하인 경우
         """
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
@@ -593,6 +595,9 @@ class TimerService:
 
         # MISSING 필드는 자동 제외
         update_data = data.model_dump()
+
+        if 'allocated_duration' in update_data and update_data['allocated_duration'] <= timer.elapsed_time:
+            raise AllocatedDurationTooShortError()
 
         # 서비스에서 수동 처리할 컬럼 추적
         exclude_fields = []

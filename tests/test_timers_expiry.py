@@ -3,7 +3,8 @@
 
 - elapsed_time은 allocated_duration을 넘지 않는다 (stop, pause, Todo DONE 전파)
 - 명령(pause·resume·stop·cancel)은 만료를 행에 확정하고 expire 이벤트를 보낸다
-- 만료로 멈춘 타이머는 재개할 수 없다
+- 만료로 멈춘 타이머는 재개할 수 없다. PATCH로 allocated_duration을 늘리면 재개할 수 있다
+- allocated_duration은 elapsed_time보다 커야 한다 (422)
 - 사용자가 멈춘 타이머는 만료되지 않는다
 
 조회가 행을 쓰지 않는 것은 tests/test_timers_read_no_write.py.
@@ -202,3 +203,54 @@ def test_user_paused_timer_does_not_expire(e2e_client):
     assert body["pause_history"][-1]["action"] == "pause"
     assert e2e_client.patch(f"/v1/timers/{timer_id}/pause").status_code == 400
     assert e2e_client.patch(f"/v1/timers/{timer_id}/resume").json()["status"] == "RUNNING"
+
+
+@pytest.mark.e2e
+def test_extend_expired_timer_then_resume(e2e_client):
+    timer_id, _ = _expired_timer(e2e_client)
+    assert e2e_client.patch(f"/v1/timers/{timer_id}/resume").status_code == 400
+
+    extended = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": ALLOCATED + 600})
+    assert extended.status_code == 200, extended.text
+    assert extended.json()["allocated_duration"] == ALLOCATED + 600
+    assert extended.json()["status"] == "PAUSED"
+    assert extended.json()["elapsed_time"] == ALLOCATED
+
+    resumed = e2e_client.patch(f"/v1/timers/{timer_id}/resume")
+    assert resumed.status_code == 200
+    body = resumed.json()
+    assert body["status"] == "RUNNING"
+    assert _parse_utc(body["started_at"]) >= _parse_utc(extended.json()["paused_at"])
+
+    current = e2e_client.get(f"/v1/timers/{timer_id}").json()
+    assert current["status"] == "RUNNING"
+    assert current["allocated_duration"] - current["elapsed_time"] > 0
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("expired", [False, True])
+def test_allocated_duration_not_above_elapsed_is_422(e2e_client, expired):
+    if expired:
+        timer_id, _ = _expired_timer(e2e_client)
+        too_short = ALLOCATED
+    else:
+        timer_id = _create(e2e_client)["id"]
+        e2e_client.patch(f"/v1/timers/{timer_id}/pause")
+        too_short = 0
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": too_short})
+
+    assert response.status_code == 422
+    assert response.json()["error_type"] == "AllocatedDurationTooShortError"
+    assert _stored(timer_id).allocated_duration == ALLOCATED
+
+
+@pytest.mark.e2e
+def test_extend_running_timer_before_expiry(e2e_client):
+    timer_id = _create(e2e_client)["id"]
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": ALLOCATED * 2})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "RUNNING"
+    assert response.json()["allocated_duration"] == ALLOCATED * 2

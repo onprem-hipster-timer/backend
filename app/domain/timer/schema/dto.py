@@ -210,6 +210,8 @@ class TimerUpdate(CustomModel):
     - 필드가 UUID 값: 해당 ID로 연결 변경
     - 필드가 null: 연결 해제
 
+    allocated_duration: 현재 elapsed_time보다 커야 함 (아니면 422). 만료된 타이머는 늘린 뒤 재개할 수 있다
+
     Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
     """
     title: str | None = MISSING
@@ -217,6 +219,7 @@ class TimerUpdate(CustomModel):
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     todo_id: UUID | None = MISSING  # Todo 연결 변경 (null로 연결 해제)
     schedule_id: UUID | None = MISSING  # Schedule 연결 변경 (null로 연결 해제)
+    allocated_duration: int = MISSING  # 할당 시간 (초 단위)
 
 
 # Forward reference 해결
