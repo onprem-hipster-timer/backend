@@ -68,9 +68,12 @@ class TimerService:
 
     @staticmethod
     def _add_running_segment_to_elapsed(timer: TimerSession, now: datetime) -> None:
-        """RUNNING 타이머의 현재 세그먼트(started_at ~ now)를 elapsed_time에 누적. started_at 있을 때만 호출."""
+        """RUNNING 타이머의 현재 세그먼트(started_at ~ now)를 elapsed_time에 누적. started_at 있을 때만 호출.
+
+        elapsed_time은 allocated_duration을 넘지 않는다.
+        """
         current_segment = int((now - timer.started_at).total_seconds())
-        timer.elapsed_time += max(0, current_segment)
+        timer.elapsed_time = min(timer.allocated_duration, timer.elapsed_time + max(0, current_segment))
 
     def create_timer(self, data: TimerCreate) -> TimerSession:
         """
