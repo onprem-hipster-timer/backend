@@ -62,9 +62,9 @@ type TimerStatus =
   | "CANCELLED"; // 취소됨
 
 interface PauseEvent {
-  action: "start" | "pause" | "resume" | "stop" | "cancel";
+  action: "start" | "pause" | "resume" | "stop" | "cancel" | "expire";
   at: string;           // ISO 8601 시간
-  elapsed?: number;     // 경과 시간 (pause, stop 시)
+  elapsed?: number;     // 경과 시간 (pause, stop, cancel, expire 시)
 }
 ```
 
@@ -122,13 +122,31 @@ interface PauseEvent {
 function displayElapsed(timer: Timer, now: Date = new Date()): number {
   if (timer.status !== 'RUNNING' || !timer.started_at) return timer.elapsed_time;
   const running = Math.floor((now.getTime() - new Date(timer.started_at).getTime()) / 1000);
-  return timer.elapsed_time + Math.max(0, running);
+  return Math.min(timer.allocated_duration, timer.elapsed_time + Math.max(0, running));
 }
 ```
 
 - `started_at`은 마지막 `resume` 시각으로 갱신되므로 위 식이 그대로 맞습니다.
 - 매 렌더마다 다시 계산하세요. "1초마다 +1"로 누적하면 백그라운드 탭에서 틀어집니다.
 - PAUSED·COMPLETED·CANCELLED는 `elapsed_time`을 그대로 씁니다.
+- `elapsed_time`은 `allocated_duration`을 넘지 않습니다 (아래 "만료").
+
+### 만료
+
+RUNNING 타이머는 `expires_at = started_at + (allocated_duration - elapsed_time)`초에 만료됩니다. 서버는 그 시각에 아무 일도 하지 않고(이벤트도 없음), 만료된 타이머를 다음과 같이 다룹니다.
+
+| 상황 | 동작 |
+|------|------|
+| 조회 (`GET /v1/timers`, `/active`, `/{id}` 등) | 응답에서만 만료 표현으로 보입니다. DB 행은 RUNNING 그대로입니다 |
+| 명령 (`pause`·`resume`·`stop`·`cancel`·`PATCH`) | 처리 전에 행에 만료 표현을 확정하고 `timer.updated`(`action: expire`)를 보냅니다 |
+
+만료 표현: `status: "PAUSED"`, `elapsed_time = allocated_duration`, `paused_at = expires_at`, `pause_history`에 `{ "action": "expire", "at": expires_at, "elapsed": allocated_duration }`.
+
+- `pause`: 만료된 타이머는 만료 표현으로 `200`을 반환합니다 (이미 만료로 멈춘 타이머도 같음). 이때 이벤트는 `expire` 하나입니다. 사용자가 멈춘 PAUSED 타이머의 `pause`는 지금처럼 `400`입니다.
+- `resume`: `elapsed_time`이 `allocated_duration`에 닿은 타이머는 `400`입니다. `PATCH /v1/timers/{id}`로 `allocated_duration`을 먼저 늘립니다.
+- `stop`·`cancel`: 만료를 확정한 뒤 처리합니다. 결과의 `elapsed_time`은 `allocated_duration`이고, 이벤트는 `expire` 다음에 `stop`·`cancel`이 옵니다.
+- 사용자가 멈춘 PAUSED 타이머는 시간이 지나도 만료되지 않습니다.
+- `status` 필터(`GET /v1/timers?status=...`)와 활성 타이머 조회는 저장된 상태로 고릅니다. 아직 확정되지 않은 만료 타이머는 `status=RUNNING`에 걸리지만 응답 본문은 `PAUSED`입니다.
 
 ---
 
@@ -255,9 +273,12 @@ Content-Type: application/json
 {
   "title": "업데이트된 제목",
   "description": "업데이트된 설명",
-  "tag_ids": ["tag-uuid"]
+  "tag_ids": ["tag-uuid"],
+  "allocated_duration": 5400
 }
 ```
+
+보낸 필드만 바꿉니다. `allocated_duration`은 현재 `elapsed_time`보다 커야 하고, 아니면 `422`(`AllocatedDurationTooShortError`)입니다. 만료된 타이머는 이 요청이 만료를 먼저 확정하므로 늘린 뒤 `resume`할 수 있습니다. 실행 중인 타이머는 값만 바뀌고 계속 실행됩니다.
 
 ### 타이머 삭제
 
@@ -323,10 +344,10 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 | `type` | `action` | 발생 |
 |--------|----------|------|
 | `timer.created` | `start` | 생성 |
-| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 상태 전이, 메타데이터 수정, 연결된 Todo·Schedule 삭제로 연결 해제 (`update`), 연결 Todo의 상태 변경 (`stop`·`cancel`·`update`) |
+| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update`, `expire` | 상태 전이, 메타데이터 수정, 연결된 Todo·Schedule 삭제로 연결 해제 (`update`), 연결 Todo의 상태 변경 (`stop`·`cancel`·`update`), 명령이 만료를 확정 (`expire`, "만료") |
 | `timer.deleted` | `delete` | 삭제, 연결된 Todo·Schedule과 함께 삭제 (`timer`는 `null`, `payload.timer_id`로 식별) |
 
-한 요청에서 같은 타이머의 `update`가 여러 번 생기면 마지막 상태로 하나만 옵니다.
+한 요청에서 같은 타이머의 `update`가 여러 번 생기면 마지막 상태로 하나만 옵니다. `expire`는 이 규칙과 별개로 그 요청의 다른 이벤트보다 먼저 옵니다.
 
 이벤트를 받는 사람은 **소유자 본인**(명령을 보낸 기기 포함)과, 타이머 공개 범위가 `FRIENDS`·`PUBLIC`이면 소유자의 친구 전원, `SELECTED_FRIENDS`이면 허용 목록에 있는 친구입니다.
 
@@ -354,7 +375,7 @@ WebSocket 연결이 작동하려면 **백엔드 서버의 `CORS_ALLOWED_ORIGINS`
 // ============================================================
 
 export type TimerStatus = "RUNNING" | "PAUSED" | "COMPLETED" | "CANCELLED";
-export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "update" | "delete";
+export type TimerAction = "start" | "pause" | "resume" | "stop" | "cancel" | "update" | "delete" | "expire";
 export type TimerEventType = "timer.created" | "timer.updated" | "timer.deleted";
 
 // ============================================================
@@ -362,7 +383,7 @@ export type TimerEventType = "timer.created" | "timer.updated" | "timer.deleted"
 // ============================================================
 
 export interface PauseEvent {
-  action: "start" | "pause" | "resume" | "stop" | "cancel";
+  action: "start" | "pause" | "resume" | "stop" | "cancel" | "expire";
   at: string;
   elapsed?: number;
 }
@@ -583,7 +604,7 @@ function getTotalWorkTime(history: PauseEvent[]): number {
   for (const event of history) {
     if (event.action === 'start' || event.action === 'resume') {
       lastStart = new Date(event.at);
-    } else if ((event.action === 'pause' || event.action === 'stop') && lastStart) {
+    } else if ((event.action === 'pause' || event.action === 'stop' || event.action === 'expire') && lastStart) {
       const endTime = new Date(event.at);
       totalWork += (endTime.getTime() - lastStart.getTime()) / 1000;
       lastStart = null;

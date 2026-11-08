@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Timer expiry**: a RUNNING timer expires at `started_at + (allocated_duration - elapsed_time)`. Reads (`GET /v1/timers`, `/v1/timers/active`, `/v1/timers/{id}` and timers embedded in schedule and Todo responses) show an expired timer as `PAUSED` with `elapsed_time = allocated_duration`, `paused_at` at the expiry instant and an `expire` entry in `pause_history`, without writing the row. The next command on the timer (`pause`, `resume`, `stop`, `cancel`, `PATCH`) stores that state first and sends `timer.updated` with `action: expire`; no event is sent at the expiry instant. `pause` on an expired timer returns 200, `resume` returns 400 until `allocated_duration` is extended, and `stop`/`cancel` finish with `elapsed_time = allocated_duration`. Status filters still match the stored status, so an expired timer not yet stored is matched by `status=RUNNING`.
+- **Extending a timer**: `PATCH /v1/timers/{timer_id}` accepts `allocated_duration`. It must be greater than the current `elapsed_time`, otherwise 422 (`AllocatedDurationTooShortError`). An expired timer can be resumed after it is extended.
+
+### Changed
+
+- **`elapsed_time` is capped at `allocated_duration`**: `pause`, `stop` and completing a timer through its Todo no longer add running time beyond the allocated duration.
 
 ---
 
