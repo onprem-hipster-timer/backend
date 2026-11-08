@@ -334,9 +334,12 @@ docker compose -f compose.production.yaml up -d
 
 `main`에서 이미지 빌드(`Build and Push Docker Image`)가 성공하면 `.github/workflows/deploy.yml`이 그 커밋의 이미지를 Cloud Run에 배포합니다. 이미지에는 커밋 sha 태그(`sha-<커밋 sha>`)가 붙고, 배포는 이 태그의 digest로 고정합니다.
 
-1. `app-migrate` 잡의 이미지를 바꾸고 실행해 끝날 때까지 기다립니다.
-2. `api` 서비스의 `api` 컨테이너 이미지를 바꿉니다.
+1. 지금 `api`가 돌리는 이미지와 새 이미지의 커밋(`org.opencontainers.image.revision`)을 비교해, 그 사이 `alembic/`·`alembic.ini` 변경이 있는지 봅니다. 어느 쪽 커밋이든 알 수 없으면 변경이 있다고 봅니다.
+2. 변경이 있으면 `migrate` 잡이 environment `database-migration`의 승인을 기다립니다. 승인하면 `app-migrate` 잡의 이미지를 바꾸고 실행해 끝날 때까지 기다립니다. 거부하면 `api`도 바꾸지 않습니다.
+3. 마이그레이션이 성공했거나 필요 없으면 `api` 서비스의 `api` 컨테이너 이미지를 바꿉니다.
 
+- 마이그레이션은 승인 없이 돌지 않습니다. 저장소 Settings > Environments의 `database-migration`에 required reviewers를 걸어 둡니다. 이 규칙이 없으면 배포가 멈춥니다(environment를 처음 참조하면 GitHub가 승인 없는 환경을 만들기 때문입니다).
+- 승인을 기다리는 동안 뒤에 온 배포는 대기합니다(`concurrency`).
 - GCP 로그인은 Workload Identity Federation(키 없음)입니다. infra가 `main`의 이 파일 하나만 배포 계정(`gha-backend-deployer`)을 쓰게 허용하므로 경로나 이름을 바꾸면 로그인이 거부됩니다.
 - 저장소 변수 `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_DEPLOY_WIF_PROVIDER`, `GCP_DEPLOYER_SA`가 없으면 배포를 건너뜁니다. 값과 배포 계정의 권한 범위는 infra README "CI 배포"에 있습니다.
 - 다시 배포하거나 되돌릴 때는 Actions에서 `Deploy to Cloud Run`을 수동 실행하고 버전 태그(예: `v2026.11.04-fcb420a`)를 줍니다.
