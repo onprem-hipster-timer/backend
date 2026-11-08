@@ -2,6 +2,11 @@ name: Deploy to Cloud Run
 
 # main에서 이미지 빌드가 성공하면 그 커밋의 이미지를 Cloud Run에 배포한다.
 #
+# - 지금 api가 돌리는 커밋과 새 커밋 사이에 alembic/ 변경이 있으면 migrate 잡이 승인을 기다린다.
+#   승인하면 app-migrate 잡을 돌린 뒤 api를 바꾸고, 거부하면 api도 바꾸지 않는다. 변경이 없으면
+#   마이그레이션 없이 api만 바꾼다.
+# - 승인은 environment `database-migration`의 required reviewers가 한다. 이 규칙이 없으면
+#   GitHub가 승인 없는 환경을 만들어 버리므로, plan 잡이 규칙을 확인하고 없으면 배포를 멈춘다.
 # - GCP 로그인은 Workload Identity Federation(키 없음). infra가 main의 이 파일
 #   (.github/workflows/deploy.yml) 하나만 배포 계정을 쓰게 허용한다. 경로나 이름을 바꾸거나
 #   다른 워크플로에서 uses:로 부르면 로그인이 거부된다.
@@ -20,7 +25,7 @@ on:
         description: '배포할 이미지 태그 (예: v2026.11.04-fcb420a)'
         required: true
 
-# 배포가 겹치지 않게 하고, 마이그레이션 중간에 끊지 않는다
+# 배포가 겹치지 않게 하고, 마이그레이션 중간에 끊지 않는다. 승인을 기다리는 실행도 자리를 잡는다
 concurrency:
   group: deploy-cloud-run
   cancel-in-progress: false
@@ -28,19 +33,25 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CLOUDSDK_CORE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+
 jobs:
-  deploy:
+  plan:
     if: >-
       vars.GCP_DEPLOYER_SA != '' &&
       (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
       contents: read
+      actions: read # environment 보호 규칙 조회
       id-token: write # WIF 토큰. 없으면 인증 단계가 실패한다
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+      migrate: ${{ steps.pending.outputs.migrate }}
     env:
-      CLOUDSDK_CORE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.GCP_REGION }}
       # 빌드가 끝나서 온 경우 그 커밋의 sha 태그, 수동 실행이면 입력한 태그
       SOURCE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('sha-{0}', github.event.workflow_run.head_sha) }}
     steps:
@@ -59,8 +70,13 @@ jobs:
             "https://ghcr.io/v2/${repo}/manifests/${SOURCE_TAG}" \
             | tr -d '\r' | awk -F': ' 'tolower($1) == "docker-content-digest" {print $2}')
           [ -n "$digest" ] || { echo "::error::ghcr에 ${SOURCE_TAG} 이미지가 없음"; exit 1; }
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "ref=${REGION}-docker.pkg.dev/${CLOUDSDK_CORE_PROJECT}/ghcr/${repo}@${digest}" >> "$GITHUB_OUTPUT"
           echo "${SOURCE_TAG} -> ${digest}"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -71,16 +87,106 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
 
-      # 순서를 지킨다. 새 스키마가 필요한 코드가 마이그레이션보다 먼저 뜨면, 앱 계정(app_rw)은
-      # 테이블을 만들 권한이 없어 실패한다.
+      # 두 이미지의 org.opencontainers.image.revision을 읽어 그 사이 alembic 변경을 본다.
+      # 어느 쪽이든 커밋을 알 수 없으면 마이그레이션이 있다고 보고 승인을 받는다.
+      - name: Check pending migrations
+        id: pending
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY,,}"
+          token=$(curl -fsS "https://ghcr.io/token?scope=repository:${repo}:pull" | jq -r .token)
+          revision_of() {
+            local ref=$1 manifest platform config
+            manifest=$(curl -fsS -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${repo}/manifests/${ref}")
+            platform=$(jq -r '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' <<<"$manifest")
+            if [ -n "$platform" ]; then
+              manifest=$(curl -fsS -H "Authorization: Bearer ${token}" \
+                -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+                "https://ghcr.io/v2/${repo}/manifests/${platform}")
+            fi
+            config=$(jq -r .config.digest <<<"$manifest")
+            # blob은 다른 호스트로 리다이렉트된다. 리다이렉트도 https만 따른다
+            curl -fsSL --proto-redir =https -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${repo}/blobs/${config}" \
+              | jq -r '.config.Labels["org.opencontainers.image.revision"] // empty'
+          }
+          deployed=$(gcloud run services describe api --region "$REGION" --format='value(spec.template.spec.containers[0].image)')
+          new_rev=$(revision_of "$DIGEST" || true)
+          old_rev=$(revision_of "${deployed##*@}" || true)
+          if [ -n "$old_rev" ] && [ -n "$new_rev" ] \
+            && git diff --quiet "$old_rev" "$new_rev" -- alembic alembic.ini 2>/dev/null; then
+            migrate=false
+          else
+            migrate=true
+          fi
+          echo "migrate=${migrate}" >> "$GITHUB_OUTPUT"
+          echo "api ${old_rev:-?} -> ${new_rev:-?}, migrate=${migrate}"
+
+      - name: Require approval rule for migrations
+        if: steps.pending.outputs.migrate == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rules=$(gh api "repos/${GITHUB_REPOSITORY}/environments/database-migration" \
+            --jq '[.protection_rules[]?.type] | join(",")' 2>/dev/null || true)
+          [[ ",${rules}," == *",required_reviewers,"* ]] || {
+            echo "::error::environment database-migration에 required reviewers가 없어 배포를 멈춤 (Settings > Environments)"
+            exit 1
+          }
+
+  migrate:
+    needs: plan
+    if: needs.plan.outputs.migrate == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: database-migration # 승인해야 시작한다
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_DEPLOY_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
       - name: Migrate database
         env:
-          IMAGE: ${{ steps.image.outputs.ref }}
+          IMAGE: ${{ needs.plan.outputs.image }}
         run: |
           gcloud run jobs update app-migrate --region "$REGION" --image "$IMAGE"
           gcloud run jobs execute app-migrate --region "$REGION" --wait
 
+  # 순서를 지킨다. 새 스키마가 필요한 코드가 마이그레이션보다 먼저 뜨면, 앱 계정(app_rw)은
+  # 테이블을 만들 권한이 없어 실패한다. 그래서 migrate가 성공했거나 필요 없을 때만 바꾼다.
+  deploy:
+    needs: [plan, migrate]
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_DEPLOY_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
       - name: Deploy api
         env:
-          IMAGE: ${{ steps.image.outputs.ref }}
+          IMAGE: ${{ needs.plan.outputs.image }}
         run: gcloud run services update api --region "$REGION" --container api --image "$IMAGE"
