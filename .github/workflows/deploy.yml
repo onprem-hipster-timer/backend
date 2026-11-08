@@ -98,10 +98,10 @@ jobs:
           repo="${GITHUB_REPOSITORY,,}"
           token=$(curl -fsS "https://ghcr.io/token?scope=repository:${repo}:pull" | jq -r .token)
           revision_of() {
-            local manifest platform config
+            local ref=$1 manifest platform config
             manifest=$(curl -fsS -H "Authorization: Bearer ${token}" \
               -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
-              "https://ghcr.io/v2/${repo}/manifests/$1")
+              "https://ghcr.io/v2/${repo}/manifests/${ref}")
             platform=$(jq -r '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' <<<"$manifest")
             if [ -n "$platform" ]; then
               manifest=$(curl -fsS -H "Authorization: Bearer ${token}" \
@@ -109,7 +109,8 @@ jobs:
                 "https://ghcr.io/v2/${repo}/manifests/${platform}")
             fi
             config=$(jq -r .config.digest <<<"$manifest")
-            curl -fsSL -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${repo}/blobs/${config}" \
+            # blob은 다른 호스트로 리다이렉트된다. 리다이렉트도 https만 따른다
+            curl -fsSL --proto-redir =https -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${repo}/blobs/${config}" \
               | jq -r '.config.Labels["org.opencontainers.image.revision"] // empty'
           }
           deployed=$(gcloud run services describe api --region "$REGION" --format='value(spec.template.spec.containers[0].image)')
