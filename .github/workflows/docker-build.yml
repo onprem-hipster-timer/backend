@@ -3,8 +3,12 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [ main ]
+    # 이미지에 들어가 배포 동작을 바꾸는 경로. alembic은 배포 때 app-migrate 잡이 이 이미지로 실행한다
     paths:
       - 'app/**'
+      - 'alembic/**'
+      - 'alembic.ini'
+      - 'scripts/docker-entrypoint.sh'
       - 'requirements.txt'
       - 'Dockerfile'
       - '.github/workflows/docker-build.yml'
