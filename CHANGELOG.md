@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.08-099ab9f] - 2026-11-08
+
 ### Fixed
 
 - **Datetime columns created as `timestamptz`**: databases bootstrapped with `create_all` while model datetime fields were plain `datetime` got `TIMESTAMP WITH TIME ZONE` columns, so PostgreSQL returned timezone-aware values and arithmetic with naive UTC datetimes failed with 500 (`can't subtract offset-naive and offset-aware datetimes`) on timer pause, stop and cancel and in schedule duration calculations. A migration converts these columns to `TIMESTAMP WITHOUT TIME ZONE`, keeping the same UTC instant; columns that are already naive are left as they are.
@@ -362,7 +368,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...HEAD
+[v2026.11.08-099ab9f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...v2026.11.08-099ab9f
 [v2026.11.07-f65a7fe]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...v2026.11.07-f65a7fe
 [v2026.11.07-c7b2408]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...v2026.11.07-c7b2408
 [v2026.11.07-acb5673]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.06-039b759...v2026.11.07-acb5673
