@@ -1,15 +1,15 @@
 # 릴리스
 
-`main`에 머지되면 이미지 빌드, CHANGELOG 갱신, GitHub Release, Cloud Run 배포가 사람 손 없이 이어집니다. 워크플로는 `.github/workflows/docker-build.yml`(빌드·릴리스)과 `deploy.yml`(배포)입니다.
+`main`에 머지되면 이미지 빌드, CHANGELOG 갱신, GitHub Release, Cloud Run 배포가 이어집니다. 사람이 하는 일은 DB 마이그레이션 승인뿐입니다([프로덕션 배포](production.md#cloud-run-github-actions)). 워크플로는 `.github/workflows/docker-build.yml`(빌드·릴리스)과 `deploy.yml`(배포)입니다.
 
 ## 흐름
 
 ```mermaid
 flowchart TD
-    Push["main push<br/>(app/**, requirements.txt, Dockerfile, docker-build.yml)"]
+    Push["main push<br/>(app/**, alembic/**, alembic.ini, scripts/docker-entrypoint.sh,<br/>requirements.txt, Dockerfile, docker-build.yml)"]
     Build["build<br/>이미지 빌드 → ghcr.io/onprem-hipster-timer/backend"]
     Release["release<br/>CHANGELOG [Unreleased] → 버전 절로 바꿔 main에 커밋<br/>GitHub Release 생성, 문서 재빌드"]
-    Deploy["deploy.yml<br/>빌드한 커밋의 이미지를 Cloud Run에 배포"]
+    Deploy["deploy.yml<br/>빌드한 커밋의 이미지를 Cloud Run에 배포<br/>alembic 변경이 있으면 마이그레이션 승인 뒤"]
     Push --> Build --> Release
     Build -- 워크플로 완료 --> Deploy
 ```
