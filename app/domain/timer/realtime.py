@@ -5,7 +5,9 @@ TimerService와 연결 타이머 핸들러(app/domain/timer/event_handlers.py)�
 이벤트를 커밋 후 큐(app/shared/uow.py)에 적재한다. 루트 트랜잭션이 커밋되면 publisher가
 받는 사람에게 보낸다.
 
-- type: timer.created(start), timer.updated(pause·resume·stop·cancel·update), timer.deleted(delete)
+- type: timer.created(start), timer.updated(pause·resume·stop·cancel·update·expire), timer.deleted(delete)
+- expire는 명령이 만료를 확정할 때만 나간다. stop·cancel·update는 그 뒤에 자기 이벤트를 따로 보내고,
+  만료된 타이머의 pause는 expire 하나만 보낸다
 - 연결된 Todo·Schedule 삭제로 링크가 끊기면 update, 함께 삭제되면 delete
 - 한 트랜잭션에서 같은 타이머의 update는 마지막 것(최신 상태) 하나만 나간다
 - payload: action, actor_name(행위자 표시명), timer(TimerData, UTC aware). 삭제는 timer가 null이고 timer_id가 있다

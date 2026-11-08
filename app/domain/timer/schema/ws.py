@@ -32,6 +32,7 @@ class TimerAction(str, Enum):
     CANCEL = "cancel"
     UPDATE = "update"
     DELETE = "delete"
+    EXPIRE = "expire"
 
 
 class TimerData(CustomModel):

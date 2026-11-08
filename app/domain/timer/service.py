@@ -25,6 +25,7 @@ from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.tag.service import TagService
 from app.domain.timer.events import TimerCancelled, TimerCompleted
+from app.domain.timer.expiry import expired_fields
 from app.domain.timer.exceptions import (
     TimerNotFoundError,
     InvalidTimerStatusError,
@@ -74,6 +75,18 @@ class TimerService:
         """
         current_segment = int((now - timer.started_at).total_seconds())
         timer.elapsed_time = min(timer.allocated_duration, timer.elapsed_time + max(0, current_segment))
+
+    def _materialize_expiry(self, timer: TimerSession, now: datetime) -> bool:
+        """만료된 RUNNING 타이머를 행에 만료 표현으로 확정하고 expire 이벤트 적재 (app/domain/timer/expiry.py)"""
+        fields = expired_fields(timer, now)
+        if fields is None:
+            return False
+        for name, value in fields.items():
+            setattr(timer, name, value)
+        self.session.flush()
+        self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.EXPIRE, timer)
+        return True
 
     def create_timer(self, data: TimerCreate) -> TimerSession:
         """
@@ -318,6 +331,7 @@ class TimerService:
         타이머 일시정지
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 확정해 반환 (이미 만료로 멈춘 타이머도 그대로 반환)
         - status가 RUNNING이어야 함
         - elapsed_time을 현재까지 경과한 시간으로 업데이트
         - status를 PAUSED로 변경
@@ -332,12 +346,17 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        now = ensure_utc_naive(datetime.now(UTC))
+        if self._materialize_expiry(timer, now):
+            return timer
+        if timer.status == TimerStatus.PAUSED.value and timer.elapsed_time >= timer.allocated_duration:
+            return timer
+
         if timer.status != TimerStatus.RUNNING.value:
             raise InvalidTimerStatusError(
                 detail=f"Cannot pause timer with status {timer.status}"
             )
 
-        now = ensure_utc_naive(datetime.now(UTC))
         if timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -365,6 +384,7 @@ class TimerService:
         
         비즈니스 로직:
         - status가 PAUSED이어야 함
+        - elapsed_time이 allocated_duration에 닿았으면 거부 (PATCH로 allocated_duration을 먼저 늘린다)
         - status를 RUNNING으로 변경
         - started_at을 현재 시간으로 재설정 (경과 시간은 그대로 유지)
         - paused_at을 None으로 설정
@@ -378,13 +398,19 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
+
         if timer.status != TimerStatus.PAUSED.value:
             raise InvalidTimerStatusError(
                 detail=f"Cannot resume timer with status {timer.status}"
             )
+        if timer.elapsed_time >= timer.allocated_duration:
+            raise InvalidTimerStatusError(
+                detail="Cannot resume timer: allocated_duration is used up. Extend allocated_duration first."
+            )
 
         # 상태 변경
-        now = ensure_utc_naive(datetime.now(UTC))
         timer.status = TimerStatus.RUNNING.value
         timer.started_at = now  # 재개 시간으로 재설정
         timer.paused_at = None
@@ -407,6 +433,7 @@ class TimerService:
         타이머 종료
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 먼저 확정
         - status가 RUNNING 또는 PAUSED이어야 함
         - elapsed_time을 최종 경과 시간으로 업데이트
         - status를 COMPLETED로 변경
@@ -422,6 +449,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        self._materialize_expiry(timer, ensure_utc_naive(datetime.now(UTC)))
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
                 detail=f"Cannot stop timer with status {timer.status}"
@@ -470,6 +498,7 @@ class TimerService:
         타이머 취소
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 먼저 확정
         - status가 RUNNING 또는 PAUSED이어야 함
         - status를 CANCELLED로 변경
         - ended_at을 현재 시간으로 설정
@@ -484,6 +513,7 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        self._materialize_expiry(timer, ensure_utc_naive(datetime.now(UTC)))
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
                 detail=f"Cannot cancel timer with status {timer.status}"
@@ -546,6 +576,7 @@ class TimerService:
         - 필드가 null: 연결 해제
 
         Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
+        만료된 타이머는 만료를 먼저 확정한다.
         
         :param timer_id: 타이머 ID
         :param data: 업데이트 데이터
@@ -557,6 +588,8 @@ class TimerService:
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
+
+        self._materialize_expiry(timer, ensure_utc_naive(datetime.now(UTC)))
 
         # MISSING 필드는 자동 제외
         update_data = data.model_dump()
