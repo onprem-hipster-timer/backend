@@ -40,9 +40,9 @@ def _stored(timer_id: str) -> TimerSession:
         return session.get(TimerSession, UUID(timer_id))
 
 
-def _expired_timer(client) -> tuple[str, datetime]:
+def _expired_timer(client, **body) -> tuple[str, datetime]:
     """할당 시간을 넘긴 RUNNING 타이머의 ID와 만료 시각(UTC aware, 초 단위)"""
-    timer_id = _create(client)["id"]
+    timer_id = _create(client, **body)["id"]
     started_at = _backdate(timer_id, ALLOCATED + 30)
     return timer_id, (started_at + timedelta(seconds=ALLOCATED)).replace(tzinfo=UTC, microsecond=0)
 
@@ -81,11 +81,12 @@ def test_elapsed_is_capped_at_allocated(e2e_client, action):
 
 
 @pytest.mark.e2e
-def test_todo_done_long_after_expiry_completes_with_allocated(e2e_client):
+def test_todo_done_long_after_expiry_completes_with_allocated(e2e_client, after_commit_items):
     group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
     todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
     timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
     _backdate(timer_id, ALLOCATED * 10)
+    after_commit_items.clear()
 
     response = e2e_client.patch(f"/v1/todos/{todo['id']}", json={"status": "DONE"})
 
@@ -93,6 +94,36 @@ def test_todo_done_long_after_expiry_completes_with_allocated(e2e_client):
     timer = e2e_client.get(f"/v1/timers/{timer_id}").json()
     assert timer["status"] == "COMPLETED"
     assert timer["elapsed_time"] == ALLOCATED
+    assert [h["action"] for h in timer["pause_history"]] == ["start", "expire", "stop"]
+    assert [i["message"]["payload"]["action"] for i in after_commit_items] == ["expire", "stop"]
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("todo_status, action", [("DONE", "stop"), ("CANCELLED", "cancel")])
+def test_todo_status_finishes_expired_timer_like_endpoint(e2e_client, after_commit_items, todo_status, action):
+    """Todo 상태로 끝낸 만료 타이머와 stop·cancel로 끝낸 만료 타이머는 elapsed·이력·이벤트가 같다"""
+    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    via_todo, todo_expires_at = _expired_timer(e2e_client, todo_id=todo["id"])
+    via_endpoint, endpoint_expires_at = _expired_timer(e2e_client)
+
+    after_commit_items.clear()
+    assert e2e_client.patch(f"/v1/todos/{todo['id']}", json={"status": todo_status}).status_code == 200
+    todo_events = [i["message"]["payload"]["action"] for i in after_commit_items]
+    after_commit_items.clear()
+    assert e2e_client.post(f"/v1/timers/{via_endpoint}/{action}").status_code == 200
+    endpoint_events = [i["message"]["payload"]["action"] for i in after_commit_items]
+
+    for timer_id, expires_at, events in (
+            (via_todo, todo_expires_at, todo_events),
+            (via_endpoint, endpoint_expires_at, endpoint_events),
+    ):
+        body = e2e_client.get(f"/v1/timers/{timer_id}").json()
+        assert body["elapsed_time"] == ALLOCATED
+        assert [h["action"] for h in body["pause_history"]] == ["start", "expire", action]
+        assert _parse_utc(body["pause_history"][1]["at"]) == expires_at
+        assert body["pause_history"][2]["elapsed"] == ALLOCATED
+        assert events == ["expire", action]
 
 
 @pytest.mark.e2e

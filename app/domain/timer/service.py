@@ -434,13 +434,13 @@ class TimerService:
         타이머 종료
         
         비즈니스 로직:
-        - 만료된 타이머는 만료를 먼저 확정
+        - 만료된 타이머는 만료를 먼저 확정 (mark_completed)
         - status가 RUNNING 또는 PAUSED이어야 함
         - elapsed_time을 최종 경과 시간으로 업데이트
         - status를 COMPLETED로 변경
         - ended_at을 현재 시간으로 설정
         - 연결 Todo가 DONE·CANCELLED가 아니면 DONE으로 (TimerCompleted → app/domain/todo/event_handlers.py)
-        
+
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
@@ -450,7 +450,6 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        self._materialize_expiry(timer, ensure_utc_naive(datetime.now(UTC)))
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
                 detail=f"Cannot stop timer with status {timer.status}"
@@ -465,9 +464,11 @@ class TimerService:
         """
         RUNNING·PAUSED 타이머를 COMPLETED로 바꾸고 실시간 이벤트 적재, TimerCompleted 수집
 
+        만료된 타이머는 만료를 먼저 확정한다 (expire → stop).
         상태 검증과 dispatch는 호출자 몫이다 (stop_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -499,12 +500,12 @@ class TimerService:
         타이머 취소
         
         비즈니스 로직:
-        - 만료된 타이머는 만료를 먼저 확정
+        - 만료된 타이머는 만료를 먼저 확정 (mark_cancelled)
         - status가 RUNNING 또는 PAUSED이어야 함
         - status를 CANCELLED로 변경
         - ended_at을 현재 시간으로 설정
         - 연결 Todo가 DONE·CANCELLED가 아니면 CANCELLED로 (TimerCancelled → app/domain/todo/event_handlers.py)
-        
+
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
@@ -514,7 +515,6 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
-        self._materialize_expiry(timer, ensure_utc_naive(datetime.now(UTC)))
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
                 detail=f"Cannot cancel timer with status {timer.status}"
@@ -528,9 +528,11 @@ class TimerService:
         """
         RUNNING·PAUSED 타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
 
+        만료된 타이머는 만료를 먼저 확정한다 (expire → cancel).
         상태 검증과 dispatch는 호출자 몫이다 (cancel_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
         timer.status = TimerStatus.CANCELLED.value
         timer.ended_at = now
 
