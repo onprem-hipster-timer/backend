@@ -2,7 +2,7 @@
 타이머 만료 테스트
 
 - elapsed_time은 allocated_duration을 넘지 않는다 (stop, pause, Todo DONE 전파)
-- 명령(pause·resume·stop·cancel)은 만료를 행에 확정하고 expire 이벤트를 보낸다
+- 명령(pause·stop·cancel·PATCH)과 Todo·Schedule 쪽 변경은 만료를 행에 확정하고 expire 이벤트를 보낸다. 400인 resume과 422인 PATCH는 쓰지 않는다
 - 만료로 멈춘 타이머는 재개할 수 없다. PATCH로 allocated_duration을 늘리면 재개할 수 있다
 - allocated_duration은 elapsed_time보다 커야 한다 (422)
 - 사용자가 멈춘 타이머는 만료되지 않는다

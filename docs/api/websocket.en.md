@@ -80,7 +80,7 @@ Every message uses the same envelope:
 
 - `id`: message ID. Drop a message you have already handled.
 - `from_user`: `sub` of the user who made the change (`null` for `connected`). If it is not your `sub`, it is a friend's activity.
-- `expire`: a command (`pause`, `resume`, `stop`, `cancel`, `PATCH`) found a RUNNING timer past its allocated duration and stored it as PAUSED. Nothing is sent at the expiry instant itself. A `stop`, `cancel` or `update` event for the same request may follow (rules: the "만료" section of the [timer guide](../guides/timer.md)).
+- `expire`: a command (`pause`, `stop`, `cancel`, a successful `PATCH`) or a change on the Todo or schedule side (applying a Todo status, deleting with `unlink`) found a RUNNING timer past its allocated duration and stored it as PAUSED. Nothing is sent at the expiry instant itself, nor for a `resume` that returns 400 or a `PATCH` that returns 422. A `stop`, `cancel` or `update` event for the same request may follow (rules: the "만료" section of the [timer guide](../guides/timer.md)).
 - `timer`: the committed timer. All times are UTC, in the same format as REST responses (`timezone=UTC`). `elapsed_time` is the stored total (for RUNNING timers, add `now - started_at` when displaying).
 
 !!! note "Field Names"

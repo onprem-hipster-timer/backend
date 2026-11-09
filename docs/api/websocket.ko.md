@@ -80,7 +80,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 - `id`: 메시지 ID. 같은 메시지를 두 번 받으면 버립니다.
 - `from_user`: 변경을 일으킨 사용자의 `sub` (`connected`는 `null`). 내 `sub`가 아니면 친구의 활동입니다.
-- `expire`: 할당 시간이 끝난 RUNNING 타이머를 명령(`pause`·`resume`·`stop`·`cancel`·`PATCH`)이 PAUSED로 확정했을 때. 만료 시각에는 오지 않습니다. 같은 요청의 `stop`·`cancel`·`update` 이벤트가 뒤따를 수 있습니다 (규칙: [타이머 가이드](../guides/timer.ko.md)의 "만료").
+- `expire`: 할당 시간이 끝난 RUNNING 타이머를 명령(`pause`·`stop`·`cancel`·성공한 `PATCH`)이나 Todo·Schedule 쪽 변경(Todo 상태 반영, `unlink` 삭제)이 PAUSED로 확정했을 때. 만료 시각에는 오지 않고, 400인 `resume`과 422인 `PATCH`에도 오지 않습니다. 같은 요청의 `stop`·`cancel`·`update` 이벤트가 뒤따를 수 있습니다 (규칙: [타이머 가이드](../guides/timer.ko.md)의 "만료").
 - `timer`: 커밋된 타이머. 시각은 모두 UTC이고 REST 응답(`timezone=UTC`)과 같은 형식입니다. `elapsed_time`은 저장된 누적값입니다(RUNNING이면 `now - started_at`을 더해 표시).
 
 !!! note "필드 이름"
