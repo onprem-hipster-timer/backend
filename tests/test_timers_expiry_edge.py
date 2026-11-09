@@ -8,7 +8,7 @@
 - status 필터는 저장된 상태 기준이다
 - expire 이벤트 페이로드는 만료 표현을 담는다
 - Todo 변경은 할당 시간을 다 쓴 타이머에만 expire를 앞세우고, 한 번만 확정한다
-- allocated_duration이 현재 경과 시간과 같으면 422
+- allocated_duration이 현재 경과 시간과 같으면 422. 400인 resume과 422인 PATCH는 만료 타이머를 저장하지 않는다
 - 데이터 이전으로 allocated == elapsed가 된 기존 행의 연장·만료
 
 기본 동작은 tests/test_timers_expiry.py.
@@ -374,3 +374,21 @@ def test_timezone_applies_to_materialized_expiry(e2e_client):
     assert expire["action"] == "expire"
     assert datetime.fromisoformat(expire["at"]).utcoffset() == seoul
     assert _utc(expire["at"]) == expected
+
+
+@pytest.mark.e2e
+def test_failed_resume_and_patch_on_expired_timer_store_nothing(e2e_client, after_commit_items):
+    timer_id = _create(e2e_client)["id"]
+    _set(timer_id, started_at=_ago(ALLOCATED + 30))
+    after_commit_items.clear()
+
+    assert e2e_client.patch(f"/v1/timers/{timer_id}/resume").status_code == 400
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": ALLOCATED, "title": "바뀌지 않음"})
+    assert response.status_code == 422
+
+    assert after_commit_items == []
+    with Session(_session_manager.engine) as session:
+        stored = session.get(TimerSession, UUID(timer_id))
+        assert stored.status == "RUNNING"
+        assert stored.title == "만료 타이머"
+        assert [h["action"] for h in stored.pause_history] == ["start"]
