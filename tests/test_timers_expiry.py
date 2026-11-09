@@ -328,3 +328,27 @@ def test_linked_resource_change_materializes_expiry_first(e2e_client, after_comm
     assert stored.status == "PAUSED"
     assert [h["action"] for h in stored.pause_history] == ["start", "expire"]
     _assert_expired(e2e_client.get(f"/v1/timers/{timer_id}").json(), expires_at)
+
+
+@pytest.mark.e2e
+def test_shrink_running_timer_counts_running_segment(e2e_client, after_commit_items):
+    """실행 중이면 저장 elapsed_time에 지금까지 실행한 구간을 더한 값보다 커야 한다"""
+    timer_id = e2e_client.post("/v1/timers", json={"title": "줄이기", "allocated_duration": 1500}).json()["id"]
+    started_at = _backdate(timer_id, 100)
+    after_commit_items.clear()
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": 50})
+
+    assert response.status_code == 422
+    assert response.json()["error_type"] == "AllocatedDurationTooShortError"
+    stored = _stored(timer_id)
+    assert stored.status == "RUNNING"
+    assert stored.allocated_duration == 1500
+    assert after_commit_items == []
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": 1000})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "RUNNING"
+    assert response.json()["allocated_duration"] == 1000
+    assert _stored(timer_id).started_at.replace(microsecond=0) == started_at.replace(microsecond=0)

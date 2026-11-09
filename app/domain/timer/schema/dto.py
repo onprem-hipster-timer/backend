@@ -210,7 +210,7 @@ class TimerUpdate(CustomModel):
     - 필드가 UUID 값: 해당 ID로 연결 변경
     - 필드가 null: 연결 해제
 
-    allocated_duration: 현재 elapsed_time보다 커야 함 (아니면 422). 만료된 타이머는 늘린 뒤 재개할 수 있다
+    allocated_duration: 현재 경과 시간(실행 중이면 지금까지 실행한 구간 포함)보다 커야 함 (아니면 422). 만료된 타이머는 늘린 뒤 재개할 수 있다
 
     Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
     """
