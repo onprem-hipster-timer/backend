@@ -174,7 +174,7 @@ session: Session = CommittingSession
 
 - **연결·재연결 직후 REST로 다시 맞춥니다.** 소켓은 연결 전이나 끊긴 동안의 메시지를 다시 보내지 않습니다.
 - `id`가 이미 처리한 메시지면 버립니다.
-- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. `updated_at`은 초 단위라 같을 수 있으므로, 같으면 `pause_history`가 더 긴 쪽을 반영하고(명령마다 항목이 하나씩 늘어난다) 길이도 같으면 가진 값을 유지합니다. COMPLETED·CANCELLED로 끝난 타이머는 다시 활성이 되지 않으므로, 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
+- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. `updated_at`은 초 단위라 같을 수 있으므로, 같으면 `pause_history`가 더 긴 쪽을 반영하고(명령마다 항목이 하나씩 늘어난다) 길이도 같으면 가진 값을 유지합니다. 단, 이 클라이언트가 보낸 명령의 REST 응답은 반영합니다(`allocated_duration`을 늘리는 `PATCH`처럼 항목이 늘지 않을 수 있다). COMPLETED·CANCELLED로 끝난 타이머는 다시 활성이 되지 않으므로, 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
 - 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
 - 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.

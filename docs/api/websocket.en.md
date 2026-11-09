@@ -92,7 +92,7 @@ The socket does not resend messages from before the connection or while it was d
 
 1. Reload timers over REST right after every connect and reconnect (`timezone=UTC`).
 2. Drop duplicates by `id`.
-3. Drop an event whose `timer.updated_at` is older than the one you hold; apply it when newer. `updated_at` has second precision, so on a tie apply the one with the longer `pause_history` (every command appends one entry) and keep the held value when the lengths are equal too. A COMPLETED or CANCELLED timer never becomes active again: once you have seen it finish, drop any unfinished value for it regardless of `updated_at`. Use the same rule for REST responses.
+3. Drop an event whose `timer.updated_at` is older than the one you hold; apply it when newer. `updated_at` has second precision, so on a tie apply the one with the longer `pause_history` (every command appends one entry) and keep the held value when the lengths are equal too, except for the REST response to your own command, which you apply (a `PATCH` such as extending `allocated_duration` may add no entry). A COMPLETED or CANCELLED timer never becomes active again: once you have seen it finish, drop any unfinished value for it regardless of `updated_at`. Use the same rule for REST responses.
 4. Drop earlier events for a timer you received `timer.deleted` for.
 
 ## Example Usage

@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`elapsed_time` is capped at `allocated_duration`**: `pause`, `stop` and completing a timer through its Todo no longer add running time beyond the allocated duration.
-- **Client rule for timer state**: the realtime and timer guides now tell clients to apply a timer value only when its `updated_at` is newer than the held one; on an equal `updated_at` the value with the longer `pause_history` wins and equal lengths keep the held value. A timer seen as COMPLETED or CANCELLED is never made active again by a later value.
+- **Client rule for timer state**: the realtime and timer guides now tell clients to apply a timer value only when its `updated_at` is newer than the held one; on an equal `updated_at` the value with the longer `pause_history` wins and equal lengths keep the held value, except that the response to the client's own command is applied (a `PATCH` such as extending `allocated_duration` may add no `pause_history` entry). A timer seen as COMPLETED or CANCELLED is never made active again by a later value.
 - **Active timers over their allocation**: a migration raises `allocated_duration` to `elapsed_time` for RUNNING and PAUSED timers whose `elapsed_time` exceeds it. COMPLETED and CANCELLED timers keep their values, so finished timers can still have `elapsed_time` greater than `allocated_duration`. The migration's downgrade does not restore the previous values.
 
 ---

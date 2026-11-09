@@ -92,7 +92,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 1. 연결·재연결 직후 REST로 타이머를 다시 조회합니다 (`timezone=UTC`).
 2. `id`로 중복을 버립니다.
-3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. 같으면(초 단위라 겹칠 수 있음) `pause_history`가 더 긴 쪽을 반영하고, 길이도 같으면 가진 값을 유지합니다. COMPLETED·CANCELLED로 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
+3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. 같으면(초 단위라 겹칠 수 있음) `pause_history`가 더 긴 쪽을 반영하고, 길이도 같으면 가진 값을 유지합니다. 단, 이 클라이언트가 보낸 명령의 REST 응답은 반영합니다(`allocated_duration`을 늘리는 `PATCH`처럼 항목이 늘지 않을 수 있다). COMPLETED·CANCELLED로 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
 4. `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 
 ## 사용 예시
