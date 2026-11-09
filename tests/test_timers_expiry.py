@@ -285,3 +285,46 @@ def test_extend_running_timer_before_expiry(e2e_client):
     assert response.status_code == 200
     assert response.json()["status"] == "RUNNING"
     assert response.json()["allocated_duration"] == ALLOCATED * 2
+
+
+def _timer_events(items: list[dict], timer_id: str) -> list[dict]:
+    return [
+        item["message"]["payload"] for item in items
+        if item["message"]["type"].startswith("timer.")
+        and (item["message"]["payload"].get("timer") or {}).get("id") == timer_id
+    ]
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("path", ["todo_deadline", "todo_unlink", "schedule_unlink"])
+def test_linked_resource_change_materializes_expiry_first(e2e_client, after_commit_items, path):
+    """Todo·Schedule 쪽 변경이 보내는 update 앞에 만료가 확정되고, 두 페이로드 모두 PAUSED"""
+    if path == "schedule_unlink":
+        schedule = e2e_client.post(
+            "/v1/schedules",
+            json={"title": "일정", "start_time": "2024-01-01T10:00:00Z", "end_time": "2024-01-01T12:00:00Z"},
+        ).json()
+        timer_id, expires_at = _expired_timer(e2e_client, schedule_id=schedule["id"])
+    else:
+        group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+        todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+        timer_id, expires_at = _expired_timer(e2e_client, todo_id=todo["id"])
+    after_commit_items.clear()
+
+    if path == "todo_deadline":
+        response = e2e_client.patch(f"/v1/todos/{todo['id']}", json={"deadline": "2024-01-20T10:00:00Z"})
+    elif path == "todo_unlink":
+        response = e2e_client.delete(f"/v1/todos/{todo['id']}", params={"linked_timer_policy": "unlink"})
+    else:
+        response = e2e_client.delete(f"/v1/schedules/{schedule['id']}", params={"linked_timer_policy": "unlink"})
+    assert response.status_code == 200, response.text
+
+    events = _timer_events(after_commit_items, timer_id)
+    assert [e["action"] for e in events] == ["expire", "update"]
+    for event in events:
+        assert event["timer"]["status"] == "PAUSED"
+        assert event["timer"]["elapsed_time"] == ALLOCATED
+    stored = _stored(timer_id)
+    assert stored.status == "PAUSED"
+    assert [h["action"] for h in stored.pause_history] == ["start", "expire"]
+    _assert_expired(e2e_client.get(f"/v1/timers/{timer_id}").json(), expires_at)
