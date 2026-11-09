@@ -189,7 +189,7 @@ Content-Type: application/json
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| `allocated_duration` | number | ✅ | 할당 시간 (초 단위, 양수 필수) |
+| `allocated_duration` | number | ✅ | 할당 시간 (초 단위, 양수 필수, 최대 2147483647) |
 | `title` | string | ❌ | 타이머 제목 |
 | `description` | string | ❌ | 타이머 설명 |
 | `schedule_id` | UUID | ❌ | Schedule ID |
@@ -278,7 +278,7 @@ Content-Type: application/json
 }
 ```
 
-보낸 필드만 바꿉니다. `allocated_duration`은 현재 경과 시간(실행 중이면 `elapsed_time`에 지금까지 실행한 구간을 더한 값)보다 커야 하고, 아니면 `422`(`AllocatedDurationTooShortError`)입니다. 만료된 타이머는 이 요청이 만료를 먼저 확정하므로 늘린 뒤 `resume`할 수 있습니다. 실행 중인 타이머는 값만 바뀌고 계속 실행됩니다.
+보낸 필드만 바꿉니다. `allocated_duration`은 현재 경과 시간(실행 중이면 `elapsed_time`에 지금까지 실행한 구간을 더한 값)보다 커야 하고, 아니면 `422`(`AllocatedDurationTooShortError`)입니다. 최대값은 생성과 같은 2147483647이고, 넘으면 `422`(검증 오류)입니다. 만료된 타이머는 이 요청이 만료를 먼저 확정하므로 늘린 뒤 `resume`할 수 있습니다. 실행 중인 타이머는 값만 바뀌고 계속 실행됩니다.
 
 ### 타이머 삭제
 

@@ -10,7 +10,7 @@ from datetime import datetime, timezone, UTC
 from typing import Optional, List, TYPE_CHECKING, Any
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
@@ -51,7 +51,7 @@ class TimerCreate(CustomModel):
     todo_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Schedule 전용 타이머 가능)
     title: Optional[str] = None
     description: Optional[str] = None
-    allocated_duration: int  # 할당 시간 (초 단위)
+    allocated_duration: int = Field(le=2_147_483_647)  # 할당 시간 (초 단위, timersession INTEGER 최대값 이하)
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
     @field_validator("allocated_duration")
@@ -219,7 +219,7 @@ class TimerUpdate(CustomModel):
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     todo_id: UUID | None = MISSING  # Todo 연결 변경 (null로 연결 해제)
     schedule_id: UUID | None = MISSING  # Schedule 연결 변경 (null로 연결 해제)
-    allocated_duration: int = MISSING  # 할당 시간 (초 단위)
+    allocated_duration: int = Field(default=MISSING, le=2_147_483_647)  # 할당 시간 (초 단위, timersession INTEGER 최대값 이하)
 
 
 # Forward reference 해결

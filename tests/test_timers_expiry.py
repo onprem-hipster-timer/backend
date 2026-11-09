@@ -352,3 +352,33 @@ def test_shrink_running_timer_counts_running_segment(e2e_client, after_commit_it
     assert response.json()["status"] == "RUNNING"
     assert response.json()["allocated_duration"] == 1000
     assert _stored(timer_id).started_at.replace(microsecond=0) == started_at.replace(microsecond=0)
+
+
+MAX_ALLOCATED = 2_147_483_647
+
+
+@pytest.mark.e2e
+def test_allocated_duration_above_max_is_validation_error(e2e_client):
+    response = e2e_client.post("/v1/timers", json={"title": "상한", "allocated_duration": MAX_ALLOCATED + 1})
+    assert response.status_code == 422
+    assert e2e_client.get("/v1/timers").json() == []
+
+    timer_id = _create(e2e_client)["id"]
+    e2e_client.patch(f"/v1/timers/{timer_id}/pause")
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": MAX_ALLOCATED + 1})
+    assert response.status_code == 422
+    assert response.json().get("error_type") != "AllocatedDurationTooShortError"
+    assert _stored(timer_id).allocated_duration == ALLOCATED
+
+
+@pytest.mark.e2e
+def test_allocated_duration_at_max_is_accepted(e2e_client):
+    timer_id = _create(e2e_client)["id"]
+    e2e_client.patch(f"/v1/timers/{timer_id}/pause")
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": MAX_ALLOCATED})
+    assert response.status_code == 200, response.text
+    assert e2e_client.patch(f"/v1/timers/{timer_id}/resume").status_code == 200
+
+    created = e2e_client.post("/v1/timers", json={"title": "상한", "allocated_duration": MAX_ALLOCATED})
+    assert created.status_code == 201, created.text
