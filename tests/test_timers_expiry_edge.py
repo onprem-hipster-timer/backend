@@ -7,6 +7,9 @@
 - timezone 변환은 가상 expire 이력에도 적용된다
 - status 필터는 저장된 상태 기준이다
 - expire 이벤트 페이로드는 만료 표현을 담는다
+- Todo 변경은 할당 시간을 다 쓴 타이머에만 expire를 앞세우고, 한 번만 확정한다
+- allocated_duration이 현재 경과 시간과 같으면 422
+- 데이터 이전으로 allocated == elapsed가 된 기존 행의 연장·만료
 
 기본 동작은 tests/test_timers_expiry.py.
 """
@@ -195,3 +198,179 @@ def test_delete_expired_timer(e2e_client):
 
     assert e2e_client.delete(f"/v1/timers/{timer_id}").status_code == 200
     assert e2e_client.get(f"/v1/timers/{timer_id}").status_code == 404
+
+
+def _timer_actions(items: list[dict], timer_id: str) -> list[str]:
+    return [
+        item["message"]["payload"]["action"] for item in items
+        if item["message"]["type"].startswith("timer.")
+        and (item["message"]["payload"].get("timer") or {}).get("id") == timer_id
+    ]
+
+
+def _todo(client) -> dict:
+    group = client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    return client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("ran, expired", [(ALLOCATED - 2, False), (ALLOCATED, True)])
+def test_todo_change_at_expiry_boundary(e2e_client, after_commit_items, ran, expired):
+    """Todo 변경 시점에 할당 시간을 다 썼을 때만 expire가 앞선다"""
+    todo = _todo(e2e_client)
+    timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
+    _set(timer_id, started_at=_ago(ran))
+    after_commit_items.clear()
+
+    assert e2e_client.patch(f"/v1/todos/{todo['id']}", json={"deadline": "2024-01-20T10:00:00Z"}).status_code == 200
+
+    assert _timer_actions(after_commit_items, timer_id) == (["expire", "update"] if expired else ["update"])
+    with Session(_session_manager.engine) as session:
+        stored = session.get(TimerSession, UUID(timer_id))
+        assert stored.status == ("PAUSED" if expired else "RUNNING")
+        assert stored.elapsed_time == (ALLOCATED if expired else 0)
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("todo_status, action", [("DONE", "stop"), ("CANCELLED", "cancel")])
+def test_todo_status_on_running_timer_before_expiry_has_no_expire(e2e_client, after_commit_items, todo_status, action):
+    todo = _todo(e2e_client)
+    timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
+    _set(timer_id, started_at=_ago(ALLOCATED - 20))
+    after_commit_items.clear()
+
+    assert e2e_client.patch(f"/v1/todos/{todo['id']}", json={"status": todo_status}).status_code == 200
+
+    assert _timer_actions(after_commit_items, timer_id) == [action]
+    body = e2e_client.get(f"/v1/timers/{timer_id}").json()
+    assert [h["action"] for h in body["pause_history"]] == ["start", action]
+    assert body["elapsed_time"] < ALLOCATED
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("todo_status, action", [("DONE", "stop"), ("CANCELLED", "cancel")])
+def test_todo_status_on_user_paused_timer_long_ago_has_no_expire(e2e_client, after_commit_items, todo_status, action):
+    """사용자가 멈춘 타이머는 오래 지나도 Todo 상태 변경에 expire가 붙지 않는다"""
+    todo = _todo(e2e_client)
+    timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
+    _set(timer_id, started_at=_ago(10))
+    elapsed = e2e_client.patch(f"/v1/timers/{timer_id}/pause").json()["elapsed_time"]
+    _set(timer_id, paused_at=_ago(ALLOCATED * 10), started_at=_ago(ALLOCATED * 10 + elapsed))
+    after_commit_items.clear()
+
+    assert e2e_client.patch(f"/v1/todos/{todo['id']}", json={"status": todo_status}).status_code == 200
+
+    assert _timer_actions(after_commit_items, timer_id) == [action]
+    body = e2e_client.get(f"/v1/timers/{timer_id}").json()
+    assert body["elapsed_time"] == elapsed
+    assert "expire" not in [h["action"] for h in body["pause_history"]]
+
+
+@pytest.mark.e2e
+def test_repeated_linked_change_materializes_once(e2e_client, after_commit_items):
+    todo = _todo(e2e_client)
+    timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
+    _set(timer_id, started_at=_ago(ALLOCATED + 30))
+    after_commit_items.clear()
+
+    for deadline in ("2024-01-20T10:00:00Z", "2024-01-21T10:00:00Z"):
+        assert e2e_client.patch(f"/v1/todos/{todo['id']}", json={"deadline": deadline}).status_code == 200
+    assert e2e_client.patch(f"/v1/timers/{timer_id}/pause").status_code in (200, 400)
+
+    assert _timer_actions(after_commit_items, timer_id).count("expire") == 1
+    with Session(_session_manager.engine) as session:
+        actions = [h["action"] for h in session.get(TimerSession, UUID(timer_id)).pause_history]
+    assert actions == ["start", "expire"]
+
+
+@pytest.mark.e2e
+def test_patch_equal_to_used_is_422_and_one_above_keeps_running(e2e_client):
+    timer_id = e2e_client.post("/v1/timers", json={"title": "경계", "allocated_duration": 1500}).json()["id"]
+    _set(timer_id, started_at=_ago(100))
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": 100})
+    assert response.status_code == 422
+    assert response.json()["error_type"] == "AllocatedDurationTooShortError"
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": 102})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "RUNNING"
+    assert response.json()["elapsed_time"] == 0
+
+
+@pytest.mark.e2e
+def test_patch_equal_to_paused_elapsed_is_422(e2e_client, after_commit_items):
+    timer_id = _create(e2e_client)["id"]
+    _set(timer_id, started_at=_ago(20))
+    elapsed = e2e_client.patch(f"/v1/timers/{timer_id}/pause").json()["elapsed_time"]
+    after_commit_items.clear()
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": elapsed})
+    assert response.status_code == 422
+    assert after_commit_items == []
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": elapsed + 1})
+    assert response.status_code == 200
+
+
+@pytest.mark.e2e
+def test_migrated_paused_overrun_row_extends_and_resumes(e2e_client):
+    """이전으로 allocated == elapsed가 된 PAUSED 행은 +300 연장 뒤 재개된다"""
+    timer_id = e2e_client.post("/v1/timers", json={"title": "기존", "allocated_duration": 1500}).json()["id"]
+    e2e_client.patch(f"/v1/timers/{timer_id}/pause")
+    _set(timer_id, allocated_duration=2400, elapsed_time=2400)
+
+    response = e2e_client.patch(f"/v1/timers/{timer_id}", json={"allocated_duration": 2700})
+    assert response.status_code == 200, response.text
+    assert response.json()["allocated_duration"] == 2700
+    resumed = e2e_client.patch(f"/v1/timers/{timer_id}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "RUNNING"
+
+
+@pytest.mark.e2e
+def test_migrated_running_overrun_row_expires_at_last_resume(e2e_client, after_commit_items):
+    """이전으로 allocated == elapsed가 된 RUNNING 행은 마지막 재개 시각에 만료로 읽히고 elapsed를 지킨다"""
+    timer_id = e2e_client.post("/v1/timers", json={"title": "기존", "allocated_duration": 1500}).json()["id"]
+    resumed_at = _ago(10)
+    _set(
+        timer_id, allocated_duration=2400, elapsed_time=2400, started_at=resumed_at,
+        pause_history=[
+            {"action": "start", "at": _ago(5000).isoformat()},
+            {"action": "pause", "at": _ago(100).isoformat(), "elapsed": 2400},
+            {"action": "resume", "at": resumed_at.isoformat()},
+        ],
+    )
+
+    body = e2e_client.get(f"/v1/timers/{timer_id}").json()
+    assert body["status"] == "PAUSED"
+    assert body["elapsed_time"] == 2400
+    assert _utc(body["paused_at"]) == _utc(body["started_at"])
+
+    after_commit_items.clear()
+    stopped = e2e_client.post(f"/v1/timers/{timer_id}/stop")
+    assert stopped.status_code == 200
+    assert stopped.json()["elapsed_time"] == 2400
+    assert _timer_actions(after_commit_items, timer_id) == ["expire", "stop"]
+
+
+@pytest.mark.e2e
+def test_timezone_applies_to_materialized_expiry(e2e_client):
+    """Todo 변경으로 확정된 만료 필드도 timezone 변환을 받는다"""
+    todo = _todo(e2e_client)
+    timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
+    started_at = _ago(ALLOCATED + 30)
+    _set(timer_id, started_at=started_at)
+    e2e_client.patch(f"/v1/todos/{todo['id']}", json={"deadline": "2024-01-20T10:00:00Z"})
+    with Session(_session_manager.engine) as session:
+        assert session.get(TimerSession, UUID(timer_id)).status == "PAUSED"
+
+    body = e2e_client.get(f"/v1/timers/{timer_id}", params={"timezone": "Asia/Seoul"}).json()
+
+    seoul = timedelta(hours=9)
+    expected = (started_at + timedelta(seconds=ALLOCATED)).replace(tzinfo=UTC, microsecond=0)
+    assert datetime.fromisoformat(body["paused_at"]).utcoffset() == seoul
+    assert _utc(body["paused_at"]) == expected
+    expire = body["pause_history"][-1]
+    assert expire["action"] == "expire"
+    assert datetime.fromisoformat(expire["at"]).utcoffset() == seoul
+    assert _utc(expire["at"]) == expected

@@ -101,3 +101,58 @@ def test_upgrade_raises_overrun_active_timers_only(
     heads = ScriptDirectory.from_config(config).get_heads()
     assert len(heads) == 1
     assert current == heads[0]
+
+
+def _prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, sa.Engine]:
+    database_url = f"sqlite:///{(tmp_path / 'raise-allocated-edge.db').resolve().as_posix()}"
+    config = _alembic_config(monkeypatch, database_url)
+    engine = sa.create_engine(database_url)
+    SQLModel.metadata.create_all(engine)
+    command.stamp(config, "head")
+    command.downgrade(config, PREVIOUS_REVISION)
+    return config, engine
+
+
+def test_upgrade_on_empty_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config, engine = _prepare(tmp_path, monkeypatch)
+
+    command.upgrade(config, "head")
+
+    assert _snapshot(engine) == {}
+    engine.dispose()
+
+
+def test_upgrade_boundary_and_nullable_columns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """한 초 넘친 행만 올라가고, 같은 값·NULL 시각·다른 소유자 행이 섞여도 결과가 같다"""
+    config, engine = _prepare(tmp_path, monkeypatch)
+    columns = {c["name"]: c for c in sa.inspect(engine).get_columns("timersession")}
+    assert not columns["allocated_duration"]["nullable"]
+    assert not columns["elapsed_time"]["nullable"]
+
+    rows = {
+        ("a", TimerStatus.RUNNING, 60, 61, True): 61,
+        ("a", TimerStatus.RUNNING, 60, 60, True): 60,
+        ("b", TimerStatus.PAUSED, 60, 61, False): 61,
+        ("b", TimerStatus.PAUSED, 60, 59, False): 60,
+        ("b", TimerStatus.COMPLETED, 60, 61, False): 60,
+    }
+    with Session(engine) as session:
+        for owner, status, allocated, elapsed, started in rows:
+            session.add(TimerSession(
+                owner_id=owner,
+                title=f"{owner}-{status.value}-{allocated}-{elapsed}",
+                status=status,
+                allocated_duration=allocated,
+                elapsed_time=elapsed,
+                started_at=datetime(2026, 11, 9, 3, 0) if started else None,
+                paused_at=None,
+            ))
+        session.commit()
+
+    command.upgrade(config, "head")
+
+    assert _snapshot(engine) == {
+        f"{owner}-{status.value}-{allocated}-{elapsed}": (raised, elapsed)
+        for (owner, status, allocated, elapsed, _), raised in rows.items()
+    }
+    engine.dispose()
