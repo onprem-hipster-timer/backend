@@ -16,6 +16,7 @@ OIDC sub ↔ 표시 정보(display_name, avatar_url) 매핑.
   친구 추가 매칭용으로만 사용한다. 사용자 검색/목록/응답에는 노출하지 않는다.
 - 외부 공유는 `sub`가 아니라 `friend_code`로만 한다(OIDC subject 비노출).
 """
+from pydantic import NaiveDatetime
 from sqlmodel import Field
 
 from app.models.base import TimestampMixin
@@ -42,3 +43,7 @@ class UserProfile(TimestampMixin, table=True):
     # 이메일 기반 친추용. 검증된 이메일이 있을 때만 normalize(email)로 채운다.
     # 사용자 검색/목록/응답에는 노출하지 않는다.
     verified_email: str | None = Field(default=None, nullable=True, index=True)
+    # 마지막으로 동의한 약관 시행일(settings.CONSENT_VERSION)과 그 시각(UTC).
+    # 동의 항목: 만 14세 이상, 이용약관, 개인정보처리방침.
+    consent_version: str | None = Field(default=None, nullable=True)
+    consented_at: NaiveDatetime | None = Field(default=None, nullable=True)
