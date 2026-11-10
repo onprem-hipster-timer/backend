@@ -39,3 +39,9 @@ class LinkedTimerPolicyRequiredError(DomainException):
         "linked_timer_policy is required because linked timers exist. "
         "Choose 'delete' or 'unlink'."
     )
+
+
+class AllocatedDurationTooShortError(DomainException):
+    """allocated_duration을 현재 경과 시간(실행 중이면 지금까지 실행한 구간 포함) 이하로 바꾸려 함"""
+    status_code = 422
+    detail = "allocated_duration must be greater than elapsed_time."

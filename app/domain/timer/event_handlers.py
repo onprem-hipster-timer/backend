@@ -16,6 +16,8 @@ stop_timer·cancel_timer와 같은 경로(TimerService.mark_completed·mark_canc
 이때 수집되는 TimerCompleted·TimerCancelled는 Todo가 이미 터미널 상태라 todo 핸들러가 무시한다.
 UNSCHEDULED·SCHEDULED는 타이머를 바꾸지 않고 updated_at만 갱신해 timer.updated(update)를 보낸다
 (다른 기기가 타이머를 다시 읽도록).
+
+연결 해제와 UNSCHEDULED·SCHEDULED 반영도 update 전에 만료를 확정한다(expire → update).
 """
 from typing import Iterable
 from uuid import UUID
@@ -68,8 +70,10 @@ def _delete_timer(session: Session, actor: CurrentUser, timer: TimerSession) -> 
 
 
 def _publish_update(session: Session, actor: CurrentUser, timer: TimerSession) -> None:
-    """updated_at을 갱신하고 timer.updated(update)를 적재. 상태(실행 중 등)는 그대로"""
-    timer.updated_at = utc_now_naive()
+    """만료됐으면 먼저 확정(expire)하고, updated_at을 갱신해 timer.updated(update)를 적재. 그 밖의 상태는 그대로"""
+    now = utc_now_naive()
+    TimerService(session, actor)._materialize_expiry(timer, now)
+    timer.updated_at = now
     session.flush()
     enqueue_timer_event(
         session, actor, TimerAction.UPDATE, realtime_recipients(session, actor, timer.id), timer=timer

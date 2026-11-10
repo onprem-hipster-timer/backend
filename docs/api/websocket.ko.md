@@ -75,11 +75,12 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 |--------|-----------|
 | `connected` | `{}` — 연결 직후 한 번 |
 | `timer.created` | `{ action: "start", actor_name, timer }` |
-| `timer.updated` | `{ action: "pause" \| "resume" \| "stop" \| "cancel" \| "update", actor_name, timer }` |
+| `timer.updated` | `{ action: "pause" \| "resume" \| "stop" \| "cancel" \| "update" \| "expire", actor_name, timer }` |
 | `timer.deleted` | `{ action: "delete", actor_name, timer: null, timer_id }` |
 
 - `id`: 메시지 ID. 같은 메시지를 두 번 받으면 버립니다.
 - `from_user`: 변경을 일으킨 사용자의 `sub` (`connected`는 `null`). 내 `sub`가 아니면 친구의 활동입니다.
+- `expire`: 할당 시간이 끝난 RUNNING 타이머를 명령(`pause`·`stop`·`cancel`·성공한 `PATCH`)이나 Todo·Schedule 쪽 변경(Todo 상태 반영, `unlink` 삭제)이 PAUSED로 확정했을 때. 만료 시각에는 오지 않고, 400인 `resume`과 422인 `PATCH`에도 오지 않습니다. 같은 요청의 `stop`·`cancel`·`update` 이벤트가 뒤따를 수 있습니다 (규칙: [타이머 가이드](../guides/timer.ko.md)의 "만료").
 - `timer`: 커밋된 타이머. 시각은 모두 UTC이고 REST 응답(`timezone=UTC`)과 같은 형식입니다. `elapsed_time`은 저장된 누적값입니다(RUNNING이면 `now - started_at`을 더해 표시).
 
 !!! note "필드 이름"
@@ -91,7 +92,7 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 1. 연결·재연결 직후 REST로 타이머를 다시 조회합니다 (`timezone=UTC`).
 2. `id`로 중복을 버립니다.
-3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
+3. `timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. 같으면(초 단위라 겹칠 수 있음) `pause_history`가 더 긴 쪽을 반영하고, 길이도 같으면 가진 값을 유지합니다. 단, 이 클라이언트가 보낸 명령의 REST 응답은 반영합니다(`allocated_duration`을 늘리는 `PATCH`처럼 항목이 늘지 않을 수 있다). COMPLETED·CANCELLED로 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
 4. `timer.deleted`를 받은 타이머의 이전 이벤트는 버립니다.
 
 ## 사용 예시

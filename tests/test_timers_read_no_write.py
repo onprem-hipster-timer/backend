@@ -5,6 +5,8 @@
 클라이언트가 더한다. 조회 경로에서 서버가 이 구간을 세션의 객체에 더하면, GET이
 트랜잭션을 커밋하면서 elapsed_time이 누적되고 updated_at이 바뀐다.
 친구가 공유 타이머를 조회해도 소유자의 행이 바뀐다.
+
+할당 시간을 넘긴 RUNNING 타이머는 조회 응답에서만 만료 표현(PAUSED)으로 보이고 행은 RUNNING 그대로다.
 """
 from datetime import datetime, timedelta, UTC
 from uuid import UUID
@@ -94,3 +96,42 @@ def test_friend_read_does_not_write_owner_timer(multi_user_e2e, path):
     _backdate(timer_id)
 
     _assert_reads_do_not_write(friend, path.format(timer_id=timer_id), timer_id)
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("path", [
+    "/v1/timers",
+    "/v1/timers/active",
+    "/v1/timers/{timer_id}",
+])
+def test_read_shows_expired_timer_without_writing(multi_user_e2e, path):
+    """만료된 RUNNING 타이머는 PAUSED·elapsed=allocated·paused_at=만료 시각으로 보이고 행은 바뀌지 않음"""
+    owner = multi_user_e2e.as_user("owner")
+    timer = TimerCommands(owner).create_timer(title="만료 조회", allocated_duration=60)
+    timer_id = timer["id"]
+    started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=90)
+    with Session(_session_manager.engine) as session:
+        session.execute(
+            update(TimerSession)
+            .where(TimerSession.id == UUID(timer_id))
+            .values(started_at=started_at, updated_at=STORED_UPDATED_AT)
+        )
+        session.commit()
+    expires_at = (started_at + timedelta(seconds=60)).replace(tzinfo=UTC, microsecond=0)
+
+    for _ in range(2):
+        response = owner.get(path.format(timer_id=timer_id))
+        assert response.status_code == 200
+        body = _find(response.json(), timer_id)
+        assert body["status"] == "PAUSED"
+        assert body["elapsed_time"] == 60
+        paused_at = datetime.fromisoformat(body["paused_at"].replace("Z", "+00:00"))
+        assert (paused_at if paused_at.tzinfo else paused_at.replace(tzinfo=UTC)) == expires_at
+        assert [h["action"] for h in body["pause_history"]] == ["start", "expire"]
+
+        with Session(_session_manager.engine) as session:
+            stored = session.get(TimerSession, UUID(timer_id))
+            assert (stored.status, stored.elapsed_time, stored.paused_at, stored.updated_at) == (
+                "RUNNING", 0, None, STORED_UPDATED_AT
+            )
+            assert [h["action"] for h in stored.pause_history] == ["start"]
