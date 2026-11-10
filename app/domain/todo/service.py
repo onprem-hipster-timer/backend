@@ -432,7 +432,10 @@ class TodoService:
         :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
         :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
         """
-        todo = self.get_todo(todo_id)
+        # 투영 Schedule보다 Todo 행을 먼저 잠근다 (ScheduleService._get_schedule_for_write와 같은 순서)
+        todo = crud.get_todo(self.session, todo_id, self.owner_id, for_update=True)
+        if not todo:
+            raise TodoNotFoundError()
 
         # 업데이트 데이터 준비
         update_dict = data.model_dump()

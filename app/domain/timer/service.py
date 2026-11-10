@@ -174,6 +174,23 @@ class TimerService:
 
         return timer
 
+    def _get_timer_for_finish(self, timer_id: UUID) -> TimerSession:
+        """
+        완료·취소 전에 연결 Todo 행 → 타이머 행 순서로 잠근 뒤 최신 값의 타이머를 반환
+
+        Todo status 변경도 Todo 행을 먼저 쓰고 핸들러가 타이머를 쓰므로, 같은 순서로 잠가
+        교착을 막는다. 두 조회 사이에 연결 Todo가 바뀌면 새 Todo는 타이머보다 늦게 잠긴다.
+
+        :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        """
+        timer = self.get_timer(timer_id)
+        if timer.todo_id is not None:
+            todo_crud.get_todo(self.session, timer.todo_id, self.owner_id, for_update=True)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id, for_update=True)
+        if not timer:
+            raise TimerNotFoundError()
+        return timer
+
     def get_timer_with_access_check(self, timer_id: UUID) -> tuple[TimerSession, bool]:
         """
         타이머 조회 (공유 리소스 접근 제어 포함)
@@ -446,9 +463,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id, self.owner_id)
-        if not timer:
-            raise TimerNotFoundError()
+        timer = self._get_timer_for_finish(timer_id)
 
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
@@ -511,9 +526,7 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id, self.owner_id)
-        if not timer:
-            raise TimerNotFoundError()
+        timer = self._get_timer_for_finish(timer_id)
 
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(

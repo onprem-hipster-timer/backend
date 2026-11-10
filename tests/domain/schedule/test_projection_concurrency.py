@@ -1,4 +1,4 @@
-"""PostgreSQL concurrency contracts for the Todo/Schedule projection pair.
+"""PostgreSQL concurrency contracts for a Todo, its projected Schedule and its timers.
 
 SQLite serializes writes differently and cannot reproduce PostgreSQL row-lock
 deadlocks, so this module is intentionally opt-in through TEST_DATABASE_URL.
@@ -16,14 +16,19 @@ import pytest
 from sqlalchemy import event, text
 from sqlmodel import Session, select
 
+from app.core.constants import TimerStatus
+from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
 from app.domain.tag.schema.dto import TagGroupCreate
 from app.domain.tag.service import TagService
+from app.domain.timer.schema.dto import TimerCreate
+from app.domain.timer.service import TimerService
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
 from app.models.schedule import Schedule
+from app.models.timer import TimerSession
 from app.models.todo import Todo
 from app.shared.uow import clear_events
 
@@ -258,3 +263,180 @@ def test_concurrent_todo_and_schedule_time_updates_complete_without_deadlock(
 
     assert [result["outcome"] for result in results] == ["success", "success"], results
     assert projection_is_consistent
+
+
+def test_concurrent_todo_deadline_update_and_schedule_delete_complete_without_deadlock(
+    test_engine,
+    test_user,
+):
+    todo_id, schedule_id, original_deadline = _seed_linked_projection(
+        test_engine,
+        test_user,
+    )
+    thread_state = threading.local()
+    listener = _install_write_gate(
+        test_engine,
+        thread_state,
+        {
+            "todo": "update todo ",
+            "schedule": "delete from schedule ",
+        },
+    )
+
+    todo_deadline = original_deadline + timedelta(minutes=10)
+
+    def worker(role, start_gate):
+        thread_state.role = role
+        with Session(test_engine) as session:
+            try:
+                _set_bounded_postgresql_waits(session)
+                start_gate.wait(timeout=_START_GATE_TIMEOUT_SECONDS)
+                if role == "todo":
+                    TodoService(session, test_user).update_todo(
+                        todo_id,
+                        TodoUpdate(deadline=todo_deadline),
+                    )
+                else:
+                    ScheduleService(session, test_user).delete_schedule(
+                        schedule_id,
+                        SourceTodoPolicy.KEEP_DEADLINE,
+                    )
+                session.commit()
+                return {"outcome": "success", "role": role}
+            except Exception as exc:
+                session.rollback()
+                clear_events(session)
+                return {
+                    "outcome": "error",
+                    "role": role,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+    try:
+        results = _run_two_workers(worker, ("todo", "schedule"))
+    finally:
+        event.remove(test_engine, "after_cursor_execute", listener)
+
+    with Session(test_engine) as session:
+        todo = session.get(Todo, todo_id)
+        projections = list(
+            session.exec(
+                select(Schedule).where(Schedule.source_todo_id == todo_id)
+            ).all()
+        )
+        # Either order is valid; the Todo flag and deadline must match what survived.
+        projection_is_consistent = (
+            todo.deadline == todo_deadline
+            and (todo.status == TodoStatus.SCHEDULED) == bool(projections)
+            and all(p.start_time == todo.deadline for p in projections)
+        )
+
+    assert [result["outcome"] for result in results] == ["success", "success"], results
+    assert projection_is_consistent
+
+
+def test_concurrent_timer_stop_and_todo_done_complete_without_deadlock(
+    test_engine,
+    test_user,
+):
+    todo_id, _, _ = _seed_linked_projection(test_engine, test_user)
+    with Session(test_engine) as session:
+        timer_id = TimerService(session, test_user).create_timer(
+            TimerCreate(title="t", allocated_duration=1500, todo_id=todo_id)
+        ).id
+        session.commit()
+    thread_state = threading.local()
+    listener = _install_write_gate(
+        test_engine,
+        thread_state,
+        {
+            "timer": "update timersession ",
+            "todo": "update todo ",
+        },
+    )
+
+    def worker(role, start_gate):
+        thread_state.role = role
+        with Session(test_engine) as session:
+            try:
+                _set_bounded_postgresql_waits(session)
+                start_gate.wait(timeout=_START_GATE_TIMEOUT_SECONDS)
+                if role == "timer":
+                    TimerService(session, test_user).stop_timer(timer_id)
+                else:
+                    TodoService(session, test_user).update_todo(
+                        todo_id,
+                        TodoUpdate(status=TodoStatus.DONE),
+                    )
+                session.commit()
+                return {"outcome": "success", "role": role}
+            except Exception as exc:
+                session.rollback()
+                clear_events(session)
+                return {
+                    "outcome": "error",
+                    "role": role,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+    try:
+        results = _run_two_workers(worker, ("timer", "todo"))
+    finally:
+        event.remove(test_engine, "after_cursor_execute", listener)
+
+    with Session(test_engine) as session:
+        todo = session.get(Todo, todo_id)
+        timer = session.get(TimerSession, timer_id)
+        stops = [entry for entry in timer.pause_history if entry["action"] == "stop"]
+        final_state = (todo.status, timer.status, len(stops))
+
+    timer_result, todo_result = results
+    # If the Todo goes first it completes the timer, so the stop that waited gets the
+    # same rejection as stopping an already completed timer.
+    assert timer_result["outcome"] == "success" or timer_result["error"].startswith(
+        "InvalidTimerStatusError"
+    ), results
+    assert todo_result["outcome"] == "success", results
+    assert final_state == (TodoStatus.DONE, TimerStatus.COMPLETED.value, 1)
+
+
+def test_concurrent_stops_of_one_timer_have_one_winner(test_engine, test_user):
+    with Session(test_engine) as session:
+        timer_id = TimerService(session, test_user).create_timer(
+            TimerCreate(title="t", allocated_duration=1500)
+        ).id
+        session.commit()
+    thread_state = threading.local()
+    listener = _install_write_gate(
+        test_engine,
+        thread_state,
+        {
+            "stopper-1": "update timersession ",
+            "stopper-2": "update timersession ",
+        },
+    )
+
+    def worker(role, start_gate):
+        thread_state.role = role
+        with Session(test_engine) as session:
+            try:
+                _set_bounded_postgresql_waits(session)
+                start_gate.wait(timeout=_START_GATE_TIMEOUT_SECONDS)
+                TimerService(session, test_user).stop_timer(timer_id)
+                session.commit()
+                return {"outcome": "success"}
+            except Exception as exc:
+                session.rollback()
+                clear_events(session)
+                return {
+                    "outcome": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+    try:
+        results = _run_two_workers(worker, ("stopper-1", "stopper-2"))
+    finally:
+        event.remove(test_engine, "after_cursor_execute", listener)
+
+    errors = [result["error"] for result in results if result["outcome"] == "error"]
+    assert len(errors) == 1 and errors[0].startswith("InvalidTimerStatusError"), results
