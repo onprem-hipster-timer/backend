@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     GRAPHQL_ENABLE_PLAYGROUND: bool = True  # 개발 환경에서만 True
     GRAPHQL_ENABLE_INTROSPECTION: bool = True  # 개발 환경에서만 True
 
+    # 이용약관·개인정보처리방침 시행일. 바꾸면 모든 사용자에게 다시 동의를 받는다.
+    CONSENT_VERSION: str = "2026-11-13"
+
     # 국경일 정보 API (한국천문연구원)
     HOLIDAY_API_BASE_URL: str = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey

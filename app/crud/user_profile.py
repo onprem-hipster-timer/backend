@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, select
 
+from app.models.base import utc_now_naive
 from app.models.user_profile import UserProfile
 
 
@@ -61,6 +62,16 @@ def create_profile(session: Session, data: UserProfileSyncData) -> UserProfile:
         friend_code=data.friend_code,
         verified_email=data.verified_email,
     )
+    session.add(profile)
+    session.flush()
+    session.refresh(profile)
+    return profile
+
+
+def record_consent(session: Session, profile: UserProfile, version: str) -> UserProfile:
+    """동의한 약관 버전과 시각을 기록"""
+    profile.consent_version = version
+    profile.consented_at = utc_now_naive()
     session.add(profile)
     session.flush()
     session.refresh(profile)
