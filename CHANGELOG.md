@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.10-8cb773e] - 2026-11-10
+
 ### Fixed
 
 - **Concurrent `POST /v1/schedules/{schedule_id}/todo` creates one Todo**: when two requests create a Todo from the same schedule at the same time, one creates and links the Todo and the other gets the same 400 as for an already linked schedule. Previously both succeeded, and the first Todo was left `SCHEDULED` with no projected schedule.
@@ -388,7 +394,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...HEAD
+[v2026.11.10-8cb773e]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...v2026.11.10-8cb773e
 [v2026.11.10-a4dbac3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...v2026.11.10-a4dbac3
 [v2026.11.08-099ab9f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...v2026.11.08-099ab9f
 [v2026.11.07-f65a7fe]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...v2026.11.07-f65a7fe
