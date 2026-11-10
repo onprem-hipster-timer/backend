@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.10-a4dbac3] - 2026-11-10
+
 ### Added
 
 - **Timer expiry**: a RUNNING timer expires at `started_at + (allocated_duration - elapsed_time)`. Reads (`GET /v1/timers`, `/v1/timers/active`, `/v1/timers/{id}` and timers embedded in schedule and Todo responses) show an expired timer as `PAUSED` with `elapsed_time = allocated_duration`, `paused_at` at the expiry instant and an `expire` entry in `pause_history`, without writing the row. The next command on the timer (`pause`, `stop`, `cancel`, a successful `PATCH`) and changes that reach the timer from its Todo or schedule (applying a Todo status, deleting the Todo or schedule with `linked_timer_policy=unlink`) store that state first and send `timer.updated` with `action: expire` before their own event; no event is sent at the expiry instant. A `resume` that returns 400 and a `PATCH` that returns 422 store nothing and send no event. `pause` on an expired timer returns 200, `resume` returns 400 until `allocated_duration` is extended, and `stop`/`cancel` finish with `elapsed_time = allocated_duration`. Status filters still match the stored status, so an expired timer not yet stored is matched by `status=RUNNING`.
@@ -378,7 +384,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...HEAD
+[v2026.11.10-a4dbac3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...v2026.11.10-a4dbac3
 [v2026.11.08-099ab9f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...v2026.11.08-099ab9f
 [v2026.11.07-f65a7fe]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...v2026.11.07-f65a7fe
 [v2026.11.07-c7b2408]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...v2026.11.07-c7b2408
