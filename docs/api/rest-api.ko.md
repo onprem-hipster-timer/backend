@@ -88,7 +88,12 @@ DELETE /v1/friends/block/{user_id}        # 차단 해제
 
 ```http
 GET    /v1/users/me                       # 본인 표시정보 + 친구코드(공유용)
+POST   /v1/users/me/deletion              # 회원 탈퇴 신청 (휴면)
+DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 ```
+
+!!! info "회원 탈퇴"
+    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 위 세 경로 외의 인증 요청은 `403`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
 
 ### 공휴일 (Holidays)
 

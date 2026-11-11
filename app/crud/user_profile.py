@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, select
 
+from app.models.account_deletion import AccountDeletion
 from app.models.base import utc_now_naive
 from app.models.user_profile import UserProfile
 
@@ -76,6 +77,20 @@ def record_consent(session: Session, profile: UserProfile, version: str) -> User
     session.flush()
     session.refresh(profile)
     return profile
+
+
+def set_deletion_requested_at(session: Session, profile: UserProfile, value) -> UserProfile:
+    """탈퇴 신청 시각 기록(None이면 취소)"""
+    profile.deletion_requested_at = value
+    session.add(profile)
+    session.flush()
+    session.refresh(profile)
+    return profile
+
+
+def is_purged(session: Session, sub: str) -> bool:
+    """파기한 계정이면 True"""
+    return session.get(AccountDeletion, sub) is not None
 
 
 def update_profile_if_changed(

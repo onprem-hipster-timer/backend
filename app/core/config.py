@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # 이용약관·개인정보처리방침 시행일. 바꾸면 모든 사용자에게 다시 동의를 받는다.
     CONSENT_VERSION: str = "2026-11-13"
 
+    # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
+    ACCOUNT_DELETION_GRACE_DAYS: int = 4
+
     # 국경일 정보 API (한국천문연구원)
     HOLIDAY_API_BASE_URL: str = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
@@ -67,6 +70,8 @@ class Settings(BaseSettings):
 
     # Kratos 공개 API (사이드카). /auth/*를 이 주소로 프록시하며, 비어 있으면 /auth/*는 404
     KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
+    # Kratos admin API (사이드카). 탈퇴 때 세션 폐기·identity 삭제에 쓰며, 비어 있으면 호출하지 않는다
+    KRATOS_ADMIN_URL: str = ""  # 예: http://127.0.0.1:4434
     # Kratos courier Cloud Run 잡 (전체 리소스 이름). KRATOS_COURIER_JOB이 비어 있으면 실행하지 않음
     COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier

@@ -4,6 +4,7 @@ User Domain DTO
 본인 표시 프로필 응답 객체. (타인 프로필을 임의 조회하는 DTO/엔드포인트는 없다 —
 표시정보는 친구 목록/받은 요청 등 관계 성립/시도 상대에 한해서만 노출된다.)
 """
+from datetime import datetime
 from typing import Literal, Optional
 
 from app.core.base_model import CustomModel
@@ -17,6 +18,8 @@ class MyProfileRead(CustomModel):
     friend_code: str  # 친추 URL에 실어 공유하는 불투명 코드
     consent_version: str  # 현재 시행 중인 약관 버전. 동의할 때 그대로 보낸다
     consent_required: bool  # consent_version에 동의하지 않았으면 True
+    deletion_requested_at: Optional[datetime] = None  # 탈퇴 신청 시각. 값이 있으면 휴면 계정
+    deletion_scheduled_at: Optional[datetime] = None  # 이 시각 뒤 파기된다 (신청 시각 + 유예 기간)
 
 
 class ConsentCreate(CustomModel):

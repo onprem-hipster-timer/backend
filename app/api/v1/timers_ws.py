@@ -1,7 +1,7 @@
 """
 타이머 실시간 WebSocket (수신 전용, REALTIME_BACKEND=inprocess)
 
-- 인증: `Sec-WebSocket-Protocol: authorization.bearer.<jwt>`. 101에 같은 값을 돌려주고, 실패하면 1008로 닫는다
+- 인증: `Sec-WebSocket-Protocol: authorization.bearer.<jwt>`. 101에 같은 값을 돌려주고, 실패하거나 탈퇴를 신청한 계정이면 1008로 닫는다
 - 연결 직후 `connected`를 보낸다. 이후에는 커밋된 타이머 변경의 이벤트 봉투만 보낸다 (app/domain/timer/realtime.py)
 - 클라이언트 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답한다. 그 외는 무시한다
 - 명령은 REST(/v1/timers)로 한다. 클라이언트는 연결·재연결 직후 REST로 상태를 다시 맞춘다
@@ -15,7 +15,7 @@ from fastapi import APIRouter, WebSocket, Depends
 
 from app.core.auth import CurrentUser
 from app.ratelimit.websocket import ws_rate_limit_guard
-from app.websocket.auth import get_ws_current_user, get_websocket_subprotocol
+from app.websocket.auth import get_ws_active_user, get_websocket_subprotocol
 from app.websocket.base import WSServerMessage, WSMessageType
 from app.websocket.manager import connection_manager
 
@@ -27,7 +27,7 @@ router = APIRouter(tags=["Timer WebSocket"])
 @router.websocket("/ws/timers")
 async def timer_websocket(
         websocket: WebSocket,
-        current_user: CurrentUser = Depends(get_ws_current_user),
+        current_user: CurrentUser = Depends(get_ws_active_user),
 ):
     """
     타이머 실시간 수신 WebSocket
