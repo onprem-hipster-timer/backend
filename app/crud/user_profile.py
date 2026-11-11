@@ -4,6 +4,7 @@ UserProfile CRUD 함수
 사용자 표시 프로필 데이터 접근 레이어.
 """
 from dataclasses import dataclass
+from typing import Iterable
 
 from sqlmodel import Session, select
 
@@ -86,6 +87,25 @@ def set_deletion_requested_at(session: Session, profile: UserProfile, value) -> 
     session.flush()
     session.refresh(profile)
     return profile
+
+
+def dormant_subs():
+    """탈퇴를 신청한 휴면 계정의 sub (서브쿼리용 select)"""
+    return select(UserProfile.sub).where(UserProfile.deletion_requested_at.is_not(None))
+
+
+def get_dormant_subs(session: Session, subs: Iterable[str]) -> set[str]:
+    """subs 중 휴면 계정"""
+    subs = set(subs)
+    if not subs:
+        return set()
+    statement = dormant_subs().where(UserProfile.sub.in_(subs))
+    return set(session.exec(statement).all())
+
+
+def is_dormant(session: Session, sub: str) -> bool:
+    """휴면 계정이면 True"""
+    return bool(get_dormant_subs(session, [sub]))
 
 
 def is_purged(session: Session, sub: str) -> bool:

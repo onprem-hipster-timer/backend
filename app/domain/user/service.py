@@ -167,13 +167,13 @@ class UserProfileService:
                 return friend_code
 
     def resolve_friend_code(self, friend_code: str) -> str | None:
-        """친구코드 → sub 해석 (직접 매칭). 없으면 None."""
+        """친구코드 → sub 해석 (직접 매칭). 없거나 휴면 계정이면 None."""
         profile = crud.get_by_friend_code(self.session, friend_code)
-        return profile.sub if profile else None
+        return profile.sub if profile and profile.deletion_requested_at is None else None
 
     def resolve_email(self, email: str) -> str | None:
-        """이메일 → sub 해석. 저장된 검증 이메일만 매칭. 없으면 None."""
+        """이메일 → sub 해석. 저장된 검증 이메일만 매칭. 없거나 휴면 계정이면 None."""
         if not email:
             return None
         profile = crud.get_by_verified_email(self.session, verified_email_for(email))
-        return profile.sub if profile else None
+        return profile.sub if profile and profile.deletion_requested_at is None else None
