@@ -23,6 +23,6 @@ class AccountDeletedError(DomainException):
 
 
 class ConsentRequiredError(DomainException):
-    """현재 시행 중인 약관 버전에 동의하지 않음"""
-    status_code = 403
+    """현재 시행 중인 약관 버전에 동의하지 않음 (동의라는 선행 조건이 필요하다)"""
+    status_code = 428
     detail = "consent_required"
