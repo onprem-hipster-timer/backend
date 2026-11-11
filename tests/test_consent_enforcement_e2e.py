@@ -120,16 +120,16 @@ def test_user_who_has_not_agreed_can_request_and_cancel_deletion(multi_user_e2e,
     a = multi_user_e2e.as_user("user-a")
     _agree(a)
     monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
-    assert _schedules(a).status_code == 403
+    assert _schedules(a).status_code == 428
 
     assert a.post("/v1/users/me/deletion").status_code == 200
     r = _schedules(a)
-    assert r.status_code == 403
+    assert r.status_code == 423
     assert r.json()["message"] == "account_deletion_pending"
 
     assert a.delete("/v1/users/me/deletion").status_code == 200
     r = _schedules(a)
-    assert r.status_code == 403
+    assert r.status_code == 428
     assert r.json()["message"] == "consent_required"
 
     _agree(a)

@@ -93,7 +93,7 @@ DELETE /v1/users/me/deletion              # Cancel account deletion
 ```
 
 !!! info "Account deletion"
-    A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `403` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
+    A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
 
 ### Holidays
 

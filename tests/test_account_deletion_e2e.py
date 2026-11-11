@@ -209,7 +209,7 @@ class TestDormantOwnRequests:
         kwargs = {"json": body} if body is not None else {}
         r = getattr(dormant, method)(path, **kwargs)
 
-        assert r.status_code == 403
+        assert r.status_code == 423
         assert r.json()["message"] == "account_deletion_pending"
 
     def test_profile_and_cancel_are_allowed(self, dormant):
@@ -228,7 +228,7 @@ class TestDormantOwnRequests:
 
         r = dormant.post("/v1/graphql", json={"query": "{ __typename }"})
 
-        assert r.status_code == 403
+        assert r.status_code == 423
         assert r.json()["message"] == "account_deletion_pending"
 
     def test_graphql_allowed_for_active_user(self, multi_user_e2e, monkeypatch):

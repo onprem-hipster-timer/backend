@@ -11,8 +11,8 @@ class ConsentVersionMismatchError(DomainException):
 
 
 class AccountDeletionPendingError(DomainException):
-    """탈퇴를 신청한 휴면 계정의 요청"""
-    status_code = 403
+    """탈퇴를 신청한 휴면 계정의 요청 (계정이 잠겨 있다)"""
+    status_code = 423
     detail = "account_deletion_pending"
 
 
