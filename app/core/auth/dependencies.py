@@ -91,10 +91,20 @@ async def get_optional_current_user(
         return None
 
 
-# 현재 약관 버전에 동의하지 않은 사용자도 부를 수 있는 경로
+# 탈퇴를 신청한 휴면 계정이 쓸 수 있는 경로 (본인 프로필 조회, 탈퇴 신청·취소)
+DORMANT_ALLOWED_ROUTES = frozenset({
+    ("GET", "/v1/users/me"),
+    ("POST", "/v1/users/me/deletion"),
+    ("DELETE", "/v1/users/me/deletion"),
+})
+
+
+# 현재 약관 버전에 동의하지 않은 사용자도 부를 수 있는 경로 (동의하지 않으면 탈퇴할 수 있어야 한다)
 CONSENT_ALLOWED_ROUTES = frozenset({
     ("GET", "/v1/users/me"),
     ("PUT", "/v1/users/me/consent"),
+    ("POST", "/v1/users/me/deletion"),
+    ("DELETE", "/v1/users/me/deletion"),
 })
 
 
@@ -114,17 +124,29 @@ def get_current_user_synced(
       **동일 세션**을 공유하고 요청 끝에 함께 commit된다.
     - 동기화는 SAVEPOINT(begin_nested) 안에서 수행한다. 동기화가 실패해도 엔드포인트
       트랜잭션을 오염시키지 않고 best-effort로 넘어간다(표시정보는 None으로 degrade).
+    - 파기한 계정은 프로필을 다시 만들지 않고 401, 휴면 계정은 DORMANT_ALLOWED_ROUTES 밖이면 423.
     - CONSENT_ENFORCED면 현재 약관 버전에 동의하지 않은 사용자는 CONSENT_ALLOWED_ROUTES 밖이면 428.
     """
     # 지연 import: domain.user.service가 app.core.auth.CurrentUser를 import하므로 순환 회피
-    from app.domain.user.exceptions import ConsentRequiredError
-    from app.domain.user.service import UserProfileService, consent_pending
+    from app.domain.user.exceptions import (
+        AccountDeletedError,
+        AccountDeletionPendingError,
+        ConsentRequiredError,
+    )
+    from app.domain.user.service import AccountState, UserProfileService, account_state, consent_pending
+
+    if account_state(session, current_user.sub) == AccountState.DELETED:
+        raise AccountDeletedError()
 
     try:
         with session.begin_nested():
             UserProfileService(session, current_user).sync_from_current_user()
     except Exception as e:  # noqa: BLE001 - 동기화 실패는 요청을 막지 않는다
         logger.warning("User profile sync failed for sub=%s: %s", current_user.sub, e)
+
+    if account_state(session, current_user.sub) == AccountState.DORMANT:
+        if (request.method, request.url.path) not in DORMANT_ALLOWED_ROUTES:
+            raise AccountDeletionPendingError()
 
     if (
         app_config.settings.CONSENT_ENFORCED

@@ -7,8 +7,9 @@ from datetime import date, time
 from typing import Optional
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, or_
 
+from app.crud.user_profile import dormant_subs
 from app.domain.meeting.schema.dto import MeetingCreate, MeetingUpdate
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 
@@ -119,14 +120,23 @@ def get_participant(
     return session.exec(statement).first()
 
 
+def _not_dormant_participant():
+    """휴면 계정이 아닌 참여자 (로그인하지 않은 참여자 포함)"""
+    return or_(
+        MeetingParticipant.user_id.is_(None),
+        MeetingParticipant.user_id.not_in(dormant_subs()),
+    )
+
+
 def get_participants(
         session: Session,
         meeting_id: UUID,
 ) -> list[MeetingParticipant]:
-    """일정 조율의 모든 참여자 조회"""
+    """일정 조율의 모든 참여자 조회 (휴면 계정 제외)"""
     statement = (
         select(MeetingParticipant)
         .where(MeetingParticipant.meeting_id == meeting_id)
+        .where(_not_dormant_participant())
         .order_by(MeetingParticipant.created_at)
     )
     results = session.exec(statement)
@@ -189,11 +199,12 @@ def get_time_slots_by_meeting(
         session: Session,
         meeting_id: UUID,
 ) -> list[MeetingTimeSlot]:
-    """미팅의 모든 참여자 시간 슬롯을 JOIN 한 번으로 조회"""
+    """미팅의 모든 참여자 시간 슬롯을 JOIN 한 번으로 조회 (휴면 계정 제외)"""
     statement = (
         select(MeetingTimeSlot)
         .join(MeetingParticipant, MeetingTimeSlot.participant_id == MeetingParticipant.id)
         .where(MeetingParticipant.meeting_id == meeting_id)
+        .where(_not_dormant_participant())
         .order_by(MeetingTimeSlot.slot_date, MeetingTimeSlot.start_time)
     )
     results = session.exec(statement)

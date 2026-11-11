@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # True면 현재 버전에 동의하지 않은 사용자는 프로필 조회·동의 기록 외의 인증 요청이 428
     CONSENT_ENFORCED: bool = True
 
+    # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
+    ACCOUNT_DELETION_GRACE_DAYS: int = 3
+    # 가입 뒤 이 시간이 지나도 이메일을 인증하지 않은 Kratos identity는 계정 정리 때 지운다
+    UNVERIFIED_SIGNUP_RETENTION_HOURS: int = 24
+    # POST /internal/accounts/purge의 X-Purge-Token 값. 비어 있으면 그 엔드포인트는 404
+    ACCOUNT_PURGE_TOKEN: str = ""
+
     # 국경일 정보 API (한국천문연구원)
     HOLIDAY_API_BASE_URL: str = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
@@ -69,6 +76,8 @@ class Settings(BaseSettings):
 
     # Kratos 공개 API (사이드카). /auth/*를 이 주소로 프록시하며, 비어 있으면 /auth/*는 404
     KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
+    # Kratos admin API (사이드카). 탈퇴 때 세션 폐기·identity 삭제에 쓰며, 비어 있으면 호출하지 않는다
+    KRATOS_ADMIN_URL: str = ""  # 예: http://127.0.0.1:4434
     # Kratos courier Cloud Run 잡 (전체 리소스 이름). KRATOS_COURIER_JOB이 비어 있으면 실행하지 않음
     COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier

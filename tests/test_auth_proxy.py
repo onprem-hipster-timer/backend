@@ -514,3 +514,94 @@ def test_ambiguous_or_unreadable_registration_body_is_rejected(client, upstream,
 
     assert response.status_code == 400
     assert upstream.requests == []
+
+
+# ── 계정 접근 기록 (app/core/audit.py) ─────────────────────────────────────────
+
+@pytest.fixture
+def access_log(monkeypatch):
+    import logging
+
+    from app.core.audit import AUDIT_LOGGER_NAME
+
+    lines: list[dict] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            lines.append(json.loads(record.getMessage()))
+
+    handler = Capture()
+    logger = logging.getLogger(AUDIT_LOGGER_NAME)
+    monkeypatch.setattr(logger, "disabled", False)
+    logger.addHandler(handler)
+    yield lines
+    logger.removeHandler(handler)
+
+
+LOGIN_BODY = {
+    "session_token": "ory_st_secret",
+    "session": {"id": "s1", "identity": {"id": "identity-1", "traits": {"email": "me@example.com"}}},
+}
+REGISTRATION_BODY = {
+    "identity": {"id": "identity-2", "traits": {"email": "new@example.com"}},
+    "session_token": "ory_st_secret",
+    "session": {"id": "s2", "identity": {"id": "identity-2", "traits": {"email": "new@example.com"}}},
+}
+
+
+@pytest.mark.parametrize(
+    "path, body, event, identity_id",
+    [
+        ("/auth/self-service/login?flow=f1", LOGIN_BODY, "login", "identity-1"),
+        ("/auth/self-service/registration?flow=f1", REGISTRATION_BODY, "registration", "identity-2"),
+        ("/auth/self-service/registration?flow=f1", {"identity": {"id": "identity-3"}}, "registration", "identity-3"),
+        ("/auth/self-service/login/?flow=f1", LOGIN_BODY, "login", "identity-1"),
+    ],
+)
+def test_successful_login_and_registration_are_logged(client, upstream, access_log, path, body, event, identity_id):
+    upstream.handler = lambda request: httpx.Response(200, json=body)
+
+    response = client.post(path, json={"method": "password"})
+
+    assert response.status_code == 200
+    assert response.json() == body
+    assert len(access_log) == 1
+    line = access_log[0]
+    assert list(line) == ["audit", "event", "identity_id", "ip", "at"]
+    assert line["audit"] == "account_access"
+    assert line["event"] == event
+    assert line["identity_id"] == identity_id
+    assert line["ip"] == "testclient"
+    assert "example.com" not in json.dumps(line)
+    assert "ory_st_secret" not in json.dumps(line)
+
+
+@pytest.mark.parametrize(
+    "method, path, status, body",
+    [
+        ("POST", "/auth/self-service/login?flow=f1", 400, {"ui": {"messages": []}}),
+        ("POST", "/auth/self-service/login?flow=f1", 422, {"redirect_browser_to": "https://idp"}),
+        ("GET", "/auth/self-service/login/api", 200, {"id": "flow-1", "ui": {}}),
+        ("POST", "/auth/self-service/recovery?flow=f1", 200, {"identity": {"id": "identity-1"}}),
+        ("POST", "/auth/self-service/verification?flow=f1", 200, {"session": {"identity": {"id": "identity-1"}}}),
+        ("POST", "/auth/self-service/login?flow=f1", 200, {"session": {"identity": {}}}),
+        ("POST", "/auth/self-service/login?flow=f1", 200, ["not", "an", "object"]),
+    ],
+)
+def test_other_responses_are_not_logged(client, upstream, access_log, method, path, status, body):
+    upstream.handler = lambda request: httpx.Response(status, json=body)
+
+    response = client.request(method, path, json={"method": "password"} if method == "POST" else None)
+
+    assert response.status_code == status
+    assert access_log == []
+
+
+def test_unreadable_login_response_is_passed_through_without_log(client, upstream, access_log):
+    upstream.handler = lambda request: httpx.Response(200, content=b"not json")
+
+    response = client.post("/auth/self-service/login?flow=f1", json={"method": "password"})
+
+    assert response.status_code == 200
+    assert response.content == b"not json"
+    assert access_log == []

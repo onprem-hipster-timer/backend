@@ -14,6 +14,8 @@ provider-agnostic 원칙: 출처는 이미 검증된 access token의 표준 OIDC
 """
 import logging
 import secrets
+from datetime import datetime, timedelta
+from enum import Enum
 
 from sqlmodel import Session
 
@@ -22,6 +24,7 @@ from app.core.auth import CurrentUser
 from app.crud import user_profile as crud
 from app.domain.user.exceptions import ConsentVersionMismatchError
 from app.domain.user.model import UserProfile
+from app.models.base import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,29 @@ def _verified_email_from_claims(current_user: CurrentUser) -> str | None:
     if current_user.email and current_user.email_verified:
         return verified_email_for(current_user.email)
     return None
+
+
+class AccountState(str, Enum):
+    ACTIVE = "active"
+    DORMANT = "dormant"  # 탈퇴 신청 후 파기 전
+    DELETED = "deleted"  # 파기됨
+
+
+def account_state(session: Session, sub: str) -> AccountState:
+    """sub의 계정 상태. 프로필이 아직 없으면 ACTIVE."""
+    if crud.is_purged(session, sub):
+        return AccountState.DELETED
+    profile = crud.get_by_sub(session, sub)
+    if profile is not None and profile.deletion_requested_at is not None:
+        return AccountState.DORMANT
+    return AccountState.ACTIVE
+
+
+def deletion_scheduled_at(profile: UserProfile) -> datetime | None:
+    """이 시각이 지난 뒤의 첫 파기 실행이 계정을 지운다"""
+    if profile.deletion_requested_at is None:
+        return None
+    return profile.deletion_requested_at + timedelta(days=app_config.settings.ACCOUNT_DELETION_GRACE_DAYS)
 
 
 def consent_pending(session: Session, sub: str) -> bool:
@@ -125,6 +151,20 @@ class UserProfileService:
         profile = self.sync_from_current_user()
         return crud.record_consent(self.session, profile, version)
 
+    def request_deletion(self) -> tuple[UserProfile, bool]:
+        """탈퇴 신청(휴면). 이미 신청했으면 처음 시각을 유지한다. 새로 신청했으면 True."""
+        profile = self.sync_from_current_user()
+        if profile.deletion_requested_at is not None:
+            return profile, False
+        return crud.set_deletion_requested_at(self.session, profile, utc_now_naive()), True
+
+    def cancel_deletion(self) -> tuple[UserProfile, bool]:
+        """탈퇴 신청 취소. 신청 상태였으면 True."""
+        profile = self.sync_from_current_user()
+        if profile.deletion_requested_at is None:
+            return profile, False
+        return crud.set_deletion_requested_at(self.session, profile, None), True
+
     def _new_unique_friend_code(self) -> str:
         """충돌 가능성은 극히 낮지만 DB 조회로 방어한다."""
         while True:
@@ -133,13 +173,13 @@ class UserProfileService:
                 return friend_code
 
     def resolve_friend_code(self, friend_code: str) -> str | None:
-        """친구코드 → sub 해석 (직접 매칭). 없으면 None."""
+        """친구코드 → sub 해석 (직접 매칭). 없거나 휴면 계정이면 None."""
         profile = crud.get_by_friend_code(self.session, friend_code)
-        return profile.sub if profile else None
+        return profile.sub if profile and profile.deletion_requested_at is None else None
 
     def resolve_email(self, email: str) -> str | None:
-        """이메일 → sub 해석. 저장된 검증 이메일만 매칭. 없으면 None."""
+        """이메일 → sub 해석. 저장된 검증 이메일만 매칭. 없거나 휴면 계정이면 None."""
         if not email:
             return None
         profile = crud.get_by_verified_email(self.session, verified_email_for(email))
-        return profile.sub if profile else None
+        return profile.sub if profile and profile.deletion_requested_at is None else None

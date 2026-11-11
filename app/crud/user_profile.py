@@ -4,9 +4,11 @@ UserProfile CRUD 함수
 사용자 표시 프로필 데이터 접근 레이어.
 """
 from dataclasses import dataclass
+from typing import Iterable
 
 from sqlmodel import Session, select
 
+from app.models.account_deletion import AccountDeletion
 from app.models.base import utc_now_naive
 from app.models.user_profile import UserProfile
 
@@ -76,6 +78,39 @@ def record_consent(session: Session, profile: UserProfile, version: str) -> User
     session.flush()
     session.refresh(profile)
     return profile
+
+
+def set_deletion_requested_at(session: Session, profile: UserProfile, value) -> UserProfile:
+    """탈퇴 신청 시각 기록(None이면 취소)"""
+    profile.deletion_requested_at = value
+    session.add(profile)
+    session.flush()
+    session.refresh(profile)
+    return profile
+
+
+def dormant_subs():
+    """탈퇴를 신청한 휴면 계정의 sub (서브쿼리용 select)"""
+    return select(UserProfile.sub).where(UserProfile.deletion_requested_at.is_not(None))
+
+
+def get_dormant_subs(session: Session, subs: Iterable[str]) -> set[str]:
+    """subs 중 휴면 계정"""
+    subs = set(subs)
+    if not subs:
+        return set()
+    statement = dormant_subs().where(UserProfile.sub.in_(subs))
+    return set(session.exec(statement).all())
+
+
+def is_dormant(session: Session, sub: str) -> bool:
+    """휴면 계정이면 True"""
+    return bool(get_dormant_subs(session, [sub]))
+
+
+def is_purged(session: Session, sub: str) -> bool:
+    """파기한 계정이면 True"""
+    return session.get(AccountDeletion, sub) is not None
 
 
 def update_profile_if_changed(
