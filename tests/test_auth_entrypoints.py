@@ -35,12 +35,14 @@ async def test_websocket_auth_keeps_email_verified():
 @pytest.mark.asyncio
 async def test_graphql_context_keeps_email_verified():
     from app.api.v1.graphql import get_context
+    from app.domain.user.service import AccountState
 
     request = MagicMock()
     request.headers = {"Authorization": "Bearer token"}
     with patch("app.api.v1.graphql.settings") as mock_settings, \
             patch("app.api.v1.graphql.oidc_client") as mock_oidc, \
-            patch("app.api.v1.graphql.get_db", return_value=iter([MagicMock()])):
+            patch("app.api.v1.graphql.get_db", return_value=iter([MagicMock()])), \
+            patch("app.domain.user.service.account_state", return_value=AccountState.ACTIVE):
         mock_settings.OIDC_ENABLED = True
         mock_oidc.verify_token = AsyncMock(return_value=CLAIMS)
 

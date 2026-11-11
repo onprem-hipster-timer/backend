@@ -62,6 +62,8 @@ async def get_context(request: Request) -> dict:
                 # 토큰 검증 실패 시 current_user는 None
                 pass
 
+    if current_user is not None:
+        _require_active_account(session, session_gen, current_user.sub)
     if current_user is not None and app_config.settings.CONSENT_ENFORCED:
         # 지연 import: domain.user.service가 app.core.auth를 import하므로 순환 회피
         from app.domain.user.exceptions import ConsentRequiredError
@@ -77,6 +79,20 @@ async def get_context(request: Request) -> dict:
         "current_user": current_user,
         "_session_gen": session_gen,  # 정리를 위한 Generator 참조
     }
+
+
+def _require_active_account(session: Session, session_gen, sub: str) -> None:
+    """휴면·파기 계정은 REST와 같은 오류로 거부한다"""
+    from app.domain.user.exceptions import AccountDeletedError, AccountDeletionPendingError
+    from app.domain.user.service import AccountState, account_state
+
+    state = account_state(session, sub)
+    if state == AccountState.ACTIVE:
+        return
+    session_gen.close()
+    if state == AccountState.DELETED:
+        raise AccountDeletedError()
+    raise AccountDeletionPendingError()
 
 
 def create_graphql_router() -> GraphQLRouter[Coroutine[Any, Any, dict], None]:

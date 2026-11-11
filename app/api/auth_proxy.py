@@ -13,6 +13,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
+- 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
+  응답은 바꾸지 않는다
 """
 import json
 import logging
@@ -24,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.core import courier
+from app.core.audit import log_account_access
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -63,6 +66,8 @@ SETTINGS_SUBMIT_PATH = "/self-service/settings"
 EMAIL_RECOVERY_METHOD = "code_recovery"
 # 소셜 로그인 제출 경로. 처음 쓰는 소셜 계정이면 로그인 제출도 가입으로 이어진다
 OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
+# 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
+ACCESS_LOG_EVENTS = {"/self-service/login": "login", "/self-service/registration": "registration"}
 
 router = APIRouter(include_in_schema=False)
 
@@ -129,6 +134,22 @@ def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
         else:
             del data[key]
     return json.dumps(data).encode()
+
+
+def _identity_id(content: bytes) -> str | None:
+    """Kratos 로그인·가입 응답의 identity id (session.identity.id, 없으면 identity.id)"""
+    try:
+        data = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    for holder in (data.get("session"), data):
+        identity = holder.get("identity") if isinstance(holder, dict) else None
+        identity_id = identity.get("id") if isinstance(identity, dict) else None
+        if isinstance(identity_id, str) and identity_id:
+            return identity_id
+    return None
 
 
 def _unreadable_body() -> JSONResponse:
@@ -219,6 +240,11 @@ async def kratos_proxy(path: str, request: Request) -> Response:
 
     if request.method == "POST" and upstream.status_code in (200, 303) and MAIL_FLOW_SUBMIT.fullmatch(path):
         courier.trigger()
+
+    event = ACCESS_LOG_EVENTS.get(submit_path)
+    if request.method == "POST" and upstream.status_code == 200 and event:
+        if identity_id := _identity_id(upstream.content):
+            log_account_access(event, identity_id, request.client.host if request.client else None)
 
     response = Response(content=upstream.content, status_code=upstream.status_code)
     for name, value in upstream.headers.multi_items():
