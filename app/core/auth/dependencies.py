@@ -114,7 +114,7 @@ def get_current_user_synced(
       **동일 세션**을 공유하고 요청 끝에 함께 commit된다.
     - 동기화는 SAVEPOINT(begin_nested) 안에서 수행한다. 동기화가 실패해도 엔드포인트
       트랜잭션을 오염시키지 않고 best-effort로 넘어간다(표시정보는 None으로 degrade).
-    - CONSENT_ENFORCED면 현재 약관 버전에 동의하지 않은 사용자는 CONSENT_ALLOWED_ROUTES 밖이면 403.
+    - CONSENT_ENFORCED면 현재 약관 버전에 동의하지 않은 사용자는 CONSENT_ALLOWED_ROUTES 밖이면 428.
     """
     # 지연 import: domain.user.service가 app.core.auth.CurrentUser를 import하므로 순환 회피
     from app.domain.user.exceptions import ConsentRequiredError

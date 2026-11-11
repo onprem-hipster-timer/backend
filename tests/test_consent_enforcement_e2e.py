@@ -1,6 +1,6 @@
 """현재 약관 버전에 동의하지 않은 사용자의 요청 제한
 
-동의가 필요한 사용자는 프로필 조회와 동의 기록 외의 인증 요청이 403(`consent_required`)이다.
+동의가 필요한 사용자는 프로필 조회와 동의 기록 외의 인증 요청이 428(`consent_required`)이다.
 """
 import pytest
 
@@ -43,7 +43,7 @@ def test_other_requests_are_forbidden_until_consent(multi_user_e2e, enforced):
     a = multi_user_e2e.as_user("user-a")
 
     r = _schedules(a)
-    assert r.status_code == 403
+    assert r.status_code == 428
     assert r.json()["message"] == "consent_required"
 
     _agree(a)
@@ -65,7 +65,7 @@ def test_new_version_forbids_again(multi_user_e2e, enforced, monkeypatch):
     monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
 
     r = _schedules(a)
-    assert r.status_code == 403
+    assert r.status_code == 428
     assert r.json()["message"] == "consent_required"
 
     _agree(a)
@@ -78,7 +78,7 @@ def test_consent_is_per_user(multi_user_e2e, enforced):
     _agree(a)
 
     assert _schedules(a).status_code == 200
-    assert _schedules(b).status_code == 403
+    assert _schedules(b).status_code == 428
 
 
 def test_forbidden_request_has_no_side_effect(multi_user_e2e, enforced):
@@ -88,7 +88,7 @@ def test_forbidden_request_has_no_side_effect(multi_user_e2e, enforced):
         "/v1/schedules",
         json={"title": "막힌 요청", "start_time": "2024-01-01T09:00:00Z", "end_time": "2024-01-01T10:00:00Z"},
     )
-    assert r.status_code == 403
+    assert r.status_code == 428
 
     _agree(a)
     assert _schedules(a).json() == []
@@ -107,7 +107,7 @@ def test_graphql_is_forbidden_until_consent(multi_user_e2e, enforced, monkeypatc
     a = multi_user_e2e.as_user("user-a")
 
     r = a.post("/v1/graphql", json={"query": "{ __typename }"})
-    assert r.status_code == 403
+    assert r.status_code == 428
     assert r.json()["message"] == "consent_required"
 
     _agree(a)
