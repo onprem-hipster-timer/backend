@@ -20,3 +20,9 @@ class AccountDeletedError(DomainException):
     """파기한 계정의 토큰"""
     status_code = 401
     detail = "account_deleted"
+
+
+class ConsentRequiredError(DomainException):
+    """현재 시행 중인 약관 버전에 동의하지 않음"""
+    status_code = 403
+    detail = "consent_required"

@@ -13,6 +13,7 @@ from sqlmodel import Session
 
 from app.core.auth.client import oidc_client
 from app.core.auth.model import CurrentUser
+import app.core.config as app_config
 from app.core.config import settings
 from app.db.session import get_db_transactional
 
@@ -98,6 +99,15 @@ DORMANT_ALLOWED_ROUTES = frozenset({
 })
 
 
+# 현재 약관 버전에 동의하지 않은 사용자도 부를 수 있는 경로 (동의하지 않으면 탈퇴할 수 있어야 한다)
+CONSENT_ALLOWED_ROUTES = frozenset({
+    ("GET", "/v1/users/me"),
+    ("PUT", "/v1/users/me/consent"),
+    ("POST", "/v1/users/me/deletion"),
+    ("DELETE", "/v1/users/me/deletion"),
+})
+
+
 def get_current_user_synced(
         request: Request,
         current_user: CurrentUser = Depends(get_current_user),
@@ -115,10 +125,15 @@ def get_current_user_synced(
     - 동기화는 SAVEPOINT(begin_nested) 안에서 수행한다. 동기화가 실패해도 엔드포인트
       트랜잭션을 오염시키지 않고 best-effort로 넘어간다(표시정보는 None으로 degrade).
     - 파기한 계정은 프로필을 다시 만들지 않고 401, 휴면 계정은 DORMANT_ALLOWED_ROUTES 밖이면 403.
+    - CONSENT_ENFORCED면 현재 약관 버전에 동의하지 않은 사용자는 CONSENT_ALLOWED_ROUTES 밖이면 403.
     """
     # 지연 import: domain.user.service가 app.core.auth.CurrentUser를 import하므로 순환 회피
-    from app.domain.user.exceptions import AccountDeletedError, AccountDeletionPendingError
-    from app.domain.user.service import AccountState, UserProfileService, account_state
+    from app.domain.user.exceptions import (
+        AccountDeletedError,
+        AccountDeletionPendingError,
+        ConsentRequiredError,
+    )
+    from app.domain.user.service import AccountState, UserProfileService, account_state, consent_pending
 
     if account_state(session, current_user.sub) == AccountState.DELETED:
         raise AccountDeletedError()
@@ -132,5 +147,12 @@ def get_current_user_synced(
     if account_state(session, current_user.sub) == AccountState.DORMANT:
         if (request.method, request.url.path) not in DORMANT_ALLOWED_ROUTES:
             raise AccountDeletionPendingError()
+
+    if (
+        app_config.settings.CONSENT_ENFORCED
+        and (request.method, request.url.path) not in CONSENT_ALLOWED_ROUTES
+        and consent_pending(session, current_user.sub)
+    ):
+        raise ConsentRequiredError()
 
     return current_user

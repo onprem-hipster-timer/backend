@@ -77,6 +77,12 @@ def deletion_scheduled_at(profile: UserProfile) -> datetime | None:
     return profile.deletion_requested_at + timedelta(days=app_config.settings.ACCOUNT_DELETION_GRACE_DAYS)
 
 
+def consent_pending(session: Session, sub: str) -> bool:
+    """현재 약관 버전에 동의하지 않았으면 True (프로필이 없으면 True)"""
+    profile = crud.get_by_sub(session, sub)
+    return profile is None or profile.consent_version != app_config.settings.CONSENT_VERSION
+
+
 class UserProfileService:
     """사용자 표시 프로필 비즈니스 로직"""
 

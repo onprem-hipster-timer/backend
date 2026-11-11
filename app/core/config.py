@@ -52,6 +52,8 @@ class Settings(BaseSettings):
 
     # 이용약관·개인정보처리방침 시행일. 바꾸면 모든 사용자에게 다시 동의를 받는다.
     CONSENT_VERSION: str = "2026-11-13"
+    # True면 현재 버전에 동의하지 않은 사용자는 프로필 조회·동의 기록 외의 인증 요청이 403
+    CONSENT_ENFORCED: bool = True
 
     # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
     ACCOUNT_DELETION_GRACE_DAYS: int = 3
