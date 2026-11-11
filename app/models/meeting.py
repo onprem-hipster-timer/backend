@@ -55,7 +55,11 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     )
 
     # Relationships
-    participants: List["MeetingParticipant"] = Relationship(back_populates="meeting")
+    # 참여자·가능 시간은 DB의 ON DELETE CASCADE가 지운다 (ORM이 FK를 NULL로 바꾸지 않게)
+    participants: List["MeetingParticipant"] = Relationship(
+        back_populates="meeting",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True},
+    )
 
 
 class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
@@ -81,7 +85,10 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 
     # Relationships
     meeting: "Meeting" = Relationship(back_populates="participants")
-    time_slots: List["MeetingTimeSlot"] = Relationship(back_populates="participant")
+    time_slots: List["MeetingTimeSlot"] = Relationship(
+        back_populates="participant",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True},
+    )
 
 
 class MeetingTimeSlot(UUIDBase, table=True):
