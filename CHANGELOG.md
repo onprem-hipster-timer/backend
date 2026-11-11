@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.11-e2c26af] - 2026-11-11
+
 ### Changed
 
 - **Mail job is requested before the `/auth/*` response**: after a sign-up, verification or recovery code request, or settings submit succeeds, the backend requests a run of `KRATOS_COURIER_JOB` and responds once the run is accepted. The job itself skips a run while another courier is sending and requeues mail stuck in processing. `COURIER_REQUEUE_JOB` is no longer read.
@@ -396,7 +402,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...HEAD
+[v2026.11.11-e2c26af]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...v2026.11.11-e2c26af
 [v2026.11.10-8cb773e]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...v2026.11.10-8cb773e
 [v2026.11.10-a4dbac3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...v2026.11.10-a4dbac3
 [v2026.11.08-099ab9f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...v2026.11.08-099ab9f
