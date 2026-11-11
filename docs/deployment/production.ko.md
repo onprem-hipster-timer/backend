@@ -155,17 +155,15 @@ KRATOS_ADMIN_URL=http://127.0.0.1:4434
 
 #### 메일 발송 (courier 잡)
 
-Kratos 메일은 Cloud Run 잡이 보냅니다. 가입, 인증·복구 코드 요청, 설정 변경 제출이 성공하면 backend가 백그라운드에서 `COURIER_REQUEUE_JOB`을 실행해 성공을 기다린 뒤 `KRATOS_COURIER_JOB`을 실행합니다.
+Kratos 메일은 Cloud Run 잡이 보냅니다. 가입, 인증·복구 코드 요청, 설정 변경 제출이 성공하면 backend가 응답하기 전에 `KRATOS_COURIER_JOB` 실행을 요청하고, 접수까지만 기다립니다.
 
 ```bash
-COURIER_REQUEUE_JOB=projects/<project>/locations/<region>/jobs/courier-requeue
 KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 ```
 
-- `kratos-courier`가 이미 실행 중이면 둘 다 건너뜁니다. 30초 안의 반복 요청도 건너뜁니다.
+- 실행 중인 courier와 겹치지 않게 하는 것과 처리 중에 멈춘 메일 복구는 잡이 맡습니다. backend는 요청마다 실행을 요청합니다.
 - 실패해도 요청은 실패하지 않습니다. 로그에만 남습니다.
-- 런타임 서비스 계정에 두 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
-- 컨테이너가 `cpu_idle=true`(요청 중에만 CPU 할당)이면 응답 뒤 requeue를 기다리는 동안 CPU가 줄어 메일이 늦어질 수 있습니다.
+- 런타임 서비스 계정에 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
 
 #### 회원 탈퇴 파기
 
