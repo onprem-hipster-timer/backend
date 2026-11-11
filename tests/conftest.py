@@ -4,6 +4,7 @@ import os
 os.environ["OIDC_ENABLED"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "false"  # 기본 비활성화, 레이트 리밋 테스트에서만 활성화
 os.environ["WS_RATE_LIMIT_ENABLED"] = "false"  # WebSocket 레이트 리밋 비활성화
+os.environ["CONSENT_ENFORCED"] = "false"  # 약관 동의 요청 제한은 tests/test_consent_enforcement_e2e.py에서만 켠다
 
 import pytest
 import pytest_asyncio

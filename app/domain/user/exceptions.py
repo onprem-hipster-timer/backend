@@ -8,3 +8,9 @@ class ConsentVersionMismatchError(DomainException):
     """현재 시행 중인 약관 버전이 아닌 버전에 동의함"""
     status_code = 409
     detail = "Consent version is not current"
+
+
+class ConsentRequiredError(DomainException):
+    """현재 시행 중인 약관 버전에 동의하지 않음"""
+    status_code = 403
+    detail = "consent_required"
