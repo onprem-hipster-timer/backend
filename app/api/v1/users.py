@@ -10,9 +10,11 @@ Users Router
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
+import app.core.config as app_config
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_db_transactional
-from app.domain.user.schema.dto import MyProfileRead
+from app.domain.user.model import UserProfile
+from app.domain.user.schema.dto import ConsentCreate, MyProfileRead
 from app.domain.user.service import UserProfileService
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -29,9 +31,30 @@ async def get_my_profile(
     `friend_code`를 공유하면 상대가 그 코드로 친구 요청을 보낼 수 있다.
     """
     profile = UserProfileService(session, current_user).sync_from_current_user()
+    return _to_read(profile)
+
+
+@router.put("/me/consent", response_model=MyProfileRead)
+async def put_my_consent(
+        data: ConsentCreate,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    만 14세 이상 확인, 이용약관, 개인정보처리방침 동의 기록.
+
+    `version`은 응답 전에 받은 현재 약관 시행일이어야 한다(다르면 409).
+    """
+    profile = UserProfileService(session, current_user).record_consent(data.version)
+    return _to_read(profile)
+
+
+def _to_read(profile: UserProfile) -> MyProfileRead:
     return MyProfileRead(
-        id=current_user.sub,
+        id=profile.sub,
         display_name=profile.display_name,
         avatar_url=profile.avatar_url,
         friend_code=profile.friend_code,
+        consent_version=app_config.settings.CONSENT_VERSION,
+        consent_required=UserProfileService.consent_required(profile),
     )

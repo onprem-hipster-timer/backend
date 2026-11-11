@@ -17,8 +17,10 @@ import secrets
 
 from sqlmodel import Session
 
+import app.core.config as app_config
 from app.core.auth import CurrentUser
 from app.crud import user_profile as crud
+from app.domain.user.exceptions import ConsentVersionMismatchError
 from app.domain.user.model import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,12 @@ def _verified_email_from_claims(current_user: CurrentUser) -> str | None:
     if current_user.email and current_user.email_verified:
         return verified_email_for(current_user.email)
     return None
+
+
+def consent_pending(session: Session, sub: str) -> bool:
+    """현재 약관 버전에 동의하지 않았으면 True (프로필이 없으면 True)"""
+    profile = crud.get_by_sub(session, sub)
+    return profile is None or profile.consent_version != app_config.settings.CONSENT_VERSION
 
 
 class UserProfileService:
@@ -104,6 +112,18 @@ class UserProfileService:
             ),
         )
         return profile
+
+    @staticmethod
+    def consent_required(profile: UserProfile) -> bool:
+        """현재 약관 버전에 동의하지 않았으면 True"""
+        return profile.consent_version != app_config.settings.CONSENT_VERSION
+
+    def record_consent(self, version: str) -> UserProfile:
+        """현재 약관 버전에 대한 동의를 기록. 다른 버전이면 ConsentVersionMismatchError."""
+        if version != app_config.settings.CONSENT_VERSION:
+            raise ConsentVersionMismatchError()
+        profile = self.sync_from_current_user()
+        return crud.record_consent(self.session, profile, version)
 
     def _new_unique_friend_code(self) -> str:
         """충돌 가능성은 극히 낮지만 DB 조회로 방어한다."""
