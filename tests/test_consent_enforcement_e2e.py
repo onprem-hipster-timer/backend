@@ -112,3 +112,25 @@ def test_graphql_is_forbidden_until_consent(multi_user_e2e, enforced, monkeypatc
 
     _agree(a)
     assert a.post("/v1/graphql", json={"query": "{ __typename }"}).status_code == 200
+
+
+def test_user_who_has_not_agreed_can_request_and_cancel_deletion(multi_user_e2e, enforced, monkeypatch):
+    """새 약관에 동의하지 않아도 탈퇴할 수 있고, 휴면 중 동의가 필요해도 탈퇴를 취소할 수 있다"""
+    monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", "")  # 세션 폐기 호출 없이
+    a = multi_user_e2e.as_user("user-a")
+    _agree(a)
+    monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+    assert _schedules(a).status_code == 403
+
+    assert a.post("/v1/users/me/deletion").status_code == 200
+    r = _schedules(a)
+    assert r.status_code == 403
+    assert r.json()["message"] == "account_deletion_pending"
+
+    assert a.delete("/v1/users/me/deletion").status_code == 200
+    r = _schedules(a)
+    assert r.status_code == 403
+    assert r.json()["message"] == "consent_required"
+
+    _agree(a)
+    assert _schedules(a).status_code == 200
