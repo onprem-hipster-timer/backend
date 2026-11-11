@@ -99,7 +99,6 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `ACCOUNT_DELETION_GRACE_DAYS` | Days between an account deletion request and the purge | `3` |
 | `UNVERIFIED_SIGNUP_RETENTION_HOURS` | Hours after which the purge run deletes sign-ups whose email was never verified | `24` |
 | `ACCOUNT_PURGE_TOKEN` | `X-Purge-Token` value for `POST /internal/accounts/purge`. When empty, that endpoint returns 404 | - |
-| `COURIER_REQUEUE_JOB` | Cloud Run job that requeues mail stuck in processing (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Cloud Run job that sends Kratos mail. When empty, no mail job is run | - |
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)

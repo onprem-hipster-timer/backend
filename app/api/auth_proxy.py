@@ -239,7 +239,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
         return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
 
     if request.method == "POST" and upstream.status_code in (200, 303) and MAIL_FLOW_SUBMIT.fullmatch(path):
-        courier.trigger()
+        await courier.start()
 
     event = ACCESS_LOG_EVENTS.get(submit_path)
     if request.method == "POST" and upstream.status_code == 200 and event:

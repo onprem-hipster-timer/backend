@@ -99,7 +99,6 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `ACCOUNT_DELETION_GRACE_DAYS` | 탈퇴 신청 뒤 파기까지의 유예 기간(일) | `3` |
 | `UNVERIFIED_SIGNUP_RETENTION_HOURS` | 이메일 인증을 마치지 않은 가입 정보를 계정 정리 때 지우기까지의 시간 | `24` |
 | `ACCOUNT_PURGE_TOKEN` | `POST /internal/accounts/purge`의 `X-Purge-Token` 값. 비우면 그 엔드포인트는 404 | - |
-| `COURIER_REQUEUE_JOB` | 처리 중에 멈춘 메일을 되돌리는 Cloud Run 잡 이름 (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Kratos 메일을 보내는 Cloud Run 잡 이름. 비우면 메일 잡을 실행하지 않음 | - |
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)

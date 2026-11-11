@@ -78,8 +78,7 @@ class Settings(BaseSettings):
     KRATOS_PUBLIC_URL: str = ""  # 예: http://127.0.0.1:4433
     # Kratos admin API (사이드카). 탈퇴 때 세션 폐기·identity 삭제에 쓰며, 비어 있으면 호출하지 않는다
     KRATOS_ADMIN_URL: str = ""  # 예: http://127.0.0.1:4434
-    # Kratos courier Cloud Run 잡 (전체 리소스 이름). KRATOS_COURIER_JOB이 비어 있으면 실행하지 않음
-    COURIER_REQUEUE_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/courier-requeue
+    # Kratos courier Cloud Run 잡 (전체 리소스 이름). 비어 있으면 실행하지 않음
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
     # 실시간 전달 (docs/development/realtime-adapter.ko.md)

@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **Mail job is requested before the `/auth/*` response**: after a sign-up, verification or recovery code request, or settings submit succeeds, the backend requests a run of `KRATOS_COURIER_JOB` and responds once the run is accepted. The job itself skips a run while another courier is sending and requeues mail stuck in processing. `COURIER_REQUEUE_JOB` is no longer read.
 
 ---
 

@@ -17,6 +17,10 @@ from app.core.config import Settings
 UPSTREAM = "http://kratos.test"
 
 
+async def _record(calls: list) -> None:
+    calls.append(True)
+
+
 class Upstream:
     """받은 요청을 기록하고 handler가 정한 응답을 돌려주는 가짜 Kratos"""
 
@@ -163,7 +167,7 @@ def test_upstream_unreachable_returns_502(client, upstream):
 )
 def test_triggers_courier_only_after_mail_flow_submit(client, upstream, monkeypatch, method, path, status, triggered):
     calls = []
-    monkeypatch.setattr(courier, "trigger", lambda: calls.append(True))
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
     upstream.handler = lambda request: httpx.Response(status, json={})
 
     client.request(method, path, json={} if method == "POST" else None, follow_redirects=False)
@@ -353,7 +357,7 @@ def test_settings_flow_creation_is_not_blocked(client, upstream):
 
 def test_allowed_settings_submit_still_triggers_courier(client, upstream, monkeypatch):
     calls = []
-    monkeypatch.setattr(courier, "trigger", lambda: calls.append(True))
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
     kratos_with_session(upstream, RECOVERY_SESSION)
 
     client.post(
