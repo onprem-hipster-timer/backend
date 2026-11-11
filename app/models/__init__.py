@@ -1,6 +1,7 @@
 # DB 레벨 검증 등록 (event listener)
 import app.valid.schedule  # noqa: F401
 import app.valid.tag  # noqa: F401
+from app.models.account_deletion import AccountDeletion
 from app.models.friendship import Friendship, FriendshipStatus
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 from app.models.schedule import Schedule, ScheduleException
@@ -28,6 +29,7 @@ __all__ = [
     "Todo",
     # User profile (OIDC sub ↔ 표시정보 JIT 캐시)
     "UserProfile",
+    "AccountDeletion",
     # Meeting
     "Meeting",
     "MeetingParticipant",

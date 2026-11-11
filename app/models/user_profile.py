@@ -47,3 +47,5 @@ class UserProfile(TimestampMixin, table=True):
     # 동의 항목: 만 14세 이상, 이용약관, 개인정보처리방침.
     consent_version: str | None = Field(default=None, nullable=True)
     consented_at: NaiveDatetime | None = Field(default=None, nullable=True)
+    # 탈퇴를 신청한 시각(UTC). 값이 있으면 휴면 계정이며, 유예 기간이 지나면 파기한다.
+    deletion_requested_at: NaiveDatetime | None = Field(default=None, nullable=True, index=True)
