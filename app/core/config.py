@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
     ACCOUNT_DELETION_GRACE_DAYS: int = 3
+    # 가입 뒤 이 시간이 지나도 이메일을 인증하지 않은 Kratos identity는 계정 정리 때 지운다
+    UNVERIFIED_SIGNUP_RETENTION_HOURS: int = 24
     # POST /internal/accounts/purge의 X-Purge-Token 값. 비어 있으면 그 엔드포인트는 404
     ACCOUNT_PURGE_TOKEN: str = ""
 

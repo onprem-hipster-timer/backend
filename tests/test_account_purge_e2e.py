@@ -126,7 +126,7 @@ class TestEndpointAuth:
             assert session.get(UserProfile, "user-a") is not None
 
     def test_correct_token_returns_counts_only(self, multi_user_e2e, kratos):
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
 
     def test_get_not_allowed(self, multi_user_e2e, kratos):
         assert multi_user_e2e._client.get(PURGE, headers={"X-Purge-Token": TOKEN}).status_code == 405
@@ -142,7 +142,7 @@ class TestGraceBoundary:
         a = multi_user_e2e.as_user("user-a")
         _request_and_age(a, "user-a", _grace() - timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
         assert a.get("/v1/users/me").status_code == 200
         assert ("DELETE", "/admin/identities/user-a") not in kratos.calls()
 
@@ -150,7 +150,7 @@ class TestGraceBoundary:
         a = multi_user_e2e.as_user("user-a")
         _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
 
     @pytest.mark.parametrize("days", [1, 7])
     def test_boundary_follows_setting(self, multi_user_e2e, kratos, monkeypatch, days):
@@ -160,7 +160,7 @@ class TestGraceBoundary:
         _request_and_age(a, "user-a", timedelta(days=days) + timedelta(minutes=1))
         _request_and_age(b, "user-b", timedelta(days=days) - timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is None
             assert session.get(UserProfile, "user-b") is not None
@@ -283,7 +283,7 @@ class TestPurgeDeletesEverything:
         assert all(before.values()), before
 
         _request_and_age(data["a"], "user-a", _grace() + timedelta(minutes=1))
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
 
         with _db() as session:
             assert _rows_with_sub(session, "user-a") == dict.fromkeys(before, 0)
@@ -342,8 +342,8 @@ class TestPurgeDeletesEverything:
         data = _populate(multi_user_e2e)
         _request_and_age(data["a"], "user-a", _grace() + timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
         assert kratos.calls() == [
             ("DELETE", "/admin/identities/user-a/sessions"),
             ("DELETE", "/admin/identities/user-a"),
@@ -387,7 +387,7 @@ class TestPurgeDeletesEverything:
 
         monkeypatch.setattr(purge, "delete_user_data", failing)
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is not None
             assert session.get(UserProfile, "user-b") is None
@@ -399,7 +399,7 @@ class TestKratosIdentity:
         _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
         kratos.status = 404
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
         with _db() as session:
             assert session.get(AccountDeletion, "user-a").kratos_deleted_at is not None
 
@@ -415,7 +415,7 @@ class TestKratosIdentity:
         else:
             monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", "")
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 1}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 1, "unverified_removed": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is None
             assert session.get(AccountDeletion, "user-a").kratos_deleted_at is None
@@ -426,9 +426,9 @@ class TestKratosIdentity:
         monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", KRATOS_ADMIN)
         kratos.requests.clear()
 
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
         assert kratos.calls() == [("DELETE", "/admin/identities/user-a")]
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
         assert kratos.calls() == [("DELETE", "/admin/identities/user-a")]
 
     def test_record_kept_one_day_after_identity_deleted(self, multi_user_e2e, kratos):

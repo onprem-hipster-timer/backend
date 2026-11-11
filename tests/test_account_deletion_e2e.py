@@ -33,10 +33,16 @@ class FakeKratosAdmin:
         self.requests.append(request)
         if self.fail:
             raise httpx.ConnectError("unreachable", request=request)
+        if request.method == "GET" and request.url.path == "/admin/identities":
+            return httpx.Response(200, json=[])
         return httpx.Response(self.status)
 
     def calls(self) -> list[tuple[str, str]]:
-        return [(r.method, r.url.path) for r in self.requests]
+        """identity 목록 조회를 뺀 요청 (목록 조회는 tests/test_unverified_signup_cleanup.py가 본다)"""
+        return [
+            (r.method, r.url.path) for r in self.requests
+            if not (r.method == "GET" and r.url.path == "/admin/identities")
+        ]
 
 
 @pytest.fixture

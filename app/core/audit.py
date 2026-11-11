@@ -1,7 +1,7 @@
 """
 계정 접근 기록
 
-로그인·가입·탈퇴 신청·취소·파기를 stdout에 JSON 한 줄로 남긴다. 다른 로그와 섞이지 않게
+로그인·가입·탈퇴 신청·취소·파기와 미인증 가입 정보 삭제를 stdout에 JSON 한 줄로 남긴다. 다른 로그와 섞이지 않게
 전용 로거가 메시지만 쓰므로 Cloud Logging이 jsonPayload로 읽는다. 보존 기간은 infra가 정한다.
 
 형식: {"audit": "account_access", "event": ..., "identity_id": ..., "ip": ..., "at": UTC ISO 8601}
@@ -13,7 +13,7 @@ import sys
 from datetime import UTC, datetime
 
 AUDIT_LOGGER_NAME = "app.audit.account_access"
-EVENTS = frozenset({"login", "registration", "deletion_requested", "deletion_cancelled", "account_purged"})
+EVENTS = frozenset({"login", "registration", "deletion_requested", "deletion_cancelled", "account_purged", "signup_expired"})
 
 _logger = logging.getLogger(AUDIT_LOGGER_NAME)
 _logger.setLevel(logging.INFO)

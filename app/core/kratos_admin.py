@@ -1,7 +1,7 @@
 """
 Kratos admin API 클라이언트
 
-탈퇴 신청 때 세션 폐기, 파기 때 identity 삭제에 쓴다. JWT sub가 Kratos identity id다.
+탈퇴 신청 때 세션 폐기, 파기 때 identity 삭제, 미인증 가입 정리 때 identity 목록 조회에 쓴다. JWT sub가 Kratos identity id다.
 KRATOS_ADMIN_URL이 비어 있으면 호출하지 않는다.
 """
 import logging
@@ -57,3 +57,24 @@ async def delete_identity(identity_id: str) -> bool:
         return True
     logger.warning("Kratos identity 삭제 실패: status=%s", response.status_code)
     return False
+
+
+async def list_identities() -> list[dict] | None:
+    """모든 identity를 페이지를 따라가며 읽는다. 실패하면 None."""
+    if not app_config.settings.KRATOS_ADMIN_URL:
+        return None
+    identities: list[dict] = []
+    url: str | None = "/admin/identities?page_size=250"
+    try:
+        async with _make_client() as client:
+            while url:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    logger.warning("Kratos identity 목록 조회 실패: status=%s", response.status_code)
+                    return None
+                identities.extend(response.json())
+                url = response.links.get("next", {}).get("url")
+    except httpx.HTTPError:
+        logger.warning("Kratos identity 목록 조회 요청 실패", exc_info=True)
+        return None
+    return identities
