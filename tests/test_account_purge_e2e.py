@@ -469,3 +469,26 @@ class TestAuditLog:
         assert line["identity_id"] == "user-a"
         assert line["ip"] is None
         assert "private@example.com" not in json.dumps(line)
+
+
+class TestAllowedEmailMatching:
+    def test_entries_typed_with_other_case_are_removed(self, multi_user_e2e, kratos):
+        """다른 사용자가 대소문자를 섞어 입력한 탈퇴자의 이메일도 파기 때 지워지고, 다른 주소는 남는다"""
+        a = multi_user_e2e.as_user("user-a", email="alice@example.com")
+        b = multi_user_e2e.as_user("user-b", email="b@example.com")
+        a.get("/v1/users/me")
+        schedule_id = b.post(
+            "/v1/schedules",
+            json={"title": "공유", "start_time": "2024-01-01T09:00:00Z", "end_time": "2024-01-01T10:00:00Z"},
+        ).json()["id"]
+        r = b.put(
+            f"/v1/visibility/schedule/{schedule_id}",
+            json={"level": "allowed_emails", "allowed_emails": ["Alice@Example.COM", "carol@example.com"]},
+        )
+        assert r.status_code == 200, r.text
+        _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
+
+        assert _run(multi_user_e2e)["purged"] == 1
+
+        remaining = b.get(f"/v1/visibility/schedule/{schedule_id}").json()["allowed_emails"]
+        assert [e.lower() for e in remaining] == ["carol@example.com"]
