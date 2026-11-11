@@ -142,6 +142,8 @@ OIDC_AUDIENCE=https://api.example.com
 OIDC_JWKS='{"keys":[...]}'
 # /auth/* 프록시 대상. 비우면 /auth/*는 404
 KRATOS_PUBLIC_URL=http://127.0.0.1:4433
+# 회원 탈퇴 때 세션 폐기·identity 삭제
+KRATOS_ADMIN_URL=http://127.0.0.1:4434
 ```
 
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
@@ -164,6 +166,18 @@ KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 - 실패해도 요청은 실패하지 않습니다. 로그에만 남습니다.
 - 런타임 서비스 계정에 두 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
 - 컨테이너가 `cpu_idle=true`(요청 중에만 CPU 할당)이면 응답 뒤 requeue를 기다리는 동안 CPU가 줄어 메일이 늦어질 수 있습니다.
+
+#### 회원 탈퇴 파기
+
+탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 4일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다.
+
+```bash
+ACCOUNT_PURGE_TOKEN=<무작위 값>   # 호출할 때 X-Purge-Token 헤더로 보낸다. 비우면 404
+```
+
+- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수}`입니다. 남은 identity는 다음 호출이 다시 지웁니다.
+- `ORIGIN_VERIFY_HEADER`를 쓰면 스케줄러 요청에도 그 헤더를 붙입니다.
+- 로그인·가입·탈퇴 신청·취소·파기는 stdout에 `{"audit": "account_access", "event", "identity_id", "ip", "at"}` JSON 한 줄로 남습니다. 보존 기간은 로그 설정에서 정합니다.
 
 > 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 

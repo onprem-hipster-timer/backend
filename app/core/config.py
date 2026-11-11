@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
     ACCOUNT_DELETION_GRACE_DAYS: int = 4
+    # POST /internal/accounts/purge의 X-Purge-Token 값. 비어 있으면 그 엔드포인트는 404
+    ACCOUNT_PURGE_TOKEN: str = ""
 
     # 국경일 정보 API (한국천문연구원)
     HOLIDAY_API_BASE_URL: str = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
