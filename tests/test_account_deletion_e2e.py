@@ -97,8 +97,14 @@ class TestRequestAndCancel:
         assert scheduled - requested == timedelta(days=app_config.settings.ACCOUNT_DELETION_GRACE_DAYS)
         assert a.get("/v1/users/me").json()["deletion_requested_at"] == data["deletion_requested_at"]
 
-    def test_grace_days_default_is_four(self):
-        assert app_config.Settings().ACCOUNT_DELETION_GRACE_DAYS == 4
+    def test_schedule_follows_grace_setting(self, multi_user_e2e, kratos, monkeypatch):
+        monkeypatch.setattr(app_config.settings, "ACCOUNT_DELETION_GRACE_DAYS", 7)
+        data = multi_user_e2e.as_user("user-a").post("/v1/users/me/deletion").json()
+
+        assert _parse(data["deletion_scheduled_at"]) - _parse(data["deletion_requested_at"]) == timedelta(days=7)
+
+    def test_grace_days_default_is_three(self):
+        assert app_config.Settings().ACCOUNT_DELETION_GRACE_DAYS == 3
 
     def test_rerequest_keeps_original_time(self, multi_user_e2e, kratos, audit):
         a = multi_user_e2e.as_user("user-a")

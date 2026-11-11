@@ -152,6 +152,19 @@ class TestGraceBoundary:
 
         assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
 
+    @pytest.mark.parametrize("days", [1, 7])
+    def test_boundary_follows_setting(self, multi_user_e2e, kratos, monkeypatch, days):
+        monkeypatch.setattr(app_config.settings, "ACCOUNT_DELETION_GRACE_DAYS", days)
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        _request_and_age(a, "user-a", timedelta(days=days) + timedelta(minutes=1))
+        _request_and_age(b, "user-b", timedelta(days=days) - timedelta(minutes=1))
+
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0}
+        with _db() as session:
+            assert session.get(UserProfile, "user-a") is None
+            assert session.get(UserProfile, "user-b") is not None
+
     def test_active_and_cancelled_accounts_are_kept(self, multi_user_e2e, kratos):
         a = multi_user_e2e.as_user("user-a")
         b = multi_user_e2e.as_user("user-b")

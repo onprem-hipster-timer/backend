@@ -96,7 +96,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | `/auth/*`를 프록시할 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 | - |
 | `KRATOS_ADMIN_URL` | Kratos admin API 주소. 회원 탈퇴 때 세션 폐기·identity 삭제에 쓴다. 비우면 호출하지 않고, 파기한 계정의 identity 삭제는 설정될 때까지 남는다 | - |
-| `ACCOUNT_DELETION_GRACE_DAYS` | 탈퇴 신청 뒤 파기까지의 유예 기간(일) | `4` |
+| `ACCOUNT_DELETION_GRACE_DAYS` | 탈퇴 신청 뒤 파기까지의 유예 기간(일) | `3` |
 | `ACCOUNT_PURGE_TOKEN` | `POST /internal/accounts/purge`의 `X-Purge-Token` 값. 비우면 그 엔드포인트는 404 | - |
 | `COURIER_REQUEUE_JOB` | 처리 중에 멈춘 메일을 되돌리는 Cloud Run 잡 이름 (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Kratos 메일을 보내는 Cloud Run 잡 이름. 비우면 메일 잡을 실행하지 않음 | - |

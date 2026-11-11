@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     CONSENT_VERSION: str = "2026-11-13"
 
     # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
-    ACCOUNT_DELETION_GRACE_DAYS: int = 4
+    ACCOUNT_DELETION_GRACE_DAYS: int = 3
     # POST /internal/accounts/purge의 X-Purge-Token 값. 비어 있으면 그 엔드포인트는 404
     ACCOUNT_PURGE_TOKEN: str = ""
 

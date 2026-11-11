@@ -96,7 +96,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | Kratos public API that `/auth/*` is proxied to. When empty, `/auth/*` returns 404 | - |
 | `KRATOS_ADMIN_URL` | Kratos admin API. Used to revoke sessions and delete identities on account deletion. When empty, it is not called and identity deletion of purged accounts stays pending until it is set | - |
-| `ACCOUNT_DELETION_GRACE_DAYS` | Days between an account deletion request and the purge | `4` |
+| `ACCOUNT_DELETION_GRACE_DAYS` | Days between an account deletion request and the purge | `3` |
 | `ACCOUNT_PURGE_TOKEN` | `X-Purge-Token` value for `POST /internal/accounts/purge`. When empty, that endpoint returns 404 | - |
 | `COURIER_REQUEUE_JOB` | Cloud Run job that requeues mail stuck in processing (`projects/…/jobs/…`) | - |
 | `KRATOS_COURIER_JOB` | Cloud Run job that sends Kratos mail. When empty, no mail job is run | - |

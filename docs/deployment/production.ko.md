@@ -169,7 +169,7 @@ KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 
 #### 회원 탈퇴 파기
 
-탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 4일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다.
+탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다.
 
 ```bash
 ACCOUNT_PURGE_TOKEN=<무작위 값>   # 호출할 때 X-Purge-Token 헤더로 보낸다. 비우면 404
