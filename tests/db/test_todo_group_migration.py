@@ -237,3 +237,37 @@ def test_migrated_todo_schema_matches_model(tmp_path: Path, monkeypatch: pytest.
     assert _shape(migrated, "todo") == _shape(modeled, "todo")
     migrated.dispose()
     modeled.dispose()
+
+
+# ============================================================
+# 일정의 tag_group_id를 지우는 마이그레이션
+# alembic/versions/2026_11_13_0320-e7f3a9c5b1d8_drop_schedule_tag_group_id.py
+# ============================================================
+
+BEFORE_SCHEDULE_DROP = "d4a8b2c6e1f9"
+
+
+def test_schedule_tag_group_id_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    database_url = f"sqlite:///{(tmp_path / 'schedule.db').resolve().as_posix()}"
+    config = _alembic_config(monkeypatch, database_url)
+    engine = sa.create_engine(database_url)
+    SQLModel.metadata.create_all(engine)
+    command.stamp(config, "head")
+
+    command.downgrade(config, BEFORE_SCHEDULE_DROP)
+    assert "tag_group_id" in {c["name"] for c in sa.inspect(engine).get_columns("schedule")}
+
+    command.upgrade(config, "head")
+    assert "tag_group_id" not in {c["name"] for c in sa.inspect(engine).get_columns("schedule")}
+    engine.dispose()
+
+
+def test_migrated_schedule_schema_matches_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    migrated, config = _legacy_engine(tmp_path, monkeypatch, "schedule_migrated.db")
+    command.upgrade(config, "head")
+    modeled = sa.create_engine(f"sqlite:///{(tmp_path / 'schedule_modeled.db').resolve().as_posix()}")
+    SQLModel.metadata.create_all(modeled)
+
+    assert _shape(migrated, "schedule") == _shape(modeled, "schedule")
+    migrated.dispose()
+    modeled.dispose()

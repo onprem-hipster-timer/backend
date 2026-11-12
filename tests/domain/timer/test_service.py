@@ -1475,22 +1475,12 @@ def test_to_read_dto_shared_timer_includes_schedule(test_session, test_user, oth
     from datetime import datetime, UTC
     from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead
     from app.domain.schedule.service import ScheduleService
-    from app.domain.tag.schema.dto import TagGroupCreate
-    from app.domain.tag.service import TagService
-
-    tag_service = TagService(test_session, other_user)
-    other_group = tag_service.create_tag_group(TagGroupCreate(
-        name="Other User Group",
-        color="#FF0000",
-    ))
-    test_session.flush()
 
     schedule_service = ScheduleService(test_session, other_user)
     schedule = schedule_service.create_schedule(ScheduleCreate(
         title="Other User Schedule",
         start_time=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
-        tag_group_id=other_group.id,
     ))
     test_session.flush()
 

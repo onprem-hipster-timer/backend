@@ -318,39 +318,6 @@ def create_schedule_exception(
     return exception
 
 
-def get_schedules_by_tag_group_id(session: Session, group_id: UUID, owner_id: str) -> list[Schedule]:
-    """
-    그룹에 속한 일정 조회 (Todo가 아닌 Schedule만)
-    
-    :param session: DB 세션
-    :param group_id: 태그 그룹 ID
-    :param owner_id: 소유자 ID
-    :return: 해당 그룹에 속한 일정 리스트
-    """
-    statement = (
-        select(Schedule)
-        .where(Schedule.owner_id == owner_id)
-        .where(Schedule.tag_group_id == group_id)
-        .where(Schedule.source_todo_id.is_(None))  # Todo에서 생성된 Schedule 제외
-    )
-    results = session.exec(statement)
-    return list(results.all())
-
-
-def clear_tag_group_id_from_schedules(session: Session, group_id: UUID, owner_id: str) -> None:
-    """
-    일정의 tag_group_id를 NULL로 설정 (Todo가 아닌 Schedule만)
-    
-    :param session: DB 세션
-    :param group_id: 태그 그룹 ID
-    :param owner_id: 소유자 ID
-    """
-    schedules = get_schedules_by_tag_group_id(session, group_id, owner_id)
-    for schedule in schedules:
-        schedule.tag_group_id = None
-    # commit은 get_db_transactional이 처리
-
-
 def get_schedules_by_source_todo_id(session: Session, todo_id: UUID, owner_id: str) -> list[Schedule]:
     """
     Todo에서 생성된 Schedule 조회

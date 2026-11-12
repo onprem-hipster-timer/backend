@@ -86,14 +86,10 @@ class TagService:
 
         - 태그: CASCADE로 함께 삭제 (할 일·일정·타이머에서 그 태그 연결도 사라진다)
         - 할 일은 태그 그룹이 아니라 할 일 그룹에 속하므로 그대로 둔다
-        - 일정: tag_group_id를 NULL로만 설정 (삭제 안 함)
         """
         tag_group = crud.get_tag_group(self.session, group_id, self.owner_id)
         if not tag_group:
             _raise_group_not_found(group_id)
-
-        from app.crud import schedule as schedule_crud
-        schedule_crud.clear_tag_group_id_from_schedules(self.session, group_id, self.owner_id)
 
         crud.delete_tag_group(self.session, tag_group)
 

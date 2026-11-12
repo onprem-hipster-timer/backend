@@ -159,7 +159,7 @@ def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_ta
 
 
 def test_delete_tag_group_keeps_todos_and_schedules(test_session, sample_tag_group, sample_todo_group, test_user):
-    """태그 그룹을 지우면 태그만 함께 지워지고, 할 일(할 일 그룹 소속)과 일정은 남는다"""
+    """태그 그룹을 지우면 태그만 함께 지워지고, 할 일(할 일 그룹 소속)과 일정은 남는다(태그 연결만 빠짐)"""
     from datetime import datetime, UTC
     from app.domain.todo.service import TodoService
     from app.domain.todo.schema.dto import TodoCreate
@@ -177,7 +177,7 @@ def test_delete_tag_group_keeps_todos_and_schedules(test_session, sample_tag_gro
         title="보존될 일정",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        tag_group_id=sample_tag_group.id,
+        tag_ids=[tag.id],
     ))
     todo_id, schedule_id = todo.id, schedule.id
     test_session.flush()
@@ -191,7 +191,7 @@ def test_delete_tag_group_keeps_todos_and_schedules(test_session, sample_tag_gro
     assert saved_todo.tags == []
     saved_schedule = schedule_crud.get_schedule(test_session, schedule_id, test_user.sub)
     assert saved_schedule.title == "보존될 일정"
-    assert saved_schedule.tag_group_id is None
+    assert saved_schedule.tags == []
 
 
 def test_delete_tag_group_keeps_todos_and_their_timers(test_session, sample_tag_group, test_user, sample_todo_group):
