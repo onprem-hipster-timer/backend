@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import ResourceScope
 from app.crud import schedule as schedule_crud
-from app.db.session import get_db_transactional
+from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
@@ -38,6 +38,8 @@ from app.domain.todo.schema.dto import (
     TodoIncludeReason,
 )
 from app.domain.todo.service import TodoService
+from app.domain.todo_group.schema.dto import TodoGroupCreate, TodoGroupRead, TodoGroupUpdate
+from app.domain.todo_group.service import TodoGroupService
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
@@ -189,6 +191,65 @@ async def read_todos(
 
     # 타임존 변환
     return [todo_read.to_timezone(tz_obj) for todo_read in result_list]
+
+
+# ============================================================
+# TodoGroup Endpoints — `/{todo_id}`보다 먼저 선언해야 "groups"가 todo_id로 해석되지 않는다
+# ============================================================
+
+@router.post("/groups", response_model=TodoGroupRead, status_code=status.HTTP_201_CREATED)
+async def create_todo_group(
+        data: TodoGroupCreate,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 생성"""
+    return TodoGroupService(session, current_user).create_todo_group(data)
+
+
+@router.get("/groups", response_model=list[TodoGroupRead])
+async def read_todo_groups(
+        session: Session = CommittingSession,
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    모든 할 일 그룹 조회 (기본 그룹 먼저, 나머지는 이름순)
+
+    기본 그룹이 없으면 만든다. 받은 기본 그룹 id로 곧바로 할 일을 만들 수 있게 응답 전에 커밋한다.
+    """
+    return TodoGroupService(session, current_user).get_all_todo_groups()
+
+
+@router.get("/groups/{group_id}", response_model=TodoGroupRead)
+async def read_todo_group(
+        group_id: UUID,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 조회"""
+    return TodoGroupService(session, current_user).get_todo_group(group_id)
+
+
+@router.patch("/groups/{group_id}", response_model=TodoGroupRead)
+async def update_todo_group(
+        group_id: UUID,
+        data: TodoGroupUpdate,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹의 이름·색·설명 수정 (기본 그룹 포함)"""
+    return TodoGroupService(session, current_user).update_todo_group(group_id, data)
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_200_OK)
+async def delete_todo_group(
+        group_id: UUID,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 삭제. 기본 그룹은 409"""
+    TodoGroupService(session, current_user).delete_todo_group(group_id)
+    return {"ok": True}
 
 
 @router.get("/stats", response_model=TodoStats)

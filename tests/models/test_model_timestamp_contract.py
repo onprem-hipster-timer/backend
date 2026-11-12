@@ -28,6 +28,7 @@ TIMESTAMP_TABLE_NAMES = {
     "tag_group",
     "timersession",
     "todo",
+    "todo_group",
     "user_profile",
 }
 
