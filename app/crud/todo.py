@@ -210,6 +210,34 @@ def get_todo_tag_stats(
     return list(session.exec(statement).all())
 
 
+def get_descendant_ids(session: Session, root_id: UUID, owner_id: str) -> List[UUID]:
+    """root의 모든 하위 할 일 id (root 제외). 깊이마다 한 번 조회하고, 이미 본 id는 다시 따라가지 않는다"""
+    found: List[UUID] = []
+    seen = {root_id}
+    frontier = [root_id]
+    while frontier:
+        children = session.exec(
+            select(Todo.id).where(Todo.owner_id == owner_id).where(Todo.parent_id.in_(frontier))
+        ).all()
+        frontier = [child for child in children if child not in seen]
+        seen.update(frontier)
+        found.extend(frontier)
+    return found
+
+
+def set_todos_group(session: Session, todo_ids: List[UUID], owner_id: str, group_id: UUID) -> None:
+    """todo_ids의 할 일을 group_id 그룹으로 옮긴다"""
+    if not todo_ids:
+        return
+    session.execute(
+        update(Todo)
+        .where(Todo.owner_id == owner_id)
+        .where(Todo.id.in_(todo_ids))
+        .values(todo_group_id=group_id)
+        .execution_options(synchronize_session="fetch")
+    )
+
+
 def move_todos_to_group(
         session: Session,
         owner_id: str,

@@ -135,3 +135,33 @@ def test_deleting_group_moves_its_todo_tree_to_default(e2e_client):
     assert moved_child["parent_id"] == parent["id"]
     assert e2e_client.get(f"/v1/todos/groups/{group_id}").status_code == 404
 
+
+
+@pytest.mark.e2e
+def test_patching_group_moves_subtree(e2e_client):
+    work = e2e_client.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+    personal = e2e_client.post("/v1/todos/groups", json={"name": "개인", "color": "#3366FF"}).json()["id"]
+    root = e2e_client.post("/v1/todos", json={"title": "root", "todo_group_id": work}).json()
+    child = e2e_client.post("/v1/todos", json={"title": "child", "todo_group_id": work, "parent_id": root["id"]}).json()
+    leaf = e2e_client.post("/v1/todos", json={"title": "leaf", "todo_group_id": work, "parent_id": child["id"]}).json()
+
+    moved = e2e_client.patch(f"/v1/todos/{child['id']}", json={"todo_group_id": personal})
+
+    assert moved.status_code == 200
+    assert (moved.json()["todo_group_id"], moved.json()["parent_id"]) == (personal, None)
+    saved_leaf = e2e_client.get(f"/v1/todos/{leaf['id']}").json()
+    assert (saved_leaf["todo_group_id"], saved_leaf["parent_id"]) == (personal, child["id"])
+    assert e2e_client.get(f"/v1/todos/{root['id']}").json()["todo_group_id"] == work
+
+
+@pytest.mark.e2e
+def test_patching_into_other_users_group_is_not_found(multi_user_e2e):
+    owner = multi_user_e2e.as_user("owner")
+    stranger = multi_user_e2e.as_user("stranger")
+    group_id = owner.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+    todo = stranger.post("/v1/todos", json={"title": "내 할 일"}).json()
+
+    response = stranger.patch(f"/v1/todos/{todo['id']}", json={"todo_group_id": group_id})
+
+    assert response.status_code == 404
+    assert stranger.get(f"/v1/todos/{todo['id']}").json()["todo_group_id"] == todo["todo_group_id"]

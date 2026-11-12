@@ -120,6 +120,23 @@ class TodoService:
         if child_id is not None:
             self._check_cycle(parent_id, child_id)
 
+    def _move_subtree(self, todo: Todo, group_id: UUID, keep_parent: bool) -> None:
+        """
+        옮긴 할 일의 하위 할 일을 모두 같은 그룹으로 옮긴다 (트리 모양 그대로)
+
+        부모가 옛 그룹에 남으면 부모 연결을 끊어 새 그룹의 최상위로 둔다.
+        요청에 parent_id가 있었으면 이미 새 그룹 기준으로 검사했으므로 그대로 둔다.
+        """
+        crud.set_todos_group(
+            self.session, crud.get_descendant_ids(self.session, todo.id, self.owner_id), self.owner_id, group_id,
+        )
+        if keep_parent or todo.parent_id is None:
+            return
+        parent = crud.get_todo(self.session, todo.parent_id, self.owner_id)
+        if parent is None or parent.todo_group_id != group_id:
+            todo.parent_id = None
+            self.session.flush()
+
     def _check_cycle(self, parent_id: UUID, child_id: UUID) -> None:
         """
         순환 참조 검사
@@ -424,6 +441,7 @@ class TodoService:
         - status 업데이트 지원. status가 바뀌면(연동 플래그 자동 전이 포함) 연결된 실행 중·일시정지
           타이머에 반영 (TodoStatusChanged → app/domain/timer/event_handlers.py)
         - parent_id 업데이트 지원 (트리 구조 변경)
+        - todo_group_id를 바꾸면 하위 할 일도 함께 옮기고, 부모가 옛 그룹에 남으면 새 그룹의 최상위가 된다
         - 태그는 TagService.set_todo_tags() 사용
         
         :param todo_id: Todo ID
@@ -433,6 +451,7 @@ class TodoService:
         :raises TodoSelfReferenceError: 자기 자신을 부모로 설정 시
         :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
         :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
+        :raises TodoGroupNotFoundError: 옮길 할 일 그룹이 없거나 남의 것일 때
         """
         # 투영 Schedule보다 Todo 행을 먼저 잠근다 (ScheduleService._get_schedule_for_write와 같은 순서)
         todo = crud.get_todo(self.session, todo_id, self.owner_id, for_update=True)
@@ -442,12 +461,17 @@ class TodoService:
         # 업데이트 데이터 준비
         update_dict = data.model_dump()
 
-        # parent_id 변경 시 검증
+        # 다른 할 일 그룹으로 옮기면 그 그룹이 내 것인지 먼저 확인한다
+        new_group_id = update_dict.get('todo_group_id')
+        moving_group = new_group_id is not None and new_group_id != todo.todo_group_id
+        if moving_group:
+            from app.domain.todo_group.service import TodoGroupService
+            TodoGroupService(self.session, self.current_user).get_todo_group(new_group_id)
+
+        # parent_id 변경 시 검증 (옮기면 새 그룹 기준)
         if 'parent_id' in update_dict:
-            new_parent_id = update_dict['parent_id']
-            # todo_group_id도 변경될 수 있으므로 새 값 우선 사용
-            effective_todo_group_id = update_dict.get('todo_group_id', todo.todo_group_id)
-            self._validate_parent_id(new_parent_id, effective_todo_group_id, todo_id)
+            effective_todo_group_id = new_group_id if moving_group else todo.todo_group_id
+            self._validate_parent_id(update_dict['parent_id'], effective_todo_group_id, todo_id)
 
         old_status = todo.status
 
@@ -514,6 +538,9 @@ class TodoService:
             ))
         # 나머지 필드 업데이트
         todo = crud.update_todo(self.session, todo, data)
+
+        if moving_group:
+            self._move_subtree(todo, new_group_id, keep_parent='parent_id' in update_dict)
 
         # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
         if deadline_updated and 'status' not in update_dict:
