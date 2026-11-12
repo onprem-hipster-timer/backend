@@ -25,8 +25,8 @@ import pytest
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.crud.todo import create_todo, update_todo
-from app.domain.tag.schema.dto import TagGroupCreate
-from app.domain.tag.service import TagService
+from app.domain.todo_group.schema.dto import TodoGroupCreate
+from app.domain.todo_group.service import TodoGroupService
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.schema.dto import TodoCreate, TodoRead, TodoUpdate
 from app.models.todo import Todo
@@ -35,15 +35,10 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 @pytest.fixture
-def tag_group(test_session, test_user):
-    """Todo의 필수 FK(tag_group_id)를 위한 태그 그룹"""
-    service = TagService(test_session, test_user)
-    return service.create_tag_group(
-        TagGroupCreate(
-            name="업무",
-            color="#FF5733",
-            description="업무 관련 태그 그룹",
-        )
+def todo_group(test_session, test_user):
+    """Todo의 필수 FK(todo_group_id)를 위한 할 일 그룹"""
+    return TodoGroupService(test_session, test_user).create_todo_group(
+        TodoGroupCreate(name="업무", color="#FF5733")
     )
 
 
@@ -68,7 +63,7 @@ def test_todo_create_dto_converts_aware_kst_deadline_to_naive_utc():
     """
     dto = TodoCreate(
         title="마감 있는 Todo",
-        tag_group_id=uuid4(),
+        todo_group_id=uuid4(),
         deadline=datetime(2024, 1, 1, 9, 0, 0, tzinfo=KST),
     )
 
@@ -83,7 +78,7 @@ def test_todo_create_dto_accepts_naive_deadline_as_utc():
     """
     dto = TodoCreate(
         title="마감 있는 Todo",
-        tag_group_id=uuid4(),
+        todo_group_id=uuid4(),
         deadline=datetime(2024, 1, 1, 0, 0, 0),
     )
 
@@ -98,7 +93,7 @@ def test_todo_create_dto_allows_none_deadline():
     """
     dto = TodoCreate(
         title="마감 없는 Todo",
-        tag_group_id=uuid4(),
+        todo_group_id=uuid4(),
     )
 
     assert dto.deadline is None
@@ -133,7 +128,7 @@ def test_todo_update_dto_omitted_deadline_stays_missing():
 # ============ 2. CRUD 저장 단계 ============
 
 
-def test_create_todo_persists_naive_utc_deadline(test_session, test_user, tag_group):
+def test_create_todo_persists_naive_utc_deadline(test_session, test_user, todo_group):
     """
     목적 객체:
     - crud.create_todo()
@@ -144,14 +139,14 @@ def test_create_todo_persists_naive_utc_deadline(test_session, test_user, tag_gr
     """
     create = TodoCreate(
         title="마감 있는 Todo",
-        tag_group_id=tag_group.id,
+        todo_group_id=todo_group.id,
         deadline=datetime(2024, 1, 1, 9, 0, 0, tzinfo=KST),  # KST -> UTC 00:00
     )
 
     todo = Todo(
         owner_id=test_user.sub,
         title=create.title,
-        tag_group_id=create.tag_group_id,
+        todo_group_id=create.todo_group_id,
         deadline=create.deadline,
         status=TodoStatus.UNSCHEDULED,
     )
@@ -164,7 +159,7 @@ def test_create_todo_persists_naive_utc_deadline(test_session, test_user, tag_gr
     _assert_utc_naive(saved.updated_at)
 
 
-def test_update_todo_persists_naive_utc_deadline(test_session, test_user, tag_group):
+def test_update_todo_persists_naive_utc_deadline(test_session, test_user, todo_group):
     """
     목적 객체:
     - crud.update_todo()
@@ -177,7 +172,7 @@ def test_update_todo_persists_naive_utc_deadline(test_session, test_user, tag_gr
         Todo(
             owner_id=test_user.sub,
             title="마감 추가 예정",
-            tag_group_id=tag_group.id,
+            todo_group_id=todo_group.id,
             status=TodoStatus.UNSCHEDULED,
         ),
     )
@@ -205,7 +200,7 @@ def test_todo_read_to_timezone_converts_deadline_and_created_at():
     todo_read = TodoRead(
         id=uuid4(),
         title="마감 있는 Todo",
-        tag_group_id=uuid4(),
+        todo_group_id=uuid4(),
         status=TodoStatus.UNSCHEDULED,
         deadline=datetime(2024, 1, 1, 0, 0, 0),
         created_at=datetime(2024, 1, 1, 0, 0, 0),
@@ -227,7 +222,7 @@ def test_todo_read_to_timezone_none_returns_self():
     todo_read = TodoRead(
         id=uuid4(),
         title="마감 있는 Todo",
-        tag_group_id=uuid4(),
+        todo_group_id=uuid4(),
         status=TodoStatus.UNSCHEDULED,
         deadline=datetime(2024, 1, 1, 0, 0, 0),
         created_at=datetime(2024, 1, 1, 0, 0, 0),

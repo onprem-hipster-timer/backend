@@ -111,8 +111,8 @@ def test_friend_sees_expired_shared_timer(multi_user_e2e):
 
 @pytest.mark.e2e
 def test_todo_timers_path_shows_expiry(e2e_client):
-    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    group = e2e_client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
     timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
     _set(timer_id, started_at=_ago(ALLOCATED + 30))
 
@@ -209,8 +209,8 @@ def _timer_actions(items: list[dict], timer_id: str) -> list[str]:
 
 
 def _todo(client) -> dict:
-    group = client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-    return client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    group = client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    return client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
 
 
 @pytest.mark.e2e

@@ -133,7 +133,6 @@ def _seed_linked_projection(test_engine, test_user):
         todo = TodoService(session, test_user).create_todo(
             TodoCreate(
                 title="Linked Todo",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )

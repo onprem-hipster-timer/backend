@@ -86,3 +86,52 @@ def test_creating_groups_has_its_own_rate_limit_rule():
     assert rule is not None
     assert rule.path_pattern == "/v1/todos/groups"
     assert rule.max_requests == get_rule_for_request("POST", "/v1/tags/groups").max_requests
+
+
+# ============================================================
+# 할 일과 할 일 그룹
+# ============================================================
+
+@pytest.mark.e2e
+def test_todo_without_group_goes_to_default(e2e_client):
+    first = e2e_client.post("/v1/todos", json={"title": "첫 할 일"})
+    second = e2e_client.post("/v1/todos", json={"title": "둘째 할 일"})
+
+    groups = e2e_client.get("/v1/todos/groups").json()
+    assert first.status_code == 201
+    assert [g["is_default"] for g in groups] == [True]
+    assert first.json()["todo_group_id"] == groups[0]["id"]
+    assert second.json()["todo_group_id"] == groups[0]["id"]
+
+
+@pytest.mark.e2e
+def test_todo_into_other_users_group_is_not_found(multi_user_e2e):
+    owner = multi_user_e2e.as_user("owner")
+    stranger = multi_user_e2e.as_user("stranger")
+    group_id = owner.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+
+    response = stranger.post("/v1/todos", json={"title": "끼어들기", "todo_group_id": group_id})
+
+    assert response.status_code == 404
+    assert owner.get("/v1/todos", params={"todo_group_ids": [group_id]}).json() == []
+
+
+@pytest.mark.e2e
+def test_deleting_group_moves_its_todo_tree_to_default(e2e_client):
+    group_id = e2e_client.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+    parent = e2e_client.post("/v1/todos", json={"title": "부모", "todo_group_id": group_id}).json()
+    child = e2e_client.post(
+        "/v1/todos", json={"title": "자식", "todo_group_id": group_id, "parent_id": parent["id"]},
+    ).json()
+
+    deleted = e2e_client.delete(f"/v1/todos/groups/{group_id}")
+
+    default_id = e2e_client.get("/v1/todos/groups").json()[0]["id"]
+    moved_parent = e2e_client.get(f"/v1/todos/{parent['id']}").json()
+    moved_child = e2e_client.get(f"/v1/todos/{child['id']}").json()
+    assert deleted.status_code == 200
+    assert moved_parent["todo_group_id"] == default_id
+    assert moved_child["todo_group_id"] == default_id
+    assert moved_child["parent_id"] == parent["id"]
+    assert e2e_client.get(f"/v1/todos/groups/{group_id}").status_code == 404
+

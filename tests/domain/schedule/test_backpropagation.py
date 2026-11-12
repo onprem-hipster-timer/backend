@@ -37,10 +37,10 @@ def schedule_service(test_session, test_user):
     return ScheduleService(test_session, test_user)
 
 
-def _todo_with_projection(todo_service, test_session, tag_group_id):
+def _todo_with_projection(todo_service, test_session, todo_group_id):
     todo = todo_service.create_todo(TodoCreate(
         title="역전파 대상 할일",
-        tag_group_id=tag_group_id,
+        todo_group_id=todo_group_id,
         deadline=DEADLINE,
     ))
     test_session.flush()
@@ -53,10 +53,10 @@ def _todo_with_projection(todo_service, test_session, tag_group_id):
 
 class TestScheduleTimeChangedBackpropagation:
     def test_schedule_time_change_backpropagates_to_todo_deadline(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """투영 일정의 시간 이동 → Todo.deadline 역투영 (#44)"""
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         schedule_service.update_schedule(
             projection.id,
@@ -70,10 +70,10 @@ class TestScheduleTimeChangedBackpropagation:
         assert todo.deadline == NAIVE_NEW_START
 
     def test_time_change_on_unlinked_schedule_touches_no_todo(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """source_todo_id 없는 일반 일정 변경은 어떤 Todo도 건드리지 않음"""
         todo, _ = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
         regular = schedule_service.create_schedule(ScheduleCreate(
             title="일반 일정",
             start_time=DEADLINE,
@@ -92,12 +92,12 @@ class TestScheduleTimeChangedBackpropagation:
         assert todo.deadline == NAIVE_DEADLINE  # 원래 마감 유지
 
     def test_recurring_conversion_requires_policy(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """투영의 반복 전환은 마감 투영이기를 그만두는 것 — 정책 없이는 422"""
         from app.domain.schedule.exceptions import SourceTodoPolicyRequiredError
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         with pytest.raises(SourceTodoPolicyRequiredError):
             schedule_service.update_schedule(
@@ -106,13 +106,13 @@ class TestScheduleTimeChangedBackpropagation:
             )
 
     def test_recurring_conversion_detaches_and_stops_backpropagation(
-            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+            self, todo_service, schedule_service, test_session, sample_todo_group, test_user):
         """정책 명시 시 자동 연결 해제 후 전환 — 이후 시간 변경은 역투영 안 됨"""
         from app.domain.schedule.enums import SourceTodoPolicy
         from app.domain.todo.enums import TodoStatus
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         schedule_service.update_schedule(
             projection.id,
@@ -141,12 +141,12 @@ class TestScheduleTimeChangedBackpropagation:
         assert todo.deadline == NAIVE_DEADLINE
 
     def test_recurring_conversion_clear_deadline_policy(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """clear_deadline 정책이면 전환 시 Todo의 마감도 제거"""
         from app.domain.schedule.enums import SourceTodoPolicy
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         schedule_service.update_schedule(
             projection.id,
@@ -169,7 +169,7 @@ class TestScheduleTimeChangedBackpropagation:
             ScheduleUpdate(source_todo_policy=SourceTodoPolicy.KEEP_DEADLINE)
 
     def test_origin_guard_blocks_todo_originated_events(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """origin=TODO인 ScheduleTimeChanged는 역투영되지 않음 (가드 직접 검증)
 
         정방향 핸들러는 Schedule을 직접 수정하고 이벤트를 발행하지 않으므로,
@@ -181,7 +181,7 @@ class TestScheduleTimeChangedBackpropagation:
         from app.shared.uow import collect_event, flush_and_dispatch_events
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         # 핸들러를 거치지 않고 시간만 직접 이동 (역투영 전제 조건 구성)
         projection.start_time = NAIVE_NEW_START
@@ -209,12 +209,12 @@ class TestScheduleTimeChangedBackpropagation:
         assert todo.deadline == NAIVE_NEW_START
 
     def test_no_pingpong_on_todo_deadline_update(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """Todo→Schedule 정방향이 역전파를 재촉발하지 않음 (depth 폭주 없이 완료)"""
         from app.domain.todo.schema.dto import TodoUpdate
 
         todo, _ = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         updated = todo_service.update_todo(todo.id, TodoUpdate(deadline=NEW_START))
 
@@ -226,12 +226,12 @@ class TestScheduleTimeChangedBackpropagation:
 
 class TestScheduleDeletedBackpropagation:
     def test_deleting_linked_schedule_without_policy_rejected(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """source-linked 일정 삭제는 source Todo 처리 정책 필수 (서버 기본값 없음)"""
         from app.domain.schedule.exceptions import SourceTodoPolicyRequiredError
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         with pytest.raises(SourceTodoPolicyRequiredError):
             schedule_service.delete_schedule(projection.id)
@@ -248,12 +248,12 @@ class TestScheduleDeletedBackpropagation:
         schedule_service.delete_schedule(regular.id)  # 정책 없이 허용
 
     def test_deleting_projected_schedule_keeps_todo_and_deadline(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """keep_deadline: 캘린더 표시만 제거 — 할일·마감 유지, 연동 플래그 해제"""
         from app.domain.schedule.enums import SourceTodoPolicy
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
         assert todo.status == TodoStatus.SCHEDULED
 
         schedule_service.delete_schedule(projection.id, SourceTodoPolicy.KEEP_DEADLINE)
@@ -263,12 +263,12 @@ class TestScheduleDeletedBackpropagation:
         assert todo.status == TodoStatus.UNSCHEDULED  # 투영 부재 반영
 
     def test_deleting_projected_schedule_clear_deadline(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """clear_deadline: 마감도 함께 제거"""
         from app.domain.schedule.enums import SourceTodoPolicy
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         schedule_service.delete_schedule(projection.id, SourceTodoPolicy.CLEAR_DEADLINE)
 
@@ -277,13 +277,13 @@ class TestScheduleDeletedBackpropagation:
         assert todo.status == TodoStatus.UNSCHEDULED
 
     def test_deleting_projection_of_done_todo_keeps_terminal_status(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """터미널 상태(DONE)는 투영 삭제로도 덮이지 않음"""
         from app.domain.schedule.enums import SourceTodoPolicy
         from app.domain.todo.schema.dto import TodoUpdate
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
         todo_service.update_todo(todo.id, TodoUpdate(status=TodoStatus.DONE))
 
         schedule_service.delete_schedule(projection.id, SourceTodoPolicy.KEEP_DEADLINE)
@@ -294,14 +294,14 @@ class TestScheduleDeletedBackpropagation:
 
 class TestScheduleCreatedWithTodoOption:
     def test_create_schedule_with_todo_option_creates_single_linked_schedule(
-            self, schedule_service, test_session, sample_tag_group, test_user):
+            self, schedule_service, test_session, sample_todo_group, test_user):
         """A→B→A 차단: 생성된 Todo의 deadline이 두 번째 일정을 만들지 않음"""
         schedule = schedule_service.create_schedule(ScheduleCreate(
             title="옵션으로 할일 생성",
             description="설명",
             start_time=DEADLINE,
             end_time=DEADLINE + timedelta(hours=1),
-            create_todo_options=CreateTodoOptions(tag_group_id=sample_tag_group.id),
+            create_todo_options=CreateTodoOptions(todo_group_id=sample_todo_group.id),
         ))
         test_session.refresh(schedule)
 
@@ -326,7 +326,7 @@ class TestScheduleCreatedWithTodoOption:
 
 class TestRecurringScheduleTodoLinkContract:
     def test_recurring_schedule_cannot_create_linked_todo_during_creation(
-            self, schedule_service, test_session, sample_tag_group, test_user):
+            self, schedule_service, test_session, sample_todo_group, test_user):
         """반복 일정은 단일 시점 deadline의 투영으로 생성될 수 없다."""
         from pydantic import ValidationError
         from sqlmodel import select
@@ -342,7 +342,7 @@ class TestRecurringScheduleTodoLinkContract:
                 end_time=DEADLINE + timedelta(hours=1),
                 recurrence_rule="FREQ=DAILY",
                 create_todo_options=CreateTodoOptions(
-                    tag_group_id=sample_tag_group.id,
+                    todo_group_id=sample_todo_group.id,
                 ),
             ))
 
@@ -354,7 +354,7 @@ class TestRecurringScheduleTodoLinkContract:
         ).all()) == []
 
     def test_existing_recurring_schedule_cannot_be_linked_to_new_todo(
-            self, schedule_service, test_session, sample_tag_group, test_user):
+            self, schedule_service, test_session, sample_todo_group, test_user):
         """기존 반복 일정에도 Schedule→Todo 연결을 새로 만들 수 없다."""
         from sqlmodel import select
 
@@ -371,7 +371,7 @@ class TestRecurringScheduleTodoLinkContract:
         with pytest.raises(DomainException):
             schedule_service.create_todo_from_schedule(
                 recurring.id,
-                sample_tag_group.id,
+                sample_todo_group.id,
             )
 
         test_session.refresh(recurring)
@@ -381,7 +381,7 @@ class TestRecurringScheduleTodoLinkContract:
         ).all()) == []
 
     def test_empty_recurrence_rule_is_rejected_without_detaching_projection(
-            self, todo_service, schedule_service, test_session, sample_tag_group):
+            self, todo_service, schedule_service, test_session, sample_todo_group):
         """빈 RRULE은 반복 전환이 아니며 연결·deadline을 훼손해서는 안 된다."""
         from pydantic import ValidationError
 
@@ -389,7 +389,7 @@ class TestRecurringScheduleTodoLinkContract:
         from app.domain.schedule.enums import SourceTodoPolicy
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         with pytest.raises((ValidationError, DomainException)):
             schedule_service.update_schedule(
@@ -409,13 +409,13 @@ class TestRecurringScheduleTodoLinkContract:
 
     @pytest.mark.asyncio
     async def test_api_last_recurring_instance_delete_applies_clear_deadline_policy(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """인스턴스 삭제 분기도 명시된 source Todo 정책을 서비스에 전달한다."""
         from app.api.v1.schedules import delete_schedule as delete_schedule_endpoint
         from app.domain.schedule.enums import SourceTodoPolicy
 
         todo, projection = _todo_with_projection(
-            todo_service, test_session, sample_tag_group.id)
+            todo_service, test_session, sample_todo_group.id)
 
         # 마이그레이션 전 데이터 등에서 남을 수 있는 source-linked 반복 일정을
         # 직접 구성한다. recurrence_end=start_time이므로 인스턴스는 하나뿐이다.

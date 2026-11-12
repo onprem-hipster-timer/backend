@@ -1019,7 +1019,7 @@ def test_list_timers_with_type_filter_todo_e2e(e2e_client):
     """Todo 연결 타이머 타입 필터 E2E 테스트"""
     # 1. 태그 그룹 생성 (Todo 생성에 필요)
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "Todo 필터 테스트 그룹", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
@@ -1030,7 +1030,7 @@ def test_list_timers_with_type_filter_todo_e2e(e2e_client):
         json={
             "title": "Todo 타입 필터 테스트",
             "duration": 3600,
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
         },
     )
     assert todo_response.status_code == 201
@@ -1066,7 +1066,7 @@ def test_list_timers_with_include_todo_e2e(e2e_client):
     """타이머 목록 조회 시 include_todo 옵션 E2E 테스트"""
     # 1. 태그 그룹 생성 (Todo 생성에 필요)
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "include_todo 테스트 그룹", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
@@ -1077,7 +1077,7 @@ def test_list_timers_with_include_todo_e2e(e2e_client):
         json={
             "title": "include_todo 테스트",
             "duration": 3600,
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
         },
     )
     assert todo_response.status_code == 201

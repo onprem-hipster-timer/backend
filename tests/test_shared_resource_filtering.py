@@ -63,7 +63,6 @@ class TestSharedTodoTagFiltering:
         todo_with_tag_a = user2_todo_service.create_todo(
             TodoCreate(
                 title="태그A만 가진 Todo",
-                tag_group_id=group.id,
                 tag_ids=[tag_a.id],
             )
         )
@@ -72,7 +71,6 @@ class TestSharedTodoTagFiltering:
         todo_with_tag_b = user2_todo_service.create_todo(
             TodoCreate(
                 title="태그B만 가진 Todo",
-                tag_group_id=group.id,
                 tag_ids=[tag_b.id],
             )
         )
@@ -478,7 +476,6 @@ class TestSharedResourceVisibilityIsolation:
         todo = user2_todo_service.create_todo(
             TodoCreate(
                 title="공유 할일",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )
@@ -663,7 +660,6 @@ class TestRelationshipLazyLoadingProtection:
         todo = todo_service.create_todo(
             TodoCreate(
                 title="테스트 할일",
-                tag_group_id=group.id,
             )
         )
 
@@ -707,7 +703,6 @@ class TestRelationshipLazyLoadingProtection:
         todo = todo_service.create_todo(
             TodoCreate(
                 title="테스트 할일",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )
@@ -751,7 +746,6 @@ class TestRelationshipLazyLoadingProtection:
         todo = todo_service.create_todo(
             TodoCreate(
                 title="테스트 할일",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )
@@ -899,7 +893,6 @@ class TestRelationshipLazyLoadingProtection:
         todo = user2_todo_service.create_todo(
             TodoCreate(
                 title="공유 할일",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )
@@ -1145,7 +1138,6 @@ class TestDomainServiceAuthorizationHelpers:
         todo = todo_service.create_todo(
             TodoCreate(
                 title="테스트 할일",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )

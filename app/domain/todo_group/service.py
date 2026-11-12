@@ -6,13 +6,14 @@ TodoGroup Domain Service
 
 테스트: tests/domain/todo_group/test_service.py, tests/test_todo_groups_e2e.py
 """
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
+from app.crud import todo as todo_crud
 from app.crud import todo_group as crud
 from app.domain.todo_group.exceptions import (
     DefaultTodoGroupDeletionError,
@@ -59,11 +60,19 @@ class TodoGroupService:
         return crud.update_todo_group(self.session, self.get_todo_group(group_id), data)
 
     def delete_todo_group(self, group_id: UUID) -> None:
-        """할 일 그룹 삭제. 기본 그룹이면 409"""
+        """할 일 그룹 삭제. 그룹의 할 일은 트리 모양 그대로 기본 그룹으로 옮긴다. 기본 그룹이면 409"""
         todo_group = self.get_todo_group(group_id)
         if todo_group.is_default:
             raise DefaultTodoGroupDeletionError()
+        default = self.get_or_create_default()
+        todo_crud.move_todos_to_group(self.session, self.owner_id, todo_group.id, default.id)
         crud.delete_todo_group(self.session, todo_group)
+
+    def resolve_group_id(self, group_id: Optional[UUID]) -> UUID:
+        """할 일이 들어갈 그룹 id. 주면 내 그룹인지 확인하고(아니면 404), 안 주면 기본 그룹"""
+        if group_id is None:
+            return self.get_or_create_default().id
+        return self.get_todo_group(group_id).id
 
     def get_or_create_default(self) -> TodoGroup:
         """기본 그룹을 돌려준다. 없으면 만든다.

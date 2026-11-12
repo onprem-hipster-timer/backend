@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class CreateTodoOptions(CustomModel):
     """Schedule 생성 시 함께 생성할 Todo 옵션"""
-    tag_group_id: UUID  # Todo가 속할 그룹 (필수)
+    todo_group_id: Optional[UUID] = None  # 할 일 그룹. 없으면 기본 그룹
 
 
 class ScheduleCreate(CustomModel):

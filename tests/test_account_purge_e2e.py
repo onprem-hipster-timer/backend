@@ -205,8 +205,8 @@ def _populate(multi_user_e2e):
         json={"title": "예외", "tag_ids": [tag_id]},
     )
     assert exception.status_code == 200, exception.text
-    parent_id = a.post("/v1/todos", json={"title": "부모", "tag_group_id": group_id, "tag_ids": [tag_id]}).json()["id"]
-    child = a.post("/v1/todos", json={"title": "자식", "tag_group_id": group_id, "parent_id": parent_id,
+    parent_id = a.post("/v1/todos", json={"title": "부모", "tag_ids": [tag_id]}).json()["id"]
+    child = a.post("/v1/todos", json={"title": "자식", "parent_id": parent_id,
                                      "deadline": "2024-01-03T10:00:00Z"})
     assert child.status_code == 201, child.text
     timer_id = TimerCommands(a).create_timer(title="타이머", allocated_duration=600, tag_ids=[tag_id])["id"]

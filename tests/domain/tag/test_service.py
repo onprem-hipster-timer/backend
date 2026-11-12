@@ -158,8 +158,8 @@ def test_delete_tag_group_cascade_tags(test_session, sample_tag_group, sample_ta
         service.get_tag(tag_id)
 
 
-def test_delete_tag_group_cascade_todos(test_session, sample_tag_group, test_user):
-    """태그 그룹 삭제 시 Todo는 삭제되고 일정은 보존됨"""
+def test_delete_tag_group_keeps_todos_and_schedules(test_session, sample_tag_group, sample_todo_group, test_user):
+    """태그 그룹을 지우면 태그만 함께 지워지고, 할 일(할 일 그룹 소속)과 일정은 남는다"""
     from datetime import datetime, UTC
     from app.domain.todo.service import TodoService
     from app.domain.todo.schema.dto import TodoCreate
@@ -169,51 +169,33 @@ def test_delete_tag_group_cascade_todos(test_session, sample_tag_group, test_use
 
     tag_service = TagService(test_session, test_user)
     todo_service = TodoService(test_session, test_user)
-    schedule_service = ScheduleService(test_session, test_user)
-    group_id = sample_tag_group.id
-
-    # 1. Todo 생성 (그룹에 속함)
-    todo_data = TodoCreate(
-        title="삭제될 Todo",
-        description="그룹 삭제 시 삭제되어야 함",
-        tag_group_id=group_id,
-    )
-    todo = todo_service.create_todo(todo_data)
-    todo_id = todo.id
-    test_session.flush()
-
-    # 2. 일정 생성 (그룹에 속함, is_todo=False)
-    schedule_data = ScheduleCreate(
+    tag = tag_service.create_tag(TagCreate(name="중요", color="#FF0000", group_id=sample_tag_group.id))
+    todo = todo_service.create_todo(TodoCreate(
+        title="남을 Todo", todo_group_id=sample_todo_group.id, tag_ids=[tag.id],
+    ))
+    schedule = ScheduleService(test_session, test_user).create_schedule(ScheduleCreate(
         title="보존될 일정",
-        description="그룹 삭제 시 보존되어야 함",
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
-        tag_group_id=group_id,
-        is_todo=False,
-    )
-    schedule = schedule_service.create_schedule(schedule_data)
-    schedule_id = schedule.id
+        tag_group_id=sample_tag_group.id,
+    ))
+    todo_id, schedule_id = todo.id, schedule.id
     test_session.flush()
 
-    # 3. 그룹 삭제
-    tag_service.delete_tag_group(group_id)
+    tag_service.delete_tag_group(sample_tag_group.id)
     test_session.flush()
     test_session.expire_all()
 
-    # 4. Todo는 삭제되었는지 확인
-    from app.domain.todo.exceptions import TodoNotFoundError
-    with pytest.raises(TodoNotFoundError):
-        todo_service.get_todo(todo_id)
-
-    # 5. 일정은 보존되고 tag_group_id만 NULL인지 확인
+    saved_todo = todo_service.get_todo(todo_id)
+    assert saved_todo.todo_group_id == sample_todo_group.id
+    assert saved_todo.tags == []
     saved_schedule = schedule_crud.get_schedule(test_session, schedule_id, test_user.sub)
-    assert saved_schedule is not None
     assert saved_schedule.title == "보존될 일정"
-    assert saved_schedule.tag_group_id is None  # NULL로 설정됨
+    assert saved_schedule.tag_group_id is None
 
 
-def test_delete_tag_group_keeps_timers_of_deleted_todos(test_session, sample_tag_group, test_user):
-    """태그 그룹 삭제로 지워지는 Todo의 타이머는 연결만 해제되어 남음"""
+def test_delete_tag_group_keeps_todos_and_their_timers(test_session, sample_tag_group, test_user, sample_todo_group):
+    """태그 그룹을 지워도 할 일과 그 타이머의 연결은 그대로다"""
     from app.crud import timer as timer_crud
     from app.domain.timer.schema.dto import TimerCreate
     from app.domain.timer.service import TimerService
@@ -221,12 +203,12 @@ def test_delete_tag_group_keeps_timers_of_deleted_todos(test_session, sample_tag
     from app.domain.todo.service import TodoService
 
     todo = TodoService(test_session, test_user).create_todo(
-        TodoCreate(title="타이머 있는 Todo", tag_group_id=sample_tag_group.id)
+        TodoCreate(title="타이머 있는 Todo", todo_group_id=sample_todo_group.id)
     )
     timer = TimerService(test_session, test_user).create_timer(
         TimerCreate(todo_id=todo.id, allocated_duration=600)
     )
-    timer_id = timer.id
+    timer_id, todo_id = timer.id, todo.id
     test_session.flush()
 
     TagService(test_session, test_user).delete_tag_group(sample_tag_group.id)
@@ -234,8 +216,28 @@ def test_delete_tag_group_keeps_timers_of_deleted_todos(test_session, sample_tag
     test_session.expire_all()
 
     saved_timer = timer_crud.get_timer(test_session, timer_id, test_user.sub)
-    assert saved_timer is not None
-    assert saved_timer.todo_id is None
+    assert saved_timer.todo_id == todo_id
+
+
+def test_delete_tag_group_ignores_todo_group_with_same_id(test_session, sample_tag_group, test_user):
+    """마이그레이션은 할 일이 있던 태그 그룹을 같은 id로 할 일 그룹에 복사한다.
+    그 태그 그룹을 지워도 같은 id의 할 일 그룹과 그 할 일은 남는다"""
+    from app.domain.todo.schema.dto import TodoCreate
+    from app.domain.todo.service import TodoService
+    from app.models.todo_group import TodoGroup
+
+    twin = TodoGroup(id=sample_tag_group.id, owner_id=test_user.sub, name="쌍둥이", color="#123456")
+    test_session.add(twin)
+    test_session.flush()
+    todo = TodoService(test_session, test_user).create_todo(TodoCreate(title="남을 Todo", todo_group_id=twin.id))
+    todo_id = todo.id
+    test_session.flush()
+
+    TagService(test_session, test_user).delete_tag_group(sample_tag_group.id)
+    test_session.flush()
+    test_session.expire_all()
+
+    assert TodoService(test_session, test_user).get_todo(todo_id).todo_group_id == sample_tag_group.id
 
 
 # ============================================================

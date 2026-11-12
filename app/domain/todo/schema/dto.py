@@ -32,7 +32,7 @@ class TodoCreate(CustomModel):
     """Todo 생성 DTO"""
     title: str
     description: Optional[str] = None
-    tag_group_id: UUID  # Todo가 속할 그룹 (필수)
+    todo_group_id: Optional[UUID] = None  # 할 일 그룹. 없으면 기본 그룹
     tag_ids: Optional[List[UUID]] = None  # 태그는 선택
     deadline: Optional[datetime] = None  # 마감기간 (선택)
     parent_id: Optional[UUID] = None  # 부모 Todo ID (트리 구조)
@@ -59,7 +59,7 @@ class TodoRead(CustomModel):
     title: str
     description: Optional[str] = None
     deadline: Optional[datetime] = None  # 마감기간
-    tag_group_id: UUID  # 소속 그룹 ID (필수)
+    todo_group_id: UUID  # 소속 할 일 그룹 ID
     parent_id: Optional[UUID] = None  # 부모 Todo ID
     status: TodoStatus  # 상태
     created_at: datetime
@@ -118,7 +118,7 @@ class TodoUpdate(CustomModel):
     """Todo 업데이트 DTO"""
     title: str | None = MISSING
     description: str | None = MISSING
-    tag_group_id: UUID | None = MISSING  # 소속 그룹 변경
+    todo_group_id: UUID | None = MISSING  # 소속 할 일 그룹 변경
     tag_ids: list[UUID] | None = MISSING  # 태그는 선택
     deadline: datetime | None = MISSING  # 마감기간 변경
     parent_id: UUID | None = MISSING  # 부모 Todo 변경
@@ -162,6 +162,6 @@ class TagStat(CustomModel):
 
 class TodoStats(CustomModel):
     """Todo 통계"""
-    group_id: Optional[UUID] = None
+    todo_group_id: Optional[UUID] = None
     total_count: int
     by_tag: List[TagStat]
