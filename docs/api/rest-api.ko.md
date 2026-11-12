@@ -32,22 +32,27 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 ### 투두 (Todos)
 
 ```http
-GET    /v1/todos          # 투두 목록 조회
-POST   /v1/todos          # 투두 생성
-GET    /v1/todos/{id}     # 특정 투두 조회
-PATCH  /v1/todos/{id}     # 투두 수정
-DELETE /v1/todos/{id}     # 투두 삭제
-GET    /v1/todos/stats    # 통계 조회
+GET    /v1/todos                 # 투두 목록 조회
+POST   /v1/todos                 # 투두 생성
+GET    /v1/todos/{id}            # 특정 투두 조회
+PATCH  /v1/todos/{id}            # 투두 수정 (할 일 그룹 이동 포함)
+DELETE /v1/todos/{id}            # 투두 삭제
+GET    /v1/todos/stats           # 통계 조회
+GET    /v1/todos/groups          # 할 일 그룹 목록 조회 (기본 그룹이 없으면 생성)
+POST   /v1/todos/groups          # 할 일 그룹 생성
+GET    /v1/todos/groups/{id}     # 특정 할 일 그룹 조회
+PATCH  /v1/todos/groups/{id}     # 할 일 그룹 수정
+DELETE /v1/todos/groups/{id}     # 할 일 그룹 삭제 (투두는 기본 그룹으로 이동)
 ```
 
 ### 태그 (Tags)
 
 ```http
-GET    /v1/tags/groups           # 태그 그룹 목록 조회
+GET    /v1/tags/groups           # 태그 그룹 목록 조회 (태그 포함)
 POST   /v1/tags/groups           # 태그 그룹 생성
-GET    /v1/tags/groups/{id}      # 특정 그룹 조회
-PATCH  /v1/tags/groups/{id}      # 그룹 수정
-DELETE /v1/tags/groups/{id}      # 그룹 삭제
+GET    /v1/tags/groups/{id}      # 특정 태그 그룹 조회
+PATCH  /v1/tags/groups/{id}      # 태그 그룹 수정
+DELETE /v1/tags/groups/{id}      # 태그 그룹 삭제 (그룹의 태그도 삭제)
 GET    /v1/tags                  # 태그 목록 조회
 POST   /v1/tags                  # 태그 생성
 DELETE /v1/tags/{id}             # 태그 삭제

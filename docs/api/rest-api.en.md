@@ -32,22 +32,27 @@ DELETE /v1/timers/{id}           # Delete timer
 ### Todos
 
 ```http
-GET    /v1/todos          # List todos
-POST   /v1/todos          # Create todo
-GET    /v1/todos/{id}     # Get specific todo
-PATCH  /v1/todos/{id}     # Update todo
-DELETE /v1/todos/{id}     # Delete todo
-GET    /v1/todos/stats    # Get statistics
+GET    /v1/todos                 # List todos
+POST   /v1/todos                 # Create todo
+GET    /v1/todos/{id}            # Get specific todo
+PATCH  /v1/todos/{id}            # Update todo (including moving it to another todo group)
+DELETE /v1/todos/{id}            # Delete todo
+GET    /v1/todos/stats           # Get statistics
+GET    /v1/todos/groups          # List todo groups (creates the default group if missing)
+POST   /v1/todos/groups          # Create todo group
+GET    /v1/todos/groups/{id}     # Get specific todo group
+PATCH  /v1/todos/groups/{id}     # Update todo group
+DELETE /v1/todos/groups/{id}     # Delete todo group (its todos move to the default group)
 ```
 
 ### Tags
 
 ```http
-GET    /v1/tags/groups           # List tag groups
+GET    /v1/tags/groups           # List tag groups (with tags)
 POST   /v1/tags/groups           # Create tag group
-GET    /v1/tags/groups/{id}      # Get specific group
-PATCH  /v1/tags/groups/{id}      # Update group
-DELETE /v1/tags/groups/{id}      # Delete group
+GET    /v1/tags/groups/{id}      # Get specific tag group
+PATCH  /v1/tags/groups/{id}      # Update tag group
+DELETE /v1/tags/groups/{id}      # Delete tag group (and its tags)
 GET    /v1/tags                  # List tags
 POST   /v1/tags                  # Create tag
 DELETE /v1/tags/{id}             # Delete tag

@@ -83,6 +83,7 @@
 | 기능 | 설명 |
 |------|------|
 | **트리 구조** | 무제한 깊이의 부모-자식 관계 |
+| **할 일 그룹** | 모든 Todo는 할 일 그룹에 속함 (지정하지 않으면 사용자의 기본 그룹) |
 | **마감 시간** | deadline 설정 시 Schedule 자동 생성 |
 | **무결성 검증** | 순환 참조, 자기 참조, 그룹 불일치 방지 |
 | **조상 포함** | 필터 시 매칭 노드의 조상도 자동 포함 |
@@ -311,6 +312,12 @@ erDiagram
         boolean is_finished
     }
 
+    TODO_GROUP {
+        string name
+        string color
+        boolean is_default
+    }
+
     SCHEDULE_EXCEPTION {
         datetime exception_date
         string title
@@ -391,6 +398,7 @@ erDiagram
 
     %% Core Relations
     SCHEDULE ||--o{ SCHEDULE_EXCEPTION : "has"
+    TODO_GROUP ||--o{ TODO : "contains"
     TODO |o--o{ SCHEDULE : "generates"
     TODO |o--o{ TODO : "sub-task of"
 

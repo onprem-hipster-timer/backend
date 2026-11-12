@@ -469,7 +469,7 @@ interface TimerCreate {
 interface TodoCreate {
   title: string;
   description?: string;
-  tag_group_id: string;
+  todo_group_id?: string;  // 없으면 기본 할 일 그룹
   deadline?: string;
   parent_id?: string;
 }

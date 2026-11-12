@@ -26,7 +26,7 @@
 
 목표는 **공개 동작(계약)을 바꾸지 않고 구현 결합도만 낮추는** 것입니다.
 
-초기 마이그레이션 범위는 Todo/Schedule 전파와 read path 정리입니다. `TagService.delete_tag_group()`처럼 다른 도메인 쓰기를 호출하는 경로도 존재하지만, 이 문서의 초기 이벤트 카탈로그에는 포함하지 않고 후속 정리 범위로 둡니다.
+초기 마이그레이션 범위는 Todo/Schedule 전파와 read path 정리입니다. `TodoGroupService.delete_todo_group()`(그룹의 Todo를 기본 그룹으로 옮김)이나, Todo·Schedule 쓰기에서 기본 할 일 그룹을 만드는 `TodoGroupService.resolve_group_id()`처럼 다른 도메인 쓰기를 직접 호출하는 경로도 존재하지만, 이 문서의 초기 이벤트 카탈로그에는 포함하지 않고 후속 정리 범위로 둡니다.
 
 ---
 
@@ -66,6 +66,7 @@ GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 r
 
 - **Timer `elapsed_time`**: 조회 메서드는 ORM을 변경하지 않습니다. 조회 응답의 `elapsed_time`은 저장값이고, RUNNING 타이머의 현재 구간(`now - started_at`)은 클라이언트가 더합니다. 누적은 `pause_timer`/`stop_timer` 같은 **write transition**에서만 합니다(`_add_running_segment_to_elapsed`). 조회가 DB를 쓰지 않는다는 보장은 `tests/test_timers_read_no_write.py`가 지킵니다.
 - **인증 parent dependency**: 모든 인증 라우터에 걸린 `get_current_user_synced`가 자체 `get_db_transactional` + 프로필 JIT sync를 엽니다. **auth-only 게이트**와 **profile-sync write 경로**로 분리해야 GET이 진짜 read-only가 됩니다.
+- **할 일 그룹 목록**: `GET /v1/todos/groups`는 read-only 전환의 예외로, 쓰는 GET입니다. 기본 할 일 그룹이 없으면 만들고, 받은 기본 그룹 `id`로 곧바로 Todo를 만들 수 있게 `CommittingSession`으로 응답 전에 커밋합니다.
 
 !!! tip "쓰기 경로 구현이 읽기 전환에 주는 순풍"
     - [#52](https://github.com/onprem-hipster-timer/backend/issues/52): `get_db`의 rollback 경계에
@@ -304,6 +305,7 @@ def handle(events, session):
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
 - `ScheduleDeleted`/`ScheduleUnlinkedFromTodo`는 클라이언트가 지정한 `source_todo_policy`(`clear_deadline`|`keep_deadline`)를 운반
+- `ScheduleCreatedWithTodoOption`은 발행 전에 소유 확인과 기본 그룹 결정을 마친 `todo_group_id`를 운반 — todo 핸들러는 그 값으로 Todo를 만들 뿐 그룹을 다시 검사하지 않습니다
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
 - `TodoDeleted`/`ScheduleDeleted`는 삭제 전 스냅샷한 `linked_timer_ids`(`TimerSession.todo_id`·`schedule_id`도 `ondelete=SET NULL`)와 클라이언트가 지정한 `linked_timer_policy`(`delete`|`unlink`)를 운반. `TodoDeleted`는 연결 투영이 없어도 항상 발행
 - 투영을 지우는 schedule 핸들러는 연결 타이머를 위해 `ScheduleDeleted(origin=TODO, 정책 없음)`를 수집 — 타이머 핸들러는 일정 연결만 해제하고, todo 핸들러는 origin 가드로 무시

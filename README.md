@@ -83,6 +83,7 @@
 | Feature | Description |
 |---------|-------------|
 | **Tree Structure** | Unlimited depth parent-child relationships |
+| **Todo Groups** | Every todo belongs to a todo group (the user's default group if none is given) |
 | **Deadlines** | Auto-create Schedule when deadline is set |
 | **Integrity Checks** | Prevent cycles, self-references, group mismatches |
 | **Ancestor Inclusion** | Auto-include ancestors when filtering |
@@ -311,6 +312,12 @@ erDiagram
         boolean is_finished
     }
 
+    TODO_GROUP {
+        string name
+        string color
+        boolean is_default
+    }
+
     SCHEDULE_EXCEPTION {
         datetime exception_date
         string title
@@ -391,6 +398,7 @@ erDiagram
 
     %% Core Relations
     SCHEDULE ||--o{ SCHEDULE_EXCEPTION : "has"
+    TODO_GROUP ||--o{ TODO : "contains"
     TODO |o--o{ SCHEDULE : "generates"
     TODO |o--o{ TODO : "sub-task of"
 
