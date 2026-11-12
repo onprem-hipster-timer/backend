@@ -35,7 +35,7 @@ class TodoCycleError(DomainException):
 class TodoParentGroupMismatchError(DomainException):
     """부모와 자식의 todo_group_id 불일치"""
     status_code = 400
-    detail = "Parent and child Todo must belong to the same tag group"
+    detail = "Parent and child Todo must belong to the same todo group"
 
 
 class TodoStatusLinkageMismatchError(DomainException):
