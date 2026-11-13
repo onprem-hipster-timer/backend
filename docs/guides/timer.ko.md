@@ -247,10 +247,14 @@ GET /v1/timers
 | `type` | string | - | 타입 필터: independent, schedule, todo |
 | `start_date` | datetime | - | 시작 날짜 필터 |
 | `end_date` | datetime | - | 종료 날짜 필터 |
+| `tag_ids` | UUID[] | - | 태그 필터. 타이머 자신의 태그 + 연결된 Schedule의 태그 + 연결된 Todo의 태그로 매칭 |
+| `tag_match` | string | all | `all`: 지정 태그를 모두 가진 타이머, `any`: 하나 이상 가진 타이머. `tag_ids`가 없으면 무시. 그 밖의 값은 422 |
 | `include_schedule` | boolean | false | Schedule 정보 포함 |
 | `include_todo` | boolean | false | Todo 정보 포함 |
 | `tag_include_mode` | string | none | 태그 포함 모드 |
 | `timezone` | string | UTC | 타임존 |
+
+`tag_ids` 필터는 `tag_include_mode`와 관계없이 같은 타이머를 고르고, 다른 필터와 함께 적용됩니다. `scope=shared`·`all`의 공유 타이머는 소유자가 붙인 태그로 매칭합니다.
 
 ### 현재 활성 타이머 조회
 

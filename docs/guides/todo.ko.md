@@ -217,15 +217,17 @@ Content-Type: application/json
 GET /v1/todos
 GET /v1/todos?todo_group_ids=uuid1&todo_group_ids=uuid2
 GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2
+GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2&tag_match=any
 ```
 
 | 파라미터 | 타입 | 설명 |
 |---------|------|------|
 | `todo_group_ids` | UUID[] | `todo_group_id`가 해당 할 일 그룹인 Todo만 조회 |
-| `tag_ids` | UUID[] | 지정된 태그를 **모두** 포함한 Todo만 조회 (AND 방식) |
+| `tag_ids` | UUID[] | 태그로 필터링. 매칭 방식은 `tag_match` |
+| `tag_match` | string | `all`(기본값): 지정된 태그를 **모두** 가진 Todo, `any`: 하나 이상 가진 Todo. `tag_ids`가 없으면 무시. 그 밖의 값은 422 |
 
 !!! note "필터링 시 트리(orphan) 처리"
-    - `tag_ids`로 필터링하면, **매칭된 Todo + 그 Todo의 모든 조상(ancestor)** 을 함께 반환합니다.
+    - `tag_ids`로 필터링하면 `tag_match`와 관계없이 **매칭된 Todo + 그 Todo의 모든 조상(ancestor)** 을 함께 반환합니다.
     - 이때 각 Todo에는 `include_reason`이 항상 포함됩니다.
         - 매칭된 Todo: `include_reason = "MATCH"`
         - 조상 Todo: `include_reason = "ANCESTOR"`
