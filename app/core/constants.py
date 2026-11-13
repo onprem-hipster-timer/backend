@@ -28,3 +28,9 @@ class ResourceScope(str, Enum):
     MINE = "mine"  # 내 리소스만 (기본값)
     SHARED = "shared"  # 공유된 타인 리소스만
     ALL = "all"  # 내 리소스 + 공유 리소스
+
+
+class TagMatchMode(str, Enum):
+    """태그 필터 매칭 방식"""
+    ALL = "all"  # 지정한 태그를 모두 가진 항목
+    ANY = "any"  # 지정한 태그 중 하나 이상을 가진 항목

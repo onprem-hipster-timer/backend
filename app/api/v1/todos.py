@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.constants import ResourceScope
+from app.core.constants import ResourceScope, TagMatchMode
 from app.crud import schedule as schedule_crud
 from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
@@ -37,7 +37,7 @@ from app.domain.todo.schema.dto import (
     TodoStats,
     TodoIncludeReason,
 )
-from app.domain.todo.service import TodoService
+from app.domain.todo.service import TodoService, tags_match
 from app.domain.todo_group.schema.dto import TodoGroupCreate, TodoGroupRead, TodoGroupUpdate
 from app.domain.todo_group.service import TodoGroupService
 
@@ -114,7 +114,11 @@ async def read_todos(
         ),
         tag_ids: Optional[List[UUID]] = Query(
             None,
-            description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 Todo만 반환)"
+            description="태그 ID 리스트 (tag_match에 따라 매칭)"
+        ),
+        tag_match: TagMatchMode = Query(
+            TagMatchMode.ALL,
+            description="태그 매칭 방식: all(모든 지정 태그를 가진 Todo, 기본값), any(하나 이상을 가진 Todo). tag_ids가 없으면 무시"
         ),
         todo_group_ids: Optional[List[UUID]] = Query(
             None,
@@ -140,7 +144,8 @@ async def read_todos(
     - todo_group_ids: 해당 할 일 그룹에 속한 Todo 반환
     
     태그 필터링:
-    - tag_ids: AND 방식 (모든 지정 태그를 포함한 Todo만 반환)
+    - tag_ids + tag_match=all(기본값): 모든 지정 태그를 가진 Todo만 반환
+    - tag_ids + tag_match=any: 지정 태그 중 하나 이상을 가진 Todo 반환
     - 태그 필터 시 조상 노드도 포함 (orphan 방지)
     
     응답의 include_reason 필드:
@@ -156,7 +161,9 @@ async def read_todos(
 
     # 내 Todo 조회 (scope=mine 또는 scope=all)
     if scope in (ResourceScope.MINE, ResourceScope.ALL):
-        result = todo_service.get_all_todos(tag_ids=tag_ids, todo_group_ids=todo_group_ids)
+        result = todo_service.get_all_todos(
+            tag_ids=tag_ids, todo_group_ids=todo_group_ids, tag_match=tag_match
+        )
         for todo in result.todos:
             # 연관 Schedule 조회 (라우터에서 orchestration)
             schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
@@ -176,11 +183,9 @@ async def read_todos(
             if todo_group_ids and todo.todo_group_id not in todo_group_ids:
                 continue
 
-            # tag_ids 필터 적용 (AND 방식)
-            if tag_ids:
-                todo_tag_ids = {tag.id for tag in todo.tags}
-                if not all(tid in todo_tag_ids for tid in tag_ids):
-                    continue
+            # tag_ids 필터 적용
+            if tag_ids and not tags_match({tag.id for tag in todo.tags}, tag_ids, tag_match):
+                continue
 
             # 연관 Schedule 조회 (라우터에서 orchestration)
             schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=True)

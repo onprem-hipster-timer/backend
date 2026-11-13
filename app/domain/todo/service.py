@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
+from app.core.constants import TagMatchMode
 from app.crud import schedule as schedule_crud
 from app.crud import timer as timer_crud
 from app.crud import todo as crud
@@ -60,6 +61,13 @@ class TodoListResult:
     """Todo 리스트 조회 결과 (include_reason 포함)"""
     todos: List[Todo]
     include_reason_by_id: dict[UUID, TodoIncludeReason]
+
+
+def tags_match(todo_tag_ids: set[UUID], tag_ids: List[UUID], tag_match: TagMatchMode) -> bool:
+    """Todo의 태그 집합이 태그 필터에 맞는지 (all: 모두 포함, any: 하나 이상 포함)"""
+    if tag_match == TagMatchMode.ANY:
+        return not todo_tag_ids.isdisjoint(tag_ids)
+    return set(tag_ids).issubset(todo_tag_ids)
 
 
 class TodoService:
@@ -316,20 +324,22 @@ class TodoService:
             tag_ids: Optional[List[UUID]] = None,
             todo_group_ids: Optional[List[UUID]] = None,
             parent_id: Optional[UUID] = None,
+            tag_match: TagMatchMode = TagMatchMode.ALL,
     ) -> TodoListResult:
         """
         모든 Todo 조회 + include_reason 맵 반환
         
         비즈니스 로직:
-        - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
+        - tag_ids: tag_match가 all이면 모든 지정 태그, any면 하나 이상을 가진 Todo가 매칭
         - todo_group_ids: 해당 할 일 그룹에 속한 Todo 반환
         - parent_id: 부모 Todo로 필터링
         - 정렬: STATUS_ORDER → deadline(오름차순, null은 뒤) → created_at(내림차순)
         - 태그 필터 시 조상도 포함, include_reason으로 MATCH/ANCESTOR 구분
         
-        :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
+        :param tag_ids: 필터링할 태그 ID 리스트
         :param todo_group_ids: 필터링할 할 일 그룹 ID 리스트
         :param parent_id: 부모 Todo ID (선택)
+        :param tag_match: 태그 매칭 방식 (all, any)
         :return: TodoListResult (todos + include_reason_by_id)
         """
         # 1. DB 조회 (정렬 적용)
@@ -341,7 +351,7 @@ class TodoService:
             return TodoListResult(todos=all_todos, include_reason_by_id=reason_map)
 
         # 3. 태그 필터 적용 → matched_ids
-        matched_ids = self._apply_tag_filter(all_todos, tag_ids)
+        matched_ids = self._apply_tag_filter(all_todos, tag_ids, tag_match)
 
         # 4. parent_by_id 맵 구성 (session.get 최소화)
         parent_by_id = {t.id: t.parent_id for t in all_todos}
@@ -362,9 +372,10 @@ class TodoService:
             self,
             todos: List[Todo],
             tag_ids: List[UUID],
+            tag_match: TagMatchMode,
     ) -> set[UUID]:
         """
-        태그 필터를 적용하여 매칭된 Todo ID 집합 반환 (AND 방식)
+        태그 필터를 적용하여 매칭된 Todo ID 집합 반환
         """
         if not todos or not tag_ids:
             return {t.id for t in todos}
@@ -372,10 +383,9 @@ class TodoService:
         todo_ids = [t.id for t in todos]
         todo_tag_map = crud.get_todo_tag_map(self.session, todo_ids)
 
-        tag_ids_set = set(tag_ids)
         return {
             t.id for t in todos
-            if tag_ids_set.issubset(todo_tag_map.get(t.id, set()))
+            if tags_match(todo_tag_map.get(t.id, set()), tag_ids, tag_match)
         }
 
     def _collect_ancestor_ids(

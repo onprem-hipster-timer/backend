@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.core.constants import TagMatchMode
 from app.crud import schedule as schedule_crud
 from app.domain.schedule.enums import ScheduleState
 from app.domain.tag.schema.dto import TagGroupCreate, TagCreate
@@ -295,6 +296,30 @@ def test_get_all_todos_filtered_by_tag_ids(test_session, sample_tag_group, test_
     assert todo3.id in todo_ids
     assert todo1.id not in todo_ids
     assert todo2.id not in todo_ids
+
+
+def test_get_all_todos_tag_match_any(test_session, sample_tag_group, test_user, sample_todo_group):
+    """tag_match=any면 지정 태그 중 하나 이상을 가진 Todo와 그 조상을 반환"""
+    service = TodoService(test_session, test_user)
+    tag_service = TagService(test_session, test_user)
+    tag1 = tag_service.create_tag(TagCreate(name="태그1", color="#FF0000", group_id=sample_tag_group.id))
+    tag2 = tag_service.create_tag(TagCreate(name="태그2", color="#00FF00", group_id=sample_tag_group.id))
+    parent = service.create_todo(TodoCreate(title="부모", todo_group_id=sample_todo_group.id))
+    test_session.flush()
+    child = service.create_todo(
+        TodoCreate(title="자식", todo_group_id=sample_todo_group.id, parent_id=parent.id, tag_ids=[tag2.id]))
+    todo1 = service.create_todo(TodoCreate(title="Todo 1", todo_group_id=sample_todo_group.id, tag_ids=[tag1.id]))
+    untagged = service.create_todo(TodoCreate(title="태그 없음", todo_group_id=sample_todo_group.id))
+    test_session.flush()
+
+    result = service.get_all_todos(tag_ids=[tag1.id, tag2.id], tag_match=TagMatchMode.ANY)
+
+    assert result.include_reason_by_id == {
+        todo1.id: TodoIncludeReason.MATCH,
+        child.id: TodoIncludeReason.MATCH,
+        parent.id: TodoIncludeReason.ANCESTOR,
+    }
+    assert untagged.id not in [t.id for t in result.todos]
 
 
 def test_get_all_todos_filtered_by_group_ids(test_session, sample_tag_group, test_user, sample_todo_group):
