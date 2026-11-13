@@ -13,7 +13,7 @@ from app.models.tag import ScheduleTag, ScheduleExceptionTag
 
 if TYPE_CHECKING:
     from app.models.timer import TimerSession
-    from app.models.tag import Tag, TagGroup
+    from app.models.tag import Tag
     from app.models.todo import Todo
 
 
@@ -42,12 +42,6 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
     recurrence_end: Optional[NaiveDatetime] = None  # 반복 종료일
     parent_id: Optional[UUID] = None  # 원본 일정 ID (예외 인스턴스용)
 
-    # Todo 그룹 직접 연결 (레거시, 선택사항)
-    tag_group_id: Optional[UUID] = Field(
-        default=None,
-        sa_column=Column(ForeignKey("tag_group.id", ondelete="SET NULL"), nullable=True)
-    )
-
     # Todo에서 생성된 Schedule 추적 (논리적 참조)
     source_todo_id: Optional[UUID] = Field(
         default=None,
@@ -69,7 +63,6 @@ class Schedule(UUIDBase, TimestampMixin, table=True):
 
     # Relationship
     timers: List["TimerSession"] = Relationship(back_populates="schedule")
-    tag_group: Optional["TagGroup"] = Relationship()
     source_todo: Optional["Todo"] = Relationship(back_populates="schedules")
 
     # 태그 관계 (다대다)

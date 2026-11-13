@@ -20,13 +20,13 @@ from app.core.constants import TimerStatus
 from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleUpdate
 from app.domain.schedule.service import ScheduleService
-from app.domain.tag.schema.dto import TagGroupCreate
-from app.domain.tag.service import TagService
 from app.domain.timer.schema.dto import TimerCreate
 from app.domain.timer.service import TimerService
 from app.domain.todo.enums import TodoStatus
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
+from app.domain.todo_group.schema.dto import TodoGroupCreate
+from app.domain.todo_group.service import TodoGroupService
 from app.models.schedule import Schedule
 from app.models.timer import TimerSession
 from app.models.todo import Todo
@@ -101,11 +101,11 @@ def _run_two_workers(worker, roles):
         executor.shutdown(wait=True, cancel_futures=True)
 
 
-def _seed_tag_group_and_schedule(test_engine, test_user):
+def _seed_todo_group_and_schedule(test_engine, test_user):
     start = datetime(2030, 1, 1, 10, 0)
     with Session(test_engine) as session:
-        group = TagService(session, test_user).create_tag_group(
-            TagGroupCreate(
+        group = TodoGroupService(session, test_user).create_todo_group(
+            TodoGroupCreate(
                 name="Projection concurrency",
                 color="#224488",
             )
@@ -124,16 +124,9 @@ def _seed_tag_group_and_schedule(test_engine, test_user):
 def _seed_linked_projection(test_engine, test_user):
     deadline = datetime(2030, 2, 1, 10, 0)
     with Session(test_engine) as session:
-        group = TagService(session, test_user).create_tag_group(
-            TagGroupCreate(
-                name="Projection lock order",
-                color="#662288",
-            )
-        )
         todo = TodoService(session, test_user).create_todo(
             TodoCreate(
                 title="Linked Todo",
-                tag_group_id=group.id,
                 deadline=deadline,
             )
         )
@@ -148,7 +141,7 @@ def test_concurrent_create_todo_from_one_schedule_has_one_winner_and_no_orphan(
     test_engine,
     test_user,
 ):
-    group_id, schedule_id = _seed_tag_group_and_schedule(test_engine, test_user)
+    group_id, schedule_id = _seed_todo_group_and_schedule(test_engine, test_user)
     thread_state = threading.local()
     listener = _install_write_gate(
         test_engine,

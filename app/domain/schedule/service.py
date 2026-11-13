@@ -99,6 +99,14 @@ class ScheduleService:
             if data.recurrence_end and data.recurrence_end < data.start_time:
                 raise InvalidRecurrenceEndError()
 
+        # 함께 만들 할 일의 그룹은 일정보다 먼저 정한다 (남의 그룹이면 일정을 만들기 전에 404)
+        todo_group_id = None
+        if data.create_todo_options:
+            from app.domain.todo_group.service import TodoGroupService
+            todo_group_id = TodoGroupService(self.session, self.current_user).resolve_group_id(
+                data.create_todo_options.todo_group_id
+            )
+
         schedule = crud.create_schedule(self.session, data, self.owner_id)
 
         # 태그 설정
@@ -114,7 +122,7 @@ class ScheduleService:
                 owner_id=self.owner_id,
                 origin=EventOrigin.SCHEDULE,
                 schedule_id=schedule.id,
-                tag_group_id=data.create_todo_options.tag_group_id,
+                todo_group_id=todo_group_id,
             ))
 
         # 응답 조립 전에 dispatch해야 source_todo_id가 응답에 보인다
@@ -453,7 +461,7 @@ class ScheduleService:
     # Todo 연동
     # ========================================
 
-    def create_todo_from_schedule(self, schedule_id: UUID, tag_group_id: UUID) -> "Todo":
+    def create_todo_from_schedule(self, schedule_id: UUID, todo_group_id: Optional[UUID] = None) -> "Todo":
         """
         기존 Schedule에서 연관된 Todo 생성
 
@@ -464,7 +472,7 @@ class ScheduleService:
         - Todo 생성 후 Schedule의 source_todo_id 업데이트
 
         :param schedule_id: Schedule ID
-        :param tag_group_id: Todo가 속할 그룹 ID (필수)
+        :param todo_group_id: Todo가 속할 할 일 그룹 ID. 없으면 기본 그룹
         :return: 생성된 Todo
         :raises ScheduleNotFoundError: Schedule을 찾을 수 없는 경우
         :raises ScheduleAlreadyLinkedToTodoError: 이미 Todo와 연결된 Schedule인 경우
@@ -483,11 +491,14 @@ class ScheduleService:
         if schedule.recurrence_rule:
             raise RecurringScheduleCannotLinkTodoError()
 
+        from app.domain.todo_group.service import TodoGroupService
+        resolved_group_id = TodoGroupService(self.session, self.current_user).resolve_group_id(todo_group_id)
+
         collect_event(self.session, ScheduleCreatedWithTodoOption(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,
             schedule_id=schedule.id,
-            tag_group_id=tag_group_id,
+            todo_group_id=resolved_group_id,
         ))
         flush_and_dispatch_events(self.session)
         self.session.refresh(schedule)

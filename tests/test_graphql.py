@@ -846,7 +846,7 @@ def test_graphql_calendar_query_with_todo(e2e_client):
     """GraphQL calendar 쿼리 Todo 포함 테스트 (deadline이 있는 Todo만 포함)"""
     # 0. 태그 그룹 생성 (필수)
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
@@ -857,7 +857,7 @@ def test_graphql_calendar_query_with_todo(e2e_client):
         json={
             "title": "deadline 없는 Todo",
             "description": "Todo 설명",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
         },
     )
     assert todo_no_deadline_response.status_code == 201
@@ -869,7 +869,7 @@ def test_graphql_calendar_query_with_todo(e2e_client):
         json={
             "title": "deadline 있는 Todo",
             "description": "Todo 설명",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
             "deadline": "2024-01-20T10:00:00Z",
         },
     )
@@ -951,7 +951,7 @@ def test_graphql_calendar_query_with_todo_and_deadline(e2e_client):
     """마감 시간이 있는 Todo가 캘린더에 포함되는지 테스트"""
     # 0. 태그 그룹 생성 (필수)
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
@@ -961,7 +961,7 @@ def test_graphql_calendar_query_with_todo_and_deadline(e2e_client):
         "/v1/todos",
         json={
             "title": "마감 시간 있는 Todo",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
             "deadline": "2024-01-20T10:00:00Z",
         },
     )
@@ -1044,7 +1044,6 @@ def test_graphql_calendar_query_todo_with_tags(e2e_client):
         "/v1/todos",
         json={
             "title": "태그 있는 Todo",
-            "tag_group_id": group_id,
             "tag_ids": [tag_id],
             "deadline": "2024-01-20T10:00:00Z",
         },
@@ -1107,7 +1106,7 @@ def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
     """날짜 범위 밖의 Todo는 캘린더에서 제외되는지 테스트"""
     # 0. 태그 그룹 생성 (필수)
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "업무", "color": "#FF5733"}
     )
     group_id = group_response.json()["id"]
@@ -1117,7 +1116,7 @@ def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
         "/v1/todos",
         json={
             "title": "날짜 범위 밖 Todo",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
             "deadline": "2024-01-20T10:00:00Z",
         },
     )

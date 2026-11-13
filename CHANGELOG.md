@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Todo groups**: `POST /v1/todos/groups` (201), `GET /v1/todos/groups`, `GET /v1/todos/groups/{group_id}`, `PATCH /v1/todos/groups/{group_id}` and `DELETE /v1/todos/groups/{group_id}` manage the groups that hold Todos (`id`, `name`, `color`, `description`, `is_default`, `created_at`, `updated_at`). Each user has one default group (`is_default: true`, named `기본` with color `#2196F3`), created by the server when it is first needed; `GET /v1/todos/groups` creates it if missing and commits before responding, so the returned `id` can be used right away. The list shows the default group first, then the other groups by name. `is_default` is read-only. The default group can be renamed or recolored but not deleted (409); deleting another group moves its Todos to the default group, keeping their parent-child links. Another user's group returns 404. `POST /v1/todos/groups` is limited to 30 requests per 60 seconds, separately from the `/v1/todos/*` rule. Purging an account deletes its todo groups.
+- **Moving a Todo to another todo group**: `PATCH /v1/todos/{todo_id}` with a different `todo_group_id` moves the Todo together with all its descendants, keeping the tree shape. If the Todo's parent stays in the old group, the Todo becomes a root Todo in the new group. A `parent_id` sent in the same request is checked against the new group (400 if that parent is not in it). `todo_group_id: null` is ignored. Previously changing `tag_group_id` moved only that Todo and kept its parent and child links across groups.
+
+### Changed
+
+- **Todos belong to todo groups (breaking)**: Todos have `todo_group_id` instead of `tag_group_id` in `POST /v1/todos`, `PATCH /v1/todos/{todo_id}` and Todo responses. In `POST /v1/todos` it is optional: without it the Todo goes to the caller's default group, and a `tag_group_id` in the body is ignored. A child Todo must be in its parent's todo group (400). The `GET /v1/todos` filter `group_ids` is renamed to `todo_group_ids`; `group_ids` is no longer read. Migrations `c1d5e9a3f7b2` and `d4a8b2c6e1f9` copy every tag group that has Todos to a todo group with the same `id`, name, color and description and move its Todos there. Each Todo ends up in a group owned by its own owner (a new group with the same name, color and description is created where needed), and Todos whose parent is in another group become root Todos. Previously Todos belonged to a tag group through a required `tag_group_id`.
+- **Todo stats by todo group (breaking)**: `GET /v1/todos/stats` takes `todo_group_id` instead of `group_id` and returns it as `todo_group_id`. `by_tag` counts the Todos' tags from every tag group. Previously `group_id` selected a tag group and also limited `by_tag` to that group's tags.
+- **Todo group when creating a Todo from a schedule (breaking)**: `create_todo_options.todo_group_id` in `POST /v1/schedules` and the `todo_group_id` query parameter of `POST /v1/schedules/{schedule_id}/todo` replace `tag_group_id` and are optional; without them the Todo goes to the default group. Previously `tag_group_id` was required.
+- **Deleting a group keeps its Todos**: `DELETE /v1/tags/groups/{group_id}` deletes the tag group and its tags, which also removes those tags from Todos, schedules and timers, and leaves the Todos in place. `DELETE /v1/todos/groups/{group_id}` moves the group's Todos to the default group. Previously deleting a tag group also deleted its Todos together with their projected schedules, unlinked those Todos' timers and cleared `tag_group_id` on schedules.
+
+### Removed
+
+- **`tag_group_id` on schedules and Todos (breaking)**: `POST /v1/schedules`, `PATCH /v1/schedules/{schedule_id}` and schedule responses no longer have `tag_group_id`; a value sent in a request is ignored. Todos use `todo_group_id` instead (see Changed). Migration `e7f3a9c5b1d8` drops `schedule.tag_group_id`, and `d4a8b2c6e1f9` drops `todo.tag_group_id`.
+
+### Fixed
+
+- **Todo group ownership is checked**: creating a Todo (`POST /v1/todos`), moving one (`PATCH /v1/todos/{todo_id}`) and creating one from a schedule (`create_todo_options` in `POST /v1/schedules`, `POST /v1/schedules/{schedule_id}/todo`) return 404 when `todo_group_id` is not one of the caller's todo groups, and change nothing; with `create_todo_options` the schedule is not created either.
 
 ---
 

@@ -41,10 +41,10 @@ def schedule_service(test_session, test_user):
     return ScheduleService(test_session, test_user)
 
 
-def _create_with_deadline(todo_service, test_session, tag_group_id, **overrides):
+def _create_with_deadline(todo_service, test_session, todo_group_id, **overrides):
     data = TodoCreate(
         title="마감 있는 할일",
-        tag_group_id=tag_group_id,
+        todo_group_id=todo_group_id,
         deadline=DEADLINE,
         **overrides,
     )
@@ -64,33 +64,33 @@ def _projections(test_session, todo_id, owner_id):
 
 class TestStatusAutomation:
     def test_create_todo_with_deadline_sets_scheduled_status(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """생성 경로 무관 일관: deadline 생성 → 투영 존재 → SCHEDULED"""
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         assert todo.status == TodoStatus.SCHEDULED
 
     def test_create_todo_without_deadline_stays_unscheduled(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         todo = todo_service.create_todo(
-            TodoCreate(title="마감 없는 할일", tag_group_id=sample_tag_group.id)
+            TodoCreate(title="마감 없는 할일", todo_group_id=sample_todo_group.id)
         )
 
         assert todo.status == TodoStatus.UNSCHEDULED
 
     def test_terminal_status_not_overridden_on_create(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """명시적 터미널 상태(DONE/CANCELLED)는 자동화가 덮지 않음"""
         todo = _create_with_deadline(
-            todo_service, test_session, sample_tag_group.id, status=TodoStatus.DONE
+            todo_service, test_session, sample_todo_group.id, status=TodoStatus.DONE
         )
 
         assert todo.status == TodoStatus.DONE
 
     def test_deadline_add_sets_scheduled_status(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         todo = todo_service.create_todo(
-            TodoCreate(title="나중에 마감 추가", tag_group_id=sample_tag_group.id)
+            TodoCreate(title="나중에 마감 추가", todo_group_id=sample_todo_group.id)
         )
         assert todo.status == TodoStatus.UNSCHEDULED
 
@@ -99,8 +99,8 @@ class TestStatusAutomation:
         assert updated.status == TodoStatus.SCHEDULED
 
     def test_deadline_clear_resets_scheduled_to_unscheduled(
-            self, todo_service, test_session, sample_tag_group, test_user):
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+            self, todo_service, test_session, sample_todo_group, test_user):
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         updated = todo_service.update_todo(
             todo.id,
@@ -112,10 +112,10 @@ class TestStatusAutomation:
         assert _projections(test_session, todo.id, test_user.sub) == []
 
     def test_explicit_terminal_status_wins_over_automation(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """DONE/CANCELLED는 사용자 상태 — 자동화가 덮지 않음"""
         todo = todo_service.create_todo(
-            TodoCreate(title="명시 상태", tag_group_id=sample_tag_group.id)
+            TodoCreate(title="명시 상태", todo_group_id=sample_todo_group.id)
         )
 
         updated = todo_service.update_todo(
@@ -125,14 +125,14 @@ class TestStatusAutomation:
         assert updated.status == TodoStatus.DONE
 
     def test_flag_mismatch_rejected_on_create(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """연동 유무 플래그는 실제 상태와 불일치하면 422 (거짓 플래그 불가)"""
         from app.domain.todo.exceptions import TodoStatusLinkageMismatchError
 
         with pytest.raises(TodoStatusLinkageMismatchError):
             todo_service.create_todo(TodoCreate(
                 title="마감 있는데 미지정?",
-                tag_group_id=sample_tag_group.id,
+                todo_group_id=sample_todo_group.id,
                 deadline=DEADLINE,
                 status=TodoStatus.UNSCHEDULED,
             ))
@@ -140,25 +140,25 @@ class TestStatusAutomation:
         with pytest.raises(TodoStatusLinkageMismatchError):
             todo_service.create_todo(TodoCreate(
                 title="마감 없는데 지정됨?",
-                tag_group_id=sample_tag_group.id,
+                todo_group_id=sample_todo_group.id,
                 status=TodoStatus.SCHEDULED,
             ))
 
     def test_flag_matching_linkage_allowed(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """실제 연동 상태와 일치하는 명시 값은 허용"""
         todo = _create_with_deadline(
-            todo_service, test_session, sample_tag_group.id,
+            todo_service, test_session, sample_todo_group.id,
             status=TodoStatus.SCHEDULED,
         )
         assert todo.status == TodoStatus.SCHEDULED
 
     def test_reopen_done_todo_with_matching_flag(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """재오픈: 연동이 있는 DONE 할일은 SCHEDULED로 복귀 (일치 → 허용)"""
         from app.domain.todo.exceptions import TodoStatusLinkageMismatchError
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         todo_service.update_todo(todo.id, TodoUpdate(status=TodoStatus.DONE))
 
         # 불일치 플래그로는 재오픈 불가
@@ -175,21 +175,21 @@ class TestStatusAutomation:
 
 class TestLinkedSchedulePolicyValidation:
     def test_deadline_clear_without_policy_rejected_when_projection_exists(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         """연결 투영이 있으면 정책 필수 (서버 기본값 없음)"""
         from app.domain.todo.exceptions import LinkedSchedulePolicyRequiredError
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         with pytest.raises(LinkedSchedulePolicyRequiredError):
             todo_service.update_todo(todo.id, TodoUpdate(deadline=None))
 
     def test_deadline_clear_without_policy_ok_when_no_projection(
-            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+            self, todo_service, schedule_service, test_session, sample_todo_group, test_user):
         """연결 투영이 없으면 정책 생략 허용 (의미 없는 선택 강요 제거)"""
         from app.domain.schedule.enums import SourceTodoPolicy
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
         schedule_service.delete_schedule(projection.id, SourceTodoPolicy.KEEP_DEADLINE)
 
@@ -220,9 +220,9 @@ class TestLinkedSchedulePolicyValidation:
 
 class TestLifecyclePolicy:
     def test_deadline_clear_unlink_preserves_schedule(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """unlink: 투영은 일반 일정으로 생존 (메모·데이터 보존)"""
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
 
         todo_service.update_todo(
@@ -237,8 +237,8 @@ class TestLifecyclePolicy:
         assert _projections(test_session, todo.id, test_user.sub) == []
 
     def test_delete_todo_delete_policy_removes_projection(
-            self, todo_service, test_session, sample_tag_group, test_user):
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+            self, todo_service, test_session, sample_todo_group, test_user):
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
 
         todo_service.delete_todo(todo.id, LinkedSchedulePolicy.DELETE)
@@ -246,8 +246,8 @@ class TestLifecyclePolicy:
         assert schedule_crud.get_schedule(test_session, projection.id, test_user.sub) is None
 
     def test_delete_todo_unlink_policy_keeps_schedule(
-            self, todo_service, test_session, sample_tag_group, test_user):
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+            self, todo_service, test_session, sample_todo_group, test_user):
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
 
         todo_service.delete_todo(todo.id, LinkedSchedulePolicy.UNLINK)
@@ -257,18 +257,18 @@ class TestLifecyclePolicy:
         assert survivor.source_todo_id is None
 
     def test_delete_todo_without_policy_rejected_when_projection_exists(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         from app.domain.todo.exceptions import LinkedSchedulePolicyRequiredError
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         with pytest.raises(LinkedSchedulePolicyRequiredError):
             todo_service.delete_todo(todo.id)
 
     def test_delete_todo_without_policy_ok_when_no_projection(
-            self, todo_service, test_session, sample_tag_group):
+            self, todo_service, test_session, sample_todo_group):
         todo = todo_service.create_todo(
-            TodoCreate(title="투영 없는 할일", tag_group_id=sample_tag_group.id)
+            TodoCreate(title="투영 없는 할일", todo_group_id=sample_todo_group.id)
         )
 
         todo_service.delete_todo(todo.id)  # 정책 없이 허용
@@ -315,13 +315,13 @@ class TestProjectionLinkImmutability:
             ScheduleUpdate.model_validate({"source_todo_id": str(uuid4())})
 
     def test_db_unique_constraint_rejects_duplicate_projection(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """'할일당 투영 1개'는 DB partial unique 제약이 최종 보장"""
         from sqlalchemy.exc import IntegrityError
 
         from app.models.schedule import Schedule
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         # API를 우회한 중복 투영 시도 (미래 회귀 시나리오 재현)
         rogue = Schedule(
@@ -339,9 +339,9 @@ class TestProjectionLinkImmutability:
 
 class TestProjectionSync:
     def test_updating_title_projects_latest_title(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """제목·설명은 Todo 소유 — 투영은 항상 최신 반영"""
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         todo_service.update_todo(
             todo.id, TodoUpdate(title="새 제목", description="새 설명")
@@ -352,9 +352,9 @@ class TestProjectionSync:
         assert projection.description == "새 설명"
 
     def test_deadline_change_preserves_user_duration(
-            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+            self, todo_service, schedule_service, test_session, sample_todo_group, test_user):
         """일정 길이는 Schedule 소유 — deadline 변경은 start만 이동"""
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
 
         # 사용자가 투영 길이를 3시간으로 조정
@@ -370,11 +370,11 @@ class TestProjectionSync:
         assert projection.end_time - projection.start_time == timedelta(hours=3)
 
     def test_deadline_change_recreates_missing_projection(
-            self, todo_service, schedule_service, test_session, sample_tag_group, test_user):
+            self, todo_service, schedule_service, test_session, sample_todo_group, test_user):
         """투영이 사라진 상태의 deadline 변경 → 조용한 no-op이 아니라 재생성"""
         from app.domain.schedule.enums import SourceTodoPolicy
 
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
         [projection] = _projections(test_session, todo.id, test_user.sub)
         schedule_service.delete_schedule(projection.id, SourceTodoPolicy.KEEP_DEADLINE)
 
@@ -385,9 +385,9 @@ class TestProjectionSync:
         assert recreated.title == todo.title
 
     def test_single_projection_invariant_after_unlink_and_readd(
-            self, todo_service, test_session, sample_tag_group, test_user):
+            self, todo_service, test_session, sample_todo_group, test_user):
         """unlink 후 deadline 재설정 → 연결 투영은 정확히 1개"""
-        todo = _create_with_deadline(todo_service, test_session, sample_tag_group.id)
+        todo = _create_with_deadline(todo_service, test_session, sample_todo_group.id)
 
         todo_service.update_todo(
             todo.id,

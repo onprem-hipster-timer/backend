@@ -335,11 +335,23 @@ def sample_tag_group(test_session, test_user):
 
 
 @pytest.fixture
-def sample_todo(test_session, sample_tag_group, test_user):
+def sample_todo_group(test_session, test_user):
+    """테스트용 할 일 그룹 (기본 그룹 아님)"""
+    from app.domain.todo_group.schema.dto import TodoGroupCreate
+    from app.domain.todo_group.service import TodoGroupService
+
+    group = TodoGroupService(test_session, test_user).create_todo_group(
+        TodoGroupCreate(name="테스트 할 일 그룹", color="#3366FF", description="테스트 할 일 그룹"),
+    )
+    test_session.flush()
+    test_session.refresh(group)
+    return group
+
+
+@pytest.fixture
+def sample_todo(test_session, sample_todo_group, test_user):
     """
-    테스트용 Todo 데이터
-    
-    sample_tag_group에 의존하여 태그 그룹이 먼저 생성되어야 함
+    테스트용 Todo 데이터 (sample_todo_group에 속함)
     """
     from app.domain.todo.schema.dto import TodoCreate
     from app.domain.todo.service import TodoService
@@ -347,7 +359,7 @@ def sample_todo(test_session, sample_tag_group, test_user):
     todo_data = TodoCreate(
         title="테스트 Todo",
         description="테스트 설명",
-        tag_group_id=sample_tag_group.id,
+        todo_group_id=sample_todo_group.id,
     )
 
     service = TodoService(test_session, test_user)
@@ -358,7 +370,7 @@ def sample_todo(test_session, sample_tag_group, test_user):
 
 
 @pytest.fixture
-def todo_with_schedule(test_session, sample_tag_group, test_user):
+def todo_with_schedule(test_session, sample_todo_group, test_user):
     """
     deadline이 있는 Todo (연관된 Schedule이 자동 생성됨)
     
@@ -373,7 +385,7 @@ def todo_with_schedule(test_session, sample_tag_group, test_user):
     todo_data = TodoCreate(
         title="마감이 있는 Todo",
         description="연관 Schedule이 있는 Todo",
-        tag_group_id=sample_tag_group.id,
+        todo_group_id=sample_todo_group.id,
         deadline=deadline,
     )
 

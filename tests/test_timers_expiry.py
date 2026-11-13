@@ -82,8 +82,8 @@ def test_elapsed_is_capped_at_allocated(e2e_client, action):
 
 @pytest.mark.e2e
 def test_todo_done_long_after_expiry_completes_with_allocated(e2e_client, after_commit_items):
-    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    group = e2e_client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
     timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
     _backdate(timer_id, ALLOCATED * 10)
     after_commit_items.clear()
@@ -102,8 +102,8 @@ def test_todo_done_long_after_expiry_completes_with_allocated(e2e_client, after_
 @pytest.mark.parametrize("todo_status, action", [("DONE", "stop"), ("CANCELLED", "cancel")])
 def test_todo_status_finishes_expired_timer_like_endpoint(e2e_client, after_commit_items, todo_status, action):
     """Todo 상태로 끝낸 만료 타이머와 stop·cancel로 끝낸 만료 타이머는 elapsed·이력·이벤트가 같다"""
-    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    group = e2e_client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
     via_todo, todo_expires_at = _expired_timer(e2e_client, todo_id=todo["id"])
     via_endpoint, endpoint_expires_at = _expired_timer(e2e_client)
 
@@ -170,8 +170,8 @@ def test_second_pause_after_expiry_is_200(e2e_client, after_commit_items):
 
 @pytest.mark.e2e
 def test_stop_after_expiry_completes_with_allocated(e2e_client, after_commit_items):
-    group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+    group = e2e_client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+    todo = e2e_client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
     timer_id = _create(e2e_client, todo_id=todo["id"])["id"]
     _backdate(timer_id, ALLOCATED + 30)
     after_commit_items.clear()
@@ -306,8 +306,8 @@ def test_linked_resource_change_materializes_expiry_first(e2e_client, after_comm
         ).json()
         timer_id, expires_at = _expired_timer(e2e_client, schedule_id=schedule["id"])
     else:
-        group = e2e_client.post("/v1/tags/groups", json={"name": "그룹", "color": "#FF5733"}).json()
-        todo = e2e_client.post("/v1/todos", json={"title": "할 일", "tag_group_id": group["id"]}).json()
+        group = e2e_client.post("/v1/todos/groups", json={"name": "그룹", "color": "#FF5733"}).json()
+        todo = e2e_client.post("/v1/todos", json={"title": "할 일", "todo_group_id": group["id"]}).json()
         timer_id, expires_at = _expired_timer(e2e_client, todo_id=todo["id"])
     after_commit_items.clear()
 

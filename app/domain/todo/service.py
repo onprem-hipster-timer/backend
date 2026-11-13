@@ -79,7 +79,7 @@ class TodoService:
     def _validate_parent_id(
             self,
             parent_id: Optional[UUID],
-            child_tag_group_id: UUID,
+            child_todo_group_id: UUID,
             child_id: Optional[UUID] = None,
     ) -> None:
         """
@@ -88,11 +88,11 @@ class TodoService:
         검증 규칙:
         - parent_id가 있으면 해당 Todo가 존재해야 함
         - 자기 자신을 부모로 설정 불가
-        - 부모와 자식의 tag_group_id가 일치해야 함
+        - 부모와 자식의 todo_group_id가 일치해야 함
         - 순환 참조 생성 불가 (child_id가 parent_id의 조상인 경우)
         
         :param parent_id: 검증할 부모 Todo ID
-        :param child_tag_group_id: 자식 Todo의 tag_group_id
+        :param child_todo_group_id: 자식 Todo의 todo_group_id
         :param child_id: 자식 Todo ID (update 시 자기참조/순환 검증용)
         :raises TodoSelfReferenceError: 자기 자신을 부모로 설정 시
         :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
@@ -112,13 +112,30 @@ class TodoService:
             raise TodoInvalidParentError()
 
         # 그룹 일관성 확인
-        if parent.tag_group_id != child_tag_group_id:
+        if parent.todo_group_id != child_todo_group_id:
             raise TodoParentGroupMismatchError()
 
         # 순환 참조 검사 (update 시에만 의미 있음)
         # child_id를 parent_id의 조상으로 설정하면 cycle 발생
         if child_id is not None:
             self._check_cycle(parent_id, child_id)
+
+    def _move_subtree(self, todo: Todo, group_id: UUID, keep_parent: bool) -> None:
+        """
+        옮긴 할 일의 하위 할 일을 모두 같은 그룹으로 옮긴다 (트리 모양 그대로)
+
+        부모가 옛 그룹에 남으면 부모 연결을 끊어 새 그룹의 최상위로 둔다.
+        요청에 parent_id가 있었으면 이미 새 그룹 기준으로 검사했으므로 그대로 둔다.
+        """
+        crud.set_todos_group(
+            self.session, crud.get_descendant_ids(self.session, todo.id, self.owner_id), self.owner_id, group_id,
+        )
+        if keep_parent or todo.parent_id is None:
+            return
+        parent = crud.get_todo(self.session, todo.parent_id, self.owner_id)
+        if parent is None or parent.todo_group_id != group_id:
+            todo.parent_id = None
+            self.session.flush()
 
     def _check_cycle(self, parent_id: UUID, child_id: UUID) -> None:
         """
@@ -167,8 +184,10 @@ class TodoService:
         :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
         :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
         """
-        # parent_id 검증 (존재/그룹 일치)
-        self._validate_parent_id(data.parent_id, data.tag_group_id)
+        # 그룹을 정하고(안 주면 기본 그룹, 주면 내 그룹인지 확인) parent_id 검증 (존재/그룹 일치)
+        from app.domain.todo_group.service import TodoGroupService
+        todo_group_id = TodoGroupService(self.session, self.current_user).resolve_group_id(data.todo_group_id)
+        self._validate_parent_id(data.parent_id, todo_group_id)
 
         # UNSCHEDULED/SCHEDULED는 연동 유무 플래그 — 명시 값이 실제 연동 상태와
         # 불일치하면 거부, 미지정 시 자동 계산. DONE/CANCELLED는 사용자 상태
@@ -186,7 +205,7 @@ class TodoService:
             title=data.title,
             description=data.description,
             deadline=data.deadline,
-            tag_group_id=data.tag_group_id,
+            todo_group_id=todo_group_id,
             parent_id=data.parent_id,
             status=status,
         )
@@ -295,7 +314,7 @@ class TodoService:
     def get_all_todos(
             self,
             tag_ids: Optional[List[UUID]] = None,
-            group_ids: Optional[List[UUID]] = None,
+            todo_group_ids: Optional[List[UUID]] = None,
             parent_id: Optional[UUID] = None,
     ) -> TodoListResult:
         """
@@ -303,18 +322,18 @@ class TodoService:
         
         비즈니스 로직:
         - tag_ids: AND 방식 (모든 지정 태그 포함해야 함)
-        - group_ids: 해당 그룹에 속한 Todo 반환 (tag_group_id로 직접 연결)
+        - todo_group_ids: 해당 할 일 그룹에 속한 Todo 반환
         - parent_id: 부모 Todo로 필터링
         - 정렬: STATUS_ORDER → deadline(오름차순, null은 뒤) → created_at(내림차순)
         - 태그 필터 시 조상도 포함, include_reason으로 MATCH/ANCESTOR 구분
         
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
-        :param group_ids: 필터링할 그룹 ID 리스트
+        :param todo_group_ids: 필터링할 할 일 그룹 ID 리스트
         :param parent_id: 부모 Todo ID (선택)
         :return: TodoListResult (todos + include_reason_by_id)
         """
         # 1. DB 조회 (정렬 적용)
-        all_todos = crud.get_todos_sorted(self.session, self.owner_id, group_ids, parent_id)
+        all_todos = crud.get_todos_sorted(self.session, self.owner_id, todo_group_ids, parent_id)
 
         # 2. 태그 필터가 없으면 전부 MATCH
         if not tag_ids:
@@ -422,6 +441,7 @@ class TodoService:
         - status 업데이트 지원. status가 바뀌면(연동 플래그 자동 전이 포함) 연결된 실행 중·일시정지
           타이머에 반영 (TodoStatusChanged → app/domain/timer/event_handlers.py)
         - parent_id 업데이트 지원 (트리 구조 변경)
+        - todo_group_id를 바꾸면 하위 할 일도 함께 옮기고, 부모가 옛 그룹에 남으면 새 그룹의 최상위가 된다
         - 태그는 TagService.set_todo_tags() 사용
         
         :param todo_id: Todo ID
@@ -431,6 +451,7 @@ class TodoService:
         :raises TodoSelfReferenceError: 자기 자신을 부모로 설정 시
         :raises TodoInvalidParentError: 부모 Todo가 존재하지 않을 때
         :raises TodoParentGroupMismatchError: 부모와 그룹이 일치하지 않을 때
+        :raises TodoGroupNotFoundError: 옮길 할 일 그룹이 없거나 남의 것일 때
         """
         # 투영 Schedule보다 Todo 행을 먼저 잠근다 (ScheduleService._get_schedule_for_write와 같은 순서)
         todo = crud.get_todo(self.session, todo_id, self.owner_id, for_update=True)
@@ -440,12 +461,17 @@ class TodoService:
         # 업데이트 데이터 준비
         update_dict = data.model_dump()
 
-        # parent_id 변경 시 검증
+        # 다른 할 일 그룹으로 옮기면 그 그룹이 내 것인지 먼저 확인한다
+        new_group_id = update_dict.get('todo_group_id')
+        moving_group = new_group_id is not None and new_group_id != todo.todo_group_id
+        if moving_group:
+            from app.domain.todo_group.service import TodoGroupService
+            TodoGroupService(self.session, self.current_user).get_todo_group(new_group_id)
+
+        # parent_id 변경 시 검증 (옮기면 새 그룹 기준)
         if 'parent_id' in update_dict:
-            new_parent_id = update_dict['parent_id']
-            # tag_group_id도 변경될 수 있으므로 새 값 우선 사용
-            effective_tag_group_id = update_dict.get('tag_group_id', todo.tag_group_id)
-            self._validate_parent_id(new_parent_id, effective_tag_group_id, todo_id)
+            effective_todo_group_id = new_group_id if moving_group else todo.todo_group_id
+            self._validate_parent_id(update_dict['parent_id'], effective_todo_group_id, todo_id)
 
         old_status = todo.status
 
@@ -512,6 +538,9 @@ class TodoService:
             ))
         # 나머지 필드 업데이트
         todo = crud.update_todo(self.session, todo, data)
+
+        if moving_group:
+            self._move_subtree(todo, new_group_id, keep_parent='parent_id' in update_dict)
 
         # status 자동 불변조건 (명시 status 없을 때만): 투영 생성→SCHEDULED, 제거→UNSCHEDULED
         if deadline_updated and 'status' not in update_dict:
@@ -605,27 +634,27 @@ class TodoService:
         tag_service = TagService(self.session, self.current_user)
         return tag_service.get_todo_tags(todo_id)
 
-    def get_todo_stats(self, group_id: Optional[UUID] = None) -> TodoStats:
+    def get_todo_stats(self, todo_group_id: Optional[UUID] = None) -> TodoStats:
         """
-        Todo 통계 조회
+        Todo 통계 조회. 태그별 수는 어느 태그 그룹의 태그든 센다
         
-        :param group_id: 필터링할 그룹 ID (선택)
+        :param todo_group_id: 필터링할 할 일 그룹 ID (선택)
         :return: Todo 통계
         """
         # Todo 조회
-        result = self.get_all_todos(group_ids=[group_id] if group_id else None)
+        result = self.get_all_todos(todo_group_ids=[todo_group_id] if todo_group_id else None)
         todos = result.todos
 
         # Todo별 태그 조회
         todo_ids = [t.id for t in todos]
         if not todo_ids:
             return TodoStats(
-                group_id=group_id,
+                todo_group_id=todo_group_id,
                 total_count=0,
                 by_tag=[],
             )
 
-        tag_rows = crud.get_todo_tag_stats(self.session, todo_ids, group_id)
+        tag_rows = crud.get_todo_tag_stats(self.session, todo_ids)
 
         # 태그별 카운트
         tag_counts: dict[UUID, dict] = {}
@@ -640,7 +669,7 @@ class TodoService:
         ]
 
         return TodoStats(
-            group_id=group_id,
+            todo_group_id=todo_group_id,
             total_count=len(todos),
             by_tag=by_tag,
         )
@@ -675,7 +704,7 @@ class TodoService:
             title=todo.title,
             description=todo.description,
             deadline=todo.deadline,
-            tag_group_id=todo.tag_group_id,
+            todo_group_id=todo.todo_group_id,
             parent_id=todo.parent_id,
             status=todo.status,
             created_at=todo.created_at,

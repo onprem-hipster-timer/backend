@@ -16,6 +16,7 @@ from app.models.schedule import Schedule, ScheduleException
 from app.models.tag import Tag, TagGroup
 from app.models.timer import TimerSession
 from app.models.todo import Todo
+from app.models.todo_group import TodoGroup
 from app.models.user_profile import UserProfile
 from app.models.visibility import ResourceVisibility, VisibilityAllowEmail, VisibilityAllowList
 
@@ -39,12 +40,13 @@ def get_purgeable_subs(session: Session, cutoff: datetime) -> list[str]:
 def delete_user_data(session: Session, sub: str, verified_email: str | None) -> None:
     """sub의 모든 데이터와 다른 사용자 데이터 속 sub의 흔적을 지운다 (commit 없음)
 
-    순서: todo.tag_group_id가 RESTRICT라 Todo를 태그 그룹보다 먼저 지운다.
+    순서: todo.todo_group_id가 RESTRICT라 Todo를 할 일 그룹보다 먼저 지운다.
     """
     session.execute(delete(TimerSession).where(TimerSession.owner_id == sub))
     session.execute(delete(ScheduleException).where(ScheduleException.owner_id == sub))
     session.execute(delete(Schedule).where(Schedule.owner_id == sub))
     session.execute(delete(Todo).where(Todo.owner_id == sub))
+    session.execute(delete(TodoGroup).where(TodoGroup.owner_id == sub))
     session.execute(delete(Tag).where(Tag.owner_id == sub))
     session.execute(delete(TagGroup).where(TagGroup.owner_id == sub))
     session.execute(delete(Meeting).where(Meeting.owner_id == sub))

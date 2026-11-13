@@ -1068,9 +1068,9 @@ def test_get_recurring_schedules_mixed_with_regular_e2e(e2e_client):
 @pytest.mark.e2e
 def test_create_schedule_with_todo_options_e2e(e2e_client):
     """Schedule 생성 시 create_todo_options로 Todo 동시 생성 E2E 테스트"""
-    # 1. 태그 그룹 생성
+    # 1. 할 일 그룹 생성
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={
             "name": "Schedule Todo 테스트 그룹",
             "color": "#FF5733",
@@ -1088,7 +1088,7 @@ def test_create_schedule_with_todo_options_e2e(e2e_client):
             "start_time": "2024-01-01T10:00:00Z",
             "end_time": "2024-01-01T12:00:00Z",
             "create_todo_options": {
-                "tag_group_id": group_id
+                "todo_group_id": group_id
             }
         }
     )
@@ -1105,15 +1105,15 @@ def test_create_schedule_with_todo_options_e2e(e2e_client):
 
     assert todo["title"] == "Todo와 함께 생성할 일정"
     assert todo["description"] == "설명입니다"
-    assert todo["tag_group_id"] == group_id
+    assert todo["todo_group_id"] == group_id
 
 
 @pytest.mark.e2e
 def test_create_todo_from_schedule_e2e(e2e_client):
     """기존 Schedule에서 Todo 생성 E2E 테스트"""
-    # 1. 태그 그룹 생성
+    # 1. 할 일 그룹 생성
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={
             "name": "Schedule To Todo 테스트",
             "color": "#00FF00",
@@ -1138,14 +1138,14 @@ def test_create_todo_from_schedule_e2e(e2e_client):
     # 3. Schedule에서 Todo 생성
     todo_response = e2e_client.post(
         f"/v1/schedules/{schedule_id}/todo",
-        params={"tag_group_id": group_id}
+        params={"todo_group_id": group_id}
     )
     assert todo_response.status_code == 201
     todo = todo_response.json()
 
     assert todo["title"] == "나중에 Todo로 변환할 일정"
     assert todo["description"] == "변환 테스트"
-    assert todo["tag_group_id"] == group_id
+    assert todo["todo_group_id"] == group_id
     assert todo["status"] == "SCHEDULED"
 
     # 4. Schedule 확인 - source_todo_id가 설정되어야 함
@@ -1157,9 +1157,9 @@ def test_create_todo_from_schedule_e2e(e2e_client):
 @pytest.mark.e2e
 def test_create_todo_from_schedule_already_linked_e2e(e2e_client):
     """이미 Todo와 연결된 Schedule에서 다시 Todo 생성 시 에러 E2E 테스트"""
-    # 1. 태그 그룹 생성
+    # 1. 할 일 그룹 생성
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={
             "name": "중복 테스트 그룹",
             "color": "#0000FF",
@@ -1183,17 +1183,68 @@ def test_create_todo_from_schedule_already_linked_e2e(e2e_client):
     # 3. 첫 번째 Todo 생성 - 성공
     first_todo_response = e2e_client.post(
         f"/v1/schedules/{schedule_id}/todo",
-        params={"tag_group_id": group_id}
+        params={"todo_group_id": group_id}
     )
     assert first_todo_response.status_code == 201
 
     # 4. 두 번째 Todo 생성 시도 - 에러
     second_todo_response = e2e_client.post(
         f"/v1/schedules/{schedule_id}/todo",
-        params={"tag_group_id": group_id}
+        params={"todo_group_id": group_id}
     )
     assert second_todo_response.status_code == 400
     assert "already linked" in second_todo_response.json()["message"].lower()
+
+
+@pytest.mark.e2e
+def test_todo_from_schedule_without_group_goes_to_default_e2e(e2e_client):
+    """그룹을 정하지 않으면 일정에서 만든 할 일은 기본 할 일 그룹에 들어간다"""
+    default_id = e2e_client.get("/v1/todos/groups").json()[0]["id"]
+    with_options = e2e_client.post("/v1/schedules", json={
+        "title": "옵션으로 만든 할 일",
+        "start_time": "2024-04-01T10:00:00Z",
+        "end_time": "2024-04-01T11:00:00Z",
+        "create_todo_options": {},
+    }).json()
+    plain = e2e_client.post("/v1/schedules", json={
+        "title": "변환할 일정",
+        "start_time": "2024-04-02T10:00:00Z",
+        "end_time": "2024-04-02T11:00:00Z",
+    }).json()
+
+    converted = e2e_client.post(f"/v1/schedules/{plain['id']}/todo")
+
+    assert e2e_client.get(f"/v1/todos/{with_options['source_todo_id']}").json()["todo_group_id"] == default_id
+    assert converted.status_code == 201
+    assert converted.json()["todo_group_id"] == default_id
+
+
+@pytest.mark.e2e
+def test_todo_from_schedule_into_other_users_group_is_not_found_e2e(multi_user_e2e):
+    """남의 할 일 그룹으로는 일정에서 할 일을 만들 수 없고, 옵션이 거절되면 일정도 만들어지지 않는다"""
+    owner = multi_user_e2e.as_user("owner")
+    stranger = multi_user_e2e.as_user("stranger")
+    group_id = owner.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+    schedule = stranger.post("/v1/schedules", json={
+        "title": "내 일정",
+        "start_time": "2024-05-01T10:00:00Z",
+        "end_time": "2024-05-01T11:00:00Z",
+    }).json()
+
+    converted = stranger.post(f"/v1/schedules/{schedule['id']}/todo", params={"todo_group_id": group_id})
+    with_options = stranger.post("/v1/schedules", json={
+        "title": "옵션 일정",
+        "start_time": "2024-05-02T10:00:00Z",
+        "end_time": "2024-05-02T11:00:00Z",
+        "create_todo_options": {"todo_group_id": group_id},
+    })
+
+    assert converted.status_code == 404
+    assert with_options.status_code == 404
+    titles = [item["title"] for item in stranger.get(
+        "/v1/schedules", params={"start_date": "2024-05-01T00:00:00Z", "end_date": "2024-05-03T00:00:00Z"},
+    ).json()]
+    assert "옵션 일정" not in titles
 
 
 # ============================================================

@@ -355,9 +355,9 @@ async def get_active_timer(
 @router.post("/{schedule_id}/todo", status_code=status.HTTP_201_CREATED)
 async def create_todo_from_schedule(
         schedule_id: UUID,
-        tag_group_id: UUID = Query(
-            ...,
-            description="Todo가 속할 TagGroup ID (필수)"
+        todo_group_id: Optional[UUID] = Query(
+            None,
+            description="Todo가 속할 할 일 그룹 ID. 없으면 기본 그룹"
         ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
@@ -373,16 +373,16 @@ async def create_todo_from_schedule(
     
     제약사항:
     - 이미 Todo와 연결된 Schedule에서는 호출 불가 (400 에러)
-    - tag_group_id는 필수 파라미터
+    - todo_group_id가 남의 그룹이면 404
     
     :param schedule_id: Schedule ID
-    :param tag_group_id: Todo가 속할 TagGroup ID
+    :param todo_group_id: Todo가 속할 할 일 그룹 ID (없으면 기본 그룹)
     :return: 생성된 Todo
     """
     from app.domain.todo.service import TodoService
 
     schedule_service = ScheduleService(session, current_user)
-    todo = schedule_service.create_todo_from_schedule(schedule_id, tag_group_id)
+    todo = schedule_service.create_todo_from_schedule(schedule_id, todo_group_id)
 
     # TodoService를 사용하여 TodoRead DTO로 변환
     todo_service = TodoService(session, current_user)

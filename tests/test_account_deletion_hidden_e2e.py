@@ -51,8 +51,8 @@ def _make_schedule(client) -> str:
 
 
 def _make_todo(client) -> str:
-    group_id = client.post("/v1/tags/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
-    return client.post("/v1/todos", json={"title": "공유 Todo", "tag_group_id": group_id}).json()["id"]
+    group_id = client.post("/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}).json()["id"]
+    return client.post("/v1/todos", json={"title": "공유 Todo", "todo_group_id": group_id}).json()["id"]
 
 
 def _make_timer(client) -> str:

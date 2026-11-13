@@ -9,7 +9,7 @@ FastAPI Best Practices:
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import case
+from sqlalchemy import case, update
 from sqlmodel import Session, select
 
 from app.domain.todo.enums import TodoStatus
@@ -78,7 +78,7 @@ def get_todos_by_ids(session: Session, todo_ids: list[UUID]) -> list[Todo]:
 def get_todos_sorted(
         session: Session,
         owner_id: str,
-        group_ids: Optional[List[UUID]] = None,
+        todo_group_ids: Optional[List[UUID]] = None,
         parent_id: Optional[UUID] = None,
 ) -> List[Todo]:
     """
@@ -107,8 +107,8 @@ def get_todos_sorted(
         )
     )
 
-    if group_ids:
-        statement = statement.where(Todo.tag_group_id.in_(group_ids))
+    if todo_group_ids:
+        statement = statement.where(Todo.todo_group_id.in_(todo_group_ids))
     if parent_id is not None:
         statement = statement.where(Todo.parent_id == parent_id)
 
@@ -196,10 +196,9 @@ def update_todo(session: Session, todo: Todo, data: TodoUpdate) -> Todo:
 def get_todo_tag_stats(
         session: Session,
         todo_ids: List[UUID],
-        group_id: Optional[UUID] = None,
 ) -> list[tuple[UUID, str]]:
     """
-    Todo ID 목록의 태그별 통계 조회
+    Todo ID 목록의 태그별 통계 조회 (어느 태그 그룹의 태그든 센다)
 
     :return: [(tag_id, tag_name), ...]
     """
@@ -208,9 +207,51 @@ def get_todo_tag_stats(
         .join(Tag)
         .where(TodoTag.todo_id.in_(todo_ids))
     )
-    if group_id:
-        statement = statement.where(Tag.group_id == group_id)
     return list(session.exec(statement).all())
+
+
+def get_descendant_ids(session: Session, root_id: UUID, owner_id: str) -> List[UUID]:
+    """root의 모든 하위 할 일 id (root 제외). 깊이마다 한 번 조회하고, 이미 본 id는 다시 따라가지 않는다"""
+    found: List[UUID] = []
+    seen = {root_id}
+    frontier = [root_id]
+    while frontier:
+        children = session.exec(
+            select(Todo.id).where(Todo.owner_id == owner_id).where(Todo.parent_id.in_(frontier))
+        ).all()
+        frontier = [child for child in children if child not in seen]
+        seen.update(frontier)
+        found.extend(frontier)
+    return found
+
+
+def set_todos_group(session: Session, todo_ids: List[UUID], owner_id: str, group_id: UUID) -> None:
+    """todo_ids의 할 일을 group_id 그룹으로 옮긴다"""
+    if not todo_ids:
+        return
+    session.execute(
+        update(Todo)
+        .where(Todo.owner_id == owner_id)
+        .where(Todo.id.in_(todo_ids))
+        .values(todo_group_id=group_id)
+        .execution_options(synchronize_session="fetch")
+    )
+
+
+def move_todos_to_group(
+        session: Session,
+        owner_id: str,
+        from_group_id: UUID,
+        to_group_id: UUID,
+) -> None:
+    """from 그룹의 할 일을 모두 to 그룹으로 옮긴다. 그룹 안의 트리는 함께 옮겨져 모양이 그대로다"""
+    session.execute(
+        update(Todo)
+        .where(Todo.owner_id == owner_id)
+        .where(Todo.todo_group_id == from_group_id)
+        .values(todo_group_id=to_group_id)
+        .execution_options(synchronize_session="fetch")
+    )
 
 
 def delete_todo(session: Session, todo: Todo) -> None:
