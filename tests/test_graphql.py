@@ -1169,3 +1169,20 @@ def test_graphql_calendar_query_todo_excluded_by_date_range(e2e_client):
     event_ids = [e["id"] for e in events]
     # deadline이 있는 Todo는 Schedule로 변환되므로, Schedule ID로 확인해야 함
     assert schedule_id_from_todo not in event_ids, "날짜 범위 밖의 Todo의 Schedule은 포함되지 않아야 합니다"
+
+
+CALENDAR_QUERY = "{ calendar(startDate: \"2024-01-01\", endDate: \"2024-01-07\") { days { date } } }"
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "query",
+    ["{ __typename }", "{ calendar(", CALENDAR_QUERY],
+    ids=["typename", "syntax-error", "calendar"],
+)
+def test_graphql_request_closes_db_session(e2e_client, db_sessions, query):
+    """GraphQL 요청이 연 DB 세션은 어떤 resolver가 실행되든 요청이 끝나면 닫힌다"""
+    e2e_client.post("/v1/graphql", json={"query": query})
+
+    assert db_sessions.opened
+    assert len(db_sessions.closed) == len(db_sessions.opened)

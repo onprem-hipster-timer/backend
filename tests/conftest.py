@@ -44,6 +44,32 @@ def after_commit_items():
     set_after_commit_sink(previous)
 
 
+# ============ DB 세션 추적 ============
+
+@pytest.fixture
+def db_sessions(monkeypatch):
+    """앱이 _session_manager.get_session으로 연 세션과 닫은 세션을 기록한다"""
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from app.db.session import _session_manager
+
+    record = SimpleNamespace(opened=[], closed=[])
+    original = _session_manager.get_session
+
+    @contextmanager
+    def tracking_get_session():
+        with original() as session:
+            record.opened.append(session)
+            try:
+                yield session
+            finally:
+                record.closed.append(session)
+
+    monkeypatch.setattr(_session_manager, "get_session", tracking_get_session)
+    return record
+
+
 # ============ DB 타입 헬퍼 함수 ============
 
 def _get_test_database_url() -> str | None:
