@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.13-dc73273] - 2026-11-13
+
 ### Fixed
 
 - **GraphQL requests close their database session**: every request to `/v1/graphql` closes its database session when the request ends, including requests that do not run the `calendar` resolver (such as `{ __typename }` or introspection) and requests rejected during parsing or validation.
@@ -404,7 +410,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...HEAD
+[v2026.11.13-dc73273]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...v2026.11.13-dc73273
 [v2026.11.11-e2c26af]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...v2026.11.11-e2c26af
 [v2026.11.10-8cb773e]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...v2026.11.10-8cb773e
 [v2026.11.10-a4dbac3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...v2026.11.10-a4dbac3
