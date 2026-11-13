@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.13-541f2db] - 2026-11-13
+
 ### Added
 
 - **Todo groups**: `POST /v1/todos/groups` (201), `GET /v1/todos/groups`, `GET /v1/todos/groups/{group_id}`, `PATCH /v1/todos/groups/{group_id}` and `DELETE /v1/todos/groups/{group_id}` manage the groups that hold Todos (`id`, `name`, `color`, `description`, `is_default`, `created_at`, `updated_at`). Each user has one default group (`is_default: true`, named `기본` with color `#2196F3`), created by the server when it is first needed; `GET /v1/todos/groups` creates it if missing and commits before responding, so the returned `id` can be used right away. The list shows the default group first, then the other groups by name. `is_default` is read-only. The default group can be renamed or recolored but not deleted (409); deleting another group moves its Todos to the default group, keeping their parent-child links. Another user's group returns 404. `POST /v1/todos/groups` is limited to 30 requests per 60 seconds, separately from the `/v1/todos/*` rule. Purging an account deletes its todo groups.
@@ -428,7 +434,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-541f2db...HEAD
+[v2026.11.13-541f2db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...v2026.11.13-541f2db
 [v2026.11.13-dc73273]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...v2026.11.13-dc73273
 [v2026.11.11-e2c26af]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...v2026.11.11-e2c26af
 [v2026.11.10-8cb773e]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...v2026.11.10-8cb773e
