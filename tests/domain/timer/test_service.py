@@ -1810,3 +1810,33 @@ class TestElapsedTimeAccumulation:
 
         assert pause_events[0]["elapsed"] == 30
         assert pause_events[1]["elapsed"] == 75
+
+
+def test_get_all_timers_tag_filter_uses_own_schedule_and_todo_tags(
+        test_session, sample_schedule, sample_todo, sample_tag_group, test_user,
+):
+    """태그 필터는 타이머 자신 + 연결된 Schedule·Todo의 태그로 매칭"""
+    from app.core.constants import TagMatchMode
+    from app.domain.tag.schema.dto import TagCreate
+    from app.domain.tag.service import TagService
+
+    tag_service = TagService(test_session, test_user)
+    own, sched, todo = (
+        tag_service.create_tag(TagCreate(name=name, color="#FF0000", group_id=sample_tag_group.id))
+        for name in ("own", "sched", "todo")
+    )
+    tag_service.set_schedule_tags(sample_schedule.id, [sched.id])
+    tag_service.set_todo_tags(sample_todo.id, [todo.id])
+    service = TimerService(test_session, test_user)
+    own_timer = service.create_timer(TimerCreate(allocated_duration=600, tag_ids=[own.id]))
+    schedule_timer = service.create_timer(TimerCreate(schedule_id=sample_schedule.id, allocated_duration=600))
+    todo_timer = service.create_timer(TimerCreate(todo_id=sample_todo.id, allocated_duration=600))
+    service.create_timer(TimerCreate(allocated_duration=600))
+    test_session.flush()
+
+    def ids(tag_ids, tag_match):
+        return {t.id for t in service.get_all_timers(tag_ids=tag_ids, tag_match=tag_match)}
+
+    assert ids([own.id, sched.id, todo.id], TagMatchMode.ANY) == {own_timer.id, schedule_timer.id, todo_timer.id}
+    assert ids([todo.id], TagMatchMode.ALL) == {todo_timer.id}
+    assert ids([own.id, sched.id], TagMatchMode.ALL) == set()

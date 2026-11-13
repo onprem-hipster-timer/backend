@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
-from app.core.constants import TimerStatus
+from app.core.constants import TagMatchMode, TimerStatus
 from app.crud import timer as crud, schedule as schedule_crud, todo as todo_crud
 from app.crud import visibility as visibility_crud
 from app.domain.dateutil.service import ensure_utc_naive
@@ -222,7 +222,11 @@ class TimerService:
 
         return timer, True
 
-    def get_shared_timers(self) -> list[TimerSession]:
+    def get_shared_timers(
+            self,
+            tag_ids: Optional[list[UUID]] = None,
+            tag_match: TagMatchMode = TagMatchMode.ALL,
+    ) -> list[TimerSession]:
         """
         공유된 타이머 조회 (타인 소유, 접근 권한 있는 것만)
 
@@ -230,7 +234,10 @@ class TimerService:
         1. visibility 후보 목록 조회
         2. 리소스 배치 조회
         3. 배치 권한 필터링
+        4. tag_ids가 있으면 태그 필터 (get_all_timers와 같은 매칭)
 
+        :param tag_ids: 태그 필터
+        :param tag_match: 태그 매칭 방식 (all, any)
         :return: 공유된 타이머 리스트
         """
         # 1. 후보 목록 조회 (visibility != PRIVATE, owner != me)
@@ -258,6 +265,12 @@ class TimerService:
             resources=timers,
             get_resource_id=lambda t: t.id,
         )
+
+        if tag_ids:
+            matched_ids = crud.get_timer_ids_matching_tags(
+                self.session, [t.id for t in accessible_timers], tag_ids, tag_match
+            )
+            accessible_timers = [t for t in accessible_timers if t.id in matched_ids]
 
         return accessible_timers
 
@@ -311,6 +324,8 @@ class TimerService:
             timer_type: Optional[str] = None,
             start_date: Optional[datetime] = None,
             end_date: Optional[datetime] = None,
+            tag_ids: Optional[list[UUID]] = None,
+            tag_match: TagMatchMode = TagMatchMode.ALL,
     ) -> list[TimerSession]:
         """
         사용자의 모든 타이머 조회 (필터링 옵션 지원)
@@ -319,6 +334,8 @@ class TimerService:
         :param timer_type: 타입 필터 (independent, schedule, todo)
         :param start_date: 시작 날짜 필터 (started_at 기준)
         :param end_date: 종료 날짜 필터 (started_at 기준)
+        :param tag_ids: 태그 필터 (자신 + 연결된 Schedule·Todo의 태그로 매칭)
+        :param tag_match: 태그 매칭 방식 (all, any)
         :return: 타이머 리스트
         """
         timers = crud.get_all_timers(
@@ -328,6 +345,8 @@ class TimerService:
             timer_type=timer_type,
             start_date=start_date,
             end_date=end_date,
+            tag_ids=tag_ids,
+            tag_match=tag_match,
         )
 
         return timers

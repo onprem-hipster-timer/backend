@@ -2,9 +2,13 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import distinct, func, union
+from sqlalchemy import select as sa_select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, select, and_
 
-from app.core.constants import TimerStatus
+from app.core.constants import TagMatchMode, TimerStatus
+from app.models.tag import ScheduleTag, TimerTag, TodoTag
 from app.models.timer import TimerSession
 
 
@@ -304,6 +308,8 @@ def get_all_timers(
         timer_type: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        tag_ids: Optional[list[UUID]] = None,
+        tag_match: TagMatchMode = TagMatchMode.ALL,
 ) -> list[TimerSession]:
     """
     사용자의 모든 타이머 조회 (필터링 옵션 지원)
@@ -314,6 +320,8 @@ def get_all_timers(
     :param timer_type: 타입 필터 (independent, schedule, todo)
     :param start_date: 시작 날짜 필터 (started_at 기준)
     :param end_date: 종료 날짜 필터 (started_at 기준)
+    :param tag_ids: 태그 필터 (timer_tag_condition 참고)
+    :param tag_match: 태그 매칭 방식 (all, any)
     :return: 타이머 리스트
     """
     statement = (
@@ -346,6 +354,9 @@ def get_all_timers(
         statement = statement.where(TimerSession.started_at >= start_date)
     if end_date:
         statement = statement.where(TimerSession.started_at <= end_date)
+
+    if tag_ids:
+        statement = statement.where(timer_tag_condition(tag_ids, tag_match))
 
     # 최신순 정렬
     statement = statement.order_by(TimerSession.created_at.desc())
@@ -381,3 +392,44 @@ def get_user_active_timer(
     )
 
     return session.exec(statement).first()
+
+
+def timer_tag_condition(tag_ids: list[UUID], tag_match: TagMatchMode) -> ColumnElement[bool]:
+    """
+    태그 필터 조건
+
+    타이머의 태그 집합은 자신의 태그 + 연결된 Schedule의 태그 + 연결된 Todo의 태그다.
+    all이면 지정 태그를 모두, any면 하나 이상을 그 집합에 가진 타이머가 매칭된다.
+    """
+    wanted = set(tag_ids)
+    effective = union(
+        sa_select(TimerTag.timer_id.label("timer_id"), TimerTag.tag_id.label("tag_id")),
+        sa_select(TimerSession.id, ScheduleTag.tag_id)
+        .join(ScheduleTag, ScheduleTag.schedule_id == TimerSession.schedule_id),
+        sa_select(TimerSession.id, TodoTag.tag_id)
+        .join(TodoTag, TodoTag.todo_id == TimerSession.todo_id),
+    ).subquery()
+
+    matching = sa_select(effective.c.timer_id).where(effective.c.tag_id.in_(wanted))
+    if tag_match == TagMatchMode.ALL:
+        matching = matching.group_by(effective.c.timer_id).having(
+            func.count(distinct(effective.c.tag_id)) == len(wanted)
+        )
+    return TimerSession.id.in_(matching)
+
+
+def get_timer_ids_matching_tags(
+        session: Session,
+        timer_ids: list[UUID],
+        tag_ids: list[UUID],
+        tag_match: TagMatchMode,
+) -> set[UUID]:
+    """timer_ids 중 태그 필터(timer_tag_condition)에 맞는 타이머 ID"""
+    if not timer_ids:
+        return set()
+    statement = (
+        select(TimerSession.id)
+        .where(TimerSession.id.in_(timer_ids))
+        .where(timer_tag_condition(tag_ids, tag_match))
+    )
+    return set(session.exec(statement).all())

@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.constants import TagIncludeMode, ResourceScope
+from app.core.constants import TagIncludeMode, TagMatchMode, ResourceScope
 from app.crud import schedule as schedule_crud
 from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
@@ -189,6 +189,14 @@ async def list_timers(
             None,
             description="종료 날짜 필터 (started_at 기준, ISO 8601 형식)"
         ),
+        tag_ids: Optional[List[UUID]] = Query(
+            None,
+            description="태그 ID 리스트 (타이머 자신 + 연결된 Schedule·Todo의 태그로 tag_match에 따라 매칭)"
+        ),
+        tag_match: TagMatchMode = Query(
+            TagMatchMode.ALL,
+            description="태그 매칭 방식: all(모든 지정 태그, 기본값), any(하나 이상). tag_ids가 없으면 무시"
+        ),
         include_schedule: bool = Query(
             False,
             description="Schedule 정보 포함 여부 (기본값: false)"
@@ -224,6 +232,10 @@ async def list_timers(
       - schedule: Schedule 연결 타이머 (schedule_id != null)
       - todo: Todo 연결 타이머 (todo_id != null)
     - start_date, end_date: 날짜 범위 필터 (started_at 기준)
+    - tag_ids, tag_match: 태그 필터. 타이머 자신 + 연결된 Schedule·Todo의 태그로 매칭하며
+      tag_include_mode와 관계없다
+      - all(기본값): 모든 지정 태그를 가진 타이머
+      - any: 지정 태그 중 하나 이상을 가진 타이머
     """
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
@@ -242,6 +254,8 @@ async def list_timers(
             timer_type=timer_type,
             start_date=start_date,
             end_date=end_date,
+            tag_ids=tag_ids,
+            tag_match=tag_match,
         )
         for timer in my_timers:
             timer_read = _build_timer_read_with_relations(
@@ -258,7 +272,7 @@ async def list_timers(
 
     # 공유된 타이머 조회 (scope=shared 또는 scope=all)
     if scope in (ResourceScope.SHARED, ResourceScope.ALL):
-        shared_timers = timer_service.get_shared_timers()
+        shared_timers = timer_service.get_shared_timers(tag_ids=tag_ids, tag_match=tag_match)
         for timer in shared_timers:
             # status 필터 적용
             if normalized_status and timer.status not in normalized_status:
