@@ -11,7 +11,7 @@
 | 개념 | 설명 |
 |------|------|
 | **Todo** | 할 일 항목. 독립적인 엔티티로 존재합니다. |
-| **TodoGroup** | 할 일 그룹. Todo를 담는 그룹으로, Todo는 반드시 하나의 할 일 그룹에 속합니다. 사용자마다 지울 수 없는 기본 그룹이 하나 있습니다. |
+| **TodoGroup** | 해야 할 일 목록. Todo를 담는 목록으로, Todo는 반드시 하나의 해야 할 일 목록에 속합니다. 사용자마다 지울 수 없는 기본 목록이 하나 있습니다. |
 | **Schedule** | 캘린더 일정. Todo에 deadline이 있으면 자동으로 생성됩니다. |
 | **TagGroup** | 태그 그룹. 태그를 묶는 그룹이며, Todo가 속하는 그룹이 아닙니다. |
 | **Tag** | 세부 분류용 태그. TagGroup에 속하며, Todo/Schedule에 연결할 수 있습니다. |
@@ -51,7 +51,7 @@ interface Todo {
   title: string;           // 제목
   description?: string;    // 설명 (선택)
   deadline?: string;       // 마감일시 (ISO 8601, 선택)
-  todo_group_id: string;   // 소속 할 일 그룹 ID
+  todo_group_id: string;   // 소속 해야 할 일 목록 ID
   parent_id?: string;      // 부모 Todo ID (트리 구조용, 선택)
   status: TodoStatus;      // 상태
   created_at: string;      // 생성일시
@@ -103,10 +103,10 @@ type ScheduleState = "PLANNED" | "IN_PROGRESS" | "COMPLETED";
 ```typescript
 interface TodoGroup {
   id: string;            // UUID
-  name: string;          // 그룹명
+  name: string;          // 목록 이름
   color: string;         // 색상 코드 (#RRGGBB)
   description?: string;  // 설명 (선택)
-  is_default: boolean;   // 기본 그룹 여부 (읽기 전용)
+  is_default: boolean;   // 기본 목록 여부 (읽기 전용)
   created_at: string;
   updated_at: string;
 }
@@ -170,7 +170,7 @@ Content-Type: application/json
 |------|------|------|------|
 | `title` | string | ✅ | Todo 제목 |
 | `description` | string | ❌ | 설명 |
-| `todo_group_id` | UUID | ❌ | 소속 할 일 그룹 ID. 없으면 기본 그룹에 들어갑니다. 내 할 일 그룹이 아니면 `404` |
+| `todo_group_id` | UUID | ❌ | 소속 해야 할 일 목록 ID. 없으면 기본 목록에 들어갑니다. 내 해야 할 일 목록이 아니면 `404` |
 | `tag_ids` | UUID[] | ❌ | 연결할 태그 ID 목록 |
 | `deadline` | datetime | ❌ | 마감일시 (있으면 Schedule 자동 생성) |
 | `parent_id` | UUID | ❌ | 부모 Todo ID (트리 구조) |
@@ -221,7 +221,7 @@ GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2
 
 | 파라미터 | 타입 | 설명 |
 |---------|------|------|
-| `todo_group_ids` | UUID[] | `todo_group_id`가 해당 할 일 그룹인 Todo만 조회 |
+| `todo_group_ids` | UUID[] | `todo_group_id`가 해당 해야 할 일 목록인 Todo만 조회 |
 | `tag_ids` | UUID[] | 지정된 태그를 **모두** 포함한 Todo만 조회 (AND 방식) |
 
 !!! note "필터링 시 트리(orphan) 처리"
@@ -295,7 +295,7 @@ Content-Type: application/json
     반대로 연결 타이머를 완료·취소하면 Todo가 `DONE`·`CANCELLED`가 됩니다 (이미 `DONE`·`CANCELLED`면 그대로).
     자세한 내용은 [타이머 가이드](timer.md)의 "연결 Todo와 상태 연동"을 참고하세요.
 
-#### 다른 할 일 그룹으로 옮기기
+#### 다른 해야 할 일 목록으로 옮기기
 
 ```http
 PATCH /v1/todos/{todo_id}
@@ -304,11 +304,11 @@ Content-Type: application/json
 { "todo_group_id": "990e8400-e29b-41d4-a716-446655440004" }
 ```
 
-- 옮길 그룹이 없거나 내 할 일 그룹이 아니면 `404`이고, 아무것도 바뀌지 않습니다.
-- 하위 Todo(자식, 손자 …)도 모두 같은 그룹으로 옮겨지며, 트리 모양은 그대로입니다.
-- 부모가 옛 그룹에 남으면 옮긴 Todo는 새 그룹의 최상위(`parent_id: null`)가 됩니다.
-- `parent_id`를 함께 보내면 새 그룹을 기준으로 검사합니다. 지정한 부모가 새 그룹에 없으면 `400`입니다.
-- `todo_group_id: null`은 무시됩니다. Todo는 항상 할 일 그룹에 속합니다.
+- 옮길 목록이 없거나 내 해야 할 일 목록이 아니면 `404`이고, 아무것도 바뀌지 않습니다.
+- 하위 Todo(자식, 손자 …)도 모두 같은 목록으로 옮겨지며, 트리 모양은 그대로입니다.
+- 부모가 옛 목록에 남으면 옮긴 Todo는 새 목록의 최상위(`parent_id: null`)가 됩니다.
+- `parent_id`를 함께 보내면 새 목록을 기준으로 검사합니다. 지정한 부모가 새 목록에 없으면 `400`입니다.
+- `todo_group_id: null`은 무시됩니다. Todo는 항상 해야 할 일 목록에 속합니다.
 
 #### Todo 삭제
 
@@ -352,7 +352,7 @@ GET /v1/todos/stats
 GET /v1/todos/stats?todo_group_id=uuid
 ```
 
-`todo_group_id`를 주면 그 할 일 그룹의 Todo만 셉니다. `by_tag`는 태그 그룹과 관계없이 Todo에 붙은 모든 태그를 셉니다.
+`todo_group_id`를 주면 그 해야 할 일 목록의 Todo만 셉니다. `by_tag`는 태그 그룹과 관계없이 Todo에 붙은 모든 태그를 셉니다.
 
 **응답:**
 
@@ -369,12 +369,12 @@ GET /v1/todos/stats?todo_group_id=uuid
 
 ---
 
-### 할 일 그룹 API
+### 해야 할 일 목록 API
 
-할 일 그룹은 Todo를 담는 그룹입니다. 사용자마다 기본 그룹(`is_default: true`, 이름 `기본`, 색 `#2196F3`)이 하나 있고,
-`todo_group_id` 없이 만든 Todo는 기본 그룹에 들어갑니다. 기본 그룹은 처음 필요할 때 서버가 만듭니다.
+해야 할 일 목록은 Todo를 담는 목록입니다. 사용자마다 기본 목록(`is_default: true`, 이름 `기본`, 색 `#2196F3`)이 하나 있고,
+`todo_group_id` 없이 만든 Todo는 기본 목록에 들어갑니다. 기본 목록은 처음 필요할 때 서버가 만듭니다.
 
-#### 그룹 생성
+#### 목록 생성
 
 ```http
 POST /v1/todos/groups
@@ -401,24 +401,24 @@ Content-Type: application/json
 }
 ```
 
-`is_default`는 읽기 전용입니다. 요청에 넣어도 무시되고, 새로 만든 그룹은 항상 `false`입니다.
+`is_default`는 읽기 전용입니다. 요청에 넣어도 무시되고, 새로 만든 목록은 항상 `false`입니다.
 
-#### 그룹 목록 조회
+#### 목록 전체 조회
 
 ```http
 GET /v1/todos/groups
 ```
 
-기본 그룹이 먼저 오고, 나머지는 이름순입니다. 기본 그룹이 없으면 만든 뒤 응답 전에 커밋하므로,
-받은 기본 그룹 `id`로 곧바로 Todo를 만들 수 있습니다.
+기본 목록이 먼저 오고, 나머지는 이름순입니다. 기본 목록이 없으면 만든 뒤 응답 전에 커밋하므로,
+받은 기본 목록 `id`로 곧바로 Todo를 만들 수 있습니다.
 
-#### 그룹 단건 조회
+#### 목록 단건 조회
 
 ```http
 GET /v1/todos/groups/{group_id}
 ```
 
-#### 그룹 수정
+#### 목록 수정
 
 ```http
 PATCH /v1/todos/groups/{group_id}
@@ -427,30 +427,30 @@ Content-Type: application/json
 { "name": "회사", "color": "#3366FF" }
 ```
 
-`name`, `color`, `description`을 바꿀 수 있습니다. 기본 그룹도 바꿀 수 있습니다.
+`name`, `color`, `description`을 바꿀 수 있습니다. 기본 목록도 바꿀 수 있습니다.
 
-#### 그룹 삭제
+#### 목록 삭제
 
 ```http
 DELETE /v1/todos/groups/{group_id}
 ```
 
-- 그룹의 Todo는 삭제되지 않고 **기본 그룹으로 옮겨집니다**. 부모-자식 관계(트리 모양)는 그대로입니다.
-- 기본 그룹은 삭제할 수 없습니다 (`409`).
+- 목록의 Todo는 삭제되지 않고 **기본 목록으로 옮겨집니다**. 부모-자식 관계(트리 모양)는 그대로입니다.
+- 기본 목록은 삭제할 수 없습니다 (`409`).
 
-단건 조회·수정·삭제는 그룹이 없거나 내 할 일 그룹이 아니면 `404`입니다.
+단건 조회·수정·삭제는 목록이 없거나 내 해야 할 일 목록이 아니면 `404`입니다.
 
 !!! note "DB 레벨 보장"
-    - 사용자당 기본 그룹은 하나입니다. 부분 unique 인덱스 `uq_todo_group_owner_default`가 보장합니다.
+    - 사용자당 기본 목록은 하나입니다. 부분 unique 인덱스 `uq_todo_group_owner_default`가 보장합니다.
     - `todo.todo_group_id` FK(`fk_todo_todo_group_id`)에는 `ondelete=RESTRICT`가 걸려 있습니다. 서비스 로직을 우회해
-      Todo가 남아 있는 그룹을 DB에서 직접 삭제하려 하면 무결성 오류로 거부됩니다.
-      정상 API 경로에서는 Todo를 기본 그룹으로 먼저 옮기므로 발화하지 않습니다.
+      Todo가 남아 있는 목록을 DB에서 직접 삭제하려 하면 무결성 오류로 거부됩니다.
+      정상 API 경로에서는 Todo를 기본 목록으로 먼저 옮기므로 발화하지 않습니다.
 
 ---
 
 ### 태그 그룹 API
 
-태그 그룹은 태그를 묶는 그룹입니다. Todo는 태그 그룹이 아니라 할 일 그룹에 속합니다.
+태그 그룹은 태그를 묶는 그룹입니다. Todo는 태그 그룹이 아니라 해야 할 일 목록에 속합니다.
 
 #### 그룹 생성
 
@@ -697,7 +697,7 @@ const parentTodo = await createTodo({
 // 자식 Todo 생성
 const childTodo = await createTodo({
   title: "1단계: 설계",
-  todo_group_id: groupId,   // 부모와 같은 할 일 그룹이어야 함
+  todo_group_id: groupId,   // 부모와 같은 해야 할 일 목록이어야 함
   parent_id: parentTodo.id  // 부모 지정
 });
 ```
@@ -719,7 +719,7 @@ const response = await fetch('/v1/schedules', {
     end_time: "2024-01-20T12:00:00Z",
     tag_ids: [tagId],
     create_todo_options: {
-      todo_group_id: groupId  // Todo가 속할 할 일 그룹 (선택, 없으면 기본 그룹)
+      todo_group_id: groupId  // Todo가 속할 해야 할 일 목록 (선택, 없으면 기본 목록)
     }
   })
 });
@@ -731,7 +731,7 @@ const schedule = await response.json();
 #### 방법 2: 기존 Schedule에서 Todo 생성 (수동 API)
 
 ```typescript
-// 기존 Schedule에서 Todo 생성 (todo_group_id는 선택, 없으면 기본 그룹)
+// 기존 Schedule에서 Todo 생성 (todo_group_id는 선택, 없으면 기본 목록)
 const response = await fetch(`/v1/schedules/${scheduleId}/todo?todo_group_id=${groupId}`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' }
@@ -748,7 +748,7 @@ const todo = await response.json();
 !!! warning "주의"
     **제약사항**: 이미 Todo와 연결된 Schedule에서는 다시 Todo를 생성할 수 없습니다 (400 에러).
 
-    두 방법 모두 `todo_group_id`가 내 할 일 그룹이 아니면 `404`입니다. 방법 1에서는 이때 Schedule도 생성되지 않습니다.
+    두 방법 모두 `todo_group_id`가 내 해야 할 일 목록이 아니면 `404`입니다. 방법 1에서는 이때 Schedule도 생성되지 않습니다.
 
 ### 5. 캘린더 태그 필터링
 
@@ -885,7 +885,7 @@ export interface Todo {
 export interface TodoCreate {
   title: string;
   description?: string;
-  todo_group_id?: string; // 없으면 기본 그룹
+  todo_group_id?: string; // 없으면 기본 목록
   tag_ids?: string[];
   deadline?: string;
   parent_id?: string;
@@ -990,7 +990,7 @@ const tagResponse = await fetch('/v1/tags', {
 });
 const tag = await tagResponse.json();
 
-// 3. 할 일 그룹 생성 (선택 — 건너뛰면 Todo는 기본 그룹에 들어감)
+// 3. 해야 할 일 목록 생성 (선택 — 건너뛰면 Todo는 기본 목록에 들어감)
 const todoGroupResponse = await fetch('/v1/todos/groups', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -1223,19 +1223,19 @@ deadline 설정, `create_todo_options`, `POST /v1/schedules/{id}/todo`.
 
 ## 주의사항
 
-### 1. 할 일 그룹을 정하지 않으면 기본 그룹
+### 1. 해야 할 일 목록을 정하지 않으면 기본 목록
 
-`todo_group_id`를 빼면 Todo는 기본 할 일 그룹에 들어갑니다. 지정하면 내 할 일 그룹이어야 합니다 (아니면 `404`).
+`todo_group_id`를 빼면 Todo는 기본 해야 할 일 목록에 들어갑니다. 지정하면 내 해야 할 일 목록이어야 합니다 (아니면 `404`).
 
 ```typescript
-// 기본 그룹에 생성
+// 기본 목록에 생성
 await fetch('/v1/todos', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ title: "할 일" })
 });
 
-// 지정한 할 일 그룹에 생성
+// 지정한 해야 할 일 목록에 생성
 await fetch('/v1/todos', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -1246,8 +1246,8 @@ await fetch('/v1/todos', {
 });
 ```
 
-자식 Todo는 부모와 같은 할 일 그룹이어야 합니다. 부모가 기본 그룹이 아닌 그룹에 있으면 자식을 만들 때도
-같은 `todo_group_id`를 보내세요. 빼면 기본 그룹으로 정해져 `400`입니다.
+자식 Todo는 부모와 같은 해야 할 일 목록이어야 합니다. 부모가 기본 목록이 아닌 목록에 있으면 자식을 만들 때도
+같은 `todo_group_id`를 보내세요. 빼면 기본 목록으로 정해져 `400`입니다.
 
 ### 2. deadline 설정 시 Schedule 자동 생성
 
@@ -1276,9 +1276,9 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그가 Todo의 �
   - `source_todo_policy` 필수 (clear_deadline: 마감도 제거 / keep_deadline: 마감 유지)
   - 어느 쪽이든 Todo는 유지되고 연동 플래그만 `UNSCHEDULED`로 해제
   - 연결 타이머가 있으면 `linked_timer_policy` 필수
-- **할 일 그룹 삭제**(`DELETE /v1/todos/groups/{id}`):
-  - 그룹의 Todo는 삭제되지 않고 기본 그룹으로 이동 (부모-자식 관계 유지)
-  - 기본 그룹은 삭제 불가 (`409`)
+- **해야 할 일 목록 삭제**(`DELETE /v1/todos/groups/{id}`):
+  - 목록의 Todo는 삭제되지 않고 기본 목록으로 이동 (부모-자식 관계 유지)
+  - 기본 목록은 삭제 불가 (`409`)
   - DB 레벨로는 `todo.todo_group_id`에 `ondelete=RESTRICT` 안전핀이 있어 서비스 우회 삭제를 차단
 - **태그 그룹 삭제**(`DELETE /v1/tags/groups/{id}`):
   - 그룹 내 모든 Tag 삭제 (CASCADE) — Todo·Schedule·타이머에서 그 태그 연결도 사라짐
@@ -1312,15 +1312,15 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그가 Todo의 �
 | DELETE | `/v1/todos/{id}` | Todo 삭제 |
 | GET | `/v1/todos/stats` | Todo 통계 조회 |
 
-### 할 일 그룹 API
+### 해야 할 일 목록 API
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| POST | `/v1/todos/groups` | 할 일 그룹 생성 |
-| GET | `/v1/todos/groups` | 할 일 그룹 목록 조회 (기본 그룹이 없으면 생성) |
-| GET | `/v1/todos/groups/{id}` | 할 일 그룹 단건 조회 |
-| PATCH | `/v1/todos/groups/{id}` | 할 일 그룹 수정 (기본 그룹 포함) |
-| DELETE | `/v1/todos/groups/{id}` | 할 일 그룹 삭제 (Todo는 기본 그룹으로 이동, 기본 그룹은 `409`) |
+| POST | `/v1/todos/groups` | 해야 할 일 목록 생성 |
+| GET | `/v1/todos/groups` | 해야 할 일 목록 전체 조회 (기본 목록이 없으면 생성) |
+| GET | `/v1/todos/groups/{id}` | 해야 할 일 목록 단건 조회 |
+| PATCH | `/v1/todos/groups/{id}` | 해야 할 일 목록 수정 (기본 목록 포함) |
+| DELETE | `/v1/todos/groups/{id}` | 해야 할 일 목록 삭제 (Todo는 기본 목록으로 이동, 기본 목록은 `409`) |
 
 ### Tag API
 
@@ -1340,7 +1340,7 @@ Todo의 태그를 수정하면 연결된 모든 Schedule의 태그가 Todo의 �
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | POST | `/v1/schedules` | Schedule 생성 (`create_todo_options`로 Todo 동시 생성 가능) |
-| POST | `/v1/schedules/{id}/todo` | 기존 Schedule에서 Todo 생성 (`todo_group_id` 선택, 없으면 기본 그룹) |
+| POST | `/v1/schedules/{id}/todo` | 기존 Schedule에서 Todo 생성 (`todo_group_id` 선택, 없으면 기본 목록) |
 
 ### GraphQL API
 

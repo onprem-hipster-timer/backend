@@ -81,7 +81,7 @@ interface PauseEvent {
       그 일정에 걸린 타이머는 묻지 않고 `schedule_id`만 `null`이 됩니다 (`timer.updated`).
       삭제되는 Todo에도 연결된 타이머는 그 Todo의 `linked_timer_policy`만 따릅니다.
     - 반복 일정의 마지막 인스턴스를 지워 원본이 삭제될 때는 생략하면 `unlink`입니다.
-    - 태그 그룹·할 일 그룹 삭제는 Todo를 지우지 않으므로 타이머 연결에 영향이 없습니다.
+    - 태그 그룹·해야 할 일 목록 삭제는 Todo를 지우지 않으므로 타이머 연결에 영향이 없습니다.
 
 !!! note "연결 Todo와 상태 연동"
     타이머는 연결된 Todo의 집중 세션입니다. 타이머를 끝내면 Todo도 끝나고, Todo의 상태가 바뀌면
