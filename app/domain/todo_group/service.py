@@ -40,7 +40,7 @@ class TodoGroupService:
 
     def create_todo_group(self, data: TodoGroupCreate) -> TodoGroup:
         """할 일 그룹 생성. 기본 그룹은 만들 수 없다"""
-        todo_group = TodoGroup.model_validate({**data.model_dump(), "owner_id": self.owner_id})
+        todo_group = TodoGroup.model_validate(data, update={"owner_id": self.owner_id})
         return crud.create_todo_group(self.session, todo_group)
 
     def get_todo_group(self, group_id: UUID) -> TodoGroup:
@@ -86,11 +86,9 @@ class TodoGroupService:
             return existing
 
         self.session.flush()
-        todo_group = TodoGroup(
-            owner_id=self.owner_id,
-            name=DEFAULT_TODO_GROUP_NAME,
-            color=DEFAULT_TODO_GROUP_COLOR,
-            is_default=True,
+        todo_group = TodoGroup.model_validate(
+            TodoGroupCreate(name=DEFAULT_TODO_GROUP_NAME, color=DEFAULT_TODO_GROUP_COLOR),
+            update={"owner_id": self.owner_id, "is_default": True},
         )
         try:
             with self.session.begin_nested():
