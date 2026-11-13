@@ -9,7 +9,7 @@ GraphQL Router
 """
 from typing import Any, Coroutine
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session
 from strawberry.fastapi import GraphQLRouter
 
@@ -20,28 +20,21 @@ from app.db.session import get_db
 from app.domain.schedule.schema.query import schema
 
 
-async def get_context(request: Request) -> dict:
+async def get_context(request: Request, session: Session = Depends(get_db)) -> dict:
     """
     GraphQL 컨텍스트 생성 (인증 포함)
     
-    Bug Fix: Generator 패턴을 사용하여 세션 생명주기 안전하게 관리
-    - get_db()의 Generator를 사용하여 세션 생성 (읽기 전용, commit 불필요)
-    - GraphQL resolver에서 try-finally를 통해 cleanup 보장
-    - 요청 종료 시 자동으로 세션 정리됨
+    세션:
+    - context_getter는 FastAPI 의존성으로 해석되므로 get_db 세션(읽기 전용)을 Depends로 받는다
+    - 세션은 어떤 resolver가 실행되든(또는 실행되지 않든) 요청이 끝나면 FastAPI가 닫는다
     
     인증:
     - Authorization 헤더에서 Bearer 토큰 추출
     - OIDC Provider를 통해 JWT 검증
     - CurrentUser 객체를 컨텍스트에 추가
-    
-    주의: Strawberry는 context를 자동으로 cleanup하지 않으므로
-    GraphQL resolver에서 try-finally를 통해 cleanup을 보장해야 합니다.
-    """
-    # Generator를 사용하여 세션 생성
-    # get_db()는 읽기 전용 세션 (commit 불필요)
-    session_gen = get_db()
-    session: Session = next(session_gen)
 
+    테스트: tests/test_graphql.py (요청 종료 시 세션 close)
+    """
     # 인증 처리
     current_user: CurrentUser | None = None
 
@@ -63,25 +56,23 @@ async def get_context(request: Request) -> dict:
                 pass
 
     if current_user is not None:
-        _require_active_account(session, session_gen, current_user.sub)
+        _require_active_account(session, current_user.sub)
     if current_user is not None and app_config.settings.CONSENT_ENFORCED:
         # 지연 import: domain.user.service가 app.core.auth를 import하므로 순환 회피
         from app.domain.user.exceptions import ConsentRequiredError
         from app.domain.user.service import consent_pending
 
         if consent_pending(session, current_user.sub):
-            session_gen.close()
             raise ConsentRequiredError()
 
     return {
         "request": request,
         "session": session,
         "current_user": current_user,
-        "_session_gen": session_gen,  # 정리를 위한 Generator 참조
     }
 
 
-def _require_active_account(session: Session, session_gen, sub: str) -> None:
+def _require_active_account(session: Session, sub: str) -> None:
     """휴면·파기 계정은 REST와 같은 오류로 거부한다"""
     from app.domain.user.exceptions import AccountDeletedError, AccountDeletionPendingError
     from app.domain.user.service import AccountState, account_state
@@ -89,7 +80,6 @@ def _require_active_account(session: Session, session_gen, sub: str) -> None:
     state = account_state(session, sub)
     if state == AccountState.ACTIVE:
         return
-    session_gen.close()
     if state == AccountState.DELETED:
         raise AccountDeletedError()
     raise AccountDeletionPendingError()

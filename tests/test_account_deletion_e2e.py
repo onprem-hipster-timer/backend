@@ -231,6 +231,18 @@ class TestDormantOwnRequests:
         assert r.status_code == 423
         assert r.json()["message"] == "account_deletion_pending"
 
+    def test_graphql_rejection_closes_db_session(self, dormant, multi_user_e2e, monkeypatch, db_sessions):
+        from app.core.auth import CurrentUser
+        monkeypatch.setattr(
+            CurrentUser, "mock", classmethod(lambda cls: multi_user_e2e.get_user("user-a"))
+        )
+
+        r = dormant.post("/v1/graphql", json={"query": "{ __typename }"})
+
+        assert r.status_code == 423
+        assert db_sessions.opened
+        assert len(db_sessions.closed) == len(db_sessions.opened)
+
     def test_graphql_allowed_for_active_user(self, multi_user_e2e, monkeypatch):
         from app.core.auth import CurrentUser
         monkeypatch.setattr(

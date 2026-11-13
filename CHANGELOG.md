@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **GraphQL requests close their database session**: every request to `/v1/graphql` closes its database session when the request ends, including requests that do not run the `calendar` resolver (such as `{ __typename }` or introspection) and requests rejected during parsing or validation.
 
 ---
 
