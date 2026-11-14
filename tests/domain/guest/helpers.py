@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.db.session import _session_manager
 from app.domain.guest.model import Guest
+from app.domain.guest.schema.dto import normalize_guest_name
 from app.models.visibility import ResourceType
 from tests.domain.guest.fakes import FakeKratos
 
@@ -15,8 +16,16 @@ def make_guest(
         password: str = "1234",
         resource_type: ResourceType = ResourceType.MEETING,
 ) -> Guest:
-    identity = kratos.add_identity("guest", {"handle": f"{uuid.uuid4()}@guest.invalid", "name": name}, password)
-    guest = Guest(identity_id=identity["id"], resource_type=resource_type, resource_id=resource_id)
+    """Kratos identity(handle "<행 id>@guest.invalid", trait name)와 게스트 행(name은 정규형)을 만든다"""
+    guest_id = uuid.uuid4()
+    identity = kratos.add_identity("guest", {"handle": f"{guest_id}@guest.invalid", "name": name}, password)
+    guest = Guest(
+        id=guest_id,
+        identity_id=identity["id"],
+        resource_type=resource_type,
+        resource_id=resource_id,
+        name=normalize_guest_name(name),
+    )
     with _session_manager.get_session() as session:
         session.add(guest)
         session.commit()

@@ -20,6 +20,10 @@ import app.models.holiday  # noqa: F401
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BEFORE_GUEST = "e7f3a9c5b1d8"
+INSERT = sa.text(
+    "INSERT INTO guest (id, identity_id, resource_type, resource_id, name, created_at, updated_at)"
+    " VALUES (:id, :identity, :resource_type, :resource, :name, '2026-11-14 00:00:00', '2026-11-14 00:00:00')"
+).bindparams(resource_type="meeting")
 
 
 def _alembic_config(monkeypatch: pytest.MonkeyPatch, database_url: str) -> Config:
@@ -46,11 +50,17 @@ def _tables(engine: sa.Engine) -> set[str]:
 
 
 def _shape(engine: sa.Engine, table: str) -> tuple:
-    """컬럼(타입·NULL 허용), 인덱스(이름·컬럼·unique), 기본키"""
+    """컬럼(타입·NULL 허용), 인덱스(이름·컬럼·unique), 기본키, unique 제약(이름·컬럼)"""
     inspector = sa.inspect(engine)
     columns = {c["name"]: (str(c["type"]), c["nullable"]) for c in inspector.get_columns(table)}
-    indexes = {(i["name"], tuple(i["column_names"]), bool(i["unique"])) for i in inspector.get_indexes(table)}
-    return columns, indexes, tuple(inspector.get_pk_constraint(table)["constrained_columns"])
+    # PostgreSQL은 unique 제약의 인덱스도 인덱스로 돌려준다 (duplicates_constraint). 제약은 uniques로 본다
+    indexes = {
+        (i["name"], tuple(i["column_names"]), bool(i["unique"]))
+        for i in inspector.get_indexes(table)
+        if not i.get("duplicates_constraint")
+    }
+    uniques = {(u["name"], tuple(u["column_names"])) for u in inspector.get_unique_constraints(table)}
+    return columns, indexes, tuple(inspector.get_pk_constraint(table)["constrained_columns"]), uniques
 
 
 @pytest.fixture
@@ -101,24 +111,39 @@ def test_identity_id_is_unique(migrated) -> None:
     command.downgrade(config, BEFORE_GUEST)
     command.upgrade(config, "head")
 
-    insert = sa.text(
-        "INSERT INTO guest (id, identity_id, resource_type, resource_id, created_at, updated_at)"
-        " VALUES (:id, :identity, 'meeting', :resource, '2026-11-14 00:00:00', '2026-11-14 00:00:00')"
-    )
     with engine.begin() as connection:
-        connection.execute(insert, {"id": "a" * 32, "identity": "i1", "resource": "1" * 32})
-        connection.execute(insert, {"id": "b" * 32, "identity": "i2", "resource": "1" * 32})
+        connection.execute(INSERT, {"id": "a" * 32, "identity": "i1", "resource": "1" * 32, "name": "a"})
+        connection.execute(INSERT, {"id": "b" * 32, "identity": "i2", "resource": "1" * 32, "name": "b"})
     with pytest.raises(sa.exc.IntegrityError):
         with engine.begin() as connection:
-            connection.execute(insert, {"id": "c" * 32, "identity": "i1", "resource": "2" * 32})
+            connection.execute(INSERT, {"id": "c" * 32, "identity": "i1", "resource": "2" * 32, "name": "c"})
+
+
+def test_name_is_unique_within_one_resource(migrated) -> None:
+    """같은 리소스(종류·id)에서 이름은 하나뿐이다. 다른 리소스나 다른 종류에서는 같은 이름을 쓸 수 있다"""
+    engine, config = migrated
+    command.downgrade(config, BEFORE_GUEST)
+    command.upgrade(config, "head")
+
+    with engine.begin() as connection:
+        connection.execute(INSERT, {"id": "a" * 32, "identity": "i1", "resource": "1" * 32, "name": "민수"})
+        connection.execute(INSERT, {"id": "b" * 32, "identity": "i2", "resource": "2" * 32, "name": "민수"})
+        connection.execute(
+            INSERT.bindparams(resource_type="todo"),
+            {"id": "c" * 32, "identity": "i3", "resource": "1" * 32, "name": "민수"},
+        )
+    with pytest.raises(sa.exc.IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(INSERT, {"id": "d" * 32, "identity": "i4", "resource": "1" * 32, "name": "민수"})
 
 
 def test_migrated_schema_matches_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, migrated) -> None:
-    """마이그레이션으로 만든 guest와 모델이 만든 것의 컬럼·인덱스가 같다"""
+    """마이그레이션으로 만든 guest와 모델이 만든 것의 컬럼·인덱스·unique 제약이 같다"""
     engine, config = migrated
     command.downgrade(config, BEFORE_GUEST)
     command.upgrade(config, "head")
     migrated_shape = _shape(engine, "guest")
+    assert ("uq_guest_resource_name", ("resource_type", "resource_id", "name")) in migrated_shape[3]
 
     modeled = sa.create_engine(f"sqlite:///{(tmp_path / 'modeled.db').resolve().as_posix()}")
     SQLModel.metadata.create_all(modeled)

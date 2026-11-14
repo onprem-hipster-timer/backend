@@ -112,11 +112,11 @@ def test_unregistered_resource_type_is_403(guest_client, path):
     assert guest_client.post(path, json=_body(uuid.uuid4(), resource_type="todo")).status_code == 403
 
 
-@pytest.mark.parametrize("path", [CREATE, LOOKUP])
-def test_kratos_down_is_503(guest_client, kratos, resource, path):
+def test_kratos_down_is_503_on_create_and_lookup_still_answers(guest_client, kratos, resource):
     make_guest(kratos, resource, name="다른 이름")
     kratos.down.add("admin")
-    assert guest_client.post(path, json=_body(resource)).status_code == 503
+    assert guest_client.post(CREATE, json=_body(resource)).status_code == 503
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name="다른 이름")).json()["handle"]
     assert len(guest_rows()) == 1
 
 
@@ -349,18 +349,11 @@ def test_emoji_sequence_with_zero_width_joiner_is_refused(guest_client, kratos, 
     assert kratos.identities == {}
 
 
-def test_stored_name_in_other_spacing_is_taken(guest_client, kratos, resource):
-    """Kratos에 정규형이 아닌 이름이 저장돼 있어도 정규형으로 비교한다"""
-    stored = make_guest(kratos, resource, name="김\u3000 민수")
-    assert guest_client.post(CREATE, json=_body(resource, name="김 민수")).status_code == 409
-    found = guest_client.post(LOOKUP, json=_lookup_body(resource, name="김 민수")).json()["handle"]
-    assert found == kratos.identities[stored.identity_id]["traits"]["handle"]
-
-
-def test_stored_name_without_canonical_form_never_matches(guest_client, kratos, resource):
-    make_guest(kratos, resource, name="민수\u200b")
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name="민수")).json() == {"handle": None}
-    assert guest_client.post(CREATE, json=_body(resource, name="민수")).status_code == 201
+def test_handle_is_derived_from_guest_row(guest_client, kratos, resource):
+    created = guest_client.post(CREATE, json=_body(resource)).json()
+    assert created["handle"] == f"{created['guest_id']}@guest.invalid"
+    [row] = guest_rows()
+    assert kratos.identities[row.identity_id]["traits"]["handle"] == created["handle"]
 
 
 def test_lookup_of_closed_resource_returns_no_handle(guest_client, host, resource):

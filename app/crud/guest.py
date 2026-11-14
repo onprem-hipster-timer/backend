@@ -23,6 +23,16 @@ def get_guest_by_identity(session: Session, identity_id: str) -> Guest | None:
     return session.exec(select(Guest).where(Guest.identity_id == identity_id)).first()
 
 
+def get_guest_by_name(session: Session, resource_type: ResourceType, resource_id: UUID, name: str) -> Guest | None:
+    statement = (
+        select(Guest)
+        .where(Guest.resource_type == resource_type)
+        .where(Guest.resource_id == resource_id)
+        .where(Guest.name == name)
+    )
+    return session.exec(statement).first()
+
+
 def list_resource_guests(session: Session, resource_type: ResourceType, resource_id: UUID) -> list[Guest]:
     """리소스의 게스트를 만든 순서대로"""
     statement = (

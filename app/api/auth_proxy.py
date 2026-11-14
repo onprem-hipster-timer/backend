@@ -12,8 +12,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - 설정 제출은 메일 코드로 본인 확인한 복구 세션의 비밀번호 변경만 넘긴다. 새어 나간 비밀번호만으로
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다.
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
-  정한다 (app/api/kratos_hooks.py). 게스트 이름 변경은 리소스마다 하나씩 넘기고, 같은 리소스의 다른 게스트가
-  쓰는 이름이면 409 guest_name_taken으로 거절한다 (app/domain/guest/service.py rename_submission)
+  정한다 (app/api/kratos_hooks.py). 같은 리소스의 다른 게스트가 쓰는 이름(정규형으로 비교)이면 넘기지 않고
+  409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other)
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)의 쿼리 문자열에는 flow 하나만 받는다(키는 대소문자 구분 없이).
   Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
@@ -26,7 +26,6 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 import json
 import logging
 import re
-from contextlib import nullcontext
 from urllib.parse import parse_qs, parse_qsl, urlencode
 
 import httpx
@@ -37,7 +36,6 @@ from app.core import courier
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
-from app.domain.guest.exceptions import GuestServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -344,8 +342,6 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     return _unreadable_body()
                 if cleaned != body:
                     outgoing = client.build_request(request.method, url, headers=headers, content=cleaned)
-            # 게스트 이름 변경 제출이면 리소스를 잠근 채 넘긴다
-            rename_guard = nullcontext(True)
             if request.method != "GET" and submit_path == SETTINGS_SUBMIT_PATH:
                 rejection, guest_identity_id = await _settings_rejection(client, request, body)
                 if rejection is not None:
@@ -357,19 +353,13 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     headers={k: v for k, v in headers.items() if k != "authorization"},
                     content=body,
                 )
-                if guest_identity_id is not None:
-                    rename_guard = guest_service.rename_submission(
+                if guest_identity_id is not None and await guest_service.name_taken_by_other(
                         guest_identity_id, _submitted_name(request.headers.get("content-type", ""), body)
-                    )
-            async with rename_guard as allowed:
-                if not allowed:
+                ):
                     return _guest_name_taken()
-                upstream = await client.send(outgoing)
+            upstream = await client.send(outgoing)
     except httpx.HTTPError:
         logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
-        return _unavailable()
-    except GuestServiceUnavailableError:
-        logger.warning("게스트 이름 확인 중 Kratos admin API 오류")
         return _unavailable()
 
     if request.method == "POST" and upstream.status_code in (200, 303) and MAIL_FLOW_SUBMIT.fullmatch(path):

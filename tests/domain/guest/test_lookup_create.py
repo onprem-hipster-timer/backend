@@ -1,6 +1,6 @@
 """게스트 이름 찾기와 생성 (service.lookup, service.create)
 
-게스트 이름은 리소스 안에서 겹치지 않는다. 이름은 Kratos identity에만 있으므로 리소스 게스트의 identity를 읽어 비교한다.
+게스트 이름(정규형)은 guest.name에 있고 리소스 안에서 겹치지 않는다. handle은 "<게스트 행 id>@guest.invalid"다.
 """
 import unicodedata
 import uuid
@@ -58,6 +58,8 @@ async def test_create_makes_identity_and_row(kratos, resource):
         {"value": handle, "via": "email", "verified": True, "status": "completed"}
     ]
     assert kratos.passwords[row.identity_id] == "1"
+    assert handle == f"{row.id}@guest.invalid"
+    assert row.name == "민수"
 
 
 @pytest.mark.asyncio
@@ -89,8 +91,8 @@ async def test_name_is_compared_after_normalisation(kratos, resource, variant):
 
 
 @pytest.mark.asyncio
-async def test_name_stored_in_other_form_in_kratos_is_taken(kratos, resource):
-    """Kratos에 NFC가 아닌 이름이 저장돼 있어도 NFC로 비교한다"""
+async def test_name_given_in_other_form_is_taken(kratos, resource):
+    """다른 형태로 받은 이름도 정규형으로 저장하고 비교한다"""
     make_guest(kratos, resource, name=unicodedata.normalize("NFD", "민수"))
     with pytest.raises(GuestNameTakenError):
         await service.create(_create(resource, name="민수"))
@@ -121,15 +123,39 @@ async def test_same_name_in_other_resource_type_is_allowed(kratos, host, resourc
 
 
 @pytest.mark.asyncio
-async def test_name_follows_renames_in_kratos(kratos, resource):
-    """Kratos에서 이름을 바꾸면 옛 이름은 비고 새 이름은 차지된다"""
-    await service.create(_create(resource, name="민수"))
+async def test_name_comes_from_guest_row_not_kratos_trait(kratos, resource):
+    """찾기와 중복 판정은 guest.name을 쓴다. Kratos trait만 바뀌어도 따라가지 않는다"""
+    created = await service.create(_create(resource, name="민수"))
     [row] = guest_rows()
     kratos.identities[row.identity_id]["traits"]["name"] = "철수"
 
+    assert (await service.lookup(_lookup(resource, name="민수"))).handle == created.handle
+    assert (await service.lookup(_lookup(resource, name="철수"))).handle is None
     with pytest.raises(GuestNameTakenError):
-        await service.create(_create(resource, name="철수"))
-    await service.create(_create(resource, name="민수"))
+        await service.create(_create(resource, name="민수"))
+
+
+@pytest.mark.asyncio
+async def test_name_taken_between_check_and_insert_is_409_and_removes_identity(kratos, resource, monkeypatch):
+    """확인 뒤 같은 이름의 게스트가 먼저 저장되면 UNIQUE 제약으로 거절하고 만든 identity를 지운다"""
+    from app.core import kratos_admin
+
+    original = kratos_admin.create_identity
+    competitor = []
+
+    async def create_then_race(*args, **kwargs):
+        identity = await original(*args, **kwargs)
+        competitor.append(make_guest(kratos, resource, name="민수"))
+        return identity
+
+    monkeypatch.setattr(kratos_admin, "create_identity", create_then_race)
+    with pytest.raises(GuestNameTakenError):
+        await service.create(_create(resource, name="민수"))
+
+    [row] = guest_rows()
+    assert row.id == competitor[0].id
+    assert list(kratos.identities) == [competitor[0].identity_id]
+    assert len(kratos.deleted) == 1
 
 
 @pytest.mark.asyncio
@@ -141,40 +167,6 @@ async def test_discarded_guests_name_is_free_again(kratos, resource):
     assert (await service.lookup(_lookup(resource))).handle is None
     again = await service.create(_create(resource))
     assert again.guest_id != created.guest_id
-
-
-@pytest.mark.asyncio
-async def test_row_without_identity_does_not_hold_name(kratos, resource):
-    """Kratos에서 identity가 사라진 게스트 행은 이름을 차지하지 않는다"""
-    guest = make_guest(kratos, resource)
-    del kratos.identities[guest.identity_id]
-    await service.create(_create(resource))
-
-
-@pytest.mark.asyncio
-async def test_identities_are_read_in_one_batched_call(kratos, resource):
-    for i in range(3):
-        make_guest(kratos, resource, name=f"g{i}")
-    kratos.list_requests.clear()
-
-    await service.create(_create(resource, name="새 이름"))
-
-    assert len(kratos.list_requests) == 1
-    assert len(kratos.list_requests[0].url.params.get_list("ids")) == 3
-
-
-@pytest.mark.asyncio
-async def test_more_guests_than_one_batch_are_all_compared(kratos, resource, monkeypatch):
-    from app.core import kratos_admin
-
-    monkeypatch.setattr(kratos_admin, "IDENTITY_BATCH_SIZE", 2)
-    for i in range(5):
-        make_guest(kratos, resource, name=f"g{i}")
-    kratos.list_requests.clear()
-
-    with pytest.raises(GuestNameTakenError):
-        await service.create(_create(resource, name="g4"))
-    assert len(kratos.list_requests) == 3
 
 
 # ============ 이름 찾기 ============
@@ -200,12 +192,6 @@ async def test_lookup_without_match_has_no_handle(kratos, resource):
 
 
 @pytest.mark.asyncio
-async def test_lookup_in_empty_resource_does_not_call_kratos(kratos, resource):
-    assert (await service.lookup(_lookup(resource))).handle is None
-    assert kratos.list_requests == []
-
-
-@pytest.mark.asyncio
 async def test_lookup_does_not_cross_resources(kratos, host, resource):
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
@@ -214,10 +200,13 @@ async def test_lookup_does_not_cross_resources(kratos, host, resource):
 
 
 @pytest.mark.asyncio
-async def test_lookup_creates_nothing(kratos, resource):
-    await service.lookup(_lookup(resource))
-    assert guest_rows() == []
-    assert kratos.identities == {}
+async def test_lookup_creates_nothing_and_does_not_call_kratos(kratos, resource):
+    make_guest(kratos, resource, name="영희")
+    kratos.down.add("admin")
+    assert (await service.lookup(_lookup(resource, name="영희"))).handle
+    assert (await service.lookup(_lookup(resource))).handle is None
+    assert len(guest_rows()) == 1
+    assert kratos.list_requests == []
 
 
 # ============ 리소스 상태 ============
@@ -282,36 +271,19 @@ async def test_closed_resource_keeps_guests_expired_and_missing_discard_them(kra
 # ============ Kratos 실패 ============
 
 @pytest.mark.asyncio
+async def test_admin_down_is_unavailable_and_creates_nothing(kratos, resource):
+    kratos.down.add("admin")
+    with pytest.raises(GuestServiceUnavailableError):
+        await service.create(_create(resource))
+    assert guest_rows() == []
+
+@pytest.mark.asyncio
 async def test_identity_creation_failure_leaves_nothing(kratos, resource):
     kratos.fail_create = True
     with pytest.raises(GuestServiceUnavailableError):
         await service.create(_create(resource))
     assert guest_rows() == []
     assert kratos.identities == {}
-
-
-@pytest.mark.asyncio
-async def test_admin_down_is_unavailable_and_creates_nothing(kratos, resource):
-    make_guest(kratos, resource, name="다른 이름")
-    kratos.down.add("admin")
-    with pytest.raises(GuestServiceUnavailableError):
-        await service.create(_create(resource))
-    with pytest.raises(GuestServiceUnavailableError):
-        await service.lookup(_lookup(resource))
-    assert len(guest_rows()) == 1
-
-
-@pytest.mark.asyncio
-async def test_identity_lookup_failure_is_unavailable_not_free(kratos, resource):
-    """이름을 확인할 수 없으면 비어 있다고 보지 않는다"""
-    await service.create(_create(resource))
-    kratos.fail_list = True
-    with pytest.raises(GuestServiceUnavailableError):
-        await service.create(_create(resource, name="영희"))
-    with pytest.raises(GuestServiceUnavailableError):
-        await service.lookup(_lookup(resource))
-    assert len(guest_rows()) == 1
-    assert len(kratos.identities) == 1
 
 
 @pytest.mark.asyncio

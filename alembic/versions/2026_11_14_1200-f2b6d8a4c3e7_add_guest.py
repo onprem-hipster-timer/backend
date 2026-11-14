@@ -1,6 +1,6 @@
 """add guest
 
-리소스 하나에 속한 게스트(Kratos identity ↔ 리소스) guest 테이블을 만든다.
+리소스 하나에 속한 게스트(Kratos identity ↔ 리소스, 리소스 안에서 겹치지 않는 이름) guest 테이블을 만든다.
 앱 시작의 create_all이 먼저 만들었을 수 있으므로 없을 때만 만든다.
 
 회귀 테스트: tests/db/test_guest_migration.py
@@ -35,7 +35,9 @@ def upgrade() -> None:
         sa.Column('identity_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('resource_type', sa.String(length=8), nullable=False),
         sa.Column('resource_id', sa.Uuid(), nullable=False),
+        sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
         sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('resource_type', 'resource_id', 'name', name='uq_guest_resource_name'),
     )
     op.create_index(op.f('ix_guest_id'), 'guest', ['id'], unique=False)
     op.create_index(op.f('ix_guest_identity_id'), 'guest', ['identity_id'], unique=True)

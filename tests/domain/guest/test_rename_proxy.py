@@ -1,6 +1,6 @@
 """/auth 프록시의 게스트 이름 변경 (method: profile)
 
-프록시는 같은 리소스의 다른 게스트가 쓰는 이름이면 Kratos에 넘기지 않고 409 guest_name_taken으로 거절한다.
+프록시는 같은 리소스의 다른 게스트가 쓰는 이름(정규형으로 비교)이면 Kratos에 넘기지 않고 409 guest_name_taken으로 답한다.
 가짜 Kratos는 설정 제출 때 backend 설정 훅 판정(service.settings_change_allowed)을 거친다.
 """
 import unicodedata
@@ -114,30 +114,6 @@ async def test_name_freed_by_discard_can_be_taken(guest_client, kratos, resource
     assert kratos.name_of(guest.identity_id) == "철수"
 
 
-def test_rename_runs_inside_resource_lock(guest_client, kratos, resource, monkeypatch):
-    guest = make_guest(kratos, resource, name="민수")
-    original = service._resource_lock
-    locked: list = []
-
-    def recording(resource_type, resource_id):
-        locked.append((resource_type, resource_id))
-        return original(resource_type, resource_id)
-
-    monkeypatch.setattr(service, "_resource_lock", recording)
-
-    assert _rename(guest_client, kratos, guest, "철수").status_code == 200
-    assert locked == [(guest.resource_type, resource)]
-
-
-def test_names_unreadable_is_502_and_not_forwarded(guest_client, kratos, resource):
-    guest = make_guest(kratos, resource, name="민수")
-    make_guest(kratos, resource, name="영희")
-    kratos.fail_list = True
-
-    assert _rename(guest_client, kratos, guest, "철수").status_code == 502
-    assert kratos.name_of(guest.identity_id) == "민수"
-
-
 def test_invalid_name_is_left_to_settings_hook(guest_client, kratos, resource):
     guest = make_guest(kratos, resource, name="민수")
     r = _rename(guest_client, kratos, guest, 3)
@@ -154,3 +130,29 @@ def test_rename_to_non_canonical_name_is_not_stored(guest_client, kratos, resour
 
     assert r.status_code in (400, 409)
     assert kratos.name_of(guest.identity_id) == "민수"
+
+
+def test_submitted_name_is_compared_in_canonical_form(guest_client, kratos, resource):
+    guest = make_guest(kratos, resource, name="민수")
+    make_guest(kratos, resource, name="김 민수")
+    r = _rename(guest_client, kratos, guest, "김\u3000\u3000민수")
+    assert r.status_code == 409
+    assert r.json()["error"]["id"] == "guest_name_taken"
+
+
+def test_proxy_check_does_not_call_kratos_admin(guest_client, kratos, resource):
+    guest = make_guest(kratos, resource, name="민수")
+    make_guest(kratos, resource, name="철수")
+    kratos.down.add("admin")
+    assert _rename(guest_client, kratos, guest, "철수").status_code == 409
+    assert kratos.list_requests == []
+
+
+def test_rename_through_proxy_updates_lookup(guest_client, kratos, resource):
+    guest = make_guest(kratos, resource, name="민수")
+    assert _rename(guest_client, kratos, guest, "철수").status_code == 200
+
+    body = {"resource_type": "meeting", "resource_id": str(resource)}
+    handle = kratos.identities[guest.identity_id]["traits"]["handle"]
+    assert guest_client.post("/v1/guests/lookup", json={**body, "name": "철수"}).json() == {"handle": handle}
+    assert guest_client.post("/v1/guests/lookup", json={**body, "name": "민수"}).json() == {"handle": None}

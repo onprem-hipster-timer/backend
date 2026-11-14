@@ -138,9 +138,11 @@ async def test_guest_of_closed_resource_cannot_rename(kratos, host, open_guest):
 
 
 @pytest.mark.asyncio
-async def test_rename_refused_when_current_identity_cannot_be_read(kratos, open_guest):
-    kratos.fail_get = True
+async def test_settings_decision_does_not_call_kratos(kratos, open_guest):
+    kratos.down.add("admin")
     traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    traits = _traits(kratos, open_guest, handle="other@guest.invalid")
     assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
 
 
@@ -206,14 +208,6 @@ async def test_rename_to_name_freed_by_discard_is_allowed(kratos, open_guest):
     assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
 
 
-@pytest.mark.asyncio
-async def test_rename_refused_when_names_cannot_be_read(kratos, open_guest):
-    make_guest(kratos, open_guest.resource_id, name="영희")
-    kratos.fail_list = True
-    traits = _traits(kratos, open_guest, name="철수")
-    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
-
-
 @pytest.mark.parametrize("name", ["김  민수", "김\u3000민수", " 김 민수", "김\t민수"])
 @pytest.mark.asyncio
 async def test_rename_to_non_canonical_spacing_is_refused(kratos, open_guest, name):
@@ -235,3 +229,41 @@ async def test_rename_to_name_of_other_guest_stored_in_other_spacing_is_refused(
     make_guest(kratos, open_guest.resource_id, name="김\u3000민수")
     traits = _traits(kratos, open_guest, name="김 민수")
     assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+# ============ guest.name ============
+
+def _row(guest):
+    return next(row for row in guest_rows() if row.id == guest.id)
+
+
+@pytest.mark.asyncio
+async def test_allowed_rename_updates_guest_name_and_lookup(kratos, open_guest):
+    from app.domain.guest.schema.dto import GuestLookup
+
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+    assert _row(open_guest).name == "철수"
+    lookup = GuestLookup(resource_type=ResourceType.MEETING, resource_id=open_guest.resource_id, name="철수")
+    assert (await service.lookup(lookup)).handle == traits["handle"]
+    lookup = GuestLookup(resource_type=ResourceType.MEETING, resource_id=open_guest.resource_id, name="민수")
+    assert (await service.lookup(lookup)).handle is None
+
+
+@pytest.mark.asyncio
+async def test_refused_rename_keeps_guest_name(kratos, open_guest, guest_events):
+    make_guest(kratos, open_guest.resource_id, name="철수")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert _row(open_guest).name == "민수"
+    assert guest_events == []
+
+
+@pytest.mark.asyncio
+async def test_rename_compares_with_guest_name_not_kratos_trait(kratos, open_guest, guest_events):
+    """Kratos trait가 guest.name과 달라도 guest.name과 같은 이름이면 바꾸지 않는다"""
+    kratos.identities[open_guest.identity_id]["traits"]["name"] = "다른 이름"
+    traits = _traits(kratos, open_guest, name="민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    assert guest_events == []

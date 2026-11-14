@@ -2,7 +2,7 @@
 Kratos admin API 클라이언트
 
 탈퇴 신청 때 세션 폐기, 파기 때 identity 삭제, 미인증 가입 정리 때 identity 목록 조회에 쓴다. JWT sub가 Kratos identity id다.
-게스트(app/domain/guest)는 identity 생성·조회·삭제에 쓴다.
+게스트(app/domain/guest)는 identity 생성·삭제에 쓴다.
 KRATOS_ADMIN_URL이 비어 있으면 호출하지 않는다.
 """
 import logging
@@ -81,10 +81,6 @@ async def list_identities() -> list[dict] | None:
     return identities
 
 
-# GET /admin/identities?ids=... 한 번에 묻는 id 수
-IDENTITY_BATCH_SIZE = 100
-
-
 async def create_identity(
         schema_id: str,
         traits: dict,
@@ -119,43 +115,3 @@ async def create_identity(
         logger.warning("Kratos identity 생성 실패: status=%s", response.status_code)
         return None
     return response.json()
-
-
-async def get_identity(identity_id: str) -> dict | None:
-    """identity 하나. 없거나 실패하면 None."""
-    if not app_config.settings.KRATOS_ADMIN_URL:
-        return None
-    try:
-        async with _make_client() as client:
-            response = await client.get(_identity_path(identity_id))
-    except httpx.HTTPError:
-        logger.warning("Kratos identity 조회 요청 실패", exc_info=True)
-        return None
-    if response.status_code != 200:
-        if response.status_code != 404:
-            logger.warning("Kratos identity 조회 실패: status=%s", response.status_code)
-        return None
-    return response.json()
-
-
-async def get_identities(identity_ids: list[str]) -> list[dict] | None:
-    """주어진 id의 identity들 (없는 id는 빠진다). 실패하면 None."""
-    if not app_config.settings.KRATOS_ADMIN_URL:
-        return None
-    wanted = set(identity_ids)
-    found: list[dict] = []
-    ids = list(dict.fromkeys(identity_ids))
-    try:
-        async with _make_client() as client:
-            for start in range(0, len(ids), IDENTITY_BATCH_SIZE):
-                batch = ids[start:start + IDENTITY_BATCH_SIZE]
-                params = [("ids", identity_id) for identity_id in batch] + [("page_size", str(len(batch)))]
-                response = await client.get("/admin/identities", params=params)
-                if response.status_code != 200:
-                    logger.warning("Kratos identity 조회 실패: status=%s", response.status_code)
-                    return None
-                found.extend(i for i in response.json() if i.get("id") in wanted)
-    except httpx.HTTPError:
-        logger.warning("Kratos identity 조회 요청 실패", exc_info=True)
-        return None
-    return found
