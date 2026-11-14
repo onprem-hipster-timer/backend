@@ -100,6 +100,17 @@ DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 !!! info "회원 탈퇴"
     신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 위 세 경로 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
 
+### 게스트 (Guests)
+
+`GUEST_ENABLED=true`일 때만 응답합니다(꺼져 있으면 404).
+
+```http
+POST   /v1/guests/enter                   # 리소스에 게스트로 입장 (인증 없음, Kratos 세션 토큰 반환)
+DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게스트 JWT)
+```
+
+게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+
 ### 공휴일 (Holidays)
 
 ```http

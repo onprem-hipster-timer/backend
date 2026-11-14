@@ -89,9 +89,11 @@ nav:
     - Add Friend: guides/add-friend.md
     - Visibility: guides/visibility.md
     - Meeting: guides/meeting.md
+    - Guest: guides/guest.md
   - Deployment:
     - Docker: deployment/docker.md
     - Production: deployment/production.md
+    - Guest Accounts (Kratos): deployment/kratos-guest.md
     - Release: deployment/release.md
   - Development:
     - Domain Events & Read/Write: development/domain-events.md

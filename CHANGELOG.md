@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Guest accounts (off by default)**: With `GUEST_ENABLED=true`, `POST /v1/guests/enter` (no authentication) takes `resource_type`, `resource_id`, `name` and `password` and returns a Kratos `session_token` with `guest_id`, `resource_type` and `resource_id`; the client gets JWTs through `/auth/sessions/whoami?tokenize_as=api` like members. If a guest of that resource has the same name and the password matches, the caller enters as that guest; otherwise a new guest is created. Names are trimmed, 1–50 characters without control characters, and may repeat; at most 10 guests of one resource share a name (409). Passwords must be non-empty and at most 72 bytes in UTF-8, with no other rule. A resource that does not exist or does not accept guests returns 403, and Kratos being unreachable returns 503 without leaving a guest behind. `POST /v1/guests/enter` is limited to 10 requests per 60 seconds per IP. `DELETE /v1/guests/me` deletes the calling guest (204). Guests are Kratos identities of the `KRATOS_GUEST_SCHEMA_ID` schema (default `guest`) created through the admin API; the backend stores only the link between the identity and its resource (table `guest`, migration `f2b6d8a4c3e7`). Resources register a guest host per resource type (`OPEN`, `CLOSED`, `EXPIRED`, `MISSING`); guests of `EXPIRED` or missing resources are deleted with their Kratos identity, and resources receive `GuestDiscarded` and `GuestRenamed` events. With `GUEST_ENABLED=false` these endpoints return 404. Kratos settings: `docs/deployment/kratos-guest.ko.md`.
+- **Kratos hook endpoints**: `POST /internal/kratos/hooks/login` and `POST /internal/kratos/hooks/settings/{profile,password,oidc}` answer Kratos web hooks only when `X-Kratos-Hook-Key` equals `KRATOS_HOOK_API_KEY` (401 otherwise) and only with `GUEST_ENABLED=true` (404 otherwise). Login is allowed for members with a verified address and for guests whose resource accepts them; a guest can change only its name. Refusals use the Kratos message format (403).
+- **Local Kratos with guests**: `docker compose -f compose.kratos.yaml -f compose.kratos.guest.yaml up -d` layers `dev/kratos/kratos.guest.yml` over `kratos.yml` (guest schema, login and settings web hooks, admin API on `127.0.0.1:4434`).
+
+### Changed
+
+- **Guest tokens are refused on member routes**: Authenticated REST routes, GraphQL and the timer WebSocket refuse tokens whose `schema_id` claim equals `KRATOS_GUEST_SCHEMA_ID` (403; the WebSocket closes with 1008), whether or not guests are on. With `GUEST_ENABLED=true`, tokens without a `schema_id` claim are refused (401). The local Kratos claims mapper adds `schema_id` and works for identities without an `email` trait.
+- **Guest name changes through `/auth`**: With `GUEST_ENABLED=true`, the proxy forwards `method: profile` settings submissions of guest sessions to Kratos. Other settings submissions are handled as before.
 
 ---
 

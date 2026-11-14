@@ -292,6 +292,7 @@ def handle(events, session):
 | `TodoDeleted`, `ScheduleDeleted` (연결 타이머) | ✅ 구현 (→ 핸들러 `app/domain/timer/event_handlers.py`) |
 | `TodoStatusChanged` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/timer/event_handlers.py`) |
 | `TimerCompleted`, `TimerCancelled` | ✅ 구현 (`app/domain/timer/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
+| `GuestDiscarded`, `GuestRenamed` | ✅ 발행 (`app/domain/guest/events.py`). 게스트를 받는 리소스가 핸들러를 등록한다 ([게스트 가이드](../guides/guest.ko.md)) |
 
 !!! note "반복 일정 × source_todo (결정)"
     마감은 시점이므로 그 투영이 반복 시리즈가 되는 것 자체가 모순 — source-linked

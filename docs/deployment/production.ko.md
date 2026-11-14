@@ -149,9 +149,18 @@ KRATOS_ADMIN_URL=http://127.0.0.1:4434
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
-- 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다.
+- 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다. `GUEST_ENABLED=true`면 게스트 세션의 `method: profile` 제출(이름 변경)도 넘기고, 바꿀 수 있는 항목은 Kratos 설정 훅이 정합니다.
 - 소셜 로그인·가입 제출(`method: oidc`)에서는 클라이언트가 보낸 `traits.email`을 버립니다. 이메일은 제공자가 검증해 준 값만 씁니다. 키가 겹쳐 `method`를 하나로 읽을 수 없는 본문은 400으로 거절합니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
+
+#### 게스트 계정
+
+게스트 계정은 `GUEST_ENABLED=true`와 Kratos 설정(게스트 schema, 클레임 매퍼의 `schema_id`, 로그인·설정 훅)을 함께 바꿔야 켜집니다. 설정 전체와 확인 절차는 [게스트 계정 설정 (Kratos)](kratos-guest.ko.md)에 있습니다.
+
+```bash
+GUEST_ENABLED=true
+KRATOS_HOOK_API_KEY=<무작위 값>   # Kratos web_hook의 X-Kratos-Hook-Key와 같은 값
+```
 
 #### 메일 발송 (courier 잡)
 
