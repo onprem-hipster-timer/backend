@@ -362,14 +362,13 @@ flowchart TD
 
 ### 꺼진 상태 (`GUEST_ENABLED=false`)
 
-```mermaid
-flowchart LR
-    A["/v1/guests/*"] --> A404["404"]
-    B["/internal/kratos/hooks/*"] --> B404["404"]
-    C["게스트 schema의 토큰"] --> C403["모든 인증 경로에서 403"]
-    D["schema_id 없는 토큰"] --> D200["회원으로 받는다"]
-    E["/auth 게스트 세션의 profile 제출"] --> E403["403"]
-```
+| 요청 | 응답 |
+|------|------|
+| `/v1/guests/*` | `404` |
+| `/internal/kratos/hooks/*` | `404` |
+| 게스트 schema의 토큰 | 모든 인증 경로에서 `403` |
+| `schema_id` 클레임이 없는 토큰 | 회원으로 받는다 |
+| `/auth`에서 게스트 세션의 `method: profile` 제출 | `403` |
 
 게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시의 판정 순서](#auth-프록시의-판정-순서)).
 
