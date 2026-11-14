@@ -67,7 +67,7 @@ def _get_guest(identity_id: str) -> Guest | None:
         return crud.get_guest_by_identity(session, identity_id)
 
 
-def _is_guest_schema(schema_id: str | None) -> bool:
+def is_guest_schema(schema_id: str | None) -> bool:
     return schema_id is not None and schema_id == app_config.settings.KRATOS_GUEST_SCHEMA_ID
 
 
@@ -229,7 +229,7 @@ async def enter(data: GuestEnter) -> GuestEnterRead:
 
 async def login_allowed(identity_id: str, schema_id: str | None, verified: bool) -> bool:
     """로그인 허용 여부. 게스트는 게스트 행이 있고 접근 정책이 허용할 때, 회원은 인증된 주소가 있을 때"""
-    if not _is_guest_schema(schema_id):
+    if not is_guest_schema(schema_id):
         return verified
     guest = _get_guest(identity_id)
     if guest is None:
@@ -248,7 +248,7 @@ def _valid_name(name: object) -> bool:
 
 async def settings_change_allowed(method: str, identity_id: str, schema_id: str | None, traits: dict) -> bool:
     """설정 변경 허용 여부. 게스트는 로그인 식별자(handle)를 그대로 둔 이름 변경만 된다"""
-    if not _is_guest_schema(schema_id):
+    if not is_guest_schema(schema_id):
         return True
     if method != "profile":
         return False

@@ -30,6 +30,8 @@ GUEST_TOKEN_NOT_REFUSED = {
     ("GET", "/auth/.well-known/openid-configuration"),
     ("GET", "/auth//.well-known/openid-configuration"),
     ("POST", "/internal/accounts/purge"),  # 공유 토큰
+    ("POST", "/internal/kratos/hooks/login"),  # Kratos 훅 키
+    ("POST", "/internal/kratos/hooks/settings/{method}"),  # Kratos 훅 키
     # Kratos 공개 API 프록시 (게스트도 세션 토큰으로 JWT를 받는다)
     *{(m, "/auth/{path:path}") for m in ("GET", "POST", "PUT", "PATCH", "DELETE")},
 }
