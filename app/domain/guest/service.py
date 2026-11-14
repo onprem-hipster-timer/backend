@@ -261,8 +261,20 @@ def _valid_name(name: object) -> bool:
         return False
 
 
+async def _name_taken_by_other(guest: Guest, name: str) -> bool:
+    """같은 리소스의 다른 게스트가 지금 이 이름인지. 이름을 읽지 못하면 True"""
+    with _session_manager.get_session() as session:
+        guests = crud.list_resource_guests(session, guest.resource_type, guest.resource_id)
+    others = [other for other in guests if other.identity_id != guest.identity_id]
+    try:
+        return await _find_by_name(others, name) is not None
+    except GuestServiceUnavailableError:
+        return True
+
+
 async def settings_change_allowed(method: str, identity_id: str, schema_id: str | None, traits: dict) -> bool:
-    """설정 변경 허용 여부. 게스트는 로그인 식별자(handle)를 그대로 둔 이름 변경만 된다"""
+    """설정 변경 허용 여부. 게스트는 로그인 식별자(handle)를 그대로 둔 이름 변경만 되고,
+    같은 리소스의 다른 게스트가 쓰는 이름으로는 바꿀 수 없다"""
     if not is_guest_schema(schema_id):
         return True
     if method != "profile":
@@ -277,6 +289,8 @@ async def settings_change_allowed(method: str, identity_id: str, schema_id: str 
     if traits.get("handle") != current_traits.get("handle") or not _valid_name(traits.get("name")):
         return False
     if traits["name"] != current_traits.get("name"):
+        if await _name_taken_by_other(guest, traits["name"]):
+            return False
         with _transaction() as session:
             collect_event(session, GuestRenamed(
                 owner_id=guest.identity_id,
