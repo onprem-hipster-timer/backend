@@ -2,6 +2,7 @@
 인증 의존성 (FastAPI Dependency)
 
 - get_current_user: 인증 게이트(실패 시 401). AuthMiddleware가 채운 request.state를 재사용.
+  게스트 토큰은 403 (ensure_member). 게스트를 받는 경로는 app/domain/guest/dependencies.py를 쓴다.
 - get_optional_current_user: 선택적 인증(미인증 허용 엔드포인트용).
 - get_current_user_synced: 인증 + 최소 표시 프로필 JIT 동기화(인증 REST 라우터용).
 """
@@ -23,18 +24,34 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
-        request: Request,
-        credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> CurrentUser:
+def ensure_member(user: CurrentUser) -> CurrentUser:
+    """회원 토큰만 통과시킨다. REST·GraphQL·WebSocket의 회원 인증이 모두 이 함수를 거친다.
+
+    - GUEST_ENABLED인데 토큰에 schema_id 클레임이 없으면 401 (게스트와 회원을 가릴 수 없다)
+    - schema_id가 KRATOS_GUEST_SCHEMA_ID면 GUEST_ENABLED와 상관없이 403
     """
-    FastAPI Dependency: 현재 인증된 사용자 반환
+    if app_config.settings.GUEST_ENABLED and user.schema_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing 'schema_id' claim",
+        )
+    if user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guest accounts cannot use this endpoint",
+        )
+    return user
+
+
+async def authenticate_request(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None,
+) -> CurrentUser:
+    """토큰 검증만 한다 (회원·게스트 구분 없음). 라우트에는 get_current_user나 게스트 의존성을 쓴다.
 
     - AuthMiddleware에서 이미 검증된 경우 request.state에서 가져옴 (중복 검증 방지)
     - 그렇지 않으면 Authorization: Bearer <token> 헤더에서 토큰 추출 후 검증
-    - CurrentUser 객체 반환
-
-    OIDC_ENABLED=false인 경우 테스트용 mock 사용자 반환
+    - OIDC_ENABLED=false인 경우 테스트용 mock 사용자 반환
     """
     # AuthMiddleware에서 이미 검증된 경우 재사용
     if hasattr(request.state, 'current_user') and request.state.current_user:
@@ -66,6 +83,22 @@ async def get_current_user(
     return CurrentUser.from_claims(claims)
 
 
+async def get_current_user(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> CurrentUser:
+    """
+    FastAPI Dependency: 현재 인증된 회원 반환
+
+    토큰 검증은 authenticate_request, 게스트 거부는 ensure_member가 한다.
+    OIDC_ENABLED=false인 경우 테스트용 mock 사용자 반환
+    """
+    user = await authenticate_request(request, credentials)
+    if settings.OIDC_ENABLED:
+        ensure_member(user)
+    return user
+
+
 async def get_optional_current_user(
         request: Request,
         credentials: HTTPAuthorizationCredentials | None = Depends(security),
@@ -73,11 +106,12 @@ async def get_optional_current_user(
     """
     FastAPI Dependency: 선택적 인증 (인증 없어도 접근 가능한 엔드포인트용)
 
-    토큰이 없으면 None 반환, 토큰이 있으면 검증 후 CurrentUser 반환
+    토큰이 없으면 None 반환, 토큰이 있으면 검증 후 CurrentUser 반환. 게스트 토큰은 403
     """
     # AuthMiddleware에서 이미 검증된 경우 재사용
     if hasattr(request.state, 'current_user') and request.state.current_user:
-        return request.state.current_user
+        user = request.state.current_user
+        return ensure_member(user) if settings.OIDC_ENABLED else user
 
     if not settings.OIDC_ENABLED:
         return CurrentUser.mock()
@@ -86,9 +120,11 @@ async def get_optional_current_user(
         return None
 
     try:
-        return await get_current_user(request, credentials)
+        user = await authenticate_request(request, credentials)
     except HTTPException:
         return None
+    # 게스트 토큰은 미인증으로 넘기지 않고 거부한다
+    return ensure_member(user)
 
 
 # 탈퇴를 신청한 휴면 계정이 쓸 수 있는 경로 (본인 프로필 조회, 탈퇴 신청·취소)

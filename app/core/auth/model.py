@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+import app.core.config as app_config
+
 
 class CurrentUser(BaseModel):
     """현재 인증된 사용자 정보 (JWT 클레임에서 추출)"""
@@ -16,6 +18,7 @@ class CurrentUser(BaseModel):
     email_verified: bool = False  # OIDC `email_verified` (이메일 기반 친추 인덱싱 조건)
     name: str | None = None
     picture: str | None = None  # OIDC `picture` 클레임 (avatar_url 출처)
+    schema_id: str | None = None  # Kratos identity schema id (`schema_id` 클레임). 게스트 구분에 쓴다
 
     # 추가 클레임 (필요시 확장)
     raw_claims: dict[str, Any] = {}
@@ -33,8 +36,14 @@ class CurrentUser(BaseModel):
             email_verified=(verified is True or verified == "true"),
             name=claims.get("name"),
             picture=claims.get("picture"),
+            schema_id=claims.get("schema_id"),
             raw_claims=claims,
         )
+
+    @property
+    def is_guest(self) -> bool:
+        """게스트 identity의 토큰이면 True (schema_id가 KRATOS_GUEST_SCHEMA_ID와 같다)"""
+        return self.schema_id is not None and self.schema_id == app_config.settings.KRATOS_GUEST_SCHEMA_ID
 
     @classmethod
     def mock(cls) -> "CurrentUser":
