@@ -3,7 +3,7 @@ Holiday Service 테스트
 
 HolidayService와 HolidayReadService 테스트
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import timezone as tz
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -16,14 +16,14 @@ from app.models.holiday import HolidayModel, HolidayHashModel
 
 
 def _create_holiday_date_range(locdate: str) -> tuple[datetime, datetime]:
-    """한국 표준시 기준 24시간 범위 생성"""
+    """한국 표준시 기준 하루 [00:00, 다음 날 00:00) 생성"""
     year = int(locdate[0:4])
     month = int(locdate[4:6])
     day = int(locdate[6:8])
 
     kst = ZoneInfo("Asia/Seoul")
     kst_start = datetime(year, month, day, 0, 0, 0, 0, tzinfo=kst)
-    kst_end = datetime(year, month, day, 23, 59, 59, 999999, tzinfo=kst)
+    kst_end = kst_start + timedelta(days=1)
 
     utc_start = kst_start.astimezone(tz.utc).replace(tzinfo=None)
     utc_end = kst_end.astimezone(tz.utc).replace(tzinfo=None)
@@ -729,3 +729,21 @@ async def test_initialize_historical_data_all_exist(test_async_session):
 
     # 모든 연도가 이미 존재하므로 False 반환
     assert result is False
+
+
+def test_holiday_read_service_year_excludes_next_year_midnight(test_session):
+    """연도 범위는 [1월 1일 00:00, 다음 해 1월 1일 00:00) (KST)"""
+    for locdate, name in (("20231231", "prev-last"), ("20240101", "first"), ("20241231", "last"), ("20250101", "next-first")):
+        start_date, end_date = _create_holiday_date_range(locdate)
+        test_session.add(HolidayModel(
+            start_date=start_date,
+            end_date=end_date,
+            dateName=name,
+            isHoliday=True,
+            dateKind="국경일",
+        ))
+    test_session.flush()
+
+    holidays = HolidayReadService(test_session).get_holidays(2024)
+
+    assert sorted(h.dateName for h in holidays) == ["first", "last"]

@@ -22,7 +22,7 @@ class HolidayModel(UUIDBase, TimestampMixin, table=True):
     __tablename__ = "holidays"
 
     start_date: NaiveDatetime = Field(index=True)  # 시작 날짜 (한국 표준시 기준 날짜의 시작, UTC naive)
-    end_date: NaiveDatetime = Field(index=True)  # 종료 날짜 (한국 표준시 기준 날짜의 종료, UTC naive)
+    end_date: NaiveDatetime = Field(index=True)  # 종료 시각 (한국 표준시 기준 다음 날 00:00, 제외, UTC naive)
     dateName: str  # 국경일 명칭
     isHoliday: bool = Field(default=False)  # 공공기관 휴일 여부
     dateKind: str = Field(

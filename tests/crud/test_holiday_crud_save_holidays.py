@@ -62,9 +62,9 @@ def test_holiday_item_to_utc_naive_range_assumes_kst():
 
     검증:
     - 천문연구원(KASI) 응답 날짜(locdate)에는 timezone 정보가 없으므로,
-      수신 DTO가 이를 KST로 간주하여 UTC naive 24시간 범위로 변환한다.
-    - KST 2024-01-01 00:00 ~ 23:59:59.999999
-      -> UTC 2023-12-31 15:00:00 ~ 2024-01-01 14:59:59.999999 (naive)
+      수신 DTO가 이를 KST로 간주하여 UTC naive 하루 범위로 변환한다.
+    - KST [2024-01-01 00:00, 2024-01-02 00:00)
+      -> UTC [2023-12-31 15:00:00, 2024-01-01 15:00:00) (naive)
     """
     item = _make_holiday_item(locdate="20240101")
 
@@ -73,7 +73,7 @@ def test_holiday_item_to_utc_naive_range_assumes_kst():
     _assert_utc_naive(start)
     _assert_utc_naive(end)
     assert start == datetime(2023, 12, 31, 15, 0, 0)
-    assert end == datetime(2024, 1, 1, 14, 59, 59, 999999)
+    assert end == datetime(2024, 1, 1, 15, 0, 0)
 
 
 @pytest.mark.asyncio
@@ -121,9 +121,9 @@ async def test_save_holidays_creates_holidays_with_naive_utc_datetimes(
     _assert_utc_naive(saved_holiday.start_date)
     _assert_utc_naive(saved_holiday.end_date)
 
-    # KST 기준 24시간 범위가 UTC naive로 변환되어 저장된다.
+    # KST 기준 하루 [00:00, 다음 날 00:00)가 UTC naive로 변환되어 저장된다.
     assert saved_holiday.start_date == datetime(2023, 12, 31, 15, 0, 0)
-    assert saved_holiday.end_date == datetime(2024, 1, 1, 14, 59, 59, 999999)
+    assert saved_holiday.end_date == datetime(2024, 1, 1, 15, 0, 0)
 
     # holidays 테이블의 created_at/updated_at(NOT NULL)이 채워져야 한다.
     # (TimestampMixin 누락 시 NotNullViolationError가 발생했던 회귀 방지)
@@ -325,7 +325,7 @@ async def test_get_holiday_by_date_accepts_naive_datetime_as_utc(
       변환된 값을 받으므로, naive 입력을 UTC로 가정하여 그대로 범위 조회한다.
       (입력 경계의 KST 가정은 이 저수준 조회 함수가 아니라 호출 경로에서 처리한다.)
     - 저장된 신정의 UTC naive 범위 내 시각으로 조회하면 매칭된다.
-      (UTC 2023-12-31 15:00 ~ 2024-01-01 14:59:59.999999)
+      (UTC [2023-12-31 15:00, 2024-01-01 15:00))
     """
     hash_value = "e" * 64
 
@@ -427,3 +427,26 @@ async def test_save_holidays_replaces_existing_holidays_for_same_year_with_naive
 
     assert saved_hash.hash_value == second_hash
     _assert_utc_naive(saved_hash.updated_at)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("instant", "found"),
+    [
+        (datetime(2023, 12, 31, 15, 0, 0), True),  # 시작 = 포함
+        (datetime(2024, 1, 1, 14, 59, 59), True),
+        (datetime(2024, 1, 1, 15, 0, 0), False),  # 끝 = 제외
+    ],
+)
+async def test_get_holiday_by_date_excludes_end_instant(test_async_session, instant, found):
+    await save_holidays(
+        session=test_async_session,
+        year=2024,
+        holidays=[_make_holiday_item(locdate="20240101", dateKind="01", dateName="신정", isHoliday=True)],
+        hash_value="2" * 64,
+    )
+    await test_async_session.flush()
+
+    result = await get_holiday_by_date(test_async_session, instant)
+
+    assert (result is not None) is found

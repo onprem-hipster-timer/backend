@@ -151,20 +151,17 @@ def get_datetime_range(
 
 def get_year_range_utc(year: int) -> tuple[datetime, datetime]:
     """
-    한국 표준시 기준 연도 범위를 UTC naive datetime으로 변환
+    한국 표준시 기준 연도 범위 [해당 연도 1월 1일 00:00, 다음 연도 1월 1일 00:00)를 UTC naive datetime으로 변환
 
-    한국 표준시(KST, UTC+9) 기준으로 해당 연도의 시작과 끝을 UTC로 변환합니다.
     DB에는 UTC naive datetime이 저장되어 있으므로, 한국 시간 기준
     연도 범위를 UTC로 변환하여 비교해야 정확한 결과가 나옵니다.
 
     :param year: 연도 (한국 표준시 기준)
-    :return: (시작 datetime, 종료 datetime) 튜플 (UTC naive)
+    :return: (시작 포함, 끝 제외) 튜플 (UTC naive)
     """
     kst = ZoneInfo("Asia/Seoul")
-    # 한국 시간 기준 해당 연도 1월 1일 00:00:00
-    kst_start = datetime(year, 1, 1, 0, 0, 0, 0, tzinfo=kst)
-    # 한국 시간 기준 해당 연도 12월 31일 23:59:59.999999
-    kst_end = datetime(year, 12, 31, 23, 59, 59, 999999, tzinfo=kst)
+    kst_start = datetime(year, 1, 1, tzinfo=kst)
+    kst_end = datetime(year + 1, 1, 1, tzinfo=kst)
 
     utc_start = ensure_utc_naive(kst_start)
     utc_end = ensure_utc_naive(kst_end)
@@ -174,15 +171,14 @@ def get_year_range_utc(year: int) -> tuple[datetime, datetime]:
 
 def parse_locdate_to_datetime_range(locdate: str) -> tuple[datetime, datetime]:
     """
-    locdate 문자열(YYYYMMDD)을 한국 표준시(KST) 기준 24시간 범위로 변환
-    
+    locdate 문자열(YYYYMMDD)을 한국 표준시(KST) 기준 하루 [00:00, 다음 날 00:00)로 변환
+
     한국천문연구원 특일 정보제공 서비스에서 사용하는 날짜 형식을 파싱합니다.
-    locdate는 한국 표준시(KST, UTC+9) 기준 날짜로 해석됩니다.
-    예: "20240101"은 한국 시간 기준 2024년 1월 1일 00:00:00 ~ 23:59:59.999999를 의미하며,
-    이를 UTC로 변환한 후 naive datetime 범위로 반환합니다.
-    
+    예: "20240101"은 한국 시간 [2024-01-01 00:00, 2024-01-02 00:00)이며,
+    이를 UTC naive datetime 범위로 반환합니다.
+
     :param locdate: 날짜 문자열 (YYYYMMDD 형식, 예: "20240101")
-    :return: (start_datetime, end_datetime) 튜플 (UTC naive datetime, 한국 시간 기준 24시간 범위)
+    :return: (시작 포함, 끝 제외) 튜플 (UTC naive)
     :raises ValueError: 잘못된 날짜 형식인 경우
     """
     if len(locdate) != 8:
@@ -196,10 +192,9 @@ def parse_locdate_to_datetime_range(locdate: str) -> tuple[datetime, datetime]:
         # 한국 표준시(KST, UTC+9) 기준으로 날짜 해석
         kst = ZoneInfo("Asia/Seoul")
 
-        # 시작 시간: 한국 시간 기준 해당 날짜 00:00:00
-        kst_start = datetime(year, month, day, 0, 0, 0, 0, tzinfo=kst)
-        # 종료 시간: 한국 시간 기준 해당 날짜 23:59:59.999999
-        kst_end = datetime(year, month, day, 23, 59, 59, 999999, tzinfo=kst)
+        kst_start = datetime(year, month, day, tzinfo=kst)
+        # aware datetime + timedelta는 벽시계 기준으로 더해 다음 날 00:00(KST)이 된다
+        kst_end = kst_start + timedelta(days=1)
 
         # UTC로 변환 후 naive datetime으로 변환 (ensure_utc_naive 사용)
         utc_start = ensure_utc_naive(kst_start)

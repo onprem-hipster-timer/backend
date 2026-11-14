@@ -90,7 +90,7 @@ async def get_holidays_by_year(
     # start_date가 UTC 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date >= range_start,
-        HolidayModel.start_date <= range_end
+        HolidayModel.start_date < range_end
     )
 
     result = await session.execute(stmt)
@@ -121,7 +121,7 @@ def get_holidays_by_year_sync(
     # start_date가 UTC 범위 내에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date >= range_start,
-        HolidayModel.start_date <= range_end,
+        HolidayModel.start_date < range_end,
     )
 
     result = session.execute(stmt)
@@ -149,10 +149,10 @@ def get_holiday_by_date_sync(
     #  여기서 naive를 KST로 재해석하면 안 된다. UTC 가정으로 정규화한다.)
     date_naive = ensure_utc_naive(date)
 
-    # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
+    # 날짜가 [start_date, end_date) 안에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date <= date_naive,
-        HolidayModel.end_date >= date_naive
+        HolidayModel.end_date > date_naive
     )
     result = session.execute(stmt)
     return result.scalar_one_or_none()
@@ -179,10 +179,10 @@ async def get_holiday_by_date(
     #  여기서 naive를 KST로 재해석하면 안 된다. UTC 가정으로 정규화한다.)
     date_naive = ensure_utc_naive(date)
 
-    # 날짜가 start_date와 end_date 범위 내에 있는 공휴일 조회
+    # 날짜가 [start_date, end_date) 안에 있는 공휴일 조회
     stmt = select(HolidayModel).where(
         HolidayModel.start_date <= date_naive,
-        HolidayModel.end_date >= date_naive
+        HolidayModel.end_date > date_naive
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
@@ -224,7 +224,7 @@ async def save_holidays(
     range_start, range_end = get_year_range_utc(year)
     delete_stmt = delete(HolidayModel).where(
         HolidayModel.start_date >= range_start,
-        HolidayModel.start_date <= range_end
+        HolidayModel.start_date < range_end
     )
     await session.execute(delete_stmt)
     await session.flush()  # 삭제를 즉시 DB에 반영
