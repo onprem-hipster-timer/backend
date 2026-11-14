@@ -18,7 +18,6 @@ from app.crud import user_profile as profile_crud
 from app.crud import visibility as crud
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.exceptions import (
-    AccessDeniedError,
     VisibilityNotFoundError,
     CannotShareWithNonFriendError,
 )
@@ -173,20 +172,6 @@ class VisibilityService:
             recipients &= set(crud.get_allowed_user_ids(self.session, visibility.id))
         recipients.discard(owner_id)
         return recipients - profile_crud.get_dormant_subs(self.session, recipients)
-
-    def require_access(
-            self,
-            resource_type: ResourceType,
-            resource_id: UUID,
-            owner_id: str,
-    ) -> None:
-        """
-        리소스 접근 권한 확인 (없으면 예외 발생)
-
-        :raises AccessDeniedError: 접근 권한이 없는 경우
-        """
-        if not self.can_access(resource_type, resource_id, owner_id):
-            raise AccessDeniedError()
 
     def set_visibility(
             self,

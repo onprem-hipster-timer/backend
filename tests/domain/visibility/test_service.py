@@ -13,7 +13,6 @@ from app.crud import visibility as visibility_crud
 from app.domain.friend.service import FriendService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.exceptions import (
-    AccessDeniedError,
     CannotShareWithNonFriendError,
 )
 from app.domain.visibility.service import VisibilityService
@@ -548,36 +547,6 @@ class TestCanAccess:
             owner_id=test_user.sub,
         )
         assert can_access is True
-
-
-class TestRequireAccess:
-    """접근 권한 강제 테스트"""
-
-    def test_require_access_passes_for_owner(self, test_session, test_user):
-        """소유자는 require_access 통과"""
-        service = VisibilityService(test_session, test_user)
-        resource_id = uuid4()
-
-        # 예외가 발생하지 않아야 함
-        service.require_access(
-            resource_type=ResourceType.SCHEDULE,
-            resource_id=resource_id,
-            owner_id=test_user.sub,
-        )
-
-    def test_require_access_raises_for_denied(self, test_session, test_user, second_user):
-        """접근 거부 시 AccessDeniedError 발생"""
-        resource_id = uuid4()
-
-        # 접근권한 설정 없음 (PRIVATE으로 간주)
-        other_service = VisibilityService(test_session, second_user)
-
-        with pytest.raises(AccessDeniedError):
-            other_service.require_access(
-                resource_type=ResourceType.SCHEDULE,
-                resource_id=resource_id,
-                owner_id=test_user.sub,
-            )
 
 
 class TestSetVisibility:
