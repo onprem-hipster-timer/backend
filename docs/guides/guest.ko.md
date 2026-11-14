@@ -558,7 +558,7 @@ sequenceDiagram
 
 #### `/auth` 프록시의 판정 순서
 
-GET은 아래 확인 없이 넘깁니다. 경로는 Kratos로 실제 나갈 경로(정리한 뒤, 소문자, 끝의 `/` 제외)로 비교합니다.
+GET은 아래 확인 없이 넘깁니다. 경로는 Kratos로 실제 나갈 경로(정리한 뒤, 소문자, 끝의 `/` 제외)로 비교합니다. "그 밖"은 그 확인에 해당하지 않거나 통과한 경우입니다.
 
 ```mermaid
 flowchart TD
@@ -567,17 +567,17 @@ flowchart TD
     RL -->|"이내"| Q{"로그인 · 가입 · 설정 ·<br/>인증 · 복구 제출인가"}
     Q -->|"아니오"| FWD["Kratos로 넘김"]
     Q -->|"예"| QS{"쿼리 문자열에<br/>flow만 있는가"}
-    QS -->|"아니오"| R400a["400 invalid_request_body"]
+    QS -->|"아니오"| R400a["400<br/>invalid_request_body"]
     QS -->|"예"| AD{"인증 · 복구 제출"}
     AD -->|"본문을 읽을 수 없음"| R400a
-    AD -->|"email이 @guest.invalid"| R400b["400 address_not_accepted"]
-    AD -->|"그 밖 · 해당 없음"| GL{"로그인 제출<br/>(GUEST_ENABLED)"}
-    GL -->|"identifier가 둘 이상 ·<br/>본문을 읽을 수 없음"| R400a
-    GL -->|"게스트 handle인데<br/>토큰 없음 · 거절"| R403g["403 guest_verification_failed"]
-    GL -->|"게스트 handle인데<br/>Turnstile 확인 불가"| R503["503 guest_verification_unavailable"]
-    GL -->|"게스트 handle + 토큰 통과 ·<br/>다른 identifier · 해당 없음"| OI{"로그인 · 가입 제출의<br/>method: oidc"}
+    AD -->|"email이 @guest.invalid"| R400b["400<br/>address_not_accepted"]
+    AD -->|"그 밖"| GL{"로그인 제출<br/>(GUEST_ENABLED)"}
+    GL -->|"identifier 둘 이상 ·<br/>본문 못 읽음"| R400a
+    GL -->|"게스트 handle,<br/>토큰 없음 · 거절"| R403g["403<br/>guest_verification_failed"]
+    GL -->|"게스트 handle,<br/>확인 불가"| R503["503<br/>guest_verification_unavailable"]
+    GL -->|"그 밖"| OI{"로그인 · 가입 제출의<br/>method: oidc"}
     OI -->|"본문을 읽을 수 없음"| R400a
-    OI -->|"traits.email을 버리고 계속 · 해당 없음"| ST{"설정 제출"}
+    OI -->|"그 밖<br/>(oidc면 traits.email을 버린다)"| ST{"설정 제출"}
     ST -->|"해당 없음"| FWD
     ST -->|"세션 토큰 없음"| R403["403"]
     ST -->|"password + 메일 복구 세션"| FWD
