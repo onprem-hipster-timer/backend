@@ -14,6 +14,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
   정한다 (app/api/kratos_hooks.py). 게스트 이름 변경은 리소스마다 하나씩 넘기고, 같은 리소스의 다른 게스트가
   쓰는 이름이면 409 guest_name_taken으로 거절한다 (app/domain/guest/service.py rename_submission)
+- 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)의 쿼리 문자열에는 flow 하나만 받는다(키는 대소문자 구분 없이).
+  Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
   넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
@@ -76,6 +78,8 @@ EMAIL_RECOVERY_METHOD = "code_recovery"
 OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
 # 메일 주소를 받는 인증·복구 제출 경로. 게스트 handle 도메인 주소는 받지 않는다
 ADDRESS_SUBMIT_PATHS = ("/self-service/verification", "/self-service/recovery")
+# 본문을 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다
+INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS, *ADDRESS_SUBMIT_PATHS})
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
 ACCESS_LOG_EVENTS = {"/self-service/login": "login", "/self-service/registration": "registration"}
 
@@ -111,6 +115,12 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
         return None
     method = data.get("method") if isinstance(data, dict) else None
     return method if isinstance(method, str) else None
+
+
+def _only_flow_query(query: str) -> bool:
+    """쿼리 문자열이 비었거나 flow 하나뿐이면 True (키는 대소문자 구분 없이 비교)"""
+    keys = [key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)]
+    return keys in ([], ["flow"])
 
 
 def _submitted_name(content_type: str, body: bytes) -> object:
@@ -319,6 +329,9 @@ async def kratos_proxy(path: str, request: Request) -> Response:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
             # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
             submit_path = outgoing.url.path.rstrip("/").lower()
+            if request.method != "GET" and submit_path in INSPECTED_SUBMIT_PATHS:
+                if not _only_flow_query(request.url.query):
+                    return _unreadable_body()
             if request.method != "GET" and submit_path in ADDRESS_SUBMIT_PATHS:
                 guest_address = _is_guest_address(request.headers.get("content-type", ""), body)
                 if guest_address is None:

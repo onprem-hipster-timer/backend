@@ -777,3 +777,73 @@ def test_address_flow_unreadable_body_is_400(client, upstream, path, content, co
 def test_address_flow_refusal_does_not_depend_on_guest_flag(client, upstream, guest_enabled, path):
     assert client.post(path, json={"method": "code", "email": "x@guest.invalid"}).status_code == 400
     assert upstream.requests == []
+
+
+# ============ 검사하는 제출의 쿼리 문자열 ============
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/auth/self-service/verification?flow=f1&email=x%40guest.invalid", {"method": "code"}),
+        ("/auth/self-service/recovery?flow=f1&email=x%40guest.invalid", {"method": "code"}),
+        ("/auth/self-service/verification?Email=x%40guest.invalid&flow=f1", {"method": "code"}),
+        ("/auth/self-service/settings?flow=f1&method=password", {"method": "password", "password": "x"}),
+        ("/auth/self-service/settings?flow=f1&password=New-Pass-123", {"method": "password"}),
+        ("/auth/self-service/settings?flow=f1&traits.name=%EC%B2%A0%EC%88%98", {"method": "profile"}),
+        ("/auth/self-service/registration?flow=f1&traits.email=a%40b.c", {"method": "oidc", "provider": "google"}),
+        ("/auth/self-service/login?flow=f1&identifier=a%40b.c", {"method": "password"}),
+        ("/auth/self-service/login?flow=f1&flow=f2", {"method": "password"}),
+        ("/auth/self-service/login?flow=f1&Flow=f2", {"method": "password"}),
+        ("/auth/self-service/login?flow=f1&=x", {"method": "password"}),
+        ("/auth/Self-Service/Recovery/?flow=f1&email=x%40guest.invalid", {"method": "code"}),
+    ],
+)
+def test_inspected_submission_with_other_query_keys_is_refused(client, upstream, monkeypatch, path, body):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+
+    response = client.post(path, json=body, headers={"X-Session-Token": "ory_st_x"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/verification?flow=f1",
+        "/auth/self-service/recovery?flow=f1",
+        "/auth/self-service/login?flow=f1",
+        "/auth/self-service/registration?flow=f1",
+        "/auth/self-service/login?Flow=f1",
+        "/auth/self-service/login",
+    ],
+)
+def test_inspected_submission_with_only_flow_is_forwarded(client, upstream, path):
+    response = client.post(path, json={"method": "code"})
+    assert response.status_code == 200
+    assert len(upstream.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/sessions/whoami?tokenize_as=api",
+        "/auth/self-service/login/api?return_to=https%3A%2F%2Fapp.example.com&refresh=true",
+        "/auth/self-service/registration/api?return_to=x",
+        "/auth/self-service/login?flow=f1&extra=1",
+        "/auth/self-service/settings?flow=f1&method=password",
+    ],
+)
+def test_get_requests_keep_their_query(client, upstream, path):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert upstream.requests[0].url.query.decode() == path.split("?", 1)[1]
+
+
+def test_other_post_paths_keep_their_query(client, upstream):
+    response = client.post("/auth/self-service/logout/api?x=1", json={"session_token": "ory_st_abc"})
+    assert response.status_code == 200
+    assert upstream.requests[0].url.query == b"x=1"
