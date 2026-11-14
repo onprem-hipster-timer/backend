@@ -317,8 +317,8 @@ class TimerService:
 
         :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
         :param timer_type: 타입 필터 (independent, schedule, todo)
-        :param start_date: 시작 날짜 필터 (started_at 기준)
-        :param end_date: 종료 날짜 필터 (started_at 기준)
+        :param start_date: started_at 범위 시작 (포함)
+        :param end_date: started_at 범위 끝 (제외)
         :return: 타이머 리스트
         """
         timers = crud.get_all_timers(

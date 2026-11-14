@@ -226,8 +226,8 @@ def get_all_timers(
     :param owner_id: 소유자 ID
     :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
     :param timer_type: 타입 필터 (independent, schedule, todo)
-    :param start_date: 시작 날짜 필터 (started_at 기준)
-    :param end_date: 종료 날짜 필터 (started_at 기준)
+    :param start_date: started_at 범위 시작 (포함)
+    :param end_date: started_at 범위 끝 (제외)
     :return: 타이머 리스트
     """
     statement = (
@@ -259,7 +259,7 @@ def get_all_timers(
     if start_date:
         statement = statement.where(TimerSession.started_at >= start_date)
     if end_date:
-        statement = statement.where(TimerSession.started_at <= end_date)
+        statement = statement.where(TimerSession.started_at < end_date)
 
     # 최신순 정렬
     statement = statement.order_by(TimerSession.created_at.desc())
@@ -312,8 +312,8 @@ def get_all_timers(
     :param owner_id: 소유자 ID
     :param status: 상태 필터 리스트 (RUNNING, PAUSED, COMPLETED, CANCELLED)
     :param timer_type: 타입 필터 (independent, schedule, todo)
-    :param start_date: 시작 날짜 필터 (started_at 기준)
-    :param end_date: 종료 날짜 필터 (started_at 기준)
+    :param start_date: started_at 범위 시작 (포함)
+    :param end_date: started_at 범위 끝 (제외)
     :return: 타이머 리스트
     """
     statement = (
@@ -345,7 +345,7 @@ def get_all_timers(
     if start_date:
         statement = statement.where(TimerSession.started_at >= start_date)
     if end_date:
-        statement = statement.where(TimerSession.started_at <= end_date)
+        statement = statement.where(TimerSession.started_at < end_date)
 
     # 최신순 정렬
     statement = statement.order_by(TimerSession.created_at.desc())
