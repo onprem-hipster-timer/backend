@@ -67,16 +67,11 @@ def test_body_without_identity_id_is_422(guest_client):
 
 # ============ 로그인 ============
 
-def test_verified_member_is_allowed(guest_client):
-    r = guest_client.post(LOGIN, json={"identity_id": "m", "schema_id": "default", "verified": True}, headers=KEY)
+def test_non_guest_is_allowed(guest_client):
+    """Kratos 설정은 회원 로그인에서 훅을 부르지 않는다. 불려도 판정은 require_verified_address에 맡긴다"""
+    r = guest_client.post(LOGIN, json={"identity_id": "m", "schema_id": "default"}, headers=KEY)
     assert r.status_code == 200
     assert r.json() == {}
-
-
-def test_unverified_member_is_refused_with_unverified_message(guest_client):
-    r = guest_client.post(LOGIN, json={"identity_id": "m", "schema_id": "default", "verified": False}, headers=KEY)
-    assert r.status_code == 403
-    assert _refusal_ids(r) == [4000010]
 
 
 def test_guest_with_open_resource_is_allowed(guest_client, guest):
@@ -86,7 +81,7 @@ def test_guest_with_open_resource_is_allowed(guest_client, guest):
 
 def test_guest_without_row_is_refused(guest_client, kratos):
     identity = kratos.add_identity("guest", {"handle": "h", "name": "x"})
-    r = guest_client.post(LOGIN, json={"identity_id": identity["id"], "schema_id": "guest", "verified": True}, headers=KEY)
+    r = guest_client.post(LOGIN, json={"identity_id": identity["id"], "schema_id": "guest"}, headers=KEY)
     assert r.status_code == 403
     assert _refusal_ids(r) == [4000001]
 

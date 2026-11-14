@@ -15,7 +15,7 @@ def make_guest(
         password: str = "1234",
         resource_type: ResourceType = ResourceType.MEETING,
 ) -> Guest:
-    identity = kratos.add_identity("guest", {"handle": str(uuid.uuid4()), "name": name}, password)
+    identity = kratos.add_identity("guest", {"handle": f"{uuid.uuid4()}@guest.invalid", "name": name}, password)
     guest = Guest(identity_id=identity["id"], resource_type=resource_type, resource_id=resource_id)
     with _session_manager.get_session() as session:
         session.add(guest)

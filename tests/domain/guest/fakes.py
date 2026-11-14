@@ -60,6 +60,7 @@ class FakeKratos:
             identity = self.add_identity(
                 body["schema_id"], body["traits"], body["credentials"]["password"]["config"]["password"]
             )
+            identity["verifiable_addresses"] = body.get("verifiable_addresses", [])
             return httpx.Response(201, json=identity)
         if request.method == "GET" and path == "/admin/identities":
             self.list_requests.append(request)

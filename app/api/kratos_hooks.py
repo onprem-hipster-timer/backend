@@ -7,8 +7,9 @@ Kratos 훅 수신 엔드포인트 (/internal/kratos/hooks/*)
 - X-Kratos-Hook-Key 헤더가 KRATOS_HOOK_API_KEY와 같아야 한다. 다르거나 없으면 401
 - 허용은 200 `{}`, 거절은 403과 Kratos 메시지 형식(`messages`). Kratos는 거절을 플로우 메시지로 돌려준다
 
-POST /internal/kratos/hooks/login: 로그인(password) 직후. 회원은 인증된 주소가 있어야 하고,
-  게스트는 게스트 행이 있고 접근 정책이 허용해야 한다 (app/domain/guest/service.py login_allowed)
+POST /internal/kratos/hooks/login: 게스트의 로그인(password) 직후. 게스트 행이 있고 접근 정책이 허용해야 한다
+  (app/domain/guest/service.py login_allowed). Kratos 설정은 회원 로그인에서 이 훅을 부르지 않고,
+  회원은 그 뒤의 require_verified_address가 판정한다. 게스트가 아닌 요청은 허용한다
 POST /internal/kratos/hooks/settings/{method}: 설정 저장 직전 (profile, password, oidc).
   게스트는 로그인 식별자(handle)를 그대로 둔 이름 변경만 된다 (settings_change_allowed)
 
@@ -26,8 +27,7 @@ from app.domain.guest import service
 
 HOOK_KEY_HEADER = "X-Kratos-Hook-Key"
 
-# Kratos text id. 4000010은 Kratos가 이메일을 인증하지 않은 로그인에 쓰는 id와 같다
-UNVERIFIED_ADDRESS_MESSAGE_ID = 4000010
+# 거절 메시지의 Kratos text id
 REFUSED_MESSAGE_ID = 4000001
 
 router = APIRouter(prefix="/internal/kratos/hooks", include_in_schema=False)
@@ -36,7 +36,6 @@ router = APIRouter(prefix="/internal/kratos/hooks", include_in_schema=False)
 class LoginHookBody(BaseModel):
     identity_id: str
     schema_id: str | None = None
-    verified: bool = False
 
 
 class SettingsHookBody(BaseModel):
@@ -77,11 +76,9 @@ async def login_hook(
         x_kratos_hook_key: str | None = Header(default=None),
 ) -> JSONResponse:
     _authorize(x_kratos_hook_key)
-    if await service.login_allowed(body.identity_id, body.schema_id, body.verified):
+    if await service.login_allowed(body.identity_id, body.schema_id):
         return _allowed()
-    if service.is_guest_schema(body.schema_id):
-        return _refused(REFUSED_MESSAGE_ID, "This guest account cannot sign in.")
-    return _refused(UNVERIFIED_ADDRESS_MESSAGE_ID, "Account not active yet. Did you forget to verify your email address?")
+    return _refused(REFUSED_MESSAGE_ID, "This guest account cannot sign in.")
 
 
 @router.post("/settings/{method}")

@@ -24,40 +24,33 @@ def open_guest(kratos, host):
 
 @pytest.mark.parametrize("schema_id", ["default", None])
 @pytest.mark.asyncio
-async def test_member_login_needs_verified_address(kratos, schema_id):
-    assert await service.login_allowed("member", schema_id, True) is True
-    assert await service.login_allowed("member", schema_id, False) is False
+async def test_member_login_is_left_to_kratos(kratos, schema_id):
+    """회원 로그인 규칙(주소 인증)은 Kratos의 require_verified_address가 정한다. 훅이 불리면 허용한다"""
+    assert await service.login_allowed("member", schema_id) is True
 
 
 @pytest.mark.asyncio
 async def test_guest_login_with_open_resource(open_guest):
-    assert await service.login_allowed(open_guest.identity_id, "guest", False) is True
-
-
-@pytest.mark.asyncio
-async def test_guest_login_ignores_verified_flag(kratos, host):
-    """게스트는 주소 인증과 상관없이 게스트 행과 접근 정책으로만 정한다"""
-    identity = kratos.add_identity("guest", {"handle": "h", "name": "x"})
-    assert await service.login_allowed(identity["id"], "guest", True) is False
+    assert await service.login_allowed(open_guest.identity_id, "guest") is True
 
 
 @pytest.mark.asyncio
 async def test_guest_login_without_row_is_refused(kratos):
     identity = kratos.add_identity("guest", {"handle": "h", "name": "x"})
-    assert await service.login_allowed(identity["id"], "guest", False) is False
+    assert await service.login_allowed(identity["id"], "guest") is False
 
 
 @pytest.mark.asyncio
 async def test_guest_login_closed_keeps_guest(kratos, host, open_guest):
     host.statuses[open_guest.resource_id] = GuestHostStatus.CLOSED
-    assert await service.login_allowed(open_guest.identity_id, "guest", False) is False
+    assert await service.login_allowed(open_guest.identity_id, "guest") is False
     assert len(guest_rows()) == 1
 
 
 @pytest.mark.asyncio
 async def test_guest_login_expired_discards(kratos, host, open_guest, guest_events):
     host.statuses[open_guest.resource_id] = GuestHostStatus.EXPIRED
-    assert await service.login_allowed(open_guest.identity_id, "guest", False) is False
+    assert await service.login_allowed(open_guest.identity_id, "guest") is False
     assert guest_rows() == []
     assert kratos.deleted == [open_guest.identity_id]
 
@@ -67,9 +60,10 @@ async def test_guest_schema_id_follows_setting(kratos, host, open_guest, monkeyp
     import app.core.config as app_config
 
     monkeypatch.setattr(app_config.settings, "KRATOS_GUEST_SCHEMA_ID", "visitor")
-    # "guest" schema는 이제 회원으로 보므로 주소 인증이 필요하다
-    assert await service.login_allowed(open_guest.identity_id, "guest", False) is False
-    assert await service.login_allowed(open_guest.identity_id, "visitor", False) is True
+    # "guest" schema는 이제 회원으로 보므로 판정을 Kratos에 맡긴다
+    assert await service.login_allowed("no-row-identity", "guest") is True
+    assert await service.login_allowed("no-row-identity", "visitor") is False
+    assert await service.login_allowed(open_guest.identity_id, "visitor") is True
 
 
 # ============ 설정 ============

@@ -85,10 +85,16 @@ async def list_identities() -> list[dict] | None:
 IDENTITY_BATCH_SIZE = 100
 
 
-async def create_identity(schema_id: str, traits: dict, password: str) -> dict | None:
+async def create_identity(
+        schema_id: str,
+        traits: dict,
+        password: str,
+        verified_addresses: tuple[str, ...] = (),
+) -> dict | None:
     """비밀번호 자격 증명을 가진 identity를 만든다. 만든 identity, 실패하면 None.
 
-    admin API로 만들면 Kratos 비밀번호 정책이 적용되지 않는다.
+    admin API로 만들면 Kratos 비밀번호 정책이 적용되지 않는다. verified_addresses는 인증을 마친
+    이메일 주소로 넣는다(schema에서 verification via email인 trait의 값이어야 한다).
     """
     if not app_config.settings.KRATOS_ADMIN_URL:
         return None
@@ -98,6 +104,11 @@ async def create_identity(schema_id: str, traits: dict, password: str) -> dict |
         "state": "active",
         "credentials": {"password": {"config": {"password": password}}},
     }
+    if verified_addresses:
+        body["verifiable_addresses"] = [
+            {"value": address, "via": "email", "verified": True, "status": "completed"}
+            for address in verified_addresses
+        ]
     try:
         async with _make_client() as client:
             response = await client.post("/admin/identities", json=body)

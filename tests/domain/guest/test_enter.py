@@ -42,8 +42,23 @@ async def test_first_enter_creates_guest(kratos, resource):
     identity = kratos.identities[row.identity_id]
     assert identity["schema_id"] == "guest"
     assert identity["traits"]["name"] == "민수"
-    uuid.UUID(identity["traits"]["handle"])
+    handle = identity["traits"]["handle"]
+    local, domain = handle.split("@")
+    uuid.UUID(local)
+    assert domain == service.GUEST_HANDLE_DOMAIN == "guest.invalid"
+    # Kratos의 require_verified_address를 통과하도록 handle을 인증된 주소로 만든다
+    assert identity["verifiable_addresses"] == [
+        {"value": handle, "via": "email", "verified": True, "status": "completed"}
+    ]
     assert kratos.passwords[row.identity_id] == "1"
+
+
+@pytest.mark.asyncio
+async def test_each_guest_gets_its_own_handle(kratos, resource):
+    await service.enter(_enter(resource, password="a"))
+    await service.enter(_enter(resource, password="b"))
+    handles = {i["traits"]["handle"] for i in kratos.identities.values()}
+    assert len(handles) == 2
 
 
 @pytest.mark.asyncio
@@ -214,7 +229,7 @@ async def test_login_failure_with_identity_deletion_failure_leaves_no_usable_gue
 
     [leftover] = kratos.identities.values()
     assert guest_rows() == []
-    assert await service.login_allowed(leftover["id"], "guest", False) is False
+    assert await service.login_allowed(leftover["id"], "guest") is False
 
 
 @pytest.mark.asyncio

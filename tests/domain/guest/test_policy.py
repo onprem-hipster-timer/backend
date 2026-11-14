@@ -94,7 +94,7 @@ async def test_discard_closes_access_even_when_kratos_is_down(kratos, host, gues
     assert guest.identity_id in caplog.text
     with pytest.raises(GuestAccessDeniedError):
         await service.authorize(guest.identity_id, ResourceType.MEETING, resource)
-    assert await service.login_allowed(guest.identity_id, "guest", False) is False
+    assert await service.login_allowed(guest.identity_id, "guest") is False
 
 
 @pytest.mark.asyncio

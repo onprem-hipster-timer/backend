@@ -6,7 +6,7 @@
 - 폐기(discard_guest, discard_resource_guests): 게스트 행 삭제와 GuestDiscarded 이벤트를 커밋한 뒤
   Kratos identity를 지운다. identity 삭제가 실패해도 행이 없으므로 접근은 닫힌다
   (로그인 훅은 행이 없는 게스트 identity를 거부한다). 실패는 로그로 남긴다
-- 입장(enter), Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed)
+- 입장(enter), Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed). 회원 로그인은 판정하지 않는다
 
 DB는 요청 세션이 아니라 자기 세션으로 쓰고 바로 커밋한다. 거부 응답과 함께 폐기가 rollback되지 않게 하고,
 Kratos 호출 동안 트랜잭션을 열어 두지 않는다 (로그인 중에 Kratos가 이 서버의 로그인 훅을 부른다).
@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 # 한 리소스에서 같은 이름을 쓸 수 있는 게스트 수 (입장 한 번에 시도하는 로그인 수의 상한)
 MAX_GUESTS_PER_NAME = 10
+
+# 게스트 로그인 식별자(handle) "<uuid4>@<이 도메인>"의 도메인. 예약된 TLD라 메일이 가지 않는다.
+# handle은 Kratos require_verified_address를 통과하도록 인증된 주소로 만들고, 게스트에게 보여 주지 않는다
+GUEST_HANDLE_DOMAIN = "guest.invalid"
 
 
 @contextmanager
@@ -189,11 +193,12 @@ async def _remove_new_guest(guest_id: UUID | None, identity_id: str) -> None:
 
 
 async def _create_guest(data: GuestEnter) -> GuestEnterRead:
-    handle = str(uuid4())
+    handle = f"{uuid4()}@{GUEST_HANDLE_DOMAIN}"
     identity = await kratos_admin.create_identity(
         app_config.settings.KRATOS_GUEST_SCHEMA_ID,
         {"handle": handle, "name": data.name},
         data.password,
+        verified_addresses=(handle,),
     )
     if identity is None:
         raise GuestServiceUnavailableError()
@@ -234,10 +239,13 @@ async def enter(data: GuestEnter) -> GuestEnterRead:
 
 # ============ Kratos 훅 판정 ============
 
-async def login_allowed(identity_id: str, schema_id: str | None, verified: bool) -> bool:
-    """로그인 허용 여부. 게스트는 게스트 행이 있고 접근 정책이 허용할 때, 회원은 인증된 주소가 있을 때"""
+async def login_allowed(identity_id: str, schema_id: str | None) -> bool:
+    """게스트 로그인 허용 여부. 게스트 행이 있고 접근 정책이 허용해야 한다.
+
+    회원 로그인은 Kratos의 require_verified_address가 정하므로 게스트가 아니면 허용한다.
+    """
     if not is_guest_schema(schema_id):
-        return verified
+        return True
     guest = _get_guest(identity_id)
     if guest is None:
         return False
