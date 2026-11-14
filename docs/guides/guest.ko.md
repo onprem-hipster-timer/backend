@@ -12,6 +12,7 @@
 | 속한 곳 | 없음 | 리소스 하나 (`resource_type`, `resource_id`) |
 | 로그인 식별자 | 이메일 | 서버가 만든 `<guest_id>@guest.invalid`(`handle`). 게스트가 입력하지 않는다 |
 | 이름 | 선택 | 필수. 1~50자, 같은 리소스 안에서 겹치지 않는다 |
+| 수 | 제한 없음 | 리소스 하나에 100명까지 |
 | 비밀번호 | Kratos 비밀번호 정책 | 비어 있지 않고 UTF-8로 72바이트 이하면 된다 |
 | 이메일 인증 | 로그인에 필요 | 없음. handle을 처음부터 인증된 주소로 만든다(메일이 가지 않는 주소) |
 | 만들 때 | Kratos 가입 플로우 | `POST /v1/guests`, Cloudflare Turnstile 토큰 필요 |
@@ -69,7 +70,7 @@ X-Session-Token: ory_st_...
 
 | 단계 | 일어나는 일 |
 |------|-------------|
-| 생성 | `POST /v1/guests`. 리소스가 게스트를 받고(`OPEN`) 그 이름이 비어 있으면 Kratos identity와 게스트 행을 만든다 |
+| 생성 | `POST /v1/guests`. 리소스가 게스트를 받고(`OPEN`) 그 이름이 비어 있고 게스트가 100명 미만이면 Kratos identity와 게스트 행을 만든다 |
 | 로그인 | Kratos 로그인 플로우. Kratos 로그인 훅이 backend에 묻고, 게스트 행이 있고 리소스가 `OPEN`일 때만 세션을 만든다 |
 | 이름 변경 | Kratos 설정 플로우(`method: profile`)로 `traits.name`을 바꾼다. 설정 훅이 `guest.name`을 바꾸고 `GuestRenamed` 이벤트를 낸다 |
 | 자기 삭제 | `DELETE /v1/guests/me` |
@@ -158,13 +159,14 @@ X-Session-Token: ory_st_...
 }
 ```
 
-서버는 리소스 상태, 이름 중복, Turnstile 토큰 순으로 확인합니다. 앞에서 거절되는 요청은 토큰을 쓰지 않습니다.
+서버는 리소스 상태, 이름 중복, 게스트 수, Turnstile 토큰 순으로 확인합니다. 앞에서 거절되는 요청은 토큰을 쓰지 않습니다.
 
 | 상태 | `error_type` | 뜻 |
 |------|--------------|----|
 | `201` | | 만들었다 |
 | `403` | `GuestEntryRefusedError` | 리소스가 없거나, 지금 게스트를 받지 않거나, 게스트 기간이 끝났다 |
 | `409` | `GuestNameTakenError` | 이 리소스에 같은 이름의 게스트가 있다 |
+| `409` | `GuestLimitReachedError` | 이 리소스에 게스트가 이미 100명이다 |
 | `403` | `GuestVerificationFailedError` | Turnstile이 토큰을 받지 않았다. 위젯에서 새 토큰을 받아 다시 보낸다 |
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
 | `422` | | 입력 규칙 위반 (`turnstile_token` 누락 포함) |
@@ -315,7 +317,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
 - 이름 찾기와 생성은 각각 IP당 분당 10회, `/auth` 제출은 IP당 분당 10회입니다(`app/ratelimit/config.py`). 요청에 토큰이 있어도 IP로 셉니다.
 - 게스트는 비밀번호를 바꾸거나 찾을 수 없습니다. 비밀번호를 잊으면 그 이름으로 다시 들어갈 수 없고, 다른 이름으로 새 게스트를 만듭니다.
-- 리소스 하나의 게스트 수에는 상한이 없습니다.
+- 리소스 하나의 게스트는 100명까지입니다(`MAX_GUESTS_PER_RESOURCE`). 수는 넣기 전에 세므로, 100명 경계에서 동시에 만들면 동시 요청 수만큼 넘을 수 있습니다. 폐기된 게스트의 자리는 다시 쓸 수 있고, 가득 찬 리소스에서도 이름 찾기·로그인·이름 변경은 됩니다.
 - IP당 한도는 backend가 접속 주소를 바르게 알 때만 지켜집니다([배포 조건](../deployment/kratos-guest.ko.md)).
 
 ## 관련 코드
