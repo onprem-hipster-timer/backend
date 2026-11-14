@@ -3,6 +3,8 @@ Meeting 입력 제한 E2E 테스트
 
 표시 이름, 미팅 모양(기간·요일·시간 단위), 수정 후 미팅, 참여 중복, 가능 시간 개수의 규칙
 """
+from datetime import date, datetime, timedelta
+
 import pytest
 
 BASE_MEETING = {
@@ -254,13 +256,13 @@ def test_patch_making_valid_meeting_is_applied(e2e_client, patch, expected):
 # 참여: 미팅마다 사용자당 참여자 한 명
 # ============================================================
 
-_SLOT = {"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "10:00:00"}
+_SLOT = {"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T10:00:00Z"}
 
 
-def _counts(client, meeting_id: str, slot_date: str = "2024-02-05") -> dict[str, int]:
+def _counts(client, meeting_id: str) -> dict[str, int]:
+    """칸 시작 시각 → 인원 수"""
     result = client.get(f"/v1/meetings/{meeting_id}/result").json()
-    group = next(g for g in result["availability_grid"] if g["date"] == slot_date)
-    return {s["time"]: s["count"] for s in group["slots"]}
+    return {cell["start_time"]: cell["count"] for cell in result["availability_grid"]}
 
 
 @pytest.mark.e2e
@@ -284,7 +286,7 @@ def test_repeat_participation_returns_same_participant_and_renames(e2e_client):
     assert [a["participant"]["id"] for a in availability] == [participant_id]
     assert availability[0]["participant"]["display_name"] == "바꾼 이름"
     assert len(availability[0]["time_slots"]) == 1  # 이름을 바꿔도 가능 시간은 그대로
-    assert _counts(e2e_client, meeting_id)["09:00"] == 1
+    assert _counts(e2e_client, meeting_id)["2024-02-05T09:00:00+0000"] == 1
 
 
 @pytest.mark.e2e
@@ -331,7 +333,7 @@ def test_two_users_are_two_participants(multi_user_e2e):
     assert ids[1] == ids[2]
     availability = owner.get(f"/v1/meetings/{meeting_id}/availability").json()
     assert sorted(a["participant"]["user_id"] for a in availability) == ["member", "owner"]
-    assert _counts(owner, meeting_id)["09:00"] == 2
+    assert _counts(owner, meeting_id)["2024-02-05T09:00:00+0000"] == 2
 
 
 # ============================================================
@@ -339,18 +341,21 @@ def test_two_users_are_two_participants(multi_user_e2e):
 # ============================================================
 
 def _grid_slots(dates: list[str], start_hour: int = 9, cells: int = 18, minutes: int = 30) -> list[dict]:
-    """날짜마다 start_hour부터 minutes 단위 칸 cells개"""
+    """날짜마다 start_hour(UTC)부터 minutes 단위 칸 cells개"""
     slots = []
     for slot_date in dates:
         for i in range(cells):
             start = start_hour * 60 + i * minutes
             end = start + minutes
             slots.append({
-                "slot_date": slot_date,
-                "start_time": f"{start // 60:02d}:{start % 60:02d}:00",
-                "end_time": f"{end // 60:02d}:{end % 60:02d}:00",
+                "start_time": f"{slot_date}T{start // 60:02d}:{start % 60:02d}:00Z",
+                "end_time": f"{slot_date}T{end // 60:02d}:{end % 60:02d}:00Z",
             })
     return slots
+
+
+def _as_response(slot: dict) -> tuple[str, str]:
+    return slot["start_time"].replace("Z", "+0000"), slot["end_time"].replace("Z", "+0000")
 
 
 _WEEK = ["2024-02-05", "2024-02-06", "2024-02-07", "2024-02-08", "2024-02-09"]
@@ -371,7 +376,7 @@ def _put_slots(client, meeting_id: str, participant_id: str, slots: list[dict]):
 def _stored_slots(client, meeting_id: str) -> list[tuple]:
     availability = client.get(f"/v1/meetings/{meeting_id}/availability").json()
     return sorted(
-        (s["slot_date"], s["start_time"], s["end_time"])
+        (s["start_time"], s["end_time"])
         for a in availability for s in a["time_slots"]
     )
 
@@ -395,7 +400,7 @@ def test_slots_over_meeting_cell_count_rejected_and_stored_kept(e2e_client):
     assert _put_slots(e2e_client, meeting_id, participant_id, [_grid_slots(_WEEK)[0]]).status_code == 200
     before = _stored_slots(e2e_client, meeting_id)
     over = _grid_slots(_WEEK) + [
-        {"slot_date": "2024-02-05", "start_time": "18:00:00", "end_time": "18:30:00"},
+        {"start_time": "2024-02-05T18:00:00Z", "end_time": "2024-02-05T18:30:00Z"},
     ]
 
     response = _put_slots(e2e_client, meeting_id, participant_id, over)
@@ -427,9 +432,10 @@ def test_slots_over_meeting_cell_count_rejected_and_stored_kept(e2e_client):
 def test_slot_cap_is_meeting_cell_count(e2e_client, overrides, cell_count):
     meeting_id = _create_meeting(e2e_client, **overrides)
     participant_id = _participate(e2e_client, meeting_id)
+    first = datetime(2024, 3, 1)
     slots = [
-        {"slot_date": "2024-03-01", "start_time": f"{i // 60:02d}:{i % 60:02d}:00",
-         "end_time": f"{(i + 1) // 60:02d}:{(i + 1) % 60:02d}:00"}
+        {"start_time": (first + timedelta(minutes=i)).isoformat() + "Z",
+         "end_time": (first + timedelta(minutes=i + 1)).isoformat() + "Z"}
         for i in range(cell_count + 1)
     ]
 
@@ -463,24 +469,29 @@ def test_duplicate_slots_are_stored_as_sent_and_count_toward_cap(e2e_client):
 @pytest.mark.parametrize(
     "overrides, slot_date",
     [
-        # 날짜만 고르는 미팅: 하루 전체(00:00–23:59)를 한 칸으로
+        # 날짜만 고르는 미팅: 하루 전체(00:00–00:00)를 한 칸으로
         ({"start_date": "2024-02-05", "end_date": "2024-05-05", "available_days": [0, 1, 2, 3, 4, 5, 6],
-          "start_time": "00:00:00", "end_time": "23:59:00", "time_slot_minutes": 1439}, "2024-05-05"),
+          "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-05-05"),
         # 요일만 고르는 미팅: 7일 기간, 하루 전체를 한 칸으로
         ({"start_date": "2024-02-05", "end_date": "2024-02-11", "available_days": [0, 1, 2, 3, 4, 5, 6],
-          "start_time": "00:00:00", "end_time": "23:59:00", "time_slot_minutes": 1439}, "2024-02-11"),
+          "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-02-11"),
     ],
 )
 def test_whole_day_slot_accepted_and_counted(e2e_client, overrides, slot_date):
     meeting_id = _create_meeting(e2e_client, **overrides)
     participant_id = _participate(e2e_client, meeting_id)
+    next_day = (date.fromisoformat(slot_date) + timedelta(days=1)).isoformat()
 
     response = _put_slots(e2e_client, meeting_id, participant_id, [
-        {"slot_date": slot_date, "start_time": "00:00:00", "end_time": "23:59:00"},
+        {"start_time": f"{slot_date}T00:00:00Z", "end_time": f"{next_day}T00:00:00Z"},
     ])
 
     assert response.status_code == 200, response.text
-    assert _counts(e2e_client, meeting_id, slot_date) == {"00:00": 1}
+    result = e2e_client.get(f"/v1/meetings/{meeting_id}/result").json()
+    cell = next(c for c in result["availability_grid"] if c["start_time"] == f"{slot_date}T00:00:00+0000")
+    assert cell == {
+        "start_time": f"{slot_date}T00:00:00+0000", "end_time": f"{next_day}T00:00:00+0000", "count": 1,
+    }
 
 
 @pytest.mark.e2e
@@ -488,9 +499,9 @@ def test_out_of_range_slots_accepted_but_not_counted(e2e_client):
     meeting_id = _create_meeting(e2e_client)
     participant_id = _participate(e2e_client, meeting_id)
     outside = [
-        {"slot_date": "2024-02-10", "start_time": "09:00:00", "end_time": "10:00:00"},  # 기간 밖(토)
-        {"slot_date": "2024-02-05", "start_time": "06:00:00", "end_time": "07:00:00"},  # 하루 범위 밖
-        {"slot_date": "2024-02-05", "start_time": "09:10:00", "end_time": "09:20:00"},  # 칸에 맞지 않음
+        {"start_time": "2024-02-10T09:00:00Z", "end_time": "2024-02-10T10:00:00Z"},  # 기간 밖(토)
+        {"start_time": "2024-02-05T06:00:00Z", "end_time": "2024-02-05T07:00:00Z"},  # 하루 범위 밖
+        {"start_time": "2024-02-05T09:10:00Z", "end_time": "2024-02-05T09:20:00Z"},  # 칸에 맞지 않음
     ]
 
     response = _put_slots(e2e_client, meeting_id, participant_id, outside)
@@ -498,7 +509,7 @@ def test_out_of_range_slots_accepted_but_not_counted(e2e_client):
     assert response.status_code == 200, response.text
     assert len(_stored_slots(e2e_client, meeting_id)) == 3
     result = e2e_client.get(f"/v1/meetings/{meeting_id}/result").json()
-    assert all(s["count"] == 0 for g in result["availability_grid"] for s in g["slots"])
+    assert all(cell["count"] == 0 for cell in result["availability_grid"])
 
 
 @pytest.mark.e2e
@@ -509,9 +520,7 @@ def test_put_replaces_all_slots(e2e_client):
 
     _put_slots(e2e_client, meeting_id, participant_id, grid[:5])
     _put_slots(e2e_client, meeting_id, participant_id, grid[5:7])
-    assert _stored_slots(e2e_client, meeting_id) == sorted(
-        (s["slot_date"], s["start_time"], s["end_time"]) for s in grid[5:7]
-    )
+    assert _stored_slots(e2e_client, meeting_id) == sorted(_as_response(s) for s in grid[5:7])
 
     assert _put_slots(e2e_client, meeting_id, participant_id, []).json() == []
     assert _stored_slots(e2e_client, meeting_id) == []

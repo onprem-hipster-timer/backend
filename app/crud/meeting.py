@@ -3,14 +3,13 @@ Meeting CRUD 함수
 
 일정 조율 데이터 접근 레이어
 """
-from datetime import date, time
 from typing import Optional
 from uuid import UUID
 
 from sqlmodel import Session, select, or_
 
 from app.crud.user_profile import dormant_subs
-from app.domain.meeting.schema.dto import MeetingCreate, MeetingUpdate, ParticipantCreate
+from app.domain.meeting.schema.dto import MeetingCreate, MeetingUpdate, ParticipantCreate, TimeSlotCreate
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 
 
@@ -162,17 +161,10 @@ def get_participant_by_user_id(
 def create_time_slot(
         session: Session,
         participant_id: UUID,
-        slot_date: date,
-        start_time: time,
-        end_time: time,
+        data: TimeSlotCreate,
 ) -> MeetingTimeSlot:
     """시간 슬롯 생성"""
-    time_slot = MeetingTimeSlot(
-        participant_id=participant_id,
-        slot_date=slot_date,
-        start_time=start_time,
-        end_time=end_time,
-    )
+    time_slot = MeetingTimeSlot.model_validate(data, update={"participant_id": participant_id})
     session.add(time_slot)
     session.flush()
     session.refresh(time_slot)
@@ -187,7 +179,7 @@ def get_participant_time_slots(
     statement = (
         select(MeetingTimeSlot)
         .where(MeetingTimeSlot.participant_id == participant_id)
-        .order_by(MeetingTimeSlot.slot_date, MeetingTimeSlot.start_time)
+        .order_by(MeetingTimeSlot.start_time)
     )
     results = session.exec(statement)
     return results.all()
@@ -203,7 +195,7 @@ def get_time_slots_by_meeting(
         .join(MeetingParticipant, MeetingTimeSlot.participant_id == MeetingParticipant.id)
         .where(MeetingParticipant.meeting_id == meeting_id)
         .where(_not_dormant_participant())
-        .order_by(MeetingTimeSlot.slot_date, MeetingTimeSlot.start_time)
+        .order_by(MeetingTimeSlot.start_time)
     )
     results = session.exec(statement)
     return results.all()

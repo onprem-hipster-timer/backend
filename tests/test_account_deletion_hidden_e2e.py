@@ -82,7 +82,7 @@ def _participate(client, meeting_id: str, name: str) -> str:
     r = client.put(
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant_id},
-        json=[{"slot_date": "2024-02-02", "start_time": "09:00:00", "end_time": "10:00:00"}],
+        json=[{"start_time": "2024-02-02T09:00:00Z", "end_time": "2024-02-02T10:00:00Z"}],
     )
     assert r.status_code == 200
     return participant_id
@@ -244,8 +244,7 @@ class TestMeetings:
 
         def nine_oclock_count():
             grid = owner.get(f"/v1/meetings/{meeting_id}/result").json()["availability_grid"]
-            day = next(g for g in grid if g["date"] == "2024-02-02")
-            return next(s["count"] for s in day["slots"] if s["time"] == "09:00")
+            return next(c["count"] for c in grid if c["start_time"] == "2024-02-02T09:00:00+0000")
 
         assert nine_oclock_count() == 2
 

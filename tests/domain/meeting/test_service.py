@@ -336,14 +336,12 @@ class TestTimeSlots:
         # 시간 슬롯 설정
         time_slots = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),  # 월요일
-                start_time=time(9, 0),
-                end_time=time(12, 0),
+                start_time=datetime(2024, 2, 1, 9, 0),  # 월요일
+                end_time=datetime(2024, 2, 1, 12, 0),
             ),
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(14, 0),
-                end_time=time(17, 0),
+                start_time=datetime(2024, 2, 1, 14, 0),
+                end_time=datetime(2024, 2, 1, 17, 0),
             ),
         ]
 
@@ -352,9 +350,8 @@ class TestTimeSlots:
         )
 
         assert len(created_slots) == 2
-        assert created_slots[0].slot_date == date(2024, 2, 1)
-        assert created_slots[0].start_time == time(9, 0)
-        assert created_slots[0].end_time == time(12, 0)
+        assert created_slots[0].start_time == datetime(2024, 2, 1, 9, 0)
+        assert created_slots[0].end_time == datetime(2024, 2, 1, 12, 0)
 
     def test_set_time_slots_replaces_existing(
             self, test_session, test_user, sample_meeting
@@ -370,9 +367,8 @@ class TestTimeSlots:
         # 첫 번째 시간 슬롯 설정
         time_slots1 = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(9, 0),
-                end_time=time(12, 0),
+                start_time=datetime(2024, 2, 1, 9, 0),
+                end_time=datetime(2024, 2, 1, 12, 0),
             ),
         ]
         service.set_time_slots(sample_meeting.id, participant.id, time_slots1)
@@ -380,9 +376,8 @@ class TestTimeSlots:
         # 두 번째 시간 슬롯 설정 (기존 슬롯 교체)
         time_slots2 = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(14, 0),
-                end_time=time(17, 0),
+                start_time=datetime(2024, 2, 1, 14, 0),
+                end_time=datetime(2024, 2, 1, 17, 0),
             ),
         ]
         created_slots = service.set_time_slots(
@@ -391,7 +386,7 @@ class TestTimeSlots:
 
         # 기존 슬롯이 교체되어 1개만 남아야 함
         assert len(created_slots) == 1
-        assert created_slots[0].start_time == time(14, 0)
+        assert created_slots[0].start_time == datetime(2024, 2, 1, 14, 0)
 
     def test_set_time_slots_denies_other_participant(
             self, test_session, test_user, other_user, sample_meeting
@@ -421,9 +416,8 @@ class TestTimeSlots:
                 sample_meeting.id,
                 participant.id,
                 [TimeSlotCreate(
-                    slot_date=date(2024, 2, 1),
-                    start_time=time(9, 0),
-                    end_time=time(12, 0),
+                    start_time=datetime(2024, 2, 1, 9, 0),
+                    end_time=datetime(2024, 2, 1, 12, 0),
                 )],
             )
 
@@ -433,9 +427,8 @@ def _distinct_slots(count: int) -> list[TimeSlotCreate]:
     first = datetime(2024, 2, 2, 9, 0)
     return [
         TimeSlotCreate(
-            slot_date=first.date(),
-            start_time=(first + timedelta(minutes=i)).time(),
-            end_time=(first + timedelta(minutes=i + 30)).time(),
+            start_time=first + timedelta(minutes=i),
+            end_time=first + timedelta(minutes=i + 30),
         )
         for i in range(count)
     ]

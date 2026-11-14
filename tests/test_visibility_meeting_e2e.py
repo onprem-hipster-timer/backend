@@ -146,7 +146,7 @@ def test_meeting_participant_access_with_email_visibility_e2e(multi_user_e2e):
     availability_response = client_allowed.put(
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant_id},
-        json=[{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}],
+        json=[{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}],
     )
     assert availability_response.status_code == 200
 
@@ -180,7 +180,7 @@ def test_owner_deletes_meeting_with_participants_e2e(multi_user_e2e):
         r = client.put(
             f"/v1/meetings/{meeting_id}/availability",
             params={"participant_id": participant_id},
-            json=[{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}],
+            json=[{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}],
         )
         assert r.status_code == 200
 

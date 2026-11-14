@@ -241,14 +241,12 @@ def test_set_availability_e2e(e2e_client):
         params={"participant_id": participant_id},
         json=[
             {
-                "slot_date": "2024-02-01",
-                "start_time": "09:00:00",
-                "end_time": "12:00:00",
+                "start_time": "2024-02-01T09:00:00Z",
+                "end_time": "2024-02-01T12:00:00Z",
             },
             {
-                "slot_date": "2024-02-01",
-                "start_time": "14:00:00",
-                "end_time": "17:00:00",
+                "start_time": "2024-02-01T14:00:00Z",
+                "end_time": "2024-02-01T17:00:00Z",
             },
         ],
     )
@@ -256,9 +254,8 @@ def test_set_availability_e2e(e2e_client):
     data = availability_response.json()
     assert isinstance(data, list)
     assert len(data) == 2
-    assert data[0]["slot_date"] == "2024-02-01"
-    assert data[0]["start_time"] == "09:00:00"
-    assert data[0]["end_time"] == "12:00:00"
+    assert data[0]["start_time"] == "2024-02-01T09:00:00+0000"
+    assert data[0]["end_time"] == "2024-02-01T12:00:00+0000"
 
 
 @pytest.mark.e2e
@@ -301,9 +298,8 @@ def test_get_availability_e2e(multi_user_e2e):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant1_id},
         json=[{
-            "slot_date": "2024-02-02",
-            "start_time": "09:00:00",
-            "end_time": "12:00:00",
+            "start_time": "2024-02-02T09:00:00Z",
+            "end_time": "2024-02-02T12:00:00Z",
         }],
     )
 
@@ -312,9 +308,8 @@ def test_get_availability_e2e(multi_user_e2e):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant2_id},
         json=[{
-            "slot_date": "2024-02-02",
-            "start_time": "10:00:00",
-            "end_time": "13:00:00",
+            "start_time": "2024-02-02T10:00:00Z",
+            "end_time": "2024-02-02T13:00:00Z",
         }],
     )
 
@@ -328,7 +323,7 @@ def test_get_availability_e2e(multi_user_e2e):
     # 각 참여자의 시간 슬롯 확인
     participant1_data = next(p for p in data if p["participant"]["id"] == participant1_id)
     assert len(participant1_data["time_slots"]) == 1
-    assert participant1_data["time_slots"][0]["start_time"] == "09:00:00"
+    assert participant1_data["time_slots"][0]["start_time"] == "2024-02-02T09:00:00+0000"
 
 
 @pytest.mark.e2e
@@ -371,9 +366,8 @@ def test_get_meeting_result_e2e(multi_user_e2e):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant1_id},
         json=[{
-            "slot_date": "2024-02-02",  # 금요일 (weekday=4, available_days에 포함)
-            "start_time": "09:00:00",
-            "end_time": "12:00:00",
+            "start_time": "2024-02-02T09:00:00Z",  # 금요일 (weekday=4, available_days에 포함)
+            "end_time": "2024-02-02T12:00:00Z",
         }],
     )
 
@@ -382,9 +376,8 @@ def test_get_meeting_result_e2e(multi_user_e2e):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant2_id},
         json=[{
-            "slot_date": "2024-02-02",  # 금요일 (weekday=4, available_days에 포함)
-            "start_time": "10:00:00",
-            "end_time": "13:00:00",
+            "start_time": "2024-02-02T10:00:00Z",  # 금요일 (weekday=4, available_days에 포함)
+            "end_time": "2024-02-02T13:00:00Z",
         }],
     )
 
@@ -396,19 +389,16 @@ def test_get_meeting_result_e2e(multi_user_e2e):
     assert data["meeting"]["id"] == meeting_id
     assert "availability_grid" in data
 
-    date_group = next((g for g in data["availability_grid"] if g["date"] == "2024-02-02"), None)
-    assert date_group is not None
-
-    slots = {s["time"]: s["count"] for s in date_group["slots"]}
+    slots = {c["start_time"]: c["count"] for c in data["availability_grid"]}
 
     # 10:00-12:00 구간은 두 명 모두 가능 (count=2)
-    assert slots.get("10:00", 0) == 2
-    assert slots.get("11:00", 0) == 2
-    assert slots.get("11:30", 0) == 2
+    assert slots["2024-02-02T10:00:00+0000"] == 2
+    assert slots["2024-02-02T11:00:00+0000"] == 2
+    assert slots["2024-02-02T11:30:00+0000"] == 2
 
     # 9:00-10:00 구간은 참여자1만 가능 (count=1)
-    assert slots.get("09:00", 0) == 1
-    assert slots.get("09:30", 0) == 1
+    assert slots["2024-02-02T09:00:00+0000"] == 1
+    assert slots["2024-02-02T09:30:00+0000"] == 1
 
 
 @pytest.mark.e2e

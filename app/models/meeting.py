@@ -7,6 +7,7 @@ from datetime import date, time
 from typing import List, TYPE_CHECKING
 from uuid import UUID
 
+from pydantic import NaiveDatetime
 from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint
 from sqlmodel import Field, Relationship
 
@@ -106,8 +107,8 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 class MeetingTimeSlot(UUIDBase, table=True):
     """
     참여자가 선택한 가능 시간 슬롯
-    
-    각 참여자가 특정 날짜와 시간 구간을 선택한 것을 저장
+
+    반열린 구간 [start_time, end_time)을 받은 그대로 저장한다. 미팅의 날짜·시간·칸과는 무관하다
     """
     __tablename__ = "meeting_time_slot"
 
@@ -120,10 +121,9 @@ class MeetingTimeSlot(UUIDBase, table=True):
         )
     )
 
-    # 시간 슬롯 정보
-    slot_date: date = Field(index=True)  # 날짜
-    start_time: time  # 시작 시간
-    end_time: time  # 종료 시간
+    # 가능 시간 (UTC naive, end_time은 포함하지 않음)
+    start_time: NaiveDatetime
+    end_time: NaiveDatetime
 
     __table_args__ = (
         CheckConstraint("start_time < end_time", name="ck_time_slot_range"),
