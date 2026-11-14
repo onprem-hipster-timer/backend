@@ -12,10 +12,10 @@ OWNER = "user-a"
 VIEWER = "user-c"
 
 
-def _create(client, title: str, start: str, end: str, **extra) -> str:
+def _create(client, title: str, start_time: str, end_time: str, **extra) -> str:
     response = client.post(
         "/v1/schedules",
-        json={"title": title, "start_time": start, "end_time": end, **extra},
+        json={"title": title, "start_time": start_time, "end_time": end_time, **extra},
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
@@ -196,3 +196,51 @@ def test_graphql_calendar_includes_schedule_on_end_date(e2e_client):
     _create(e2e_client, "late", "2024-03-12T23:30:00Z", "2024-03-13T00:30:00Z")
 
     assert _calendar(e2e_client, "2024-03-12", "2024-03-12") == {"2024-03-12": ["late"]}
+
+
+OVERNIGHT_DAILY = {
+    "start_time": "2024-03-01T22:00:00Z",
+    "end_time": "2024-03-02T02:00:00Z",
+    "recurrence_rule": "FREQ=DAILY",
+    "recurrence_end": "2024-03-03T22:00:00Z",
+}
+
+
+@pytest.mark.e2e
+def test_last_occurrence_running_past_recurrence_end_is_returned(e2e_client):
+    _create(e2e_client, "overnight", **OVERNIGHT_DAILY)
+
+    response = e2e_client.get(
+        "/v1/schedules",
+        params={"start_date": "2024-03-04T00:00:00Z", "end_date": "2024-03-04T01:00:00Z"},
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()
+    assert [datetime.fromisoformat(s["start_time"]) for s in items] == [
+        datetime(2024, 3, 3, 22, tzinfo=timezone.utc)
+    ]
+    assert datetime.fromisoformat(items[0]["end_time"]) == datetime(2024, 3, 4, 2, tzinfo=timezone.utc)
+    assert _titles(e2e_client, "2024-03-04T02:00:00Z", "2024-03-04T03:00:00Z") == []
+
+
+@pytest.mark.e2e
+def test_shared_last_occurrence_running_past_recurrence_end_is_returned(multi_user_e2e):
+    owner = multi_user_e2e.as_user(OWNER)
+    viewer = multi_user_e2e.as_user(VIEWER)
+    schedule_id = _create(owner, "overnight", **OVERNIGHT_DAILY)
+    response = owner.put(f"/v1/visibility/schedule/{schedule_id}", json={"level": "public"})
+    assert response.status_code == 200, response.text
+
+    assert _titles(viewer, "2024-03-04T00:00:00Z", "2024-03-04T01:00:00Z", scope="shared") == ["overnight"]
+    assert _titles(viewer, "2024-03-04T02:00:00Z", "2024-03-04T03:00:00Z", scope="shared") == []
+
+
+@pytest.mark.e2e
+def test_recurring_schedule_ended_before_range_is_not_returned(e2e_client):
+    _create(
+        e2e_client, "morning", "2024-03-01T09:00:00Z", "2024-03-01T10:00:00Z",
+        recurrence_rule="FREQ=DAILY", recurrence_end="2024-03-03T09:00:00Z",
+    )
+
+    assert _titles(e2e_client, "2024-03-03T10:00:00Z", "2024-03-05T00:00:00Z") == []
+    assert _titles(e2e_client, "2024-03-03T09:59:59Z", "2024-03-05T00:00:00Z") == ["morning"]

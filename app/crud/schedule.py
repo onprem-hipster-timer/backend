@@ -184,15 +184,14 @@ def get_recurring_schedules(
             # 첫 회차가 범위 끝 이전에 시작하고
             (Schedule.start_time < end_date)
         )
-        .where(
-            # 반복 종료일이 없거나 조회 시작일 이후
-            (Schedule.recurrence_end.is_(None))
-            | (Schedule.recurrence_end >= start_date)
-        )
         .order_by(Schedule.start_time)
     )
-    results = session.exec(statement)
-    return results.all()
+    # 마지막 회차는 recurrence_end에 시작해 recurrence_end + 일정 길이에 끝날 수 있다
+    # (일정 길이를 더하는 식은 DB마다 달라 메모리에서 거른다)
+    return [
+        s for s in session.exec(statement).all()
+        if s.recurrence_end is None or s.recurrence_end + (s.end_time - s.start_time) > start_date
+    ]
 
 
 def get_schedule_exception(
