@@ -95,10 +95,12 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS` | 공개 JWKS JSON. 설정하면 discovery 대신 이 키로 검증 (Kratos처럼 discovery가 없는 발급자). `GET /auth/.well-known/jwks.json`으로 공개되므로 비밀 키 성분이 있으면 기동 실패 | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS 캐시 TTL | `3600` |
 | `KRATOS_PUBLIC_URL` | `/auth/*`를 프록시할 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 | - |
-| `KRATOS_ADMIN_URL` | Kratos admin API 주소. 회원 탈퇴 때 세션 폐기·identity 삭제, 게스트 identity 생성·조회·삭제에 쓴다. 비우면 호출하지 않고, 파기한 계정의 identity 삭제는 설정될 때까지 남는다 | - |
-| `GUEST_ENABLED` | 게스트 계정을 켠다. 켜면 `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`가 없을 때 기동 실패하고, `schema_id` 클레임이 없는 토큰은 401. 끄면 `/v1/guests/*`·`/internal/kratos/hooks/*`는 404이고 게스트 토큰은 403 ([게스트 계정 설정](../deployment/kratos-guest.ko.md)) | `False` |
+| `KRATOS_ADMIN_URL` | Kratos admin API 주소. 회원 탈퇴 때 세션 폐기·identity 삭제, 게스트 identity 생성·삭제에 쓴다. 비우면 호출하지 않고, 파기한 계정의 identity 삭제는 설정될 때까지 남는다 | - |
+| `GUEST_ENABLED` | 게스트 계정을 켠다. 켜면 `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`, `TURNSTILE_SECRET_KEY`가 없을 때 기동 실패하고, `schema_id` 클레임이 없는 토큰은 401. 끄면 `/v1/guests/*`·`/internal/kratos/hooks/*`는 404이고 게스트 토큰은 403 ([게스트 계정 설정](../deployment/kratos-guest.ko.md)) | `False` |
 | `KRATOS_GUEST_SCHEMA_ID` | Kratos의 게스트 identity schema id. 토큰의 `schema_id`가 이 값이면 게스트 | `guest` |
 | `KRATOS_HOOK_API_KEY` | Kratos web_hook이 `X-Kratos-Hook-Key` 헤더로 보내는 값. `/internal/kratos/hooks/*`는 이 값이 맞아야 응답한다 | - |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 위젯의 비밀 키. 게스트 생성(`POST /v1/guests`)의 `turnstile_token`을 확인한다. `GUEST_ENABLED=true`면 필수 | - |
+| `TURNSTILE_VERIFY_URL` | Turnstile 토큰 확인 주소 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` |
 | `ACCOUNT_DELETION_GRACE_DAYS` | 탈퇴 신청 뒤 파기까지의 유예 기간(일) | `3` |
 | `UNVERIFIED_SIGNUP_RETENTION_HOURS` | 이메일 인증을 마치지 않은 가입 정보를 계정 정리 때 지우기까지의 시간 | `24` |
 | `ACCOUNT_PURGE_TOKEN` | `POST /internal/accounts/purge`의 `X-Purge-Token` 값. 비우면 그 엔드포인트는 404 | - |

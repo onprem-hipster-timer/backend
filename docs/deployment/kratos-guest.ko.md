@@ -2,12 +2,13 @@
 
 이 backend를 배포하고 Kratos를 직접 운영하는 조직이 게스트 계정을 켜는 데 필요한 설정 전체입니다. Ory Kratos v26.2.0에서 확인한 설정입니다. 게스트가 무엇이고 API가 어떻게 생겼는지는 [게스트 계정 가이드](../guides/guest.ko.md)에 있습니다.
 
-게스트를 켜려면 아래 두 쪽을 모두 바꿉니다. 한쪽만 바꾸면 게스트 입장이 실패하거나(`503`), 모든 회원 토큰이 `401`이 됩니다.
+게스트를 켜려면 아래 세 쪽을 모두 갖춥니다. Kratos와 backend 중 한쪽만 바꾸면 게스트 생성·로그인이 실패하거나, 모든 회원 토큰이 `401`이 됩니다.
 
 | 어디 | 무엇 |
 |------|------|
-| backend | 환경 변수 `GUEST_ENABLED`, `KRATOS_HOOK_API_KEY`, `KRATOS_ADMIN_URL`, `KRATOS_PUBLIC_URL` |
+| backend | 환경 변수 `GUEST_ENABLED`, `KRATOS_HOOK_API_KEY`, `KRATOS_ADMIN_URL`, `KRATOS_PUBLIC_URL`, `TURNSTILE_SECRET_KEY` |
 | Kratos | 게스트 identity schema, JWT 클레임 매퍼의 `schema_id`, 로그인 훅, 설정 훅, backend가 닿는 admin API |
+| Cloudflare Turnstile | 위젯(사이트 키는 클라이언트, 비밀 키는 backend). 게스트를 켜면 반드시 쓴다 |
 
 게스트를 켜도 회원 로그인은 Kratos 기본 동작 그대로입니다. 로그인과 설정 변경에서 backend를 부르는 것은 게스트뿐입니다.
 
@@ -17,20 +18,44 @@
 |------|----|------|
 | `GUEST_ENABLED` | `true` | 게스트 기능을 켠다. 기본 `false` |
 | `KRATOS_HOOK_API_KEY` | 무작위 값 (32자 이상 권장) | Kratos 훅 요청의 `X-Kratos-Hook-Key` 헤더와 같아야 한다 |
-| `KRATOS_ADMIN_URL` | 예: `http://127.0.0.1:4434` | backend가 게스트 identity를 만들고, 읽고, 지운다 |
-| `KRATOS_PUBLIC_URL` | 예: `http://127.0.0.1:4433` | backend가 게스트 대신 비밀번호 로그인을 해서 세션 토큰을 받는다 |
+| `KRATOS_ADMIN_URL` | 예: `http://127.0.0.1:4434` | backend가 게스트 identity를 만들고 지운다 |
+| `KRATOS_PUBLIC_URL` | 예: `http://127.0.0.1:4433` | `/auth` 프록시가 넘기는 곳. 게스트도 회원처럼 `/auth`로 로그인하고 JWT를 받는다 |
+| `TURNSTILE_SECRET_KEY` | Turnstile 위젯의 비밀 키 | 게스트 생성 요청의 `turnstile_token`을 확인한다 (1.1) |
+| `TURNSTILE_VERIFY_URL` | 기본 `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 토큰 확인 주소. 보통 바꾸지 않는다 |
 | `KRATOS_GUEST_SCHEMA_ID` | `guest` (기본값) | Kratos의 게스트 identity schema id. 바꾸면 아래 Kratos 설정의 `'guest'`도 모두 바꾼다 |
 
-`GUEST_ENABLED=true`인데 `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`, `KRATOS_GUEST_SCHEMA_ID` 중 하나라도 비어 있으면 backend가 기동하지 않습니다.
+`GUEST_ENABLED=true`인데 `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`, `KRATOS_GUEST_SCHEMA_ID`, `TURNSTILE_SECRET_KEY` 중 하나라도 비어 있으면 backend가 기동하지 않습니다.
 
 ```bash
 GUEST_ENABLED=true
 KRATOS_HOOK_API_KEY=<무작위 값>
 KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 KRATOS_ADMIN_URL=http://127.0.0.1:4434
+TURNSTILE_SECRET_KEY=<Turnstile 비밀 키>
 ```
 
 `GUEST_ENABLED=true`이면 backend는 `schema_id` 클레임이 없는 토큰을 `401`로 거부합니다. 그래서 Kratos의 클레임 매퍼(2.3)를 먼저 바꾸고, 바꾼 매퍼로 발급한 토큰이 퍼진 뒤(tokenizer `ttl`, 기본 10분) backend에서 `GUEST_ENABLED`를 켭니다.
+
+### 1.1 Cloudflare Turnstile
+
+게스트 생성(`POST /v1/guests`)은 Cloudflare Turnstile 토큰을 요구합니다. 게스트를 켠 채 Turnstile을 끄는 설정은 없습니다.
+
+1. Cloudflare 대시보드의 Turnstile에서 위젯을 만들고, 호스트 이름에 게스트 화면을 띄우는 클라이언트의 도메인을 넣는다. 사이트 키와 비밀 키가 나온다.
+2. 사이트 키는 클라이언트에 넣는다. 클라이언트는 위젯에서 받은 토큰을 생성 요청의 `turnstile_token`으로 보낸다.
+3. 비밀 키는 backend의 `TURNSTILE_SECRET_KEY`에 넣는다.
+
+- backend는 요청마다 `TURNSTILE_VERIFY_URL`에 비밀 키와 토큰만 보냅니다(접속 주소는 보내지 않는다). backend에서 `challenges.cloudflare.com`으로 나가는 HTTPS가 열려 있어야 합니다.
+- 토큰은 한 번만 확인할 수 있고 위젯이 준 뒤 5분 동안 유효합니다. 생성이 `403 GuestVerificationFailedError`면 클라이언트는 새 토큰을 받아 다시 보냅니다.
+- 이름 찾기(`POST /v1/guests/lookup`)와 로그인은 토큰을 요구하지 않습니다.
+- 개발·테스트용 비밀 키(Cloudflare 문서의 테스트 키): `1x0000000000000000000000000000000AA`는 어떤 토큰이든 통과시키고, `2x0000000000000000000000000000000AA`는 모두 거절합니다. 운영에 쓰지 않습니다.
+
+### 1.2 접속 주소와 요청 한도
+
+게스트 이름 찾기, 게스트 생성, `/auth` 제출은 IP당 분당 10회로 제한합니다. 이 한도는 backend가 방문자의 주소를 바르게 알 때만 지켜집니다.
+
+- backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
+- uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.
+- `/internal/kratos/hooks/*`는 Kratos만 부릅니다. 앞단에서 밖으로 열지 않는 것을 권합니다.
 
 ## 2. Kratos 설정
 
@@ -87,10 +112,10 @@ kratos serve -c kratos.yml -c kratos.guest.yml
 }
 ```
 
-- `handle`: 비밀번호 로그인 식별자. backend가 `<uuid4>@guest.invalid`로 만들고 같은 값을 인증된 주소(`verifiable_addresses`, `verified: true`)로 넣는다. 그래서 게스트도 로그인 훅 뒤의 `require_verified_address`를 통과한다. `.invalid`는 예약된 최상위 도메인이라 이 주소로 메일이 가지 않는다. 게스트는 handle을 입력하지 않는다
+- `handle`: 비밀번호 로그인 식별자. backend가 `<guest_id>@guest.invalid`(`guest_id`는 `guest` 테이블의 행 id)로 만들고 같은 값을 인증된 주소(`verifiable_addresses`, `verified: true`)로 넣는다. 그래서 게스트도 로그인 훅 뒤의 `require_verified_address`를 통과한다. `.invalid`는 예약된 최상위 도메인이라 이 주소로 메일이 가지 않는다. 게스트는 handle을 입력하지 않는다
 - `handle`의 `verification`: `require_verified_address`가 보는 인증 주소가 되려면 필요하다. `recovery`는 두지 않아 비밀번호 찾기가 없다
-- `name`: 표시 이름. backend의 이름 규칙(1~50자)과 같은 길이 제한
-- 누군가 게스트 handle로 인증 코드를 요청하면 Kratos는 그 주소로 인증 코드 메일을 큐에 넣고 주소의 `status`를 `sent`로 바꾼다. `verified`는 그대로라 로그인에는 영향이 없다. 메일은 `.invalid` 주소라 전달되지 않으며, courier 로그와 `GET /admin/courier/messages`에 그 메시지가 남는다. 복구 요청은 `sent_email` 응답만 오고 메일을 큐에 넣지 않는다
+- `name`: 표시 이름. backend의 이름 규칙(1~50자)과 같은 길이 제한. backend는 같은 이름을 `guest.name`에도 두고 이름 찾기와 중복 검사에 쓴다
+- backend의 `/auth` 프록시는 `@guest.invalid` 주소로 온 인증·복구 제출을 Kratos에 넘기지 않는다(`400 address_not_accepted`). Kratos 공개 API에 직접 온 인증 코드 요청은 Kratos가 그 주소로 메일을 큐에 넣고 주소의 `status`를 `sent`로 바꾼다. `verified`는 그대로라 로그인에는 영향이 없고, 메일은 `.invalid` 주소라 전달되지 않는다. 복구 요청은 메일을 큐에 넣지 않는다
 
 ### 2.2 identity schema 등록
 
@@ -252,7 +277,8 @@ function(ctx)
 
 - URL의 마지막 경로(`profile`, `password`, `oidc`)로 backend가 어떤 변경인지 안다
 - `error 'cancel'`: 게스트가 아닌 identity의 설정 변경은 훅을 부르지 않는다. 회원 설정은 backend 상태와 상관없다
-- backend는 게스트의 `profile` 변경 중 `handle`이 그대로이고 이름 규칙에 맞는 것만 허용하고, `password`·`oidc` 변경은 거절한다
+- backend는 게스트의 `profile` 변경 중 `handle`이 그대로이고 이름이 [정규형](../guides/guest.ko.md#이름과-비밀번호-규칙)이며 같은 리소스의 다른 게스트가 쓰지 않는 것만 허용하고, `password`·`oidc` 변경은 거절한다
+- 이름이 바뀌는 변경을 허용할 때 backend는 `guest.name`을 먼저 바꾼다. 이름 중복은 `guest` 테이블의 UNIQUE 제약이 막는다. 훅 판정은 Kratos를 부르지 않는다
 - 기존 `password` 훅(`revoke_active_sessions` 등)은 목록에 다시 적는다
 
 ### 2.6 admin API
@@ -262,8 +288,6 @@ backend가 `KRATOS_ADMIN_URL`로 admin API에 닿아야 합니다. backend가 �
 | 호출 | 용도 |
 |------|------|
 | `POST /admin/identities` | 게스트 identity 만들기 (`schema_id`, `traits`, 비밀번호, handle을 인증된 주소로) |
-| `GET /admin/identities?ids=...` | 리소스 게스트들의 현재 이름 읽기 (한 번에 100개씩) |
-| `GET /admin/identities/{id}` | 이름 변경 때 현재 `handle` 읽기 |
 | `DELETE /admin/identities/{id}` | 게스트 폐기 |
 
 admin API는 backend 밖으로 열지 않습니다.
@@ -278,6 +302,8 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_PROFILE_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 SELFSERVICE_FLOWS_SETTINGS_AFTER_PASSWORD_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 ```
+
+저장소의 `dev/kratos/kratos.guest.yml`에 있는 키(`dev-only-kratos-hook-key`)는 로컬 전용입니다. 운영에서는 새 무작위 값을 씁니다.
 
 ## 3. 게스트를 끈 상태
 
@@ -311,11 +337,23 @@ curl -s -w ' %{http_code}\n' -X POST "$API/internal/kratos/hooks/login" -H "X-Kr
 # {} 200
 ```
 
-### 4.3 입장과 JWT
+### 4.3 생성, 로그인, JWT
+
+`TS_TOKEN`은 Turnstile 위젯에서 받은 토큰입니다. backend가 테스트용 비밀 키(1.1)를 쓰는 환경에서는 아무 문자열이나 됩니다.
 
 ```bash
-TOKEN=$(curl -s -X POST "$API/v1/guests/enter" -H 'content-type: application/json' \
-  -d "{\"resource_type\":\"$RESOURCE_TYPE\",\"resource_id\":\"$RESOURCE_ID\",\"name\":\"확인\",\"password\":\"1\"}" \
+R="\"resource_type\":\"$RESOURCE_TYPE\",\"resource_id\":\"$RESOURCE_ID\",\"name\":\"확인\""
+
+curl -s -X POST "$API/v1/guests/lookup" -H 'content-type: application/json' -d "{$R}"
+# {"handle":null}
+
+HANDLE=$(curl -s -X POST "$API/v1/guests" -H 'content-type: application/json' \
+  -d "{$R,\"password\":\"1\",\"turnstile_token\":\"$TS_TOKEN\"}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["handle"])')
+
+FLOW=$(curl -s "$API/auth/self-service/login/api" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+TOKEN=$(curl -s -X POST "$API/auth/self-service/login?flow=$FLOW" -H 'content-type: application/json' \
+  -d "{\"method\":\"password\",\"identifier\":\"$HANDLE\",\"password\":\"1\"}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')
 JWT=$(curl -s "$API/auth/sessions/whoami?tokenize_as=api" -H "X-Session-Token: $TOKEN" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["tokenized"])')
@@ -326,7 +364,9 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/users/me" -H "Authorization: B
 # 403
 ```
 
-입장이 `503`이면 backend 로그에서 Kratos 오류를 봅니다. 로그인 훅의 키가 다르면 Kratos가 게스트 로그인을 거절해 입장이 `503`이 됩니다.
+- 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고, `GuestVerificationFailedError`는 Turnstile 토큰입니다.
+- 생성이 `503`이면 backend가 Turnstile 확인 주소나 Kratos admin API에 닿지 않는 것입니다. backend 로그를 봅니다.
+- 로그인이 `400`이고 메시지 `id`가 `4000001`이면 로그인 훅이 거절한 것입니다. 훅 URL과 키를 확인합니다(4.2).
 
 ### 4.4 회원
 
@@ -349,7 +389,9 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/auth/sessions/whoami" -H "X-Sessi
 | Kratos가 로그인 훅 URL에 닿지 않는다 | Kratos는 세 번 시도(약 3초)한 뒤 그 게스트의 로그인을 거절한다. 회원은 인증 여부와 상관없이 게스트가 없을 때와 같다(훅을 부르지 않는다) |
 | Kratos가 설정 훅 URL에 닿지 않는다 | 게스트의 설정 변경이 거절된다. 회원 설정은 영향이 없다 |
 | 훅 키가 다르다 | backend가 `401`을 돌려주고 Kratos는 위와 같이 게스트 로그인·설정 변경을 거절한다 |
-| backend가 Kratos admin·공개 API에 닿지 않는다 | 입장이 `503`이고 게스트를 만들지 않는다. 게스트 폐기는 게스트 행만 지우고 identity 삭제 실패를 로그에 남긴다. 행이 없는 게스트 identity는 로그인할 수 없다 |
+| backend가 Kratos admin API에 닿지 않는다 | 게스트 생성이 `503`이고 게스트를 만들지 않는다. 게스트 폐기는 게스트 행만 지우고 identity 삭제 실패를 로그에 남긴다. 행이 없는 게스트 identity는 로그인할 수 없다. 이름 찾기는 Kratos를 부르지 않아 그대로 된다 |
+| backend가 Kratos 공개 API에 닿지 않는다 | `/auth` 요청이 `502`다. 회원과 게스트 모두 로그인하거나 JWT를 받을 수 없다 |
+| backend가 Turnstile 확인 주소에 닿지 않는다 | 게스트 생성이 `503`이고 게스트를 만들지 않는다. 이미 만든 게스트의 로그인과 이름 찾기는 그대로 된다 |
 
 ## 6. 로컬에서 켜기
 
@@ -364,6 +406,7 @@ backend는 `compose.kratos.yaml`의 환경 변수에 다음을 더해 `0.0.0.0:2
 GUEST_ENABLED=true
 KRATOS_ADMIN_URL=http://127.0.0.1:4434
 KRATOS_HOOK_API_KEY=dev-only-kratos-hook-key
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-게스트를 받는 리소스(호스트)가 등록되어 있어야 입장할 수 있습니다. 등록된 호스트가 없으면 입장은 `403`입니다.
+게스트를 받는 리소스(호스트)가 등록되어 있어야 게스트를 만들 수 있습니다. 등록된 호스트가 없으면 이름 찾기와 생성은 `403`입니다.

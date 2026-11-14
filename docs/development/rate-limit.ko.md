@@ -47,6 +47,8 @@ Rate Limit은 사용자별로 독립적으로 적용됩니다:
 | 인증됨 | JWT의 `sub` claim (OIDC 사용자 ID) |
 | 미인증 | 클라이언트 IP 주소 (`X-Forwarded-For` 또는 직접 연결 IP) |
 
+규칙에 `per_ip=True`가 있으면 토큰이 있어도 클라이언트 IP로 셉니다(게스트 이름 찾기·생성, `/auth` 제출).
+
 ---
 
 ## 2. 환경변수 설정
@@ -220,6 +222,9 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 | `/v1/tags` | POST | 60초 | 30 | Tag 생성 제한 |
 | `/v1/tags/groups` | POST | 60초 | 30 | TagGroup 생성 제한 |
 | `/v1/todos/groups` | POST | 60초 | 30 | TodoGroup 생성 제한 |
+| `/v1/guests/lookup` | POST | 60초 | 10 | 게스트 이름 찾기 (IP 단위) |
+| `/v1/guests` | POST | 60초 | 10 | 게스트 생성 (IP 단위) |
+| `/auth/*` | POST, PUT, PATCH, DELETE | 60초 | 10 | Kratos 프록시 제출: 로그인, 가입, 코드 제출, 설정 (IP 단위, 메서드마다 따로 센다). GET은 제한하지 않는다 |
 | `/v1/friends/requests` | POST | 60초 | 20 | 친구 요청(이메일 열거·스팸 억제, 더 엄격) |
 | `/v1/todos/*` | ALL | 60초 | 100 | Todo 일반 작업 |
 | `/v1/schedules/*` | ALL | 60초 | 60 | Schedule 일반 작업 |

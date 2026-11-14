@@ -105,11 +105,12 @@ DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 `GUEST_ENABLED=true`일 때만 응답합니다(꺼져 있으면 404).
 
 ```http
-POST   /v1/guests/enter                   # 리소스에 게스트로 입장 (인증 없음, Kratos 세션 토큰 반환)
+POST   /v1/guests/lookup                  # 리소스에서 그 이름의 게스트 로그인 식별자(handle) 찾기 (인증 없음)
+POST   /v1/guests                         # 게스트 생성 (인증 없음, Turnstile 토큰 필요). handle 반환
 DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게스트 JWT)
 ```
 
-게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
 
 ### 공휴일 (Holidays)
 
