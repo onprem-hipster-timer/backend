@@ -113,3 +113,33 @@ def test_create_todo_rejects_out_of_range_deadline(e2e_client):
     response = e2e_client.post("/v1/todos", json={"title": "x", "deadline": TOO_EARLY})
 
     assert response.status_code == 422, response.text
+
+
+@pytest.mark.e2e
+def test_create_schedule_rejects_value_within_a_day_of_the_minimum(e2e_client):
+    response = e2e_client.post(
+        "/v1/schedules",
+        json={"title": "x", "start_time": "0001-01-01T12:00:00Z", "end_time": "2024-03-10T10:00:00Z"},
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    ("start_time", "end_time", "tz"),
+    [
+        ("0001-01-02T00:00:00Z", "0001-01-02T01:00:00Z", "-12:00"),
+        ("9999-12-30T22:00:00Z", "9999-12-30T23:59:59.999999Z", "+14:00"),
+    ],
+)
+def test_schedule_at_the_bounds_can_be_read_in_any_offset(e2e_client, start_time, end_time, tz):
+    response = e2e_client.post(
+        "/v1/schedules", json={"title": "edge", "start_time": start_time, "end_time": end_time},
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+
+    response = e2e_client.get(f"/v1/schedules/{schedule_id}", params={"timezone": tz})
+
+    assert response.status_code == 200, response.text

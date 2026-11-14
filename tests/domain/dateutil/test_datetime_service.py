@@ -276,3 +276,26 @@ class TestGetDatetimeRange:
 def test_conversion_out_of_datetime_range_raises_value_error(convert, value):
     with pytest.raises(ValueError, match="datetime is out of range"):
         convert(value)
+
+
+@pytest.mark.parametrize("convert", [ensure_utc_naive, to_utc_naive])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        (datetime(1, 1, 2), True),
+        (datetime(1, 1, 1, 23, 59, 59, 999999), False),
+        (datetime(1, 1, 2, 9, tzinfo=timezone(timedelta(hours=9))), True),
+        (datetime(1, 1, 2, 8, 59, 59, 999999, tzinfo=timezone(timedelta(hours=9))), False),
+        (datetime(9999, 12, 30, 23, 59, 59, 999999), True),
+        (datetime(9999, 12, 31), False),
+        (datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=timezone.utc), True),
+        (datetime(9999, 12, 30, 12, tzinfo=timezone(timedelta(hours=-12))), False),
+    ],
+)
+def test_conversion_bounds(convert, value, accepted):
+    if accepted:
+        expected = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+        assert convert(value) == expected
+    else:
+        with pytest.raises(ValueError, match="datetime is out of range"):
+            convert(value)

@@ -14,12 +14,22 @@ from app.domain.dateutil.exceptions import InvalidTimezoneError
 # 기본 시간 허용 오차 (1분)
 DEFAULT_TIME_TOLERANCE_SECONDS = 60
 
+# 받아들이는 UTC 시각 [MIN_UTC, MAX_UTC): ±24시간 안의 어떤 오프셋으로 바꿔도 datetime으로 나타낼 수 있다
+MIN_UTC = datetime(1, 1, 2)
+MAX_UTC = datetime(9999, 12, 31)
+
 
 def _astimezone_utc(dt: datetime) -> datetime:
     try:
         return dt.astimezone(timezone.utc)
     except OverflowError:
         raise ValueError("datetime is out of range") from None
+
+
+def _check_range(dt: datetime) -> datetime:
+    if not MIN_UTC <= dt < MAX_UTC:
+        raise ValueError("datetime is out of range")
+    return dt
 
 
 def to_utc_naive(dt: datetime | None) -> datetime | None:
@@ -36,7 +46,7 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
 
     :param dt: datetime 객체 (timezone 있거나 없음)
     :return: UTC naive datetime (timezone 정보 제거)
-    :raises ValueError: UTC로 바꾼 값이 datetime 표현 범위를 벗어나는 경우
+    :raises ValueError: UTC 값이 [MIN_UTC, MAX_UTC)를 벗어나는 경우
     """
     if dt is None:
         return None
@@ -46,7 +56,7 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
         dt = _astimezone_utc(dt)
 
     # timezone 정보 제거 (naive datetime)
-    return dt.replace(tzinfo=None)
+    return _check_range(dt.replace(tzinfo=None))
 
 
 def ensure_utc_naive(dt: datetime | None) -> datetime | None:
@@ -60,7 +70,7 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
 
     :param dt: datetime 객체
     :return: UTC naive datetime
-    :raises ValueError: UTC로 바꾼 값이 datetime 표현 범위를 벗어나는 경우
+    :raises ValueError: UTC 값이 [MIN_UTC, MAX_UTC)를 벗어나는 경우
     """
     if dt is None:
         return None
@@ -71,13 +81,13 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
         if dt.tzinfo != timezone.utc:
             dt = _astimezone_utc(dt)
         # UTC로 변환 후 naive datetime으로 변환
-        return dt.replace(tzinfo=None)
+        return _check_range(dt.replace(tzinfo=None))
 
     # timezone이 없으면 그대로 반환 (UTC로 가정)
-    return dt
+    return _check_range(dt)
 
 
-# 요청 파라미터용: UTC naive로 바꾸고, 바꿀 수 없으면 422로 거절된다
+# 요청 파라미터용: UTC naive로 바꾸고, [MIN_UTC, MAX_UTC) 밖이면 422로 거절된다
 # 필수 파라미터는 `Annotated[UtcNaiveDatetime, Query(...)]`로 써야 검증이 적용된다 (`= Query(...)` 기본값 형태는 적용되지 않음)
 UtcNaiveDatetime = Annotated[datetime, AfterValidator(ensure_utc_naive)]
 
