@@ -203,3 +203,38 @@ class TestOIDCJwksSetting:
         """OIDC_JWKS는 /auth/.well-known/jwks.json으로 공개되므로 비밀 키가 있으면 기동 실패"""
         with pytest.raises(ValidationError, match="OIDC_JWKS"):
             Settings(OIDC_JWKS='{"keys": [' + key + ']}')
+
+
+class TestGuestSettings:
+    """게스트 기능 플래그와 기동 검증"""
+
+    REQUIRED = {
+        "KRATOS_PUBLIC_URL": "http://127.0.0.1:4433",
+        "KRATOS_ADMIN_URL": "http://127.0.0.1:4434",
+        "KRATOS_HOOK_API_KEY": "hook-key",
+        "TURNSTILE_SECRET_KEY": "turnstile-secret",
+    }
+
+    def test_guest_is_off_by_default(self):
+        settings = Settings()
+        assert settings.GUEST_ENABLED is False
+        assert settings.KRATOS_GUEST_SCHEMA_ID == "guest"
+        assert settings.TURNSTILE_VERIFY_URL == "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+    def test_off_needs_no_turnstile_secret(self):
+        assert Settings(GUEST_ENABLED=False, TURNSTILE_SECRET_KEY="").GUEST_ENABLED is False
+
+    def test_off_needs_no_kratos_settings(self):
+        assert Settings(GUEST_ENABLED=False, KRATOS_PUBLIC_URL="", KRATOS_ADMIN_URL="").GUEST_ENABLED is False
+
+    def test_on_with_all_settings(self):
+        assert Settings(GUEST_ENABLED=True, **self.REQUIRED).GUEST_ENABLED is True
+
+    @pytest.mark.parametrize(
+        "name",
+        ["KRATOS_PUBLIC_URL", "KRATOS_ADMIN_URL", "KRATOS_HOOK_API_KEY", "KRATOS_GUEST_SCHEMA_ID", "TURNSTILE_SECRET_KEY"],
+    )
+    def test_on_without_required_setting_fails(self, name):
+        values = {**self.REQUIRED, name: ""}
+        with pytest.raises(ValidationError, match=name):
+            Settings(GUEST_ENABLED=True, **values)

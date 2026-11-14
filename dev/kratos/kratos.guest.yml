@@ -1,0 +1,87 @@
+# 게스트 계정을 켤 때 kratos.yml 위에 겹치는 설정. 로컬 개발용이다.
+#   kratos serve -c /etc/config/kratos/kratos.yml -c /etc/config/kratos/kratos.guest.yml
+# 뒤 파일의 값이 앞 파일의 값을 덮는다. 목록(identity.schemas, 훅 목록)은 합쳐지지 않고 통째로 바뀌므로
+# kratos.yml에 있던 항목(default schema, require_verified_address, revoke_active_sessions)도 여기 다시 적는다.
+# 설정 키마다의 설명과 운영 값은 docs/deployment/kratos-guest.ko.md에 있다.
+# 훅 URL의 host.docker.internal:2614는 호스트에서 실행 중인 backend다 (compose.kratos.guest.yaml).
+# value는 backend의 KRATOS_HOOK_API_KEY와 같아야 한다.
+
+serve:
+  admin:
+    host: 0.0.0.0 # backend가 identity를 만들고 지운다. compose.kratos.guest.yaml이 127.0.0.1:4434로만 연다
+
+identity:
+  schemas:
+    - id: default
+      url: file:///etc/config/kratos/identity.schema.json
+    - id: guest
+      url: file:///etc/config/kratos/guest.schema.json
+
+selfservice:
+  flows:
+    login:
+      after:
+        password:
+          hooks: # 게스트 훅 다음에 기존 require_verified_address. 회원 로그인은 게스트 훅을 부르지 않는다
+            - hook: web_hook
+              config:
+                url: http://host.docker.internal:2614/internal/kratos/hooks/login
+                method: POST
+                body: file:///etc/config/kratos/hook.login.jsonnet
+                response:
+                  parse: true
+                auth:
+                  type: api_key
+                  config:
+                    name: X-Kratos-Hook-Key
+                    value: dev-only-kratos-hook-key
+                    in: header
+            - hook: require_verified_address
+    settings:
+      after:
+        profile:
+          hooks:
+            - hook: web_hook
+              config:
+                url: http://host.docker.internal:2614/internal/kratos/hooks/settings/profile
+                method: POST
+                body: file:///etc/config/kratos/hook.settings.jsonnet
+                response:
+                  parse: true
+                auth:
+                  type: api_key
+                  config:
+                    name: X-Kratos-Hook-Key
+                    value: dev-only-kratos-hook-key
+                    in: header
+        password:
+          hooks:
+            - hook: web_hook
+              config:
+                url: http://host.docker.internal:2614/internal/kratos/hooks/settings/password
+                method: POST
+                body: file:///etc/config/kratos/hook.settings.jsonnet
+                response:
+                  parse: true
+                auth:
+                  type: api_key
+                  config:
+                    name: X-Kratos-Hook-Key
+                    value: dev-only-kratos-hook-key
+                    in: header
+            - hook: revoke_active_sessions
+        oidc:
+          hooks:
+            - hook: web_hook
+              config:
+                url: http://host.docker.internal:2614/internal/kratos/hooks/settings/oidc
+                method: POST
+                body: file:///etc/config/kratos/hook.settings.jsonnet
+                response:
+                  parse: true
+                auth:
+                  type: api_key
+                  config:
+                    name: X-Kratos-Hook-Key
+                    value: dev-only-kratos-hook-key
+                    in: header

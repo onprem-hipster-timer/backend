@@ -1,0 +1,23 @@
+# 게스트 계정을 켠 로컬 Kratos. compose.kratos.yaml에 겹쳐 쓴다. 운영 배포에는 쓰지 않는다.
+#
+# 사용법:
+#   1. compose.kratos.yaml의 1번(서명 키 생성)을 먼저 한다
+#   2. 시작:  docker compose -f compose.kratos.yaml -f compose.kratos.guest.yaml up -d
+#   3. backend: compose.kratos.yaml의 환경 변수에 아래를 더해 0.0.0.0:2614에서 실행
+#      (Kratos 컨테이너가 host.docker.internal:2614로 훅을 부르므로 127.0.0.1에만 열면 닿지 않는다)
+#   종료:     docker compose -f compose.kratos.yaml -f compose.kratos.guest.yaml down -v
+#
+# backend 환경 변수 (추가):
+#   GUEST_ENABLED=true
+#   KRATOS_ADMIN_URL=http://127.0.0.1:4434
+#   KRATOS_HOOK_API_KEY=dev-only-kratos-hook-key
+#   TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA  (Cloudflare 테스트 키, 항상 통과)
+# 설정 내용: dev/kratos/kratos.guest.yml, docs/deployment/kratos-guest.ko.md
+
+services:
+  kratos:
+    command: serve -c /etc/config/kratos/kratos.yml -c /etc/config/kratos/kratos.guest.yml --dev --watch-courier
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:4434:4434"

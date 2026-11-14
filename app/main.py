@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth_proxy, internal, oidc_discovery
+from app.api import auth_proxy, internal, kratos_hooks, oidc_discovery
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
@@ -222,6 +222,8 @@ app.include_router(auth_proxy.router)
 
 # 내부 작업 (/internal/*). 스케줄러가 공유 토큰으로 호출한다
 app.include_router(internal.router)
+# Kratos 훅 수신 (/internal/kratos/hooks/*). 게스트를 켠 Kratos가 공유 키로 호출한다. GUEST_ENABLED가 꺼져 있으면 404
+app.include_router(kratos_hooks.router)
 
 
 # Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)

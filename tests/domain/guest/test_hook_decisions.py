@@ -1,0 +1,269 @@
+"""Kratos 훅 판정 (service.login_allowed, service.settings_change_allowed)"""
+import uuid
+
+import pytest
+
+from app.domain.guest import service
+from app.domain.guest.events import GuestRenamed
+from app.domain.guest.host import GuestHostStatus
+from app.models.visibility import ResourceType
+from app.shared.events import EventOrigin
+from tests.domain.guest.helpers import guest_rows, make_guest
+
+pytestmark = pytest.mark.usefixtures("guest_db")
+
+
+@pytest.fixture
+def open_guest(kratos, host):
+    resource = uuid.uuid4()
+    host.statuses[resource] = GuestHostStatus.OPEN
+    return make_guest(kratos, resource)
+
+
+# ============ 로그인 ============
+
+@pytest.mark.parametrize("schema_id", ["default", None])
+@pytest.mark.asyncio
+async def test_member_login_is_left_to_kratos(kratos, schema_id):
+    """회원 로그인 규칙(주소 인증)은 Kratos의 require_verified_address가 정한다. 훅이 불리면 허용한다"""
+    assert await service.login_allowed("member", schema_id) is True
+
+
+@pytest.mark.asyncio
+async def test_guest_login_with_open_resource(open_guest):
+    assert await service.login_allowed(open_guest.identity_id, "guest") is True
+
+
+@pytest.mark.asyncio
+async def test_guest_login_without_row_is_refused(kratos):
+    identity = kratos.add_identity("guest", {"handle": "h", "name": "x"})
+    assert await service.login_allowed(identity["id"], "guest") is False
+
+
+@pytest.mark.asyncio
+async def test_guest_login_closed_keeps_guest(kratos, host, open_guest):
+    host.statuses[open_guest.resource_id] = GuestHostStatus.CLOSED
+    assert await service.login_allowed(open_guest.identity_id, "guest") is False
+    assert len(guest_rows()) == 1
+
+
+@pytest.mark.asyncio
+async def test_guest_login_expired_discards(kratos, host, open_guest, guest_events):
+    host.statuses[open_guest.resource_id] = GuestHostStatus.EXPIRED
+    assert await service.login_allowed(open_guest.identity_id, "guest") is False
+    assert guest_rows() == []
+    assert kratos.deleted == [open_guest.identity_id]
+
+
+@pytest.mark.asyncio
+async def test_guest_schema_id_follows_setting(kratos, host, open_guest, monkeypatch):
+    import app.core.config as app_config
+
+    monkeypatch.setattr(app_config.settings, "KRATOS_GUEST_SCHEMA_ID", "visitor")
+    # "guest" schema는 이제 회원으로 보므로 판정을 Kratos에 맡긴다
+    assert await service.login_allowed("no-row-identity", "guest") is True
+    assert await service.login_allowed("no-row-identity", "visitor") is False
+    assert await service.login_allowed(open_guest.identity_id, "visitor") is True
+
+
+# ============ 설정 ============
+
+def _traits(kratos, guest, **changes):
+    return {**kratos.identities[guest.identity_id]["traits"], **changes}
+
+
+@pytest.mark.parametrize("method", ["profile", "password", "oidc"])
+@pytest.mark.asyncio
+async def test_member_settings_are_allowed(kratos, method):
+    assert await service.settings_change_allowed(method, "member", "default", {"email": "a@b.c"}) is True
+
+
+@pytest.mark.asyncio
+async def test_guest_rename_is_allowed_and_published(kratos, open_guest, guest_events):
+    traits = _traits(kratos, open_guest, name="철수")
+
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    assert guest_events == [GuestRenamed(
+        owner_id=open_guest.identity_id,
+        origin=EventOrigin.GUEST,
+        guest_id=open_guest.id,
+        resource_type=ResourceType.MEETING,
+        resource_id=open_guest.resource_id,
+        name="철수",
+    )]
+
+
+@pytest.mark.asyncio
+async def test_guest_profile_without_name_change_publishes_nothing(kratos, open_guest, guest_events):
+    traits = _traits(kratos, open_guest)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    assert guest_events == []
+
+
+@pytest.mark.asyncio
+async def test_guest_cannot_change_login_identifier(kratos, open_guest, guest_events):
+    traits = _traits(kratos, open_guest, handle=str(uuid.uuid4()), name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    traits.pop("handle")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert guest_events == []
+
+
+@pytest.mark.parametrize("name", ["", "   ", " 철수", "a" * 51, "철\x00수", None, 3])
+@pytest.mark.asyncio
+async def test_guest_rename_follows_name_rules(kratos, open_guest, name):
+    traits = _traits(kratos, open_guest, name=name)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.parametrize("method", ["password", "oidc", "totp", "unknown"])
+@pytest.mark.asyncio
+async def test_guest_other_settings_are_refused(kratos, open_guest, method):
+    traits = _traits(kratos, open_guest)
+    assert await service.settings_change_allowed(method, open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_guest_without_row_cannot_rename(kratos):
+    identity = kratos.add_identity("guest", {"handle": "h", "name": "x"})
+    traits = {"handle": "h", "name": "y"}
+    assert await service.settings_change_allowed("profile", identity["id"], "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_guest_of_closed_resource_cannot_rename(kratos, host, open_guest):
+    host.statuses[open_guest.resource_id] = GuestHostStatus.CLOSED
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_settings_decision_does_not_call_kratos(kratos, open_guest):
+    kratos.down.add("admin")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    traits = _traits(kratos, open_guest, handle="other@guest.invalid")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_guest_rename_to_non_nfc_name_is_refused(kratos, open_guest, guest_events):
+    import unicodedata
+
+    traits = _traits(kratos, open_guest, name=unicodedata.normalize("NFD", "철수"))
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert guest_events == []
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+# ============ 이름은 리소스 안에서 겹치지 않는다 ============
+
+@pytest.mark.asyncio
+async def test_rename_to_name_of_other_guest_in_resource_is_refused(kratos, open_guest, guest_events):
+    make_guest(kratos, open_guest.resource_id, name="철수")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert guest_events == []
+
+
+@pytest.mark.asyncio
+async def test_rename_to_name_stored_in_other_form_is_refused(kratos, open_guest):
+    import unicodedata
+
+    make_guest(kratos, open_guest.resource_id, name=unicodedata.normalize("NFD", "철수"))
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_rename_to_name_used_in_other_resource_is_allowed(kratos, open_guest):
+    make_guest(kratos, uuid.uuid4(), name="철수")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.asyncio
+async def test_rename_to_own_current_name_is_allowed(kratos, open_guest):
+    make_guest(kratos, open_guest.resource_id, name="영희")
+    traits = _traits(kratos, open_guest, name="민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.asyncio
+async def test_rename_to_nfc_form_of_own_name_is_allowed(kratos, open_guest):
+    import unicodedata
+
+    kratos.identities[open_guest.identity_id]["traits"]["name"] = unicodedata.normalize("NFD", "민수")
+    traits = _traits(kratos, open_guest, name="민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.asyncio
+async def test_rename_to_name_freed_by_discard_is_allowed(kratos, open_guest):
+    other = make_guest(kratos, open_guest.resource_id, name="철수")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    await service.discard_guest(other.identity_id)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.parametrize("name", ["김  민수", "김\u3000민수", " 김 민수", "김\t민수"])
+@pytest.mark.asyncio
+async def test_rename_to_non_canonical_spacing_is_refused(kratos, open_guest, name):
+    traits = _traits(kratos, open_guest, name=name)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    traits = _traits(kratos, open_guest, name="김 민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.parametrize("name", ["철\u200b수", "철수\ufeff", "👨\u200d👩"])
+@pytest.mark.asyncio
+async def test_rename_to_name_with_refused_character_is_refused(kratos, open_guest, name):
+    traits = _traits(kratos, open_guest, name=name)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_rename_to_name_of_other_guest_stored_in_other_spacing_is_refused(kratos, open_guest):
+    make_guest(kratos, open_guest.resource_id, name="김\u3000민수")
+    traits = _traits(kratos, open_guest, name="김 민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+# ============ guest.name ============
+
+def _row(guest):
+    return next(row for row in guest_rows() if row.id == guest.id)
+
+
+@pytest.mark.asyncio
+async def test_allowed_rename_updates_guest_name_and_lookup(kratos, open_guest):
+    from app.domain.guest.schema.dto import GuestLookup
+
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+    assert _row(open_guest).name == "철수"
+    lookup = GuestLookup(resource_type=ResourceType.MEETING, resource_id=open_guest.resource_id, name="철수")
+    assert (await service.lookup(lookup)).handle == traits["handle"]
+    lookup = GuestLookup(resource_type=ResourceType.MEETING, resource_id=open_guest.resource_id, name="민수")
+    assert (await service.lookup(lookup)).handle is None
+
+
+@pytest.mark.asyncio
+async def test_refused_rename_keeps_guest_name(kratos, open_guest, guest_events):
+    make_guest(kratos, open_guest.resource_id, name="철수")
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert _row(open_guest).name == "민수"
+    assert guest_events == []
+
+
+@pytest.mark.asyncio
+async def test_rename_compares_with_guest_name_not_kratos_trait(kratos, open_guest, guest_events):
+    """Kratos trait가 guest.name과 달라도 guest.name과 같은 이름이면 바꾸지 않는다"""
+    kratos.identities[open_guest.identity_id]["traits"]["name"] = "다른 이름"
+    traits = _traits(kratos, open_guest, name="민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+    assert guest_events == []

@@ -24,6 +24,7 @@ class RateLimitRule(BaseModel):
     path_pattern: str  # fnmatch 패턴: "/v1/todos/*", "/v1/todos"
     window_seconds: int  # 윈도우 크기 (초)
     max_requests: int  # 윈도우 내 최대 요청 수
+    per_ip: bool = False  # True면 토큰이 있어도 클라이언트 IP로 센다
 
     def matches(self, method: str, path: str) -> bool:
         """
@@ -88,12 +89,37 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=30,
     ),
+    # 게스트 이름 찾기·생성: 인증 없는 경로라 토큰과 상관없이 IP 단위로 세고 더 엄격하게 제한
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/guests/lookup",
+        window_seconds=60,
+        max_requests=10,
+        per_ip=True,
+    ),
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/guests",
+        window_seconds=60,
+        max_requests=10,
+        per_ip=True,
+    ),
     # 친구 요청: 이메일 경로 대량 시도(열거/스팸) 억제를 위해 더 엄격하게 제한
     RateLimitRule(
         methods=["POST"],
         path_pattern="/v1/friends/requests",
         window_seconds=60,
         max_requests=20,
+    ),
+
+    # Kratos 공개 API 프록시의 제출(로그인·가입·인증·복구·설정·로그아웃): 토큰과 상관없이 IP 단위.
+    # GET(플로우 생성, whoami·JWT 발급, JWKS)은 제한하지 않는다
+    RateLimitRule(
+        methods=["POST", "PUT", "PATCH", "DELETE"],
+        path_pattern="/auth/*",
+        window_seconds=60,
+        max_requests=10,
+        per_ip=True,
     ),
 
     # --------------------------------------------------------

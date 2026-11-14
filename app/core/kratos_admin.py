@@ -2,6 +2,7 @@
 Kratos admin API 클라이언트
 
 탈퇴 신청 때 세션 폐기, 파기 때 identity 삭제, 미인증 가입 정리 때 identity 목록 조회에 쓴다. JWT sub가 Kratos identity id다.
+게스트(app/domain/guest)는 identity 생성·삭제에 쓴다.
 KRATOS_ADMIN_URL이 비어 있으면 호출하지 않는다.
 """
 import logging
@@ -78,3 +79,39 @@ async def list_identities() -> list[dict] | None:
         logger.warning("Kratos identity 목록 조회 요청 실패", exc_info=True)
         return None
     return identities
+
+
+async def create_identity(
+        schema_id: str,
+        traits: dict,
+        password: str,
+        verified_addresses: tuple[str, ...] = (),
+) -> dict | None:
+    """비밀번호 자격 증명을 가진 identity를 만든다. 만든 identity, 실패하면 None.
+
+    admin API로 만들면 Kratos 비밀번호 정책이 적용되지 않는다. verified_addresses는 인증을 마친
+    이메일 주소로 넣는다(schema에서 verification via email인 trait의 값이어야 한다).
+    """
+    if not app_config.settings.KRATOS_ADMIN_URL:
+        return None
+    body = {
+        "schema_id": schema_id,
+        "traits": traits,
+        "state": "active",
+        "credentials": {"password": {"config": {"password": password}}},
+    }
+    if verified_addresses:
+        body["verifiable_addresses"] = [
+            {"value": address, "via": "email", "verified": True, "status": "completed"}
+            for address in verified_addresses
+        ]
+    try:
+        async with _make_client() as client:
+            response = await client.post("/admin/identities", json=body)
+    except httpx.HTTPError:
+        logger.warning("Kratos identity 생성 요청 실패", exc_info=True)
+        return None
+    if response.status_code != 201:
+        logger.warning("Kratos identity 생성 실패: status=%s", response.status_code)
+        return None
+    return response.json()
