@@ -77,7 +77,9 @@ async def test_unregistered_resource_type_is_missing(kratos, guest_db, guest_eve
 
 
 @pytest.mark.asyncio
-async def test_discard_closes_access_even_when_kratos_is_down(kratos, host, guest_events, caplog):
+async def test_discard_closes_access_even_when_kratos_is_down(kratos, host, guest_events, caplog, monkeypatch):
+    # alembic 마이그레이션 테스트의 fileConfig가 이미 있던 로거를 끈다
+    monkeypatch.setattr(service.logger, "disabled", False)
     resource = uuid.uuid4()
     host.statuses[resource] = GuestHostStatus.OPEN
     guest = make_guest(kratos, resource)
