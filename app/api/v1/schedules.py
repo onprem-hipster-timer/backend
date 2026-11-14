@@ -30,6 +30,8 @@ from app.domain.timer.service import TimerService
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
+INSTANCE_START_DESCRIPTION = "반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"
+
 
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
@@ -144,7 +146,7 @@ async def read_schedules(
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
         schedule_id: UUID,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -181,7 +183,7 @@ async def read_schedule(
 async def update_schedule(
         schedule_id: UUID,
         data: ScheduleUpdate,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -225,7 +227,7 @@ async def update_schedule(
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
 async def delete_schedule(
         schedule_id: UUID,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         source_todo_policy: SourceTodoPolicy | None = Query(
             None,
             description=(
