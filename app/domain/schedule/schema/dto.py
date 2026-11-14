@@ -99,6 +99,8 @@ class ScheduleRead(CustomModel):
     recurrence_rule: Optional[str] = None
     recurrence_end: Optional[datetime] = None
     parent_id: Optional[UUID] = None  # 원본 일정 ID (가상 인스턴스인 경우)
+    # 회차의 원래 시작 시간 (가상 인스턴스인 경우). 조회/수정/삭제의 instance_start 쿼리로 그대로 보낸다
+    instance_start: Optional[datetime] = None
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: ScheduleState  # 상태
     created_at: datetime
@@ -122,7 +124,7 @@ class ScheduleRead(CustomModel):
 
         # datetime 필드만 타임존 변환
         update_data = {}
-        for field_name in ["start_time", "end_time", "recurrence_end", "created_at"]:
+        for field_name in ["start_time", "end_time", "recurrence_end", "created_at", "instance_start"]:
             value = getattr(self, field_name, None)
             if value is not None and isinstance(value, datetime):
                 if validate:

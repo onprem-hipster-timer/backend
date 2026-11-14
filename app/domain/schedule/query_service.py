@@ -13,6 +13,7 @@ from app.crud import schedule as crud
 from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.recurring_service import RecurringScheduleService
+from app.models.schedule import ScheduleException
 from app.models.tag import Tag, ScheduleTag
 from app.utils.recurrence import RecurrenceCalculator
 
@@ -92,12 +93,100 @@ class ScheduleQueryService:
             self.session, start_date_utc, end_date_utc, self.owner_id
         )
 
-        # 3. 예외 인스턴스 조회 및 인덱싱
+        # 3. 예외 인스턴스 조회
         exceptions = crud.get_schedule_exceptions(
             self.session, start_date_utc, end_date_utc, self.owner_id
         )
 
-        # 예외를 한 번만 순회하여 dict와 parent별 그룹화 동시 생성
+        # 4. 반복 일정 확장 + 일반 일정 합치기 (시간순 정렬)
+        all_schedules = self.expand_in_range(
+            list(regular_schedules) + list(recurring_schedules),
+            exceptions,
+            start_date_utc,
+            end_date_utc,
+        )
+
+        # 5. 태그 필터링 적용
+        if tag_ids or group_ids:
+            all_schedules = self.filter_schedules_by_tags(
+                all_schedules, tag_ids, group_ids
+            )
+
+        return all_schedules
+
+    def get_shared_schedules_by_date_range(
+            self,
+            shared_schedules: list[Schedule],
+            start_date: datetime,
+            end_date: datetime,
+    ) -> list[Schedule]:
+        """
+        접근 가능한 공유 일정을 날짜 범위로 조회 (반복 일정은 가상 인스턴스로 확장)
+
+        예외 인스턴스는 넘겨받은 반복 일정의 것만 배치로 조회한다.
+
+        :param shared_schedules: 접근 권한이 확인된 타인 소유 일정
+        :param start_date: 시작 날짜
+        :param end_date: 종료 날짜
+        :return: 해당 날짜 범위와 겹치는 일정 (가상 인스턴스 포함, 시간순)
+        """
+        start_date_utc = ensure_utc_naive(start_date)
+        end_date_utc = ensure_utc_naive(end_date)
+
+        recurring_ids = [s.id for s in shared_schedules if s.recurrence_rule]
+        exceptions = crud.get_schedule_exceptions_by_parent_ids(
+            self.session, recurring_ids, start_date_utc, end_date_utc
+        )
+        return self.expand_in_range(shared_schedules, exceptions, start_date_utc, end_date_utc)
+
+    def expand_in_range(
+            self,
+            schedules: list[Schedule],
+            exceptions: list[ScheduleException],
+            start_date_utc: datetime,
+            end_date_utc: datetime,
+    ) -> list[Schedule]:
+        """
+        일정 목록을 날짜 범위 안의 항목으로 펼친다
+
+        - 일반 일정: 범위와 겹치면 그대로 포함
+        - 반복 일정: 범위 안의 회차를 가상 인스턴스로 확장 (삭제된 회차 제외, 수정된 회차는 예외 값)
+
+        :param schedules: 일정 리스트 (일반 + 반복 원본)
+        :param exceptions: 반복 일정들의 예외 인스턴스
+        :param start_date_utc: 시작 날짜 (UTC naive)
+        :param end_date_utc: 종료 날짜 (UTC naive)
+        :return: 범위와 겹치는 일정과 가상 인스턴스 (시간순)
+        """
+        regular_schedules = [
+            s for s in schedules
+            if not s.recurrence_rule
+            and s.start_time <= end_date_utc and s.end_time >= start_date_utc
+        ]
+        recurring_schedules = [s for s in schedules if s.recurrence_rule]
+
+        exception_dict, exceptions_by_parent = self._index_exceptions(exceptions)
+
+        # 반복 일정을 가상 인스턴스로 확장
+        virtual_instances = []
+        for schedule in recurring_schedules:
+            virtual_instances.extend(
+                self._expand_recurring(
+                    schedule, exception_dict, exceptions_by_parent, start_date_utc, end_date_utc
+                )
+            )
+
+        # 일반 일정 + 가상 인스턴스 합치기 (시간순 정렬)
+        return sorted(regular_schedules + virtual_instances, key=lambda s: s.start_time)
+
+    @staticmethod
+    def _index_exceptions(
+            exceptions: list[ScheduleException],
+    ) -> tuple[
+        dict[tuple[UUID, datetime], ScheduleException],
+        dict[UUID, list[ScheduleException]],
+    ]:
+        """예외를 한 번만 순회하여 (parent_id, 날짜) 매칭용 dict와 parent별 그룹을 만든다"""
         exception_dict = {}
         exceptions_by_parent = {}
         for exc in exceptions:
@@ -108,54 +197,57 @@ class ScheduleQueryService:
             if exc.parent_id not in exceptions_by_parent:
                 exceptions_by_parent[exc.parent_id] = []
             exceptions_by_parent[exc.parent_id].append(exc)
+        return exception_dict, exceptions_by_parent
 
-        # 4. 반복 일정을 가상 인스턴스로 확장
+    def _expand_recurring(
+            self,
+            schedule: Schedule,
+            exception_dict: dict[tuple[UUID, datetime], ScheduleException],
+            exceptions_by_parent: dict[UUID, list[ScheduleException]],
+            start_date_utc: datetime,
+            end_date_utc: datetime,
+    ) -> list[Schedule]:
+        """반복 일정 하나를 범위 안의 가상 인스턴스로 확장한다 (삭제된 회차 제외)"""
+        instances = RecurrenceCalculator.expand_recurrence(
+            schedule.start_time,
+            schedule.end_time,
+            schedule.recurrence_rule,
+            schedule.recurrence_end,
+            start_date_utc,
+            end_date_utc,
+        )
+
         virtual_instances = []
-        for schedule in recurring_schedules:
-            if not schedule.recurrence_rule:
-                continue
-
-            instances = RecurrenceCalculator.expand_recurrence(
-                schedule.start_time,
-                schedule.end_time,
-                schedule.recurrence_rule,
-                schedule.recurrence_end,
-                start_date_utc,
-                end_date_utc,
+        for instance_start, instance_end in instances:
+            exception = self._find_exception(
+                schedule.id, instance_start, exception_dict, exceptions_by_parent
             )
+            if exception and exception.is_deleted:
+                continue  # 삭제된 인스턴스는 제외
 
-            # 예외 처리: 삭제/수정된 인스턴스 처리
-            for instance_start, instance_end in instances:
-
-                exception = exception_dict.get((schedule.id, instance_start))
-
-                # 정확히 매칭되지 않으면 시간 허용 오차 검색 (해당 parent_id의 예외만)
-                if exception is None and schedule.id in exceptions_by_parent:
-                    for exc in exceptions_by_parent[schedule.id]:
-                        if is_datetime_within_tolerance(exc.exception_date, instance_start):
-                            exception = exc
-                            break
-
-                if exception and exception.is_deleted:
-                    continue  # 삭제된 인스턴스는 제외
-
-                # 가상 인스턴스 생성
-                virtual_schedule = self._recurring.create_virtual_instance(
+            # 가상 인스턴스 생성
+            virtual_instances.append(
+                self._recurring.create_virtual_instance(
                     schedule, instance_start, instance_end, exception
                 )
-                virtual_instances.append(virtual_schedule)
-
-        # 5. 일반 일정 + 가상 인스턴스 합치기
-        all_schedules = list(regular_schedules) + virtual_instances
-
-        # 6. 태그 필터링 적용
-        if tag_ids or group_ids:
-            all_schedules = self.filter_schedules_by_tags(
-                all_schedules, tag_ids, group_ids
             )
+        return virtual_instances
 
-        # 7. 시간순 정렬
-        return sorted(all_schedules, key=lambda s: s.start_time)
+    @staticmethod
+    def _find_exception(
+            parent_id: UUID,
+            instance_start: datetime,
+            exception_dict: dict[tuple[UUID, datetime], ScheduleException],
+            exceptions_by_parent: dict[UUID, list[ScheduleException]],
+    ) -> Optional[ScheduleException]:
+        """회차의 예외를 찾는다 (정확히 매칭되지 않으면 해당 parent의 예외에서 시간 허용 오차 검색)"""
+        exception = exception_dict.get((parent_id, instance_start))
+        if exception is not None:
+            return exception
+        for exc in exceptions_by_parent.get(parent_id, []):
+            if is_datetime_within_tolerance(exc.exception_date, instance_start):
+                return exc
+        return None
 
     def filter_schedules_by_tags(
             self,

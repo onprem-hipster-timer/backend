@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Reading one occurrence of a recurring schedule**: `GET /v1/schedules/{parent_id}?instance_start=<datetime>` returns that occurrence in the same shape as the instance in `GET /v1/schedules`: `parent_id` set to the recurring schedule, `instance_start` set to the occurrence's original start time, the occurrence's `start_time`/`end_time`, values from a modified occurrence, `recurrence_rule: null` and an `id` generated per response. The `instance_start` query parameter is the occurrence's original start time and matches within 1 minute, as in `PATCH`/`DELETE`; `timezone` only changes the response time zone. Returns 404 when the rule has no occurrence at that time (including before the first occurrence and after `recurrence_end`) or the occurrence was deleted, 400 (`RecurringScheduleError`) for a schedule that is not recurring, and the same status as `GET /v1/schedules/{schedule_id}` when the schedule is missing or not accessible. Shared recurring schedules can be read this way with `is_shared: true`. Without `instance_start` the endpoint returns the schedule itself, as before.
+- **`instance_start` on recurring instances**: `ScheduleRead` has `instance_start`, the occurrence's original start time, on every recurring instance returned by `GET /v1/schedules` (own and shared), `GET /v1/schedules/{parent_id}?instance_start=...` and `PATCH /v1/schedules/{parent_id}?instance_start=...`; it is `null` for other schedules. It equals `start_time` unless the occurrence was moved, is converted by `timezone` like the other times, and can be sent back unchanged as the `instance_start` query parameter to read, update or delete that occurrence. Instance `id`s are generated per response and cannot be used to address an occurrence.
+
+### Fixed
+
+- **Shared recurring schedules in the schedule list**: `GET /v1/schedules` with `scope=shared` or `scope=all` expands shared recurring schedules into their occurrences within `start_date`–`end_date`, like the caller's own recurring schedules: deleted occurrences are left out, modified ones show the modified values, and each has `parent_id`, `is_shared: true` and the owner's `owner_id`. `tag_ids` and `group_ids` still apply only to the caller's own schedules. Recurring instances in the list and in instance responses now carry the owner's `owner_id`. Previously a shared recurring schedule appeared once, as the schedule itself, and only in ranges overlapping its first occurrence, and instances had `owner_id: null`.
 
 ---
 

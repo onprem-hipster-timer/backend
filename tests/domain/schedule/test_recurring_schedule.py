@@ -331,6 +331,106 @@ def test_delete_recurring_instance_not_recurring(test_session, sample_schedule, 
         )
 
 
+# ==================== 반복 일정 인스턴스 단건 조회 테스트 ====================
+
+def _create_weekly_until_jan_29(service):
+    return service.create_schedule(ScheduleCreate(
+        title="주간 회의",
+        start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # 월요일
+        end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        recurrence_rule="FREQ=WEEKLY;BYDAY=MO",
+        recurrence_end=datetime(2024, 1, 29, 23, 59, 59, tzinfo=UTC),
+    ))
+
+
+def test_get_recurring_instance(test_session, test_user):
+    """회차 시작 시각으로 가상 인스턴스를 조회"""
+    service = ScheduleService(test_session, test_user)
+    parent = _create_weekly_until_jan_29(service)
+
+    instance, is_shared = service.get_recurring_instance(
+        parent.id, datetime(2024, 1, 8, 10, 0, 0, tzinfo=UTC)
+    )
+
+    assert is_shared is False
+    assert instance.parent_id == parent.id
+    assert instance.start_time == datetime(2024, 1, 8, 10, 0, 0)
+    assert instance.end_time == datetime(2024, 1, 8, 12, 0, 0)
+    assert instance.recurrence_rule is None
+
+
+def test_get_recurring_instance_applies_exception(test_session, test_user):
+    """수정된 회차는 예외의 값을, 삭제된 회차는 ScheduleNotFoundError"""
+    service = ScheduleService(test_session, test_user)
+    parent = _create_weekly_until_jan_29(service)
+    service.update_recurring_instance(
+        parent.id, datetime(2024, 1, 8, 10, 0, 0, tzinfo=UTC), ScheduleUpdate(title="수정된 회의")
+    )
+    service.delete_recurring_instance(parent.id, datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC))
+
+    modified, _ = service.get_recurring_instance(parent.id, datetime(2024, 1, 8, 10, 0, 0, tzinfo=UTC))
+
+    assert modified.title == "수정된 회의"
+    with pytest.raises(ScheduleNotFoundError):
+        service.get_recurring_instance(parent.id, datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC))
+
+
+@pytest.mark.parametrize("instance_start", [
+    datetime(2024, 1, 9, 10, 0, 0, tzinfo=UTC),  # 규칙에 없는 요일
+    datetime(2024, 1, 8, 10, 2, 0, tzinfo=UTC),  # 허용 오차 밖
+    datetime(2024, 2, 5, 10, 0, 0, tzinfo=UTC),  # recurrence_end 이후
+])
+def test_get_recurring_instance_without_occurrence(test_session, test_user, instance_start):
+    """규칙에 회차가 없으면 ScheduleNotFoundError"""
+    service = ScheduleService(test_session, test_user)
+    parent = _create_weekly_until_jan_29(service)
+
+    with pytest.raises(ScheduleNotFoundError):
+        service.get_recurring_instance(parent.id, instance_start)
+
+
+def test_get_recurring_instance_not_recurring(test_session, sample_schedule, test_user):
+    """반복 일정이 아닌 일정에 대해 인스턴스 조회 시도 실패 테스트"""
+    service = ScheduleService(test_session, test_user)
+
+    with pytest.raises(RecurringScheduleError):
+        service.get_recurring_instance(
+            sample_schedule.id,
+            datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
+        )
+
+
+def test_get_shared_schedules_by_date_range_expands_recurring(test_session, test_user, other_user):
+    """공유된 반복 일정은 범위 안의 회차로 확장되고 예외가 반영된다"""
+    from app.domain.visibility.enums import ResourceType, VisibilityLevel
+    from app.domain.visibility.service import VisibilityService
+
+    owner_service = ScheduleService(test_session, other_user)
+    parent = _create_weekly_until_jan_29(owner_service)
+    VisibilityService(test_session, other_user).set_visibility(
+        resource_type=ResourceType.SCHEDULE,
+        resource_id=parent.id,
+        level=VisibilityLevel.PUBLIC,
+    )
+    owner_service.delete_recurring_instance(parent.id, datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC))
+
+    viewer_service = ScheduleService(test_session, test_user)
+    schedules = viewer_service.get_shared_schedules_by_date_range(
+        datetime(2024, 1, 8, 0, 0, 0, tzinfo=UTC),
+        datetime(2024, 1, 28, 23, 59, 59, tzinfo=UTC),
+    )
+
+    assert [(s.parent_id, s.start_time) for s in schedules] == [
+        (parent.id, datetime(2024, 1, 8, 10, 0, 0)),
+        (parent.id, datetime(2024, 1, 22, 10, 0, 0)),
+    ]
+    assert all(s.owner_id == other_user.sub for s in schedules)
+    assert viewer_service.get_schedules_by_date_range(
+        datetime(2024, 1, 8, 0, 0, 0, tzinfo=UTC),
+        datetime(2024, 1, 28, 23, 59, 59, tzinfo=UTC),
+    ) == []
+
+
 # ==================== CASCADE DELETE 테스트 ====================
 
 def test_delete_recurring_schedule_cascade_delete(test_engine, test_user):
