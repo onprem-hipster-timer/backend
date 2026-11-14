@@ -190,7 +190,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_guest(self) -> Self:
-        """GUEST_ENABLED인데 Kratos 주소·훅 키가 없으면 기동 실패 (게스트 입장·훅이 요청마다 실패하기 전에)"""
+        """GUEST_ENABLED인데 Kratos 주소·훅 키가 없으면 기동 실패 (게스트 생성·로그인·훅이 요청마다 실패하기 전에)"""
         if not self.GUEST_ENABLED:
             return self
         missing = [

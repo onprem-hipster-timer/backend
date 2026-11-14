@@ -44,7 +44,7 @@ api_router.include_router(authed)
 # ── 공개(무인증) 라우터 ───────────────────────────────────────────────────────
 # 인증/동기화 의존성 없음. 타입·prefix가 제각각이라 개별 등록한다.
 api_router.include_router(holidays_router, prefix="/v1")
-# 게스트 입장(무인증)과 게스트 토큰 경로. 회원 게이트 대신 게스트 의존성을 쓴다 (app/domain/guest/dependencies.py)
+# 게스트 이름 찾기·생성(무인증)과 게스트 토큰 경로. 회원 게이트 대신 게스트 의존성을 쓴다 (app/domain/guest/dependencies.py)
 api_router.include_router(guests_router, prefix="/v1")
 api_router.include_router(timers_ws_router, prefix="/v1")
 api_router.include_router(create_graphql_router(), prefix="/v1/graphql", tags=["GraphQL"])
