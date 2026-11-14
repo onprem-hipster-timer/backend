@@ -14,6 +14,7 @@ class EventOrigin(str, Enum):
     TODO = "todo"
     SCHEDULE = "schedule"
     TIMER = "timer"
+    GUEST = "guest"
 
 
 @dataclass(frozen=True, kw_only=True)
