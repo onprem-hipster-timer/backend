@@ -210,6 +210,14 @@ def test_flag_off_endpoints_are_404(guest_client, guest_off, kratos, tokens, res
     assert len(guest_rows()) == 1
 
 
+def test_flag_off_lookup_and_create_do_not_call_kratos(guest_client, guest_off, kratos, resource):
+    guest_off()
+    assert guest_client.post(CREATE, json=_body(resource)).status_code == 404
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
+    assert kratos.identities == {}
+    assert kratos.list_requests == []
+
+
 def test_flag_off_guest_token_is_refused_on_member_routes(guest_client, guest_off, tokens):
     guest_off()
     assert guest_client.get("/v1/users/me", headers=tokens.guest("g-1")).status_code == 403
