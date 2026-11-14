@@ -20,7 +20,7 @@ import app.models  # noqa: F401  # register every table in SQLModel.metadata
 import app.models.holiday  # noqa: F401
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BEFORE_UNIQUE = "e7f3a9c5b1d8"
+BEFORE_UNIQUE = "aeb221d93ba3"
 CONSTRAINT = "uq_meeting_participant_meeting_user"
 _TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
 
