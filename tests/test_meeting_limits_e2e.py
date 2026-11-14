@@ -9,6 +9,7 @@ BASE_MEETING = {
     "title": "입력 제한 테스트",
     "start_date": "2024-02-05",  # 월요일
     "end_date": "2024-02-09",  # 금요일
+    "timezone": "UTC",
     "available_days": [0, 1, 2, 3, 4],
     "start_time": "09:00:00",
     "end_time": "18:00:00",
@@ -118,6 +119,39 @@ def test_meeting_shape_rejected(e2e_client, overrides):
     assert e2e_client.get("/v1/meetings").json() == []
 
 
+# ============================================================
+# 시간대: IANA 이름만, 생성 때 필수
+# ============================================================
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("name", ["Asia/Seoul", "America/New_York", "UTC"])
+def test_meeting_timezone_accepted_and_returned(e2e_client, name):
+    response = e2e_client.post("/v1/meetings", json={**BASE_MEETING, "timezone": name})
+
+    assert response.status_code == 201, response.text
+    meeting_id = response.json()["id"]
+    assert response.json()["timezone"] == name
+    assert e2e_client.get(f"/v1/meetings/{meeting_id}").json()["timezone"] == name
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("name", ["Mars/Olympus", "+09:00", "-05:00", "KST+9", "", "Asia/../UTC", None])
+def test_meeting_timezone_rejected(e2e_client, name):
+    response = e2e_client.post("/v1/meetings", json={**BASE_MEETING, "timezone": name})
+
+    assert response.status_code == 422, response.text
+    assert e2e_client.get("/v1/meetings").json() == []
+
+
+@pytest.mark.e2e
+def test_meeting_timezone_required(e2e_client):
+    body = {key: value for key, value in BASE_MEETING.items() if key != "timezone"}
+
+    response = e2e_client.post("/v1/meetings", json=body)
+
+    assert response.status_code == 422, response.text
+
+
 @pytest.mark.e2e
 def test_meeting_title_is_trimmed(e2e_client):
     response = e2e_client.post("/v1/meetings", json={**BASE_MEETING, "title": "  주간 회의  "})
@@ -131,7 +165,7 @@ def test_meeting_title_is_trimmed(e2e_client):
 # ============================================================
 
 _SHAPE_FIELDS = (
-    "title", "description", "start_date", "end_date", "available_days",
+    "title", "description", "start_date", "end_date", "timezone", "available_days",
     "start_time", "end_time", "time_slot_minutes",
 )
 
@@ -166,6 +200,9 @@ def _shape(meeting: dict) -> dict:
         {"title": "   "},
         {"title": "a" * 201},
         {"description": "d" * 2001},
+        {"timezone": "Mars/Olympus"},
+        {"timezone": "+09:00"},
+        {"timezone": None},
     ],
 )
 def test_patch_making_invalid_meeting_is_422_and_keeps_stored(e2e_client, patch):
@@ -189,6 +226,7 @@ def test_patch_making_invalid_meeting_is_422_and_keeps_stored(e2e_client, patch)
         ({"title": "  새 제목  "}, {"title": "새 제목"}),
         ({"description": None}, {"description": None}),
         ({"title": None}, {}),  # null은 NOT NULL 필드를 바꾸지 않는다
+        ({"timezone": "Asia/Seoul"}, {"timezone": "Asia/Seoul"}),
     ],
 )
 def test_patch_making_valid_meeting_is_applied(e2e_client, patch, expected):

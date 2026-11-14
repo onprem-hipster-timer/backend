@@ -32,6 +32,7 @@ def meeting_data() -> MeetingCreate:
         description="다음 주 회의 일정을 조율합니다",
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
+        timezone="UTC",
         available_days=[0, 2, 4],  # 월, 수, 금
         start_time=time(9, 0),
         end_time=time(18, 0),

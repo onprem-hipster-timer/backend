@@ -12,6 +12,7 @@ def _meeting_with_participant(session) -> Meeting:
         title="회의",
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
+        timezone="UTC",
         available_days=[0, 1, 2, 3, 4],
         start_time=time(9),
         end_time=time(18),

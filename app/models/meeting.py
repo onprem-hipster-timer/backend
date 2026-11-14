@@ -36,6 +36,9 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     start_date: date
     end_date: date
 
+    # 날짜·요일·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
+    timezone: str
+
     # 요일 기반 설정 (JSON array of integers 0-6, 0=월요일)
     # 예: [0, 2, 4] = 월, 수, 금
     available_days: List[int] = Field(

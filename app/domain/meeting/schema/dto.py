@@ -7,6 +7,7 @@ import unicodedata
 from datetime import date, datetime, time, timezone
 from typing import Optional, List
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.relativedelta import relativedelta
 from pydantic import ConfigDict, field_validator, model_validator
@@ -51,6 +52,15 @@ def _validate_available_days(v: list[int]) -> list[int]:
     return sorted(v)
 
 
+def _validate_timezone(v: str) -> str:
+    """IANA 시간대 이름 (예: Asia/Seoul, UTC). UTC 오프셋 문자열은 받지 않는다"""
+    try:
+        ZoneInfo(v)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError("timezone must be an IANA time zone name such as Asia/Seoul or UTC") from None
+    return v
+
+
 def _validate_time_slot_minutes(v: int) -> int:
     if not TIME_SLOT_MINUTES_MIN <= v <= TIME_SLOT_MINUTES_MAX:
         raise ValueError(
@@ -68,6 +78,7 @@ class MeetingCreate(CustomModel):
     description: Optional[str] = None
     start_date: date
     end_date: date
+    timezone: str  # 날짜·요일·시간을 해석하는 IANA 시간대
     available_days: List[int]  # 요일 리스트 (0-6, 0=월요일)
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간
@@ -82,6 +93,11 @@ class MeetingCreate(CustomModel):
     @classmethod
     def validate_description(cls, v):
         return _validate_description(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v):
+        return _validate_timezone(v)
 
     @field_validator("available_days")
     @classmethod
@@ -130,6 +146,7 @@ class MeetingUpdate(CustomModel):
     description: str | None = MISSING
     start_date: date | None = MISSING
     end_date: date | None = MISSING
+    timezone: str = MISSING
     available_days: list[int] | None = MISSING
     start_time: time | None = MISSING
     end_time: time | None = MISSING
@@ -146,6 +163,11 @@ class MeetingUpdate(CustomModel):
     @classmethod
     def validate_description(cls, v):
         return _validate_description(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v):
+        return _validate_timezone(v)
 
     @field_validator("available_days")
     @classmethod
@@ -174,6 +196,7 @@ class MeetingRead(CustomModel):
     description: Optional[str] = None
     start_date: date
     end_date: date
+    timezone: str
     available_days: List[int]
     start_time: time
     end_time: time
