@@ -3,12 +3,16 @@ MeetingService 테스트
 
 일정 조율 서비스 CRUD + 참여자 관리 테스트
 """
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
 import pytest
 
-from app.domain.meeting.exceptions import InvalidMeetingError, MeetingNotFoundError
+from app.domain.meeting.exceptions import (
+    InvalidMeetingError,
+    MeetingNotFoundError,
+    TooManyTimeSlotsError,
+)
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -421,3 +425,42 @@ class TestTimeSlots:
                     end_time=time(12, 0),
                 )],
             )
+
+
+def _distinct_slots(count: int) -> list[TimeSlotCreate]:
+    """2024-02-02(금) 09:00부터 1분씩 어긋난 30분 슬롯"""
+    first = datetime(2024, 2, 2, 9, 0)
+    return [
+        TimeSlotCreate(
+            slot_date=first.date(),
+            start_time=(first + timedelta(minutes=i)).time(),
+            end_time=(first + timedelta(minutes=i + 30)).time(),
+        )
+        for i in range(count)
+    ]
+
+
+class TestTimeSlotsLimit:
+    """한 요청의 가능 시간 슬롯 수는 미팅의 칸 수까지
+
+    sample_meeting: 2024-02-01~07 중 월·수·금 3일 x 540분 / 30분 = 54칸
+    """
+
+    def test_slots_up_to_cell_count_accepted(self, test_session, test_user, sample_meeting):
+        service = MeetingService(test_session, test_user)
+        participant, _ = service.create_participant(
+            sample_meeting.id, ParticipantCreate(display_name="참여자1")
+        )
+
+        created = service.set_time_slots(sample_meeting.id, participant.id, _distinct_slots(54))
+
+        assert len(created) == 54
+
+    def test_slots_over_cell_count_rejected(self, test_session, test_user, sample_meeting):
+        service = MeetingService(test_session, test_user)
+        participant, _ = service.create_participant(
+            sample_meeting.id, ParticipantCreate(display_name="참여자1")
+        )
+
+        with pytest.raises(TooManyTimeSlotsError):
+            service.set_time_slots(sample_meeting.id, participant.id, _distinct_slots(55))

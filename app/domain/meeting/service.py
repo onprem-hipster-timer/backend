@@ -3,6 +3,8 @@ Meeting Service
 
 일정 조율 서비스 비즈니스 로직 (CRUD + 참여자 관리)
 """
+from datetime import timedelta
+from math import ceil
 from typing import List
 from uuid import UUID
 
@@ -18,6 +20,7 @@ from app.domain.meeting.exceptions import (
     InvalidMeetingError,
     MeetingNotFoundError,
     MeetingParticipantNotFoundError,
+    TooManyTimeSlotsError,
 )
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
@@ -262,6 +265,7 @@ class MeetingService:
         참여자의 가능 시간 설정
         
         기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
+        슬롯 수는 미팅의 칸 수(_cell_count)까지입니다. 슬롯이 미팅의 날짜·시간 범위 안에 있는지는 검사하지 않습니다.
         
         :param meeting_id: 일정 조율 ID
         :param participant_id: 참여자 ID
@@ -270,9 +274,14 @@ class MeetingService:
         :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
         :raises AccessDeniedError: 접근 권한이 없는 경우
         :raises MeetingParticipantNotFoundError: 참여자를 찾을 수 없는 경우
+        :raises TooManyTimeSlotsError: 슬롯 수가 미팅의 칸 수보다 많은 경우
         """
         # 접근 권한 확인
-        self.get_meeting_with_access_check(meeting_id)
+        meeting, _ = self.get_meeting_with_access_check(meeting_id)
+
+        limit = self._cell_count(meeting)
+        if len(time_slots) > limit:
+            raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
 
         # 참여자 확인
         participant = self.get_participant(meeting_id, participant_id)
@@ -297,6 +306,17 @@ class MeetingService:
             created_slots.append(slot)
 
         return created_slots
+
+    @staticmethod
+    def _cell_count(meeting: Meeting) -> int:
+        """기간 안의 고른 요일 수 x 하루 범위(분) / 시간 단위(분), 올림"""
+        days = sum(
+            (meeting.start_date + timedelta(days=offset)).weekday() in meeting.available_days
+            for offset in range((meeting.end_date - meeting.start_date).days + 1)
+        )
+        start_minutes = meeting.start_time.hour * 60 + meeting.start_time.minute
+        end_minutes = meeting.end_time.hour * 60 + meeting.end_time.minute
+        return ceil(days * max(end_minutes - start_minutes, 0) / meeting.time_slot_minutes)
 
     def to_read_dto(
             self,
