@@ -1,36 +1,73 @@
-# OIDC 인증 가이드
+# 인증 가이드
 
-이 문서는 백엔드 API의 OIDC 인증 시스템에 대한 가이드입니다.
+이 문서는 backend API의 인증 구조를 설명합니다.
 
 ## 1. 인증 아키텍처 개요
 
-이 백엔드는 **OIDC Resource Server (Relying Party)** 로 동작합니다. 
-외부 OIDC Provider(Keycloak, Auth0, Google 등)에서 발급한 JWT Access Token을 검증합니다.
+계정, 비밀번호, 세션은 [Ory Kratos](https://www.ory.sh/kratos/)가 맡고, backend는 Kratos가 서명한 JWT를 검증합니다.
+
+- Kratos는 backend 옆에서만 닿습니다. 클라이언트는 backend의 `/auth/*`([`/auth` 프록시](auth-proxy.ko.md))로 Kratos 공개 API를 씁니다.
+- 클라이언트는 Kratos의 API 플로우로 로그인해 **세션 토큰**을 받고, 세션 토큰으로 **JWT**를 받아 API 요청에 붙입니다. 쿠키는 쓰지 않습니다.
+- backend는 JWT의 서명과 `iss`·`aud`·`exp`를 `OIDC_JWKS`의 공개 키로 검증합니다. 요청마다 Kratos에 묻지 않습니다.
+- 로그인은 이메일 인증을 마친 계정만 됩니다(Kratos `require_verified_address`).
+
+### 구성 요소
+
+```mermaid
+flowchart TB
+    FE["클라이언트"]
+    PX["backend<br/>/auth/* 프록시"]
+    API["backend<br/>/v1/* · GraphQL · WebSocket"]
+    KR["Kratos<br/>(계정 · 비밀번호 · 세션 · JWT 서명)"]
+    JW["OIDC_JWKS<br/>(공개 키)"]
+
+    FE -->|"로그인 · 가입 · 세션 → JWT"| PX
+    PX --> KR
+    FE -->|"Authorization: Bearer JWT"| API
+    API -.->|"서명 검증"| JW
+
+    classDef backend stroke-width:3px
+    class PX,API,JW backend
+```
 
 ### 인증 흐름
 
 ```mermaid
 sequenceDiagram
-    participant FE as Frontend
-    participant BE as Backend API
-    participant OP as OIDC Provider
+    autonumber
+    participant FE as 클라이언트
+    participant PX as backend<br/>/auth 프록시
+    participant KR as Kratos
+    participant API as backend API
 
-    FE->>OP: 1. 로그인 요청
-    OP-->>FE: 2. Access Token 발급
-    FE->>BE: 3. API 요청 + Bearer Token
-    BE->>OP: 4. JWKS 조회 (캐시됨)
-    BE->>BE: 5. JWT 서명 검증
-    BE-->>FE: 6. 응답 + 사용자 데이터
+    FE->>PX: GET /auth/self-service/<br/>login/api
+    PX->>KR: 넘김
+    KR-->>FE: flow id
+    FE->>PX: POST /auth/self-service/<br/>login?flow=…<br/>(이메일, 비밀번호)
+    PX->>KR: 넘김
+    KR-->>FE: session_token
+    FE->>PX: GET /auth/sessions/whoami<br/>?tokenize_as=api<br/>+ X-Session-Token
+    PX->>KR: 넘김
+    KR-->>FE: JWT (tokenized)
+    FE->>API: API 요청<br/>+ Authorization: Bearer JWT
+    API->>API: 서명 · iss · aud · exp 검증<br/>(OIDC_JWKS)
+    API-->>FE: 응답
 ```
+
+- 세션 토큰은 Kratos 세션을 가리키고(기본 수명 720시간), JWT는 세션에서 만든 짧은 수명의 토큰입니다(Kratos tokenizer `ttl`, 기본 10분).
+- JWT가 만료되면 클라이언트가 7번을 다시 불러 새 JWT를 받습니다. 리프레시 토큰은 없습니다.
+- 가입, 이메일 인증, 비밀번호 복구, Google 로그인도 같은 방식으로 `/auth/*`의 Kratos 플로우를 씁니다.
 
 ### 핵심 개념
 
 | 용어 | 설명 |
 |------|------|
-| **OIDC Provider** | 사용자 인증을 담당하는 외부 서버 (Keycloak, Auth0, Google 등) |
-| **Access Token** | OIDC Provider가 발급한 JWT, API 요청 시 사용 |
-| **JWKS** | JSON Web Key Set, JWT 서명 검증에 사용되는 공개키 |
-| **sub claim** | JWT 내 사용자 고유 식별자, 데이터 소유권(owner_id)에 사용 |
+| **Kratos** | 계정·세션을 맡는 identity 서버. backend 옆에서만 닿는다 |
+| **세션 토큰** | Kratos API 플로우 로그인의 결과(`ory_st_…`). `/auth/*` 요청의 `X-Session-Token` 헤더로 보낸다 |
+| **JWT** | 세션 토큰으로 받은 토큰(`whoami?tokenize_as=api`의 `tokenized`). API 요청의 `Authorization: Bearer`로 보낸다 |
+| **JWKS** | JWT 서명 검증에 쓰는 공개 키 (`OIDC_JWKS`) |
+| **sub claim** | JWT 내 사용자 고유 식별자(Kratos identity id), 데이터 소유권(owner_id)에 사용 |
+| **schema_id claim** | Kratos identity schema id. 회원과 [게스트 계정](guest.ko.md)을 가린다 |
 
 ### 인증 모듈 구성 (객체 의존성과 역할)
 
@@ -40,7 +77,7 @@ sequenceDiagram
 | 모듈 | 객체 | 역할 |
 |------|------|------|
 | `model.py` | `CurrentUser` | 검증된 JWT 클레임에서 추출한 인증 주체. **DB에 영속되지 않는 휘발성 값 객체**(영속 표시 프로필 `UserProfile`과 별개 개념). `from_claims()`(클레임→객체 단일 매핑)·`mock()`(OIDC 비활성화 시 주입) 제공. |
-| `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | 외부 OIDC Provider 통신 전담. discovery 메타데이터·JWKS를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. |
+| `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | JWT 검증 전담. `OIDC_JWKS`의 공개 키(없으면 discovery의 `jwks_uri`)를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. |
 | `dependencies.py` | `ensure_member` | **회원 판정**. 토큰의 `schema_id`가 게스트 schema면 `403`, `GUEST_ENABLED=true`인데 `schema_id`가 비어 있지 않은 문자열이 아니면 `401`. REST·GraphQL·WebSocket의 회원 인증이 모두 거친다([게스트 계정](./guest.ko.md#회원-경로)). |
 | `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). 검증한 토큰을 `ensure_member`로 넘겨 회원만 통과시킨다. `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
 | `dependencies.py` | `get_optional_current_user` | 선택적 인증(미인증 허용 엔드포인트용). 토큰이 없으면 `None` 반환. |
@@ -204,77 +241,47 @@ os.environ["OIDC_ENABLED"] = "false"
 
 ---
 
-## 3. 프로덕션: OIDC 설정
+## 3. 프로덕션 설정
 
 ### 환경변수 목록
 
 | 환경변수 | 필수 | 기본값 | 설명 |
 |----------|------|--------|------|
 | `OIDC_ENABLED` | O | `true` | 인증 활성화 여부 |
-| `OIDC_ISSUER_URL` | O | - | OIDC Provider의 Issuer URL |
-| `OIDC_AUDIENCE` | O | - | Client ID (Access Token의 `aud` claim) |
-| `OIDC_DISCOVERY_URL` | X | 자동 생성 | 커스텀 Discovery URL |
+| `OIDC_ISSUER_URL` | O | - | JWT의 `iss`. Kratos tokenizer가 넣는 값으로, backend의 `/auth/` 주소다 (예: `https://api.example.com/auth/`) |
+| `OIDC_AUDIENCE` | O | - | JWT의 `aud`. Kratos 클레임 매퍼가 넣는 값과 같아야 한다 (예: `https://api.example.com`) |
+| `OIDC_JWKS` | O | - | Kratos가 JWT 서명에 쓰는 키의 공개 JWKS JSON. 비밀 키 성분이 있으면 기동하지 않는다 |
+| `KRATOS_PUBLIC_URL` | O | - | `/auth/*`를 넘길 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 |
+| `KRATOS_ADMIN_URL` | X | - | 회원 탈퇴의 세션 폐기·identity 삭제, 게스트 identity 생성·삭제 |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | X | `3600` | JWKS 캐시 TTL (초) |
+
+전체 목록과 Kratos 쪽 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [프로덕션 배포](../deployment/production.ko.md)에 있습니다.
 
 ### 예시 설정 (.env)
 
 ```bash
-# 프로덕션 설정 예시
 OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://auth.example.com/realms/production
-OIDC_AUDIENCE=my-frontend-app
-OIDC_JWKS_CACHE_TTL_SECONDS=3600
+OIDC_ISSUER_URL=https://api.example.com/auth/
+OIDC_AUDIENCE=https://api.example.com
+OIDC_JWKS='{"keys":[{"kty":"EC","crv":"P-256","kid":"...","x":"...","y":"..."}]}'
+KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 ```
 
-### Docker Compose 설정
-
-```yaml
-# compose.yaml
-services:
-  backend:
-    environment:
-      - OIDC_ENABLED=true
-      - OIDC_ISSUER_URL=https://auth.example.com/realms/production
-      - OIDC_AUDIENCE=my-frontend-app
-```
+로컬에서는 `compose.kratos.yaml`이 같은 구성의 Kratos를 띄웁니다. 서명 키는 `python scripts/gen_dev_jwks.py`로 만들고, 출력된 공개 JWKS를 `OIDC_JWKS`에 넣습니다.
 
 ---
 
 ## 4. Well-Known 엔드포인트
 
-### 자동 Discovery
+backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이 내줍니다. backend 밖에서 같은 JWT를 검증하는 서비스가 씁니다.
 
-백엔드는 OIDC Discovery를 통해 자동으로 Provider 설정을 가져옵니다:
-
-```
-Discovery URL = {OIDC_ISSUER_URL}/.well-known/openid-configuration
-```
-
-예시:
-- Issuer URL: `https://auth.example.com/realms/myrealm`
-- Discovery URL: `https://auth.example.com/realms/myrealm/.well-known/openid-configuration`
-
-### 커스텀 Discovery URL
-
-비표준 경로를 사용하는 Provider의 경우 직접 지정:
-
-```bash
-OIDC_DISCOVERY_URL=https://auth.example.com/custom/.well-known/openid-configuration
-```
-
-### Discovery에서 가져오는 정보
-
-| 필드 | 용도 |
+| 경로 | 내용 |
 |------|------|
-| `jwks_uri` | JWT 서명 검증을 위한 공개키 URL |
-| `issuer` | 토큰 발급자 검증용 |
+| `GET /auth/.well-known/jwks.json` | `OIDC_JWKS`의 공개 키 |
+| `GET /auth/.well-known/openid-configuration` | `issuer`와 `jwks_uri`가 든 discovery 문서 |
 
-### JWKS 캐싱
-
-성능 최적화를 위해 JWKS는 캐싱됩니다:
-- 기본 캐시 TTL: 3600초 (1시간)
-- `OIDC_JWKS_CACHE_TTL_SECONDS` 환경변수로 조정 가능
-- 캐시 만료 시 자동으로 재조회
+- `OIDC_JWKS`가 비어 있으면 두 경로 모두 404입니다.
+- backend 자신은 discovery를 거치지 않고 `OIDC_JWKS`로 바로 검증합니다. 키를 바꾸면 backend를 다시 배포합니다.
 
 ---
 
@@ -295,7 +302,7 @@ Authorization: Bearer <access_token>
 ```javascript
 const accessToken = 'your-access-token';
 
-const response = await fetch('http://localhost:8000/v1/schedules', {
+const response = await fetch('http://localhost:2614/v1/schedules', {
   method: 'GET',
   headers: {
     'Authorization': `Bearer ${accessToken}`,
@@ -317,7 +324,7 @@ const data = await response.json();
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000/v1',
+  baseURL: 'http://localhost:2614/v1',
 });
 
 // 요청 인터셉터: 토큰 자동 추가
@@ -359,7 +366,7 @@ const query = `
   }
 `;
 
-const response = await fetch('http://localhost:8000/graphql', {
+const response = await fetch('http://localhost:2614/v1/graphql', {
   method: 'POST',
   headers: {
     'Authorization': `Bearer ${accessToken}`,
@@ -392,8 +399,8 @@ const response = await fetch('http://localhost:8000/graphql', {
 ```
 
 **처리 방법**: 
-1. Refresh Token으로 새 Access Token 요청
-2. 실패 시 로그인 페이지로 리다이렉트
+1. 세션 토큰으로 JWT를 다시 받는다 (`GET /auth/sessions/whoami?tokenize_as=api`)
+2. 그 요청도 `401`이면 세션이 끝난 것이므로 로그인 화면으로 보낸다
 
 `GUEST_ENABLED=true`이면 `schema_id` 클레임이 없거나 비어 있지 않은 문자열이 아닌 토큰도 `401`입니다.
 
@@ -403,7 +410,7 @@ const response = await fetch('http://localhost:8000/graphql', {
 }
 ```
 
-**처리 방법**: OIDC Provider(Kratos)의 클레임 매퍼가 `schema_id`를 넣는지 확인합니다([게스트 계정 설정](../deployment/kratos-guest.ko.md)).
+**처리 방법**: Kratos의 클레임 매퍼가 `schema_id`를 넣는지 확인합니다([게스트 계정 설정](../deployment/kratos-guest.ko.md)).
 
 #### 403 Forbidden (게스트 토큰)
 
@@ -430,120 +437,60 @@ GraphQL에서 인증 없이 보호된 쿼리 실행 시:
 }
 ```
 
-### 토큰 갱신 (프론트엔드 책임)
+### 토큰 받기와 갱신
 
-Access Token 갱신은 **프론트엔드에서 OIDC Provider와 직접** 처리합니다:
+JWT는 Kratos 세션 토큰으로 받습니다. 만료가 가까우면 같은 요청을 다시 보내 새 JWT를 받습니다.
 
 ```javascript
-// 예시: oidc-client-ts 사용
-import { UserManager } from 'oidc-client-ts';
+// 로그인 (Kratos API 플로우)
+const flow = await (await fetch('/auth/self-service/login/api')).json();
+const login = await (await fetch(`/auth/self-service/login?flow=${flow.id}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ method: 'password', identifier: email, password }),
+})).json();
+const sessionToken = login.session_token;   // 안전한 저장소에 보관
 
-const userManager = new UserManager({
-  authority: 'https://auth.example.com/realms/myrealm',
-  client_id: 'my-frontend-app',
-  redirect_uri: 'http://localhost:3000/callback',
-});
-
-// 자동 토큰 갱신
-userManager.events.addAccessTokenExpiring(async () => {
-  try {
-    await userManager.signinSilent();
-  } catch (error) {
-    // 갱신 실패 → 재로그인 필요
-    await userManager.signinRedirect();
-  }
-});
+// JWT 받기 · 갱신
+async function fetchJwt() {
+  const res = await fetch('/auth/sessions/whoami?tokenize_as=api', {
+    headers: { 'X-Session-Token': sessionToken },
+  });
+  if (res.status === 401) return null;       // 세션이 끝났다 → 다시 로그인
+  return (await res.json()).tokenized;
+}
 ```
+
+- 제출 요청의 쿼리 문자열에는 `flow`만 넣습니다. 다른 값이 있으면 프록시가 `400`으로 거절합니다.
+- `/auth`로 가는 GET 밖의 요청은 IP당 분당 10회입니다. JWT 갱신(`GET`)은 이 한도에 들지 않습니다.
+- 로그아웃은 `DELETE /auth/self-service/logout/api`에 세션 토큰을 보냅니다. 세션은 바로 끝나고, 이미 받은 JWT는 만료까지 유효합니다.
+- 이메일 인증 전의 계정으로 로그인하면 Kratos가 `400`과 함께 인증 플로우 정보를 돌려줍니다.
 
 ---
 
-## 6. OIDC Provider별 설정 예시
+## 6. Kratos가 아닌 OIDC Provider
 
-### Keycloak
+backend의 토큰 검증은 표준 OIDC JWT를 받으므로 다른 Provider의 토큰도 검증할 수 있습니다. `OIDC_JWKS`를 비우면 `OIDC_ISSUER_URL`의 discovery(`/.well-known/openid-configuration`, 또는 `OIDC_DISCOVERY_URL`)에서 `jwks_uri`를 읽습니다.
 
-```bash
-# Keycloak 설정
-OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://keycloak.example.com/realms/myrealm
-OIDC_AUDIENCE=my-frontend-app
-```
+다만 아래 기능은 Kratos를 전제로 합니다.
 
-**Keycloak 설정 시 확인 사항:**
-- Client 생성 시 `Access Type`: `public` (SPA) 또는 `confidential`
-- `Valid Redirect URIs`: 프론트엔드 URL 등록
-- `Web Origins`: CORS 설정을 위한 프론트엔드 origin
-
-**프론트엔드 설정:**
-```javascript
-const oidcConfig = {
-  authority: 'https://keycloak.example.com/realms/myrealm',
-  client_id: 'my-frontend-app',
-  redirect_uri: 'http://localhost:3000/callback',
-  scope: 'openid profile email',
-};
-```
-
-### Google
-
-```bash
-# Google 설정
-OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://accounts.google.com
-OIDC_AUDIENCE=your-google-client-id.apps.googleusercontent.com
-```
-
-**Google Cloud Console 설정:**
-1. OAuth 2.0 클라이언트 ID 생성
-2. 승인된 JavaScript 원본에 프론트엔드 URL 추가
-3. 승인된 리다이렉션 URI 추가
-
-**프론트엔드 설정:**
-```javascript
-const oidcConfig = {
-  authority: 'https://accounts.google.com',
-  client_id: 'your-google-client-id.apps.googleusercontent.com',
-  redirect_uri: 'http://localhost:3000/callback',
-  scope: 'openid profile email',
-};
-```
-
-### Auth0
-
-```bash
-# Auth0 설정
-OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://your-tenant.auth0.com/
-OIDC_AUDIENCE=https://your-api-identifier
-```
-
-!!! warning "주의"
-    Auth0의 Issuer URL은 끝에 `/`가 포함되어야 합니다.
-
-**Auth0 Dashboard 설정:**
-1. Application 생성 (Single Page Application)
-2. API 생성 및 Identifier 설정
-3. Allowed Callback URLs, Logout URLs, Web Origins 설정
-
-**프론트엔드 설정:**
-```javascript
-const oidcConfig = {
-  authority: 'https://your-tenant.auth0.com',
-  client_id: 'your-auth0-client-id',
-  redirect_uri: 'http://localhost:3000/callback',
-  scope: 'openid profile email',
-  audience: 'https://your-api-identifier',
-};
-```
+| 기능 | Kratos가 필요한 이유 |
+|------|----------------------|
+| `/auth/*` 프록시 | Kratos 공개 API로 넘긴다 |
+| 회원 탈퇴의 세션 폐기·identity 삭제 | Kratos admin API를 부른다 |
+| [게스트 계정](guest.ko.md) | Kratos identity schema, 훅, admin API를 쓴다 |
+| JWT의 `schema_id`·`email_verified` | Kratos 클레임 매퍼가 넣는다 |
 
 ---
-
-로그인·가입·세션 조회·JWT 발급 요청이 지나는 `/auth/*` 경로는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
 
 ## 관련 코드 참조
 
 | 파일 | 설명 |
 |------|------|
-| `app/core/auth/` | OIDC 인증 패키지 (model·client·dependencies·middleware) |
+| `app/core/auth/` | 인증 패키지 (model·client·dependencies·middleware) |
+| `app/api/auth_proxy.py` | `/auth/*` Kratos 프록시 ([`/auth` 프록시](auth-proxy.ko.md)) |
+| `app/api/oidc_discovery.py` | `/auth/.well-known/*` |
+| `dev/kratos/` | 로컬 Kratos 설정 (identity schema, 클레임 매퍼) |
 | `app/core/auth/model.py` | `CurrentUser` 인증 주체 값 객체 |
 | `app/core/auth/client.py` | `OIDCClient` / `oidc_client` (discovery·JWKS·토큰 검증) |
 | `app/core/auth/dependencies.py` | `get_current_user` / `get_current_user_synced` 의존성, `ensure_member` |
@@ -592,9 +539,10 @@ async def protected_endpoint(
 
 ### Q: 토큰 만료 시간은 어떻게 되나요?
 
-OIDC Provider 설정에 따라 다릅니다. 일반적으로:
-- Access Token: 5분 ~ 1시간
-- Refresh Token: 1일 ~ 30일
+Kratos 설정에 따릅니다. 저장소의 로컬 설정(`dev/kratos/kratos.yml`) 기준:
+- JWT: 10분 (`session.whoami.tokenizer.templates.api.ttl`)
+- 세션: 720시간 (`session.lifespan`)
+- 리프레시 토큰은 없습니다. JWT는 세션 토큰으로 다시 받습니다.
 
 ### Q: JWKS 캐시가 갱신되지 않아요
 
