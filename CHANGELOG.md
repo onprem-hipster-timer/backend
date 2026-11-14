@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+
+- **Allowed emails and domains ignore letter case**: for the `allowed_emails` visibility level, emails and domains are compared without regard to letter case, on both the allow list and the viewer's verified email, so `Alice@Partner.com` matches `alice@partner.com` and `Company.com` matches `user@company.com`. Domains still match exactly apart from case (`sub.example.com` does not match `example.com`). `PUT /v1/visibility/{resource_type}/{resource_id}` stores `allowed_emails` and `allowed_domains` trimmed and lower-cased, keeping one entry where values become equal, and responses return them in that form. Migration `aeb221d93ba3` converts stored entries the same way.
 
 ---
 
