@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     # Kratos courier Cloud Run 잡 (전체 리소스 이름). 비어 있으면 실행하지 않음
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
+    # 게스트 계정 (docs/guides/guest.ko.md, docs/deployment/kratos-guest.ko.md). 끄면 게스트 엔드포인트와
+    # Kratos 훅 엔드포인트는 404이고, 게스트 schema의 토큰은 모든 경로에서 거부된다
+    GUEST_ENABLED: bool = False
+    KRATOS_GUEST_SCHEMA_ID: str = "guest"  # Kratos의 게스트 identity schema id (JWT schema_id 클레임과 비교)
+    # Kratos web_hook이 X-Kratos-Hook-Key 헤더로 보내는 값. /internal/kratos/hooks/*는 이 값이 맞아야 응답한다
+    KRATOS_HOOK_API_KEY: str = ""
+
     # 실시간 전달 (docs/development/realtime-adapter.ko.md)
     REALTIME_BACKEND: Literal["inprocess", "cloudflare"] = "inprocess"  # inprocess: /v1/ws/timers 연결로 전달, cloudflare: realtime Worker로 push
     REALTIME_PUSH_URL: str = ""  # cloudflare: Worker의 push 엔드포인트 (예: https://api.example.com/realtime/push)
@@ -179,6 +186,20 @@ class Settings(BaseSettings):
                 and not (self.REALTIME_PUSH_URL and self.REALTIME_PUSH_SECRET)
         ):
             raise ValueError("REALTIME_BACKEND=cloudflare에는 REALTIME_PUSH_URL과 REALTIME_PUSH_SECRET이 필요합니다")
+        return self
+
+    @model_validator(mode="after")
+    def validate_guest(self) -> Self:
+        """GUEST_ENABLED인데 Kratos 주소·훅 키가 없으면 기동 실패 (게스트 입장·훅이 요청마다 실패하기 전에)"""
+        if not self.GUEST_ENABLED:
+            return self
+        missing = [
+            name
+            for name in ("KRATOS_PUBLIC_URL", "KRATOS_ADMIN_URL", "KRATOS_HOOK_API_KEY", "KRATOS_GUEST_SCHEMA_ID")
+            if not getattr(self, name)
+        ]
+        if missing:
+            raise ValueError(f"GUEST_ENABLED=true에는 {', '.join(missing)} 값이 필요합니다")
         return self
 
     @property
