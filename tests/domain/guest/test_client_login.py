@@ -1,5 +1,7 @@
 """게스트가 회원처럼 /auth 프록시로 Kratos에 로그인한다 (생성 → handle 찾기 → 비밀번호 로그인 → whoami)
 
+게스트 handle 로그인 제출에는 X-Turnstile-Token 헤더가 필요하다 (test_guest_login_turnstile.py).
+
 가짜 Kratos는 로그인 때 backend 로그인 훅 판정(service.login_allowed)을 거친다.
 """
 import uuid
@@ -21,6 +23,7 @@ def _login(client, identifier: str, password: str):
     return client.post(
         f"/auth/self-service/login?flow={flow}",
         json={"method": "password", "identifier": identifier, "password": password},
+        headers={"X-Turnstile-Token": "token-from-widget"},
     )
 
 

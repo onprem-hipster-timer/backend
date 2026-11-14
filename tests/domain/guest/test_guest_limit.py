@@ -88,6 +88,7 @@ def test_lookup_login_and_rename_work_on_full_resource(guest_client, kratos, res
     login = guest_client.post(
         f"/auth/self-service/login?flow={flow}",
         json={"method": "password", "identifier": handle, "password": "1234"},
+        headers={"X-Turnstile-Token": "t"},
     )
     assert login.status_code == 200
     token = login.json()["session_token"]

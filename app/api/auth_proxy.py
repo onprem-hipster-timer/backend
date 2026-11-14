@@ -16,6 +16,10 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other)
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)의 쿼리 문자열에는 flow 하나만 받는다(키는 대소문자 구분 없이).
   Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
+- GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소일 때 X-Turnstile-Token
+  헤더의 Turnstile 토큰을 확인한 뒤 넘긴다. 토큰이 없거나 통과하지 못하면 403 guest_verification_failed, 확인할 수
+  없으면 503 guest_verification_unavailable. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
+  X-Turnstile-Token은 Kratos에 넘기지 않는다
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
   넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
@@ -26,13 +30,14 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 import json
 import logging
 import re
+import unicodedata
 from urllib.parse import parse_qs, parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core import courier
+from app.core import courier, turnstile
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
@@ -76,6 +81,12 @@ EMAIL_RECOVERY_METHOD = "code_recovery"
 OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
 # 메일 주소를 받는 인증·복구 제출 경로. 게스트 handle 도메인 주소는 받지 않는다
 ADDRESS_SUBMIT_PATHS = ("/self-service/verification", "/self-service/recovery")
+# 로그인 제출 경로와 로그인 식별자 키 (password_identifier는 이전 이름)
+LOGIN_SUBMIT_PATH = "/self-service/login"
+IDENTIFIER_KEYS = ("identifier", "password_identifier")
+# 게스트 handle로 로그인할 때 Turnstile 토큰을 담는 요청 헤더와 토큰 길이 상한
+TURNSTILE_TOKEN_HEADER = "x-turnstile-token"
+TURNSTILE_TOKEN_MAX_LENGTH = 2048
 # 본문을 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다
 INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS, *ADDRESS_SUBMIT_PATHS})
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
@@ -119,6 +130,50 @@ def _only_flow_query(query: str) -> bool:
     """쿼리 문자열이 비었거나 flow 하나뿐이면 True (키는 대소문자 구분 없이 비교)"""
     keys = [key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)]
     return keys in ([], ["flow"])
+
+
+_UNREADABLE = object()
+
+
+def _submitted_identifier(content_type: str, body: bytes) -> object:
+    """로그인 제출의 식별자 값(없으면 None). 읽을 수 없거나 식별자가 둘 이상이면 _UNREADABLE"""
+    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+        try:
+            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+        except UnicodeDecodeError:
+            return _UNREADABLE
+        values = [value for key, value in pairs if key.lower() in IDENTIFIER_KEYS]
+    else:
+        try:
+            data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        except (ValueError, UnicodeDecodeError):
+            return _UNREADABLE
+        if not isinstance(data, dict):
+            return None
+        values = [value for key, value in data.items() if key.lower() in IDENTIFIER_KEYS]
+    if len(values) > 1:
+        return _UNREADABLE
+    return values[0] if values else None
+
+
+def _is_guest_handle(identifier: object) -> bool:
+    """NFKC·앞뒤 공백 제거·casefold 뒤 게스트 handle 도메인 주소인지"""
+    if not isinstance(identifier, str):
+        return False
+    normalized = unicodedata.normalize("NFKC", identifier).strip().casefold()
+    return normalized.endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
+
+
+async def _guest_login_refusal(token: str | None) -> Response | None:
+    """게스트 handle 로그인의 Turnstile 토큰을 확인한다. 통과하면 None, 아니면 거절 응답"""
+    if not token or len(token) > TURNSTILE_TOKEN_MAX_LENGTH:
+        return _guest_verification_failed()
+    try:
+        passed = await turnstile.verify(token)
+    except turnstile.TurnstileUnavailableError:
+        logger.warning("게스트 로그인 Turnstile 확인 실패", exc_info=True)
+        return _proxy_error("guest_verification_unavailable", 503, "Service Unavailable", "확인 서비스에 연결할 수 없습니다.")
+    return None if passed else _guest_verification_failed()
 
 
 def _submitted_name(content_type: str, body: bytes) -> object:
@@ -233,6 +288,14 @@ def _settings_forbidden() -> JSONResponse:
     )
 
 
+def _proxy_error(error_id: str, code: int, status: str, reason: str) -> JSONResponse:
+    return JSONResponse({"error": {"id": error_id, "code": code, "status": status, "reason": reason}}, status_code=code)
+
+
+def _guest_verification_failed() -> JSONResponse:
+    return _proxy_error("guest_verification_failed", 403, "Forbidden", "확인을 통과하지 못했습니다. 다시 시도하세요.")
+
+
 def _address_not_accepted() -> JSONResponse:
     return JSONResponse(
         {
@@ -336,6 +399,14 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     return _unreadable_body()
                 if guest_address:
                     return _address_not_accepted()
+            if request.method != "GET" and submit_path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
+                identifier = _submitted_identifier(request.headers.get("content-type", ""), body)
+                if identifier is _UNREADABLE:
+                    return _unreadable_body()
+                if _is_guest_handle(identifier):
+                    refusal = await _guest_login_refusal(request.headers.get(TURNSTILE_TOKEN_HEADER))
+                    if refusal is not None:
+                        return refusal
             if request.method != "GET" and submit_path in OIDC_SUBMIT_PATHS:
                 cleaned = _without_oidc_email(request.headers.get("content-type", ""), body)
                 if cleaned is None:
