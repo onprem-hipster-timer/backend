@@ -6,7 +6,7 @@ Guest CRUD Operations
 """
 from uuid import UUID
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.models.guest import Guest
 from app.models.visibility import ResourceType
@@ -42,6 +42,16 @@ def list_resource_guests(session: Session, resource_type: ResourceType, resource
         .order_by(Guest.created_at, Guest.id)
     )
     return list(session.exec(statement).all())
+
+
+def count_resource_guests(session: Session, resource_type: ResourceType, resource_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(Guest)
+        .where(Guest.resource_type == resource_type)
+        .where(Guest.resource_id == resource_id)
+    )
+    return session.exec(statement).one()
 
 
 def delete_guest(session: Session, guest: Guest) -> None:

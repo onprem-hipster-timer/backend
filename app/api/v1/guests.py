@@ -48,7 +48,8 @@ async def create_guest(data: GuestCreate):
     """
     리소스에 새 게스트를 만든다. 로그인은 응답의 handle과 비밀번호로 Kratos에 한다.
 
-    이름은 리소스 안에서 겹치지 않는다(이미 있으면 409). 리소스가 없거나 지금 게스트를 받지 않으면 403.
+    이름은 리소스 안에서 겹치지 않는다(이미 있으면 409). 리소스의 게스트가 100명이면 409.
+    리소스가 없거나 지금 게스트를 받지 않으면 403.
     turnstile_token이 확인을 통과하지 못하면 403, 확인할 수 없으면 503.
     """
     return await service.create(data)

@@ -18,6 +18,12 @@ class GuestNameTakenError(DomainException):
     detail = "같은 이름의 게스트가 이미 있습니다. 다른 이름을 쓰세요"
 
 
+class GuestLimitReachedError(DomainException):
+    """리소스의 게스트 수가 상한에 닿음"""
+    status_code = status.HTTP_409_CONFLICT
+    detail = "이 리소스에는 게스트를 더 만들 수 없습니다"
+
+
 class GuestAccessDeniedError(DomainException):
     """게스트 토큰이 이 리소스에 접근할 수 없음"""
     status_code = status.HTTP_403_FORBIDDEN

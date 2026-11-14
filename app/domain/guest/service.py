@@ -35,6 +35,7 @@ from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.exceptions import (
     GuestAccessDeniedError,
     GuestEntryRefusedError,
+    GuestLimitReachedError,
     GuestNameTakenError,
     GuestServiceUnavailableError,
     GuestVerificationFailedError,
@@ -57,6 +58,9 @@ logger = logging.getLogger(__name__)
 # 게스트 로그인 식별자(handle) "<게스트 행 id>@<이 도메인>"의 도메인. 예약된 TLD라 메일이 가지 않는다.
 # handle은 Kratos require_verified_address를 통과하도록 인증된 주소로 만들고, 게스트에게 보여 주지 않는다
 GUEST_HANDLE_DOMAIN = "guest.invalid"
+
+# 한 리소스의 게스트 수 상한. 생성 전에 세므로 동시에 만들면 동시 요청 수만큼 넘을 수 있다
+MAX_GUESTS_PER_RESOURCE = 100
 
 
 def guest_handle(guest_id: UUID) -> str:
@@ -89,6 +93,11 @@ def _read_guest(identity_id: str) -> Guest | None:
 def _read_named_guest(resource_type: ResourceType, resource_id: UUID, name: str) -> Guest | None:
     with _session_manager.get_session() as session:
         return crud.get_guest_by_name(session, resource_type, resource_id, name)
+
+
+def _count_guests(resource_type: ResourceType, resource_id: UUID) -> int:
+    with _session_manager.get_session() as session:
+        return crud.count_resource_guests(session, resource_type, resource_id)
 
 
 def is_guest_schema(schema_id: str | None) -> bool:
@@ -206,13 +215,16 @@ async def _verify_human(token: str) -> None:
 async def create(data: GuestCreate) -> GuestRead:
     """새 게스트를 만들고 로그인 식별자(handle)를 돌려준다.
 
-    리소스 확인 → 같은 이름 확인(있으면 GuestNameTakenError) → Turnstile 확인(통과하지 못하면
+    리소스 확인 → 같은 이름 확인(있으면 GuestNameTakenError) → 게스트 수 확인(MAX_GUESTS_PER_RESOURCE명이면
+    GuestLimitReachedError) → Turnstile 확인(통과하지 못하면
     GuestVerificationFailedError, 확인할 수 없으면 GuestServiceUnavailableError) → Kratos identity 생성 → 게스트 행 커밋.
-    Turnstile 토큰은 한 번만 확인되므로 받지 않을 요청(리소스·이름)은 확인 전에 거절한다. 행을 넣다가 같은 이름과 겹치면 만든 identity를 지우고 GuestNameTakenError.
+    Turnstile 토큰은 한 번만 확인되므로 받지 않을 요청(리소스·이름·게스트 수)은 확인 전에 거절한다. 행을 넣다가 같은 이름과 겹치면 만든 identity를 지우고 GuestNameTakenError.
     """
     await _require_open(data.resource_type, data.resource_id)
     if await run_in_threadpool(_read_named_guest, data.resource_type, data.resource_id, data.name) is not None:
         raise GuestNameTakenError()
+    if await run_in_threadpool(_count_guests, data.resource_type, data.resource_id) >= MAX_GUESTS_PER_RESOURCE:
+        raise GuestLimitReachedError()
     await _verify_human(data.turnstile_token)
 
     guest_id = uuid4()
