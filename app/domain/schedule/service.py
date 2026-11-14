@@ -434,6 +434,19 @@ class ScheduleService:
     # 반복 일정 인스턴스 관리 (→ RecurringScheduleService)
     # ========================================
 
+    def get_recurring_instance(
+            self,
+            parent_id: UUID,
+            instance_start: datetime,
+    ) -> tuple[Schedule, bool]:
+        """
+        반복 일정의 특정 인스턴스 조회 (공유 리소스 접근 제어 포함)
+
+        :return: (가상 인스턴스, is_shared) 튜플
+        """
+        parent_schedule, is_shared = self.get_schedule_with_access_check(parent_id)
+        return self._recurring.get_recurring_instance(parent_schedule, instance_start), is_shared
+
     def update_recurring_instance(
             self,
             parent_id: UUID,
