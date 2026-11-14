@@ -10,13 +10,16 @@
         "handle": {
           "type": "string",
           "title": "Handle",
-          "minLength": 36,
-          "maxLength": 36,
+          "format": "email",
+          "maxLength": 64,
           "ory.sh/kratos": {
             "credentials": {
               "password": {
                 "identifier": true
               }
+            },
+            "verification": {
+              "via": "email"
             }
           }
         },
