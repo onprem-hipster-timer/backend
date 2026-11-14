@@ -9,6 +9,8 @@
 | backend | 환경 변수 `GUEST_ENABLED`, `KRATOS_HOOK_API_KEY`, `KRATOS_ADMIN_URL`, `KRATOS_PUBLIC_URL` |
 | Kratos | 게스트 identity schema, JWT 클레임 매퍼의 `schema_id`, 로그인 훅, 설정 훅, backend가 닿는 admin API |
 
+게스트를 켜도 회원 로그인은 Kratos 기본 동작 그대로입니다. 로그인과 설정 변경에서 backend를 부르는 것은 게스트뿐입니다.
+
 ## 1. backend 환경 변수
 
 | 변수 | 값 | 설명 |
@@ -40,7 +42,7 @@ kratos serve -c kratos.yml -c kratos.guest.yml
 
 ### 2.1 게스트 identity schema
 
-게스트의 trait은 로그인 식별자 `handle`과 이름 `name`뿐입니다. 인증·복구 주소가 없어 이메일 인증과 비밀번호 찾기가 없습니다. 파일: `dev/kratos/guest.schema.json`
+게스트의 trait은 로그인 식별자 `handle`과 이름 `name`뿐입니다. 파일: `dev/kratos/guest.schema.json`
 
 ```json
 {
@@ -55,13 +57,16 @@ kratos serve -c kratos.yml -c kratos.guest.yml
         "handle": {
           "type": "string",
           "title": "Handle",
-          "minLength": 36,
-          "maxLength": 36,
+          "format": "email",
+          "maxLength": 64,
           "ory.sh/kratos": {
             "credentials": {
               "password": {
                 "identifier": true
               }
+            },
+            "verification": {
+              "via": "email"
             }
           }
         },
@@ -82,8 +87,10 @@ kratos serve -c kratos.yml -c kratos.guest.yml
 }
 ```
 
-- `handle`: backend가 만드는 UUID 문자열(36자)이고 비밀번호 로그인 식별자다
+- `handle`: 비밀번호 로그인 식별자. backend가 `<uuid4>@guest.invalid`로 만들고 같은 값을 인증된 주소(`verifiable_addresses`, `verified: true`)로 넣는다. 그래서 게스트도 로그인 훅 뒤의 `require_verified_address`를 통과한다. `.invalid`는 예약된 최상위 도메인이라 이 주소로 메일이 가지 않는다. 게스트는 handle을 입력하지 않는다
+- `handle`의 `verification`: `require_verified_address`가 보는 인증 주소가 되려면 필요하다. `recovery`는 두지 않아 비밀번호 찾기가 없다
 - `name`: 표시 이름. backend의 이름 규칙(1~50자)과 같은 길이 제한
+- 누군가 게스트 handle로 인증 코드를 요청하면 Kratos는 그 주소로 인증 코드 메일을 큐에 넣고 주소의 `status`를 `sent`로 바꾼다. `verified`는 그대로라 로그인에는 영향이 없다. 메일은 `.invalid` 주소라 전달되지 않으며, courier 로그와 `GET /admin/courier/messages`에 그 메시지가 남는다. 복구 요청은 `sent_email` 응답만 오고 메일을 큐에 넣지 않는다
 
 ### 2.2 identity schema 등록
 
@@ -102,7 +109,7 @@ identity:
 
 ### 2.3 JWT 클레임 매퍼에 `schema_id`
 
-세션을 JWT로 바꾸는 tokenizer 템플릿의 클레임 매퍼가 `schema_id`를 넣어야 합니다. 게스트에게는 `email` trait이 없으므로 매퍼가 `email`을 전제하면 안 됩니다. 파일: `dev/kratos/api-jwt.claims.jsonnet`
+세션을 JWT로 바꾸는 tokenizer 템플릿의 클레임 매퍼가 `schema_id`를 넣어야 합니다. 게스트에게는 `email` trait이 없으므로 매퍼가 `email`을 전제하면 안 됩니다. `email`은 `traits.email`에서만 읽으므로 게스트 handle(인증된 주소)은 `email` 클레임이 되지 않고, 게스트의 `email_verified`는 `false`입니다. 파일: `dev/kratos/api-jwt.claims.jsonnet`
 
 ```jsonnet
 local session = std.extVar('session');
@@ -132,7 +139,7 @@ local verified = [
 
 ### 2.4 로그인 훅
 
-`selfservice.flows.login.after.password.hooks`의 `require_verified_address`를 backend `web_hook`으로 바꿉니다. `require_verified_address`는 인증할 주소가 없는 identity(게스트)의 로그인을 `500`으로 끝내기 때문입니다.
+`selfservice.flows.login.after.password.hooks`에서 기존 `require_verified_address` 앞에 게스트 `web_hook`을 둡니다.
 
 ```yaml
 selfservice:
@@ -154,27 +161,25 @@ selfservice:
                     name: X-Kratos-Hook-Key
                     value: <KRATOS_HOOK_API_KEY와 같은 값>
                     in: header
+            - hook: require_verified_address
 ```
 
 훅 본문 (`dev/kratos/hook.login.jsonnet`):
 
 ```jsonnet
 function(ctx)
-  local identity = ctx.identity;
-  local addresses = if 'verifiable_addresses' in identity then identity.verifiable_addresses else [];
-  local verified = std.length([a for a in addresses if a.verified]) > 0;
-  if identity.schema_id != 'guest' && verified then error 'cancel' else {
-    identity_id: identity.id,
-    schema_id: identity.schema_id,
-    verified: verified,
+  if ctx.identity.schema_id != 'guest' then error 'cancel' else {
+    identity_id: ctx.identity.id,
+    schema_id: ctx.identity.schema_id,
   }
 ```
 
+- `error 'cancel'`: 게스트가 아닌 identity는 훅을 부르지 않는다. 회원 로그인은 `require_verified_address`가 지금과 같이 판정한다(미인증 회원은 `session_verified_address_required`와 `continue_with`의 인증 플로우)
+- backend는 게스트 행이 있고 리소스가 `OPEN`일 때만 게스트 로그인을 허용한다. 게스트가 아닌 요청이 오면 허용한다
+- `require_verified_address`: 순서대로 실행되므로 게스트 훅 뒤에 둔다. 게스트는 handle이 인증된 주소라 통과한다
 - `url`: Kratos에서 닿는 backend 주소. backend는 `/internal/kratos/hooks/login`에서 받는다
 - `response.parse: true`: backend의 `403` 응답이 로그인을 멈춘다. 이 값이 없으면 거절이 무시된다
 - `auth`: backend는 `X-Kratos-Hook-Key`가 `KRATOS_HOOK_API_KEY`와 다르면 `401`이고, Kratos는 그 로그인을 거절한다
-- `error 'cancel'`: 인증된 주소가 있는 회원은 훅을 부르지 않는다. 이런 회원의 로그인은 backend 상태와 상관없다
-- 훅을 부르면 backend가 정한다. 게스트는 게스트 행이 있고 리소스가 `OPEN`일 때, 회원은 인증된 주소가 있을 때 허용한다
 - `'guest'`: `KRATOS_GUEST_SCHEMA_ID`와 같은 값
 
 ### 2.5 설정 훅
@@ -256,7 +261,7 @@ backend가 `KRATOS_ADMIN_URL`로 admin API에 닿아야 합니다. backend가 �
 
 | 호출 | 용도 |
 |------|------|
-| `POST /admin/identities` | 게스트 identity 만들기 (`schema_id`, `traits`, 비밀번호) |
+| `POST /admin/identities` | 게스트 identity 만들기 (`schema_id`, `traits`, 비밀번호, handle을 인증된 주소로) |
 | `GET /admin/identities?ids=...` | 리소스 게스트들의 현재 이름 읽기 (한 번에 100개씩) |
 | `GET /admin/identities/{id}` | 이름 변경 때 현재 `handle` 읽기 |
 | `DELETE /admin/identities/{id}` | 게스트 폐기 |
@@ -281,7 +286,7 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 - `/v1/guests/*`와 `/internal/kratos/hooks/*`는 `404`입니다
 - `schema_id`가 게스트 schema인 토큰은 모든 경로에서 거부됩니다(`403`)
 - `schema_id` 클레임이 없는 토큰도 받습니다
-- Kratos는 2장의 설정 없이 기존 설정(`require_verified_address`)으로 둡니다. 게스트 훅 설정을 남긴 채 backend만 끄면 훅이 `404`를 받아 게스트와 이메일을 인증하지 않은 회원의 로그인이 거절됩니다. 인증된 회원은 영향이 없습니다
+- Kratos는 2장의 설정 없이 기존 설정으로 둡니다. 게스트 훅 설정을 남긴 채 backend만 끄면 게스트 로그인은 훅이 `404`를 받아 거절되고, 회원 로그인은 영향이 없습니다
 
 ## 4. 설정 후 확인
 
@@ -298,11 +303,11 @@ curl -s "$KRATOS_PUBLIC/schemas" | python3 -c 'import json,sys; print(*[s["id"] 
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/internal/kratos/hooks/login" \
-  -H 'content-type: application/json' -d '{"identity_id":"x","schema_id":"default","verified":true}'
+  -H 'content-type: application/json' -d '{"identity_id":"x","schema_id":"default"}'
 # 401 (키 없음). 404면 GUEST_ENABLED가 꺼져 있다
 
 curl -s -w ' %{http_code}\n' -X POST "$API/internal/kratos/hooks/login" -H "X-Kratos-Hook-Key: $KEY" \
-  -H 'content-type: application/json' -d '{"identity_id":"x","schema_id":"default","verified":true}'
+  -H 'content-type: application/json' -d '{"identity_id":"x","schema_id":"default"}'
 # {} 200
 ```
 
@@ -341,23 +346,12 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/auth/sessions/whoami" -H "X-Sessi
 
 | 상황 | 동작 |
 |------|------|
-| Kratos가 로그인 훅 URL에 닿지 않는다 | Kratos는 세 번 시도(약 3초)한 뒤 그 로그인을 거절한다. 이메일을 인증한 회원은 훅을 부르지 않으므로 그대로 로그인된다. 게스트와 이메일을 인증하지 않은 회원은 거절된다 |
+| Kratos가 로그인 훅 URL에 닿지 않는다 | Kratos는 세 번 시도(약 3초)한 뒤 그 게스트의 로그인을 거절한다. 회원은 인증 여부와 상관없이 게스트가 없을 때와 같다(훅을 부르지 않는다) |
 | Kratos가 설정 훅 URL에 닿지 않는다 | 게스트의 설정 변경이 거절된다. 회원 설정은 영향이 없다 |
-| 훅 키가 다르다 | backend가 `401`을 돌려주고 Kratos는 위와 같이 거절한다 |
+| 훅 키가 다르다 | backend가 `401`을 돌려주고 Kratos는 위와 같이 게스트 로그인·설정 변경을 거절한다 |
 | backend가 Kratos admin·공개 API에 닿지 않는다 | 입장이 `503`이고 게스트를 만들지 않는다. 게스트 폐기는 게스트 행만 지우고 identity 삭제 실패를 로그에 남긴다. 행이 없는 게스트 identity는 로그인할 수 없다 |
 
-## 6. 회원에게 달라지는 점
-
-게스트를 켜면 이메일을 인증하지 않은 회원의 로그인 거절 응답이 바뀝니다.
-
-| | 게스트 끔 (`require_verified_address`) | 게스트 켬 (로그인 훅) |
-|---|---|---|
-| 응답 | 오류 `error.id: session_verified_address_required` | `400`, 플로우 메시지 `id: 4000010` |
-| 인증 플로우 | `continue_with`에 새 인증 플로우가 오고 코드를 다시 보낸다 | 오지 않는다. 클라이언트가 인증 플로우를 만든다 |
-
-클라이언트는 두 응답을 모두 "이메일 인증 필요"로 다룹니다.
-
-## 7. 로컬에서 켜기
+## 6. 로컬에서 켜기
 
 ```bash
 python scripts/gen_dev_jwks.py
