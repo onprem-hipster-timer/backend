@@ -18,7 +18,7 @@ http://localhost:2614/v1/graphql
 
 ## Authentication
 
-All GraphQL queries require authentication:
+All GraphQL queries require member authentication. Tokens of [guest accounts](../guides/guest.ko.md) get `403`.
 
 ```javascript
 const response = await fetch('http://localhost:2614/v1/graphql', {

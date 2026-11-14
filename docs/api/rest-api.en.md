@@ -100,6 +100,18 @@ DELETE /v1/users/me/deletion              # Cancel account deletion
 !!! info "Account deletion"
     A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
 
+### Guests
+
+Only answered when `GUEST_ENABLED=true` (404 otherwise).
+
+```http
+POST   /v1/guests/lookup                  # Find the login identifier (handle) of the guest with that name in a resource (no authentication)
+POST   /v1/guests                         # Create a guest (no authentication, Turnstile token required). Returns the handle
+DELETE /v1/guests/me                      # The guest deletes itself (guest JWT)
+```
+
+Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. A guest's login submission needs a Turnstile token (`X-Turnstile-Token` header). Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
+
 ### Holidays
 
 ```http

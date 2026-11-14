@@ -38,6 +38,8 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 The server echoes the same subprotocol in its response to complete the handshake. The JWT is verified only when connecting.
 
+Only member tokens are accepted. A token of a [guest account](../guides/guest.ko.md) closes the connection with `1008`.
+
 !!! warning "Warning"
     **Important**: You must add WebSocket URLs to `CORS_ALLOWED_ORIGINS` for WebSocket connections to work:
     - Development: `ws://localhost:2614,ws://127.0.0.1:2614`
