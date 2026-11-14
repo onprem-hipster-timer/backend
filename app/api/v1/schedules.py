@@ -159,7 +159,7 @@ async def read_schedule(
     ID로 일정 조회 (공유된 일정 포함)
     
     본인 소유 일정 또는 공유 접근 권한이 있는 일정을 조회합니다.
-    접근 권한이 없으면 403 Forbidden을 반환합니다.
+    없거나 접근 권한이 없으면 404를 반환합니다.
     """
     service = ScheduleService(session, current_user)
     schedule, is_shared = service.get_schedule_with_access_check(schedule_id)

@@ -79,4 +79,4 @@ def test_todo_visibility_private_blocks_access(multi_user_e2e):
     todo_id = _make_todo(client_a, "비공개 Todo")
 
     response = client_b.get(f"/v1/todos/{todo_id}")
-    assert response.status_code == 403
+    assert response.status_code == 404

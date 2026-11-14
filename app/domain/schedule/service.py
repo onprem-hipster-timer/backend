@@ -315,8 +315,7 @@ class ScheduleService:
 
         :param schedule_id: 일정 ID
         :return: (일정, is_shared) 튜플
-        :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises ScheduleNotFoundError: 일정이 없거나 접근할 수 없는 경우
         """
 
         # 먼저 ID로만 조회 (소유자 무관)
@@ -330,11 +329,12 @@ class ScheduleService:
 
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.require_access(
+        if not visibility_service.can_access(
             resource_type=ResourceType.SCHEDULE,
             resource_id=schedule_id,
             owner_id=schedule.owner_id,
-        )
+        ):
+            raise ScheduleNotFoundError()
 
         return schedule, True
 
@@ -351,12 +351,10 @@ class ScheduleService:
         :param schedule_id: Schedule ID
         :return: ScheduleRead DTO 또는 None (권한 없거나 리소스 없음)
         """
-        from app.domain.visibility.exceptions import AccessDeniedError
-
         try:
             schedule, is_shared = self.get_schedule_with_access_check(schedule_id)
             return self.to_read_dto(schedule, is_shared=is_shared)
-        except (ScheduleNotFoundError, AccessDeniedError):
+        except ScheduleNotFoundError:
             return None
 
     def get_all_schedules(self) -> list[Schedule]:
