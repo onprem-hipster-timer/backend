@@ -38,10 +38,42 @@ class TestGuestEntryRules:
         assert rule.max_requests == 10  # 전역 폴백(60)보다 엄격
         assert rule.window_seconds == 60
 
+    @pytest.mark.parametrize("path", ["/v1/guests", "/v1/guests/lookup"])
+    def test_guest_lookup_and_create_are_counted_per_ip(self, path):
+        assert get_rule_for_request("POST", path).per_ip is True
+
     def test_guest_self_delete_falls_back_to_global(self):
         rule = get_rule_for_request("DELETE", "/v1/guests/me")
         assert rule is not None
         assert rule.max_requests == 60
+
+
+class TestAuthProxySubmitRule:
+    """/auth 프록시 제출 rate limit 규칙"""
+
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    @pytest.mark.parametrize(
+        "path",
+        ["/auth/self-service/login", "/auth/self-service/login/", "/auth//self-service/login",
+         "/auth/Self-Service/Login", "/auth/self-service/registration", "/auth/self-service/logout/api"],
+    )
+    def test_non_get_requests_under_auth_are_limited_per_ip(self, method, path):
+        rule = get_rule_for_request(method, path)
+        assert rule is not None
+        assert rule.path_pattern == "/auth/*"
+        assert (rule.max_requests, rule.window_seconds) == (10, 60)
+        assert rule.per_ip is True
+
+    @pytest.mark.parametrize(
+        "path",
+        ["/auth/sessions/whoami", "/auth/self-service/login/api", "/auth/.well-known/jwks.json"],
+    )
+    def test_get_requests_under_auth_are_not_limited(self, path):
+        assert get_rule_for_request("GET", path) is None
+
+    @pytest.mark.parametrize("method,path", [("POST", "/v1/todos"), ("GET", "/v1/tags"), ("POST", "/v1/friends/requests")])
+    def test_other_rules_count_per_user(self, method, path):
+        assert get_rule_for_request(method, path).per_ip is False
 
 
 class TestRateLimitRule:

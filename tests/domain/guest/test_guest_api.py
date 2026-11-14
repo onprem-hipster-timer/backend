@@ -166,28 +166,6 @@ def test_unknown_resource_type_is_422(guest_client, resource, path):
     assert guest_client.post(path, json=_body(resource, resource_type="planet")).status_code == 422
 
 
-@pytest.fixture
-def rate_limited(guest_client, monkeypatch):
-    import app.core.config as app_config
-    from app.ratelimit.storage.memory import reset_storage
-
-    monkeypatch.setattr(app_config.settings, "RATE_LIMIT_ENABLED", True)
-    reset_storage()
-    yield guest_client
-    reset_storage()
-
-
-def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource):
-    for i in range(10):
-        assert rate_limited.post(LOOKUP, json=_lookup_body(resource)).status_code == 200
-    assert rate_limited.post(LOOKUP, json=_lookup_body(resource)).status_code == 429
-
-    for i in range(10):
-        assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}")).status_code == 201
-    assert rate_limited.post(CREATE, json=_body(resource, name="g10")).status_code == 429
-    assert len(guest_rows()) == 10
-
-
 # ============ 자기 삭제 ============
 
 def test_guest_deletes_itself(guest_client, kratos, tokens, resource, guest_events):

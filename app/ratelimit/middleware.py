@@ -1,7 +1,7 @@
 """
 Rate Limit Middleware
 
-FastAPI 미들웨어로 모든 /v1/* 요청에 레이트 리밋 적용
+FastAPI 미들웨어로 /v1/*와 /auth/* 요청에 레이트 리밋 적용
 """
 import logging
 
@@ -22,9 +22,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     레이트 리밋 미들웨어
     
     처리 흐름:
-    1. 요청 경로가 /v1/*인지 확인
+    1. 요청 경로가 /v1/* 또는 /auth/*인지 확인
     2. 경로에 맞는 규칙 찾기
-    3. 사용자 식별 (Authorization 헤더 -> sub 또는 Client IP)
+    3. 사용자 식별 (Authorization 헤더 -> sub 또는 Client IP, 규칙이 per_ip면 항상 Client IP)
     4. 레이트 리밋 체크
     5. 초과 시 429 응답, 허용 시 X-RateLimit-* 헤더 추가
     """
@@ -41,8 +41,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
-        # /v1/* 경로만 레이트 리밋 적용
-        if not path.startswith("/v1"):
+        # /v1/*와 /auth/*(Kratos 프록시) 경로만 레이트 리밋 적용
+        if not (path.startswith("/v1") or path.startswith("/auth/")):
             return await call_next(request)
 
         # 규칙 찾기
@@ -52,7 +52,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # 사용자 식별
-        user_id = await self._get_user_id(request)
+        user_id = await self._get_user_id(request, per_ip=rule.per_ip)
 
         # 레이트 리밋 체크
         limiter = get_limiter()
@@ -88,12 +88,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return response
 
-    async def _get_user_id(self, request: Request) -> str:
+    async def _get_user_id(self, request: Request, per_ip: bool = False) -> str:
         """
         사용자 식별자 추출
         
         우선순위:
-        1. request.state.current_user (AuthMiddleware에서 설정됨 - 중복 검증 방지)
+        1. request.state.current_user (AuthMiddleware에서 설정됨 - 중복 검증 방지). per_ip면 건너뛴다
         2. Client IP 주소 (인증 없는 경우, 프록시 설정 고려)
         
         프록시 설정:
@@ -102,7 +102,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         - 그 외: request.client.host 직접 사용
         """
         # AuthMiddleware에서 이미 검증된 사용자 정보 사용
-        if hasattr(request.state, 'current_user') and request.state.current_user:
+        if not per_ip and hasattr(request.state, 'current_user') and request.state.current_user:
             return request.state.current_user.sub
 
         # 실제 클라이언트 IP 추출 (프록시 설정 고려)
