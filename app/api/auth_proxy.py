@@ -14,6 +14,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
   정한다 (app/api/kratos_hooks.py). 게스트 이름 변경은 리소스마다 하나씩 넘기고, 같은 리소스의 다른 게스트가
   쓰는 이름이면 409 guest_name_taken으로 거절한다 (app/domain/guest/service.py rename_submission)
+- 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
+  넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
@@ -72,6 +74,8 @@ SETTINGS_SUBMIT_PATH = "/self-service/settings"
 EMAIL_RECOVERY_METHOD = "code_recovery"
 # 소셜 로그인 제출 경로. 처음 쓰는 소셜 계정이면 로그인 제출도 가입으로 이어진다
 OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
+# 메일 주소를 받는 인증·복구 제출 경로. 게스트 handle 도메인 주소는 받지 않는다
+ADDRESS_SUBMIT_PATHS = ("/self-service/verification", "/self-service/recovery")
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
 ACCESS_LOG_EVENTS = {"/self-service/login": "login", "/self-service/registration": "registration"}
 
@@ -126,6 +130,29 @@ def _get_ignoring_case(data: object, key: str) -> object:
     if not isinstance(data, dict):
         return None
     return next((value for k, value in data.items() if k.lower() == key), None)
+
+
+def _is_guest_address(content_type: str, body: bytes) -> bool | None:
+    """제출한 email이 게스트 handle 도메인 주소면 True. 본문을 읽을 수 없거나 email이 겹치면 None.
+
+    키는 Kratos처럼 대소문자 구분 없이 찾고, 값은 앞뒤 공백을 떼고 대소문자 구분 없이 비교한다.
+    """
+    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+        try:
+            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+        except UnicodeDecodeError:
+            return None
+        values = [value for key, value in pairs if key.lower() == "email"]
+        if len(values) > 1:
+            return None
+        email = values[0] if values else None
+    else:
+        try:
+            data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        except (ValueError, UnicodeDecodeError):
+            return None
+        email = _get_ignoring_case(data, "email")
+    return isinstance(email, str) and email.strip().lower().endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
 
 
 def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
@@ -195,6 +222,20 @@ def _settings_forbidden() -> JSONResponse:
             }
         },
         status_code=403,
+    )
+
+
+def _address_not_accepted() -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": {
+                "id": "address_not_accepted",
+                "code": 400,
+                "status": "Bad Request",
+                "reason": "이 주소로는 인증·복구를 요청할 수 없습니다.",
+            }
+        },
+        status_code=400,
     )
 
 
@@ -278,6 +319,12 @@ async def kratos_proxy(path: str, request: Request) -> Response:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
             # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
             submit_path = outgoing.url.path.rstrip("/").lower()
+            if request.method != "GET" and submit_path in ADDRESS_SUBMIT_PATHS:
+                guest_address = _is_guest_address(request.headers.get("content-type", ""), body)
+                if guest_address is None:
+                    return _unreadable_body()
+                if guest_address:
+                    return _address_not_accepted()
             if request.method != "GET" and submit_path in OIDC_SUBMIT_PATHS:
                 cleaned = _without_oidc_email(request.headers.get("content-type", ""), body)
                 if cleaned is None:

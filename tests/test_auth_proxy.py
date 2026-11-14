@@ -682,3 +682,98 @@ def test_unreadable_login_response_is_passed_through_without_log(client, upstrea
     assert response.status_code == 200
     assert response.content == b"not json"
     assert access_log == []
+
+
+# ============ 게스트 handle 도메인 주소의 인증·복구 제출 ============
+
+ADDRESS_FLOWS = ["/auth/self-service/verification?flow=f1", "/auth/self-service/recovery?flow=f1"]
+
+
+def _forwarded(upstream, path):
+    return [r for r in upstream.requests if r.url.path == path.split("?")[0].removeprefix("/auth")]
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+@pytest.mark.parametrize(
+    "email",
+    ["x@guest.invalid", "x@GUEST.Invalid", "  x@guest.invalid  ", "X@Guest.INVALID\n"],
+)
+def test_address_flow_to_guest_domain_is_refused_json(client, upstream, monkeypatch, path, email):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+
+    response = client.post(path, json={"method": "code", "email": email})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "address_not_accepted"
+    assert _forwarded(upstream, path) == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+@pytest.mark.parametrize("key", ["Email", "EMAIL"])
+def test_address_flow_email_key_is_read_ignoring_case(client, upstream, path, key):
+    response = client.post(path, json={"method": "code", key: "x@guest.invalid"})
+    assert response.status_code == 400
+    assert _forwarded(upstream, path) == []
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+@pytest.mark.parametrize("key", ["email", "Email"])
+def test_address_flow_to_guest_domain_is_refused_form(client, upstream, monkeypatch, path, key):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+
+    response = client.post(path, data={"method": "code", key: " x@Guest.Invalid "})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "address_not_accepted"
+    assert _forwarded(upstream, path) == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("path", ["/auth/self-service/Verification/?flow=f1", "/auth/self-service/recover%79?flow=f1"])
+def test_address_flow_other_path_spellings_are_refused(client, upstream, path):
+    assert client.post(path, json={"method": "code", "email": "x@guest.invalid"}).status_code == 400
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+@pytest.mark.parametrize("body", [{"json": {"method": "code", "email": "m@example.com"}},
+                                  {"data": {"method": "code", "email": "m@example.com"}},
+                                  {"json": {"method": "code", "code": "123456"}},
+                                  {"json": {"method": "code", "email": "x@guest.invalid.example.com"}},
+                                  {"json": {"method": "code", "email": "x@notguest.invalid"}}])
+def test_address_flow_other_submissions_are_forwarded(client, upstream, monkeypatch, path, body):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+
+    response = client.post(path, **body)
+
+    assert response.status_code == 200
+    assert len(_forwarded(upstream, path)) == 1
+    assert calls == [True]
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+@pytest.mark.parametrize(
+    "content,content_type",
+    [
+        (b'{"email": "m@example.com", "Email": "x@guest.invalid"}', "application/json"),
+        (b"not json", "application/json"),
+        (b"email=m%40example.com&Email=x%40guest.invalid", "application/x-www-form-urlencoded"),
+        (b"\xff\xfe", "application/x-www-form-urlencoded"),
+    ],
+    ids=["json_duplicate_key", "json_broken", "form_duplicate_key", "form_not_utf8"],
+)
+def test_address_flow_unreadable_body_is_400(client, upstream, path, content, content_type):
+    response = client.post(path, content=content, headers={"content-type": content_type})
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("path", ADDRESS_FLOWS)
+def test_address_flow_refusal_does_not_depend_on_guest_flag(client, upstream, guest_enabled, path):
+    assert client.post(path, json={"method": "code", "email": "x@guest.invalid"}).status_code == 400
+    assert upstream.requests == []
