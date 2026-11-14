@@ -15,7 +15,8 @@ from tests.domain.guest.helpers import make_guest
 # (메서드, 경로) — 게스트 토큰을 거부하지 않는 경로
 GUEST_TOKEN_NOT_REFUSED = {
     # 게스트 경로
-    ("POST", "/v1/guests/enter"),  # 인증 없음 (입장)
+    ("POST", "/v1/guests"),  # 인증 없음 (생성)
+    ("POST", "/v1/guests/lookup"),  # 인증 없음 (이름 찾기)
     ("DELETE", "/v1/guests/me"),  # 게스트 토큰 전용
     # 사용자 인증을 쓰지 않는 경로
     ("GET", "/health"),

@@ -11,23 +11,22 @@ KRATOS_PUBLIC = "http://kratos-public.test"
 
 
 class FakeKratos:
-    """identity 생성·조회·삭제와 비밀번호 로그인(API 플로우)을 흉내 낸다
+    """identity 생성·조회·삭제와 비밀번호 로그인(API 플로우)·이름 변경을 흉내 낸다
 
     - down: "admin" 또는 "public"이 들어 있으면 그 API는 연결 오류
     - fail_create / fail_list / fail_get: admin 응답을 500으로
-    - login_status: 비밀번호가 맞아도 돌려줄 상태 코드 (None이면 200)
+    - sessions: 세션 토큰 → identity id
     """
 
     def __init__(self):
         self.identities: dict[str, dict] = {}
         self.passwords: dict[str, str] = {}
         self.deleted: list[str] = []
-        self.logins: list[str] = []
+        self.sessions: dict[str, str] = {}
         self.down: set[str] = set()
         self.fail_create = False
         self.fail_list = False
         self.fail_get = False
-        self.login_status: int | None = None
         self.list_requests: list[httpx.Request] = []
 
     # ---- 테스트 준비 ----
@@ -84,28 +83,46 @@ class FakeKratos:
                 return httpx.Response(204)
         return httpx.Response(404)
 
-    # ---- 공개 API ----
-    def public(self, request: httpx.Request) -> httpx.Response:
+    # ---- 공개 API (backend /auth 프록시가 넘기는 요청) ----
+    async def public(self, request: httpx.Request) -> httpx.Response:
+        """비밀번호 로그인(API 플로우), whoami, 설정(profile) 제출. 로그인·설정은 Kratos처럼 backend 훅 판정을 거친다"""
+        import json
+
+        from app.domain.guest import service
+
         if "public" in self.down:
             raise httpx.ConnectError("public down", request=request)
         path = request.url.path
-        if request.method == "GET" and path == "/self-service/login/api":
+        if request.method == "GET" and path in ("/self-service/login/api", "/self-service/settings/api"):
             return httpx.Response(200, json={"id": str(uuid.uuid4())})
         if request.method == "POST" and path == "/self-service/login":
-            import json
             body = json.loads(request.content)
             for identity_id, identity in self.identities.items():
                 traits = identity["traits"]
                 if body["identifier"] in (traits.get("handle"), traits.get("email")):
                     if self.passwords[identity_id] != body["password"]:
                         break
-                    self.logins.append(identity_id)
-                    if self.login_status is not None:
-                        return httpx.Response(self.login_status, json={})
-                    return httpx.Response(
-                        200, json={"session_token": f"token-{identity_id}", "session": {"identity": identity}}
-                    )
+                    if not await service.login_allowed(identity_id, identity["schema_id"]):
+                        return httpx.Response(400, json={"ui": {"messages": [{"id": 4000001}]}})
+                    token = f"token-{identity_id}"
+                    self.sessions[token] = identity_id
+                    return httpx.Response(200, json={"session_token": token, "session": {"identity": identity}})
             return httpx.Response(400, json={"ui": {"messages": [{"id": 4000006}]}})
+        identity_id = self.sessions.get(request.headers.get("x-session-token", ""))
+        identity = self.identities.get(identity_id) if identity_id else None
+        if request.method == "GET" and path == "/sessions/whoami":
+            if identity is None:
+                return httpx.Response(401, json={})
+            return httpx.Response(200, json={"identity": identity, "authentication_methods": [{"method": "password"}]})
+        if request.method == "POST" and path == "/self-service/settings":
+            if identity is None:
+                return httpx.Response(401, json={})
+            body = json.loads(request.content)
+            traits = body["traits"]
+            if not await service.settings_change_allowed(body["method"], identity_id, identity["schema_id"], traits):
+                return httpx.Response(400, json={"ui": {"messages": [{"id": 4000001}]}})
+            identity["traits"] = dict(traits)
+            return httpx.Response(200, json={"state": "success", "identity": identity})
         return httpx.Response(404)
 
 

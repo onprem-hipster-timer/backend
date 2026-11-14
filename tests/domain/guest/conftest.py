@@ -1,7 +1,7 @@
 """게스트 테스트 fixture
 
 - guest_db: 앱 세션 매니저를 테스트 엔진으로 바꾼다 (게스트 서비스는 자기 세션을 연다)
-- kratos: 가짜 Kratos admin·공개 API와 GUEST_ENABLED=true 설정
+- kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳)와 GUEST_ENABLED=true 설정
 - host: MEETING 리소스 종류에 등록한 가짜 호스트
 - guest_events: 발행된 게스트 이벤트 기록
 """
@@ -10,7 +10,8 @@ import pytest
 from sqlmodel import SQLModel
 
 import app.core.config as app_config
-from app.core import kratos_admin, kratos_public
+from app.api import auth_proxy
+from app.core import kratos_admin
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.host import register_guest_host, unregister_guest_host
 from app.models.visibility import ResourceType
@@ -50,7 +51,7 @@ def kratos(monkeypatch):
         lambda: httpx.AsyncClient(base_url=KRATOS_ADMIN, transport=httpx.MockTransport(fake.admin)),
     )
     monkeypatch.setattr(
-        kratos_public,
+        auth_proxy,
         "_make_client",
         lambda: httpx.AsyncClient(base_url=KRATOS_PUBLIC, transport=httpx.MockTransport(fake.public)),
     )

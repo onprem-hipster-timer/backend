@@ -12,10 +12,10 @@ class GuestEntryRefusedError(DomainException):
     detail = "게스트로 들어갈 수 없습니다"
 
 
-class GuestNameLimitError(DomainException):
-    """같은 리소스에 같은 이름의 게스트가 이미 최대 수만큼 있음"""
+class GuestNameTakenError(DomainException):
+    """같은 리소스에 같은 이름의 게스트가 이미 있음"""
     status_code = status.HTTP_409_CONFLICT
-    detail = "같은 이름의 게스트가 너무 많습니다. 다른 이름을 쓰세요"
+    detail = "같은 이름의 게스트가 이미 있습니다. 다른 이름을 쓰세요"
 
 
 class GuestAccessDeniedError(DomainException):

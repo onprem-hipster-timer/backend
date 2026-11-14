@@ -6,43 +6,55 @@
 - 폐기(discard_guest, discard_resource_guests): 게스트 행 삭제와 GuestDiscarded 이벤트를 커밋한 뒤
   Kratos identity를 지운다. identity 삭제가 실패해도 행이 없으므로 접근은 닫힌다
   (로그인 훅은 행이 없는 게스트 identity를 거부한다). 실패는 로그로 남긴다
-- 입장(enter), Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed). 회원 로그인은 판정하지 않는다
+- 이름 찾기(lookup)와 생성(create). 게스트 이름은 리소스 안에서 겹치지 않는다. 이름은 Kratos에만 있으므로
+  리소스의 게스트 identity를 읽어 비교하고, 생성과 이름 변경은 리소스마다 잠가 하나씩 처리한다(_resource_lock)
+- Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed). 회원 로그인은 판정하지 않는다
 
-DB는 요청 세션이 아니라 자기 세션으로 쓰고 바로 커밋한다. 거부 응답과 함께 폐기가 rollback되지 않게 하고,
-Kratos 호출 동안 트랜잭션을 열어 두지 않는다 (로그인 중에 Kratos가 이 서버의 로그인 훅을 부른다).
+DB는 요청 세션이 아니라 자기 세션으로 쓰고 바로 커밋한다. 거부 응답과 함께 폐기가 rollback되지 않게 한다.
+리소스 잠금 밖에서는 Kratos 호출 동안 트랜잭션을 열어 두지 않는다. 잠근 동안 Kratos가 이 서버의 훅을 부를 수
+있으므로(이름 변경 제출) 훅 판정은 잠그지 않는다.
 
 테스트: tests/domain/guest/
 """
+import asyncio
+import hashlib
 import logging
 import unicodedata
-from contextlib import contextmanager
-from typing import Iterator
+from contextlib import asynccontextmanager, contextmanager
+from typing import AsyncIterator, Iterator
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlmodel import Session
 
 import app.core.config as app_config
-from app.core import kratos_admin, kratos_public
+from app.core import kratos_admin
 from app.crud import guest as crud
 from app.db.session import _session_manager
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.exceptions import (
     GuestAccessDeniedError,
     GuestEntryRefusedError,
-    GuestNameLimitError,
+    GuestNameTakenError,
     GuestServiceUnavailableError,
 )
 from app.domain.guest.host import GuestHostStatus, host_status
 from app.domain.guest.model import Guest
-from app.domain.guest.schema.dto import GuestEnter, GuestEnterRead, normalize_guest_name
+from app.domain.guest.schema.dto import (
+    GuestCreate,
+    GuestLookup,
+    GuestLookupRead,
+    GuestRead,
+    normalize_guest_name,
+)
 from app.models.visibility import ResourceType
 from app.shared.events import EventOrigin
 from app.shared.uow import clear_events, collect_event, flush_and_dispatch_events
 
 logger = logging.getLogger(__name__)
 
-# 한 리소스에서 같은 이름을 쓸 수 있는 게스트 수 (입장 한 번에 시도하는 로그인 수의 상한)
-MAX_GUESTS_PER_NAME = 10
+# 같은 리소스의 게스트 생성·이름 변경 잠금을 다시 묻기까지 쉬는 시간 (PostgreSQL)
+LOCK_RETRY_SECONDS = 0.05
 
 # 게스트 로그인 식별자(handle) "<uuid4>@<이 도메인>"의 도메인. 예약된 TLD라 메일이 가지 않는다.
 # handle은 Kratos require_verified_address를 통과하도록 인증된 주소로 만들고, 게스트에게 보여 주지 않는다
@@ -139,102 +151,89 @@ async def authorize(identity_id: str, resource_type: ResourceType, resource_id: 
     return guest
 
 
-# ============ 입장 ============
+# ============ 이름 찾기와 생성 ============
 
-async def _login(handle: str, password: str) -> str | None:
-    try:
-        return await kratos_public.password_login(handle, password)
-    except kratos_public.KratosUnavailableError:
-        logger.warning("게스트 로그인 중 Kratos 공개 API 오류", exc_info=True)
-        raise GuestServiceUnavailableError()
+@asynccontextmanager
+async def _resource_lock(resource_type: ResourceType, resource_id: UUID) -> AsyncIterator[Session]:
+    """같은 리소스의 게스트 생성·이름 변경을 하나씩 처리하는 세션. 트랜잭션이 끝날 때까지 잠근다.
 
-
-def _entered(guest_id: UUID, data: GuestEnter, token: str) -> GuestEnterRead:
-    return GuestEnterRead(
-        session_token=token,
-        guest_id=guest_id,
-        resource_type=data.resource_type,
-        resource_id=data.resource_id,
-    )
-
-
-async def _same_name_guests(data: GuestEnter) -> list[tuple[Guest, str]]:
-    """리소스에서 지금 Kratos 이름이 data.name과 같은 게스트와 그 로그인 식별자(handle), 만든 순서대로"""
+    PostgreSQL은 트랜잭션 advisory lock이다. 기다리는 동안 이벤트 루프를 막지 않게 try로 묻고 쉰다.
+    다른 DB(SQLite)에서는 잠그지 않는다.
+    """
     with _session_manager.get_session() as session:
-        guests = crud.list_resource_guests(session, data.resource_type, data.resource_id)
+        if session.get_bind().dialect.name == "postgresql":
+            digest = hashlib.sha256(f"guest:{resource_type.value}:{resource_id}".encode()).digest()
+            lock = text("SELECT pg_try_advisory_xact_lock(:key)").bindparams(
+                key=int.from_bytes(digest[:8], "big", signed=True)
+            )
+            while not session.exec(lock).scalar():
+                await asyncio.sleep(LOCK_RETRY_SECONDS)
+        yield session
+
+
+async def _find_by_name(guests: list[Guest], name: str) -> dict | None:
+    """게스트 중 지금 Kratos 이름이 name(NFC)인 게스트의 identity"""
     if not guests:
-        return []
+        return None
     identities = await kratos_admin.get_identities([guest.identity_id for guest in guests])
     if identities is None:
         raise GuestServiceUnavailableError()
-    traits_by_id = {identity["id"]: identity.get("traits") or {} for identity in identities}
-    matches = []
-    for guest in guests:
-        traits = traits_by_id.get(guest.identity_id, {})
-        name = traits.get("name")
-        # data.name은 NFC다. Kratos에 다른 형태로 저장된 이름도 같은 이름으로 본다
-        if (
-                isinstance(name, str)
-                and unicodedata.normalize("NFC", name) == data.name
-                and isinstance(traits.get("handle"), str)
-        ):
-            matches.append((guest, traits["handle"]))
-    return matches
+    for identity in identities:
+        stored = (identity.get("traits") or {}).get("name")
+        # Kratos에 다른 형태로 저장된 이름도 같은 이름으로 본다
+        if isinstance(stored, str) and unicodedata.normalize("NFC", stored) == name:
+            return identity
+    return None
 
 
-async def _remove_new_guest(guest_id: UUID | None, identity_id: str) -> None:
-    """입장을 마치지 못한 새 게스트를 지운다. 리소스가 저장한 것이 없으므로 이벤트는 내지 않는다"""
-    if guest_id is not None:
-        with _transaction() as session:
-            guest = session.get(Guest, guest_id)
-            if guest is not None:
-                crud.delete_guest(session, guest)
-    await _delete_identity(identity_id)
-
-
-async def _create_guest(data: GuestEnter) -> GuestEnterRead:
-    handle = f"{uuid4()}@{GUEST_HANDLE_DOMAIN}"
-    identity = await kratos_admin.create_identity(
-        app_config.settings.KRATOS_GUEST_SCHEMA_ID,
-        {"handle": handle, "name": data.name},
-        data.password,
-        verified_addresses=(handle,),
-    )
-    if identity is None:
-        raise GuestServiceUnavailableError()
-    identity_id = identity["id"]
-
-    guest_id: UUID | None = None
-    try:
-        with _transaction() as session:
-            guest = crud.create_guest(session, Guest.model_validate(data, update={"identity_id": identity_id}))
-            guest_id = guest.id
-        token = await _login(handle, data.password)
-    except BaseException:
-        await _remove_new_guest(guest_id, identity_id)
-        raise
-    if token is None:
-        await _remove_new_guest(guest_id, identity_id)
-        raise GuestServiceUnavailableError()
-    return _entered(guest_id, data, token)
-
-
-async def enter(data: GuestEnter) -> GuestEnterRead:
-    """이름과 비밀번호가 맞는 게스트가 있으면 다시 들어가고, 없으면 새 게스트를 만든다"""
-    status = _status(data.resource_type, data.resource_id)
+async def _require_open(resource_type: ResourceType, resource_id: UUID) -> None:
+    """리소스가 게스트를 받지 않으면 GuestEntryRefusedError. EXPIRED·MISSING이면 게스트를 모두 폐기한다"""
+    status = _status(resource_type, resource_id)
     if status != GuestHostStatus.OPEN:
         if status in (GuestHostStatus.EXPIRED, GuestHostStatus.MISSING):
-            await discard_resource_guests(data.resource_type, data.resource_id)
+            await discard_resource_guests(resource_type, resource_id)
         raise GuestEntryRefusedError()
 
-    candidates = await _same_name_guests(data)
-    for guest, handle in candidates:
-        token = await _login(handle, data.password)
-        if token is not None:
-            return _entered(guest.id, data, token)
-    if len(candidates) >= MAX_GUESTS_PER_NAME:
-        raise GuestNameLimitError()
-    return await _create_guest(data)
+
+async def lookup(data: GuestLookup) -> GuestLookupRead:
+    """리소스에서 이름이 data.name인 게스트의 로그인 식별자(handle). 없으면 handle이 None"""
+    await _require_open(data.resource_type, data.resource_id)
+    with _session_manager.get_session() as session:
+        guests = crud.list_resource_guests(session, data.resource_type, data.resource_id)
+    identity = await _find_by_name(guests, data.name)
+    handle = (identity.get("traits") or {}).get("handle") if identity is not None else None
+    return GuestLookupRead(handle=handle if isinstance(handle, str) else None)
+
+
+async def create(data: GuestCreate) -> GuestRead:
+    """새 게스트를 만들고 로그인 식별자(handle)를 돌려준다. 리소스에 같은 이름이 있으면 GuestNameTakenError"""
+    await _require_open(data.resource_type, data.resource_id)
+    async with _resource_lock(data.resource_type, data.resource_id) as session:
+        guests = crud.list_resource_guests(session, data.resource_type, data.resource_id)
+        if await _find_by_name(guests, data.name) is not None:
+            raise GuestNameTakenError()
+        handle = f"{uuid4()}@{GUEST_HANDLE_DOMAIN}"
+        identity = await kratos_admin.create_identity(
+            app_config.settings.KRATOS_GUEST_SCHEMA_ID,
+            {"handle": handle, "name": data.name},
+            data.password,
+            verified_addresses=(handle,),
+        )
+        if identity is None:
+            raise GuestServiceUnavailableError()
+        try:
+            guest = crud.create_guest(session, Guest.model_validate(data, update={"identity_id": identity["id"]}))
+            guest_id = guest.id
+            session.commit()
+        except BaseException:
+            await _delete_identity(identity["id"])
+            raise
+    return GuestRead(
+        guest_id=guest_id,
+        handle=handle,
+        resource_type=data.resource_type,
+        resource_id=data.resource_id,
+    )
 
 
 # ============ Kratos 훅 판정 ============

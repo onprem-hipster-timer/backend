@@ -88,10 +88,16 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=30,
     ),
-    # 게스트 입장: 인증 없이 IP 단위로 세며, 요청 하나가 Kratos 로그인을 여러 번 시도할 수 있어 더 엄격하게 제한
+    # 게스트 이름 찾기·생성: 인증 없이 IP 단위로 세므로 더 엄격하게 제한
     RateLimitRule(
         methods=["POST"],
-        path_pattern="/v1/guests/enter",
+        path_pattern="/v1/guests/lookup",
+        window_seconds=60,
+        max_requests=10,
+    ),
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/guests",
         window_seconds=60,
         max_requests=10,
     ),

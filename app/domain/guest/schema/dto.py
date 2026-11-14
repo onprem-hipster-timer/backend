@@ -2,7 +2,8 @@
 Guest Domain DTO
 
 이름과 비밀번호는 먼저 NFC로 정규화한다. 기기마다 같은 글자가 다른 유니코드 형태로 올 수 있다.
-이름은 앞뒤 공백을 떼고 1~50자, 제어 문자는 받지 않는다. 같은 리소스 안에서도 이름은 겹칠 수 있다.
+이름은 앞뒤 공백을 떼고 1~50자, 제어 문자는 받지 않는다. 같은 리소스 안에서 이름은 겹치지 않는다
+(정규화한 이름이 정확히 같으면 같은 이름).
 비밀번호는 비어 있지 않고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
 """
 import unicodedata
@@ -27,17 +28,26 @@ def normalize_guest_name(value: str) -> str:
     return name
 
 
-class GuestEnter(CustomModel):
-    """게스트 입장 요청"""
+class GuestLookup(CustomModel):
+    """게스트 이름 찾기 요청"""
     resource_type: ResourceType
     resource_id: UUID
     name: str
-    password: str
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         return normalize_guest_name(v)
+
+
+class GuestLookupRead(CustomModel):
+    """게스트 이름 찾기 응답. 그 이름의 게스트가 없으면 handle은 null"""
+    handle: str | None
+
+
+class GuestCreate(GuestLookup):
+    """게스트 생성 요청"""
+    password: str
 
     @field_validator("password")
     @classmethod
@@ -50,9 +60,9 @@ class GuestEnter(CustomModel):
         return v
 
 
-class GuestEnterRead(CustomModel):
-    """게스트 입장 응답. session_token으로 /auth/sessions/whoami?tokenize_as=api를 불러 JWT를 받는다"""
-    session_token: str
+class GuestRead(CustomModel):
+    """게스트 생성 응답. 클라이언트는 handle과 비밀번호로 Kratos에 로그인한다"""
     guest_id: UUID
+    handle: str
     resource_type: ResourceType
     resource_id: UUID

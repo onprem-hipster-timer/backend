@@ -1,4 +1,4 @@
-"""게스트 엔드포인트 (POST /v1/guests/enter, DELETE /v1/guests/me)와 플래그"""
+"""게스트 엔드포인트 (POST /v1/guests/lookup, POST /v1/guests, DELETE /v1/guests/me)와 플래그"""
 import uuid
 
 import pytest
@@ -6,7 +6,8 @@ import pytest
 from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.helpers import guest_rows, make_guest
 
-ENTER = "/v1/guests/enter"
+CREATE = "/v1/guests"
+LOOKUP = "/v1/guests/lookup"
 ME = "/v1/guests/me"
 
 
@@ -21,38 +22,77 @@ def _body(resource, name="민수", password="1234", resource_type="meeting") -> 
     return {"resource_type": resource_type, "resource_id": str(resource), "name": name, "password": password}
 
 
-def test_enter_returns_session_token_and_guest(guest_client, kratos, resource):
-    r = guest_client.post(ENTER, json=_body(resource))
+def _lookup_body(resource, name="민수", resource_type="meeting") -> dict:
+    return {"resource_type": resource_type, "resource_id": str(resource), "name": name}
 
-    assert r.status_code == 200, r.text
+
+def test_create_returns_handle_and_guest(guest_client, kratos, resource):
+    r = guest_client.post(CREATE, json=_body(resource))
+
+    assert r.status_code == 201, r.text
     [row] = guest_rows()
     assert r.json() == {
-        "session_token": f"token-{row.identity_id}",
         "guest_id": str(row.id),
+        "handle": kratos.identities[row.identity_id]["traits"]["handle"],
         "resource_type": "meeting",
         "resource_id": str(resource),
     }
 
 
-def test_enter_needs_no_token(guest_client, resource):
-    assert guest_client.post(ENTER, json=_body(resource)).status_code == 200
+def test_lookup_returns_handle_of_named_guest(guest_client, resource):
+    created = guest_client.post(CREATE, json=_body(resource)).json()
+
+    r = guest_client.post(LOOKUP, json=_lookup_body(resource))
+
+    assert r.status_code == 200, r.text
+    assert r.json() == {"handle": created["handle"]}
 
 
-def test_enter_again_returns_same_guest(guest_client, resource):
-    first = guest_client.post(ENTER, json=_body(resource)).json()
-    again = guest_client.post(ENTER, json=_body(resource)).json()
-    assert again["guest_id"] == first["guest_id"]
+def test_lookup_without_guest_returns_null_handle(guest_client, resource):
+    guest_client.post(CREATE, json=_body(resource, name="민수"))
+    r = guest_client.post(LOOKUP, json=_lookup_body(resource, name="영희"))
+    assert r.status_code == 200
+    assert r.json() == {"handle": None}
 
 
-def test_enter_closed_resource_is_403(guest_client, host):
+def test_lookup_takes_no_password(guest_client, resource):
+    r = guest_client.post(LOOKUP, json=_body(resource))
+    assert r.status_code == 200
+
+
+def test_endpoints_need_no_token(guest_client, resource):
+    assert guest_client.post(CREATE, json=_body(resource)).status_code == 201
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 200
+
+
+def test_taken_name_is_409(guest_client, kratos, resource):
+    guest_client.post(CREATE, json=_body(resource, password="1234"))
+    r = guest_client.post(CREATE, json=_body(resource, password="5678"))
+
+    assert r.status_code == 409
+    assert len(guest_rows()) == 1
+    assert len(kratos.identities) == 1
+
+
+def test_same_name_in_two_resources_both_succeed(guest_client, host, resource):
+    other = uuid.uuid4()
+    host.statuses[other] = GuestHostStatus.OPEN
+    first = guest_client.post(CREATE, json=_body(resource))
+    second = guest_client.post(CREATE, json=_body(other))
+    assert first.status_code == second.status_code == 201
+    assert first.json()["handle"] != second.json()["handle"]
+
+
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
+def test_closed_resource_is_403(guest_client, host, path):
     resource = uuid.uuid4()
     host.statuses[resource] = GuestHostStatus.CLOSED
-    r = guest_client.post(ENTER, json=_body(resource))
-    assert r.status_code == 403
+    assert guest_client.post(path, json=_body(resource)).status_code == 403
 
 
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
 @pytest.mark.parametrize("status", [GuestHostStatus.EXPIRED, GuestHostStatus.MISSING, None])
-def test_enter_unusable_resource_gives_same_refusal(guest_client, host, status):
+def test_unusable_resource_gives_same_refusal(guest_client, host, status, path):
     """없는 리소스와 기간이 끝난 리소스, 받지 않는 리소스는 같은 응답이다"""
     resource = uuid.uuid4()
     if status is not None:
@@ -60,63 +100,92 @@ def test_enter_unusable_resource_gives_same_refusal(guest_client, host, status):
     closed = uuid.uuid4()
     host.statuses[closed] = GuestHostStatus.CLOSED
 
-    r = guest_client.post(ENTER, json=_body(resource))
-    closed_r = guest_client.post(ENTER, json=_body(closed))
+    r = guest_client.post(path, json=_body(resource))
+    closed_r = guest_client.post(path, json=_body(closed))
 
     assert r.status_code == closed_r.status_code == 403
     assert r.json()["message"] == closed_r.json()["message"]
 
 
-def test_enter_unregistered_resource_type_is_403(guest_client):
-    assert guest_client.post(ENTER, json=_body(uuid.uuid4(), resource_type="todo")).status_code == 403
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
+def test_unregistered_resource_type_is_403(guest_client, path):
+    assert guest_client.post(path, json=_body(uuid.uuid4(), resource_type="todo")).status_code == 403
 
 
-def test_eleventh_same_name_is_409(guest_client, resource):
-    for i in range(10):
-        assert guest_client.post(ENTER, json=_body(resource, password=f"p{i}")).status_code == 200
-    assert guest_client.post(ENTER, json=_body(resource, password="other")).status_code == 409
-
-
-def test_kratos_down_is_503(guest_client, kratos, resource):
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
+def test_kratos_down_is_503(guest_client, kratos, resource, path):
+    make_guest(kratos, resource, name="다른 이름")
     kratos.down.add("admin")
-    assert guest_client.post(ENTER, json=_body(resource)).status_code == 503
-    assert guest_rows() == []
+    assert guest_client.post(path, json=_body(resource)).status_code == 503
+    assert len(guest_rows()) == 1
 
 
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
 @pytest.mark.parametrize("name", ["", "   ", "a" * 51, "민\x07수", "\n"])
-def test_invalid_name_is_422(guest_client, kratos, resource, name):
-    assert guest_client.post(ENTER, json=_body(resource, name=name)).status_code == 422
+def test_invalid_name_is_422(guest_client, kratos, resource, name, path):
+    assert guest_client.post(path, json=_body(resource, name=name)).status_code == 422
     assert kratos.identities == {}
 
 
 @pytest.mark.parametrize("name", ["a", "a" * 50, "  민수  ", "김 민수", "🙂"])
 def test_valid_names(guest_client, resource, name):
-    assert guest_client.post(ENTER, json=_body(resource, name=name)).status_code == 200
+    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=name)).json()["handle"] is not None
 
 
 @pytest.mark.parametrize("password", ["", "가" * 25, "a" * 73])
 def test_invalid_password_is_422(guest_client, kratos, resource, password):
     """비어 있거나 UTF-8로 72바이트를 넘는 비밀번호 (가 25자 = 75바이트)"""
-    assert guest_client.post(ENTER, json=_body(resource, password=password)).status_code == 422
+    assert guest_client.post(CREATE, json=_body(resource, password=password)).status_code == 422
     assert kratos.identities == {}
 
 
 @pytest.mark.parametrize("password", ["1", " ", "a" * 72, "가" * 24, "1234"])
 def test_any_short_password_is_accepted(guest_client, kratos, resource, password):
-    r = guest_client.post(ENTER, json=_body(resource, password=password))
-    assert r.status_code == 200
+    r = guest_client.post(CREATE, json=_body(resource, password=password))
+    assert r.status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
 
 
 @pytest.mark.parametrize("field", ["resource_type", "resource_id", "name", "password"])
-def test_missing_field_is_422(guest_client, resource, field):
+def test_create_missing_field_is_422(guest_client, resource, field):
     body = _body(resource)
     del body[field]
-    assert guest_client.post(ENTER, json=body).status_code == 422
+    assert guest_client.post(CREATE, json=body).status_code == 422
 
 
-def test_unknown_resource_type_is_422(guest_client, resource):
-    assert guest_client.post(ENTER, json=_body(resource, resource_type="planet")).status_code == 422
+@pytest.mark.parametrize("field", ["resource_type", "resource_id", "name"])
+def test_lookup_missing_field_is_422(guest_client, resource, field):
+    body = _lookup_body(resource)
+    del body[field]
+    assert guest_client.post(LOOKUP, json=body).status_code == 422
+
+
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
+def test_unknown_resource_type_is_422(guest_client, resource, path):
+    assert guest_client.post(path, json=_body(resource, resource_type="planet")).status_code == 422
+
+
+@pytest.fixture
+def rate_limited(guest_client, monkeypatch):
+    import app.core.config as app_config
+    from app.ratelimit.storage.memory import reset_storage
+
+    monkeypatch.setattr(app_config.settings, "RATE_LIMIT_ENABLED", True)
+    reset_storage()
+    yield guest_client
+    reset_storage()
+
+
+def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource):
+    for i in range(10):
+        assert rate_limited.post(LOOKUP, json=_lookup_body(resource)).status_code == 200
+    assert rate_limited.post(LOOKUP, json=_lookup_body(resource)).status_code == 429
+
+    for i in range(10):
+        assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}")).status_code == 201
+    assert rate_limited.post(CREATE, json=_body(resource, name="g10")).status_code == 429
+    assert len(guest_rows()) == 10
 
 
 # ============ 자기 삭제 ============
@@ -155,8 +224,10 @@ def test_flag_off_endpoints_are_404(guest_client, guest_off, kratos, tokens, res
     guest = make_guest(kratos, resource)
     guest_off()
 
-    assert guest_client.post(ENTER, json=_body(resource)).status_code == 404
-    assert guest_client.post(ENTER, json={}).status_code == 404
+    assert guest_client.post(CREATE, json=_body(resource)).status_code == 404
+    assert guest_client.post(CREATE, json={}).status_code == 404
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
+    assert guest_client.post(LOOKUP, json={}).status_code == 404
     assert guest_client.delete(ME, headers=tokens.guest(guest.identity_id)).status_code == 404
     assert len(guest_rows()) == 1
 
@@ -188,49 +259,36 @@ def _nfd(text: str) -> str:
     return unicodedata.normalize("NFD", text)
 
 
-def test_nfc_and_nfd_name_enter_same_guest(guest_client, kratos, resource):
+def test_nfc_and_nfd_name_are_one_name(guest_client, kratos, resource):
     assert _nfd("민수") != "민수"
-    first = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
-    again = guest_client.post(ENTER, json=_body(resource, name=_nfd("민수"))).json()
+    created = guest_client.post(CREATE, json=_body(resource, name="민수")).json()
 
-    assert again["guest_id"] == first["guest_id"]
+    assert guest_client.post(CREATE, json=_body(resource, name=_nfd("민수"))).status_code == 409
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=_nfd("민수"))).json() == {
+        "handle": created["handle"]
+    }
     assert len(guest_rows()) == 1
 
 
 def test_nfd_name_is_stored_as_nfc(guest_client, kratos, resource):
-    guest_client.post(ENTER, json=_body(resource, name=_nfd("민수")))
+    guest_client.post(CREATE, json=_body(resource, name=_nfd("민수")))
     assert kratos.name_of(guest_rows()[0].identity_id) == "민수"
 
 
-def test_nfc_and_nfd_password_enter_same_guest(guest_client, kratos, resource):
-    """가짜 Kratos는 저장된 문자열과 정확히 비교하므로 호출 전에 정규화해야 같은 게스트가 된다"""
-    first = guest_client.post(ENTER, json=_body(resource, password=_nfd("비밀"))).json()
+def test_nfd_password_is_stored_as_nfc(guest_client, kratos, resource):
+    guest_client.post(CREATE, json=_body(resource, password=_nfd("비밀")))
     assert kratos.passwords[guest_rows()[0].identity_id] == "비밀"
-    again = guest_client.post(ENTER, json=_body(resource, password="비밀")).json()
-    third = guest_client.post(ENTER, json=_body(resource, password=_nfd("비밀"))).json()
-
-    assert again["guest_id"] == third["guest_id"] == first["guest_id"]
-    assert len(guest_rows()) == 1
 
 
 def test_name_length_is_measured_after_normalisation(guest_client, kratos, resource):
     name = "가" * 50
     assert len(_nfd(name)) > 50
-    assert guest_client.post(ENTER, json=_body(resource, name=_nfd(name))).status_code == 200
+    assert guest_client.post(CREATE, json=_body(resource, name=_nfd(name))).status_code == 201
     assert kratos.name_of(guest_rows()[0].identity_id) == name
 
 
 def test_password_bytes_are_measured_after_normalisation(guest_client, kratos, resource):
     password = "가" * 24  # NFC 72바이트
     assert len(_nfd(password).encode()) > 72
-    assert guest_client.post(ENTER, json=_body(resource, password=_nfd(password))).status_code == 200
+    assert guest_client.post(CREATE, json=_body(resource, password=_nfd(password))).status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
-
-
-def test_identity_renamed_to_nfd_elsewhere_still_matches(guest_client, kratos, resource):
-    """Kratos에 NFC가 아닌 이름이 저장돼 있어도 NFC로 비교한다"""
-    first = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
-    kratos.identities[guest_rows()[0].identity_id]["traits"]["name"] = _nfd("민수")
-
-    again = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
-    assert again["guest_id"] == first["guest_id"]

@@ -3,8 +3,9 @@ Guests Router
 
 리소스 하나에 속한 게스트 계정 (docs/guides/guest.ko.md). GUEST_ENABLED가 꺼져 있으면 모두 404.
 
-- POST /v1/guests/enter: 인증 없음. 이름·비밀번호가 맞는 게스트로 다시 들어가거나 새 게스트를 만들고
-  Kratos 세션 토큰을 돌려준다. JWT는 회원처럼 /auth/sessions/whoami?tokenize_as=api로 받는다
+- POST /v1/guests/lookup: 인증 없음. 리소스에서 그 이름의 게스트 로그인 식별자(handle)를 돌려준다
+- POST /v1/guests: 인증 없음. 새 게스트를 만들고 handle을 돌려준다
+  클라이언트는 handle과 비밀번호로 회원처럼 /auth로 Kratos에 로그인하고 JWT를 받는다
 - DELETE /v1/guests/me: 게스트 토큰. 게스트가 자기를 폐기한다
 
 테스트: tests/domain/guest/test_guest_api.py
@@ -16,7 +17,7 @@ from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.domain.guest import service
 from app.domain.guest.dependencies import get_current_guest
-from app.domain.guest.schema.dto import GuestEnter, GuestEnterRead
+from app.domain.guest.schema.dto import GuestCreate, GuestLookup, GuestLookupRead, GuestRead
 
 
 def require_guest_enabled() -> None:
@@ -32,16 +33,24 @@ router = APIRouter(
 )
 
 
-@router.post("/enter", response_model=GuestEnterRead)
-async def enter_as_guest(data: GuestEnter):
+@router.post("/lookup", response_model=GuestLookupRead)
+async def lookup_guest(data: GuestLookup):
     """
-    리소스에 게스트로 들어간다.
+    리소스에서 이름이 같은 게스트의 로그인 식별자(handle)를 찾는다. 없으면 handle은 null.
 
-    이 리소스에서 이름이 같고 비밀번호가 맞는 게스트가 있으면 그 게스트로, 없으면 새 게스트로 들어간다.
-    이름은 겹칠 수 있고, 같은 이름은 리소스당 10명까지다(넘으면 409).
     리소스가 없거나 지금 게스트를 받지 않으면 403.
     """
-    return await service.enter(data)
+    return await service.lookup(data)
+
+
+@router.post("", response_model=GuestRead, status_code=status.HTTP_201_CREATED)
+async def create_guest(data: GuestCreate):
+    """
+    리소스에 새 게스트를 만든다. 로그인은 응답의 handle과 비밀번호로 Kratos에 한다.
+
+    이름은 리소스 안에서 겹치지 않는다(이미 있으면 409). 리소스가 없거나 지금 게스트를 받지 않으면 403.
+    """
+    return await service.create(data)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
