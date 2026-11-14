@@ -12,7 +12,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - 설정 제출은 메일 코드로 본인 확인한 복구 세션의 비밀번호 변경만 넘긴다. 새어 나간 비밀번호만으로
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다.
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
-  정한다 (app/api/kratos_hooks.py)
+  정한다 (app/api/kratos_hooks.py). 게스트 이름 변경은 리소스마다 하나씩 넘기고, 같은 리소스의 다른 게스트가
+  쓰는 이름이면 409 guest_name_taken으로 거절한다 (app/domain/guest/service.py rename_submission)
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
@@ -21,6 +22,7 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 import json
 import logging
 import re
+from contextlib import nullcontext
 from urllib.parse import parse_qs, parse_qsl, urlencode
 
 import httpx
@@ -30,6 +32,8 @@ from fastapi.responses import JSONResponse
 from app.core import courier
 from app.core.audit import log_account_access
 from app.core.config import settings
+from app.domain.guest import service as guest_service
+from app.domain.guest.exceptions import GuestServiceUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +109,25 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
     return method if isinstance(method, str) else None
 
 
+def _submitted_name(content_type: str, body: bytes) -> object:
+    """설정 제출 본문의 traits.name. 없거나 읽을 수 없으면 None (키는 Kratos처럼 대소문자 구분 없이 찾는다)"""
+    try:
+        if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+            values = parse_qs(body.decode(), keep_blank_values=True).get("traits.name", [])
+            return values[0] if len(values) == 1 else None
+        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    traits = _get_ignoring_case(data, "traits")
+    return _get_ignoring_case(traits, "name")
+
+
+def _get_ignoring_case(data: object, key: str) -> object:
+    if not isinstance(data, dict):
+        return None
+    return next((value for k, value in data.items() if k.lower() == key), None)
+
+
 def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
     """소셜 로그인 제출이면 traits.email을 뺀 본문, 아니면 본문 그대로. 읽을 수 없으면 None.
 
@@ -175,6 +198,25 @@ def _settings_forbidden() -> JSONResponse:
     )
 
 
+def _guest_name_taken() -> JSONResponse:
+    return JSONResponse(
+        {"error": {"id": "guest_name_taken", "code": 409, "status": "Conflict", "reason": "같은 이름의 게스트가 이미 있습니다."}},
+        status_code=409,
+    )
+
+
+def _unavailable() -> JSONResponse:
+    return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
+
+
+def _guest_identity_id(session: object) -> str | None:
+    """whoami 세션이 게스트 schema identity면 그 id"""
+    if not _is_guest_session(session):
+        return None
+    identity_id = session["identity"].get("id")
+    return identity_id if isinstance(identity_id, str) and identity_id else None
+
+
 def _is_guest_session(session: object) -> bool:
     """whoami 세션의 identity가 게스트 schema인지"""
     identity = session.get("identity") if isinstance(session, dict) else None
@@ -182,8 +224,11 @@ def _is_guest_session(session: object) -> bool:
     return isinstance(schema_id, str) and schema_id == settings.KRATOS_GUEST_SCHEMA_ID
 
 
-async def _settings_rejection(client: httpx.AsyncClient, request: Request, body: bytes) -> Response | None:
+async def _settings_rejection(
+        client: httpx.AsyncClient, request: Request, body: bytes
+) -> tuple[Response | None, str | None]:
     """메일 코드로 본인 확인한 복구 세션의 비밀번호 변경이 아니면 거절 응답을 돌려준다.
+    두 번째 값은 넘길 제출이 게스트의 이름 변경이면 그 게스트의 identity id다.
 
     비밀번호 로그인·재인증 세션은 비밀번호만 알면 만들 수 있으므로 받지 않는다. 복구 세션이라도
     비밀번호로 다시 인증하면 마지막 인증 방법이 password가 되어 받지 않는다. 이메일 변경(profile)과
@@ -192,10 +237,10 @@ async def _settings_rejection(client: httpx.AsyncClient, request: Request, body:
     """
     method = _submitted_method(request.headers.get("content-type", ""), body)
     if method != "password" and not (method == "profile" and settings.GUEST_ENABLED):
-        return _settings_forbidden()
+        return _settings_forbidden(), None
     token = request.headers.get("x-session-token")
     if not token:
-        return _settings_forbidden()
+        return _settings_forbidden(), None
     whoami = await client.get(
         "/sessions/whoami", headers={"x-session-token": token, "accept": "application/json"}
     )
@@ -207,15 +252,16 @@ async def _settings_rejection(client: httpx.AsyncClient, request: Request, body:
         except ValueError:
             session = None
     if method == "profile":
-        return None if _is_guest_session(session) else _settings_forbidden()
+        guest_identity_id = _guest_identity_id(session)
+        return (None, guest_identity_id) if guest_identity_id else (_settings_forbidden(), None)
     if session is not None:
         methods = session.get("authentication_methods") if isinstance(session, dict) else None
         if isinstance(methods, list) and methods and isinstance(methods[-1], dict):
             last_method = methods[-1].get("method")
     if last_method != EMAIL_RECOVERY_METHOD:
         logger.warning("메일 복구 세션이 아닌 설정 제출을 거절함")
-        return _settings_forbidden()
-    return None
+        return _settings_forbidden(), None
+    return None, None
 
 
 @router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -238,8 +284,11 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     return _unreadable_body()
                 if cleaned != body:
                     outgoing = client.build_request(request.method, url, headers=headers, content=cleaned)
+            # 게스트 이름 변경 제출이면 리소스를 잠근 채 넘긴다
+            rename_guard = nullcontext(True)
             if request.method != "GET" and submit_path == SETTINGS_SUBMIT_PATH:
-                if (rejection := await _settings_rejection(client, request, body)) is not None:
+                rejection, guest_identity_id = await _settings_rejection(client, request, body)
+                if rejection is not None:
                     return rejection
                 # 검사한 X-Session-Token 세션으로만 처리되게 다른 세션 헤더는 넘기지 않는다
                 outgoing = client.build_request(
@@ -248,10 +297,20 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     headers={k: v for k, v in headers.items() if k != "authorization"},
                     content=body,
                 )
-            upstream = await client.send(outgoing)
+                if guest_identity_id is not None:
+                    rename_guard = guest_service.rename_submission(
+                        guest_identity_id, _submitted_name(request.headers.get("content-type", ""), body)
+                    )
+            async with rename_guard as allowed:
+                if not allowed:
+                    return _guest_name_taken()
+                upstream = await client.send(outgoing)
     except httpx.HTTPError:
         logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
-        return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
+        return _unavailable()
+    except GuestServiceUnavailableError:
+        logger.warning("게스트 이름 확인 중 Kratos admin API 오류")
+        return _unavailable()
 
     if request.method == "POST" and upstream.status_code in (200, 303) and MAIL_FLOW_SUBMIT.fullmatch(path):
         await courier.start()

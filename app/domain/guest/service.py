@@ -262,14 +262,27 @@ def _valid_name(name: object) -> bool:
 
 
 async def _name_taken_by_other(guest: Guest, name: str) -> bool:
-    """같은 리소스의 다른 게스트가 지금 이 이름인지. 이름을 읽지 못하면 True"""
+    """같은 리소스의 다른 게스트가 지금 이 이름인지. 이름을 읽지 못하면 GuestServiceUnavailableError"""
     with _session_manager.get_session() as session:
         guests = crud.list_resource_guests(session, guest.resource_type, guest.resource_id)
     others = [other for other in guests if other.identity_id != guest.identity_id]
-    try:
-        return await _find_by_name(others, name) is not None
-    except GuestServiceUnavailableError:
-        return True
+    return await _find_by_name(others, name) is not None
+
+
+@asynccontextmanager
+async def rename_submission(identity_id: str, name: object) -> AsyncIterator[bool]:
+    """게스트의 이름 변경 제출을 감싼다. 블록 안에서 Kratos에 제출한다 (/auth 프록시).
+
+    리소스를 잠가 같은 리소스의 생성·이름 변경과 겹치지 않게 하고, 같은 리소스의 다른 게스트가 이미 그 이름이면
+    False를 준다. 게스트 행이 없거나 이름이 문자열이 아니면 잠그지 않고 True (설정 훅이 거절한다).
+    이름을 읽지 못하면 GuestServiceUnavailableError.
+    """
+    guest = _get_guest(identity_id)
+    if guest is None or not isinstance(name, str):
+        yield True
+        return
+    async with _resource_lock(guest.resource_type, guest.resource_id):
+        yield not await _name_taken_by_other(guest, name)
 
 
 async def settings_change_allowed(method: str, identity_id: str, schema_id: str | None, traits: dict) -> bool:
@@ -289,7 +302,10 @@ async def settings_change_allowed(method: str, identity_id: str, schema_id: str 
     if traits.get("handle") != current_traits.get("handle") or not _valid_name(traits.get("name")):
         return False
     if traits["name"] != current_traits.get("name"):
-        if await _name_taken_by_other(guest, traits["name"]):
+        try:
+            if await _name_taken_by_other(guest, traits["name"]):
+                return False
+        except GuestServiceUnavailableError:
             return False
         with _transaction() as session:
             collect_event(session, GuestRenamed(

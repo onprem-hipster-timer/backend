@@ -314,7 +314,7 @@ def test_settings_other_than_password_are_rejected_even_after_recovery(client, u
 
 GUEST_SESSION = {
     "authentication_methods": [{"method": "password"}],
-    "identity": {"schema_id": "guest", "traits": {"handle": "h", "name": "민수"}},
+    "identity": {"id": "guest-identity", "schema_id": "guest", "traits": {"handle": "h", "name": "민수"}},
 }
 MEMBER_SESSION = {
     "authentication_methods": [{"method": "password"}],
@@ -330,15 +330,14 @@ def guest_enabled(monkeypatch):
                                                          KRATOS_HOOK_API_KEY="k"))
 
 
-def test_settings_profile_of_guest_session_is_forwarded_when_guest_enabled(client, upstream, guest_enabled):
-    """게스트의 이름 변경은 넘긴다. 바꿀 수 있는 항목은 Kratos 설정 훅이 정한다"""
-    kratos_with_session(upstream, GUEST_SESSION)
+def test_settings_profile_of_guest_session_without_identity_id_is_rejected(client, upstream, guest_enabled):
+    """게스트 이름 변경은 tests/domain/guest/test_rename_proxy.py에서 DB와 함께 확인한다"""
+    kratos_with_session(upstream, {**GUEST_SESSION, "identity": {"schema_id": "guest", "traits": {"handle": "h"}}})
 
     response = client.post(SETTINGS_SUBMIT, json=GUEST_RENAME, headers={"X-Session-Token": "ory_st_guest"})
 
-    assert response.status_code == 200
-    [forwarded] = settings_forwarded(upstream)
-    assert forwarded.headers["x-session-token"] == "ory_st_guest"
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
 
 
 def test_settings_profile_of_member_session_is_rejected_when_guest_enabled(client, upstream, guest_enabled):
