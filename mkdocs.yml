@@ -90,6 +90,7 @@ nav:
     - Visibility: guides/visibility.md
     - Meeting: guides/meeting.md
     - Guest: guides/guest.md
+    - Guest Flows: guides/guest-flows.md
   - Deployment:
     - Docker: deployment/docker.md
     - Production: deployment/production.md
