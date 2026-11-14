@@ -4,7 +4,7 @@ Meeting Domain DTO (Data Transfer Objects)
 일정 조율 관련 데이터 전송 객체
 """
 import unicodedata
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional, List
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -23,6 +23,12 @@ DESCRIPTION_MAX_LENGTH = 2000
 MAX_PERIOD = relativedelta(months=3)
 TIME_SLOT_MINUTES_MIN = 5
 TIME_SLOT_MINUTES_MAX = 1440
+
+
+def daily_range(start_time: time, end_time: time) -> timedelta:
+    """하루 범위 [start_time, end_time). end_time 00:00은 다음 날 00:00(하루의 끝)이다"""
+    end = datetime.combine(date.min + timedelta(days=1 if end_time == time(0) else 0), end_time)
+    return end - datetime.combine(date.min, start_time)
 
 
 def _validate_title(v: str) -> str:
@@ -81,7 +87,7 @@ class MeetingCreate(CustomModel):
     timezone: str  # 날짜·요일·시간을 해석하는 IANA 시간대
     available_days: List[int]  # 요일 리스트 (0-6, 0=월요일)
     start_time: time  # 하루 시작 시간
-    end_time: time  # 하루 종료 시간
+    end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 하루의 끝)
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
 
     @field_validator("title")
@@ -119,8 +125,8 @@ class MeetingCreate(CustomModel):
     def validate_time_range(cls, v, info):
         """시간 범위 검증"""
         start_time = info.data.get("start_time")
-        if start_time and v <= start_time:
-            raise ValueError("end_time must be > start_time")
+        if start_time is not None and v != time(0) and v <= start_time:
+            raise ValueError("end_time must be > start_time or 00:00 (end of day)")
         return v
 
     @field_validator("time_slot_minutes")
@@ -134,8 +140,7 @@ class MeetingCreate(CustomModel):
         """기간은 start_date + 3개월(같은 날, 없으면 그 달 말일)까지, 시간 단위는 하루 범위 이하"""
         if self.end_date > self.start_date + MAX_PERIOD:
             raise ValueError("end_date must be no later than 3 months after start_date")
-        daily_range = datetime.combine(date.min, self.end_time) - datetime.combine(date.min, self.start_time)
-        if self.time_slot_minutes * 60 > daily_range.total_seconds():
+        if self.time_slot_minutes * 60 > daily_range(self.start_time, self.end_time).total_seconds():
             raise ValueError("time_slot_minutes must not exceed end_time - start_time")
         return self
 

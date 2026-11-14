@@ -23,6 +23,7 @@ from app.domain.meeting.exceptions import (
     TooManyTimeSlotsError,
 )
 from app.domain.meeting.schema.dto import (
+    daily_range,
     MeetingCreate,
     MeetingUpdate,
     MeetingRead,
@@ -314,9 +315,8 @@ class MeetingService:
             (meeting.start_date + timedelta(days=offset)).weekday() in meeting.available_days
             for offset in range((meeting.end_date - meeting.start_date).days + 1)
         )
-        start_minutes = meeting.start_time.hour * 60 + meeting.start_time.minute
-        end_minutes = meeting.end_time.hour * 60 + meeting.end_time.minute
-        return ceil(days * max(end_minutes - start_minutes, 0) / meeting.time_slot_minutes)
+        daily_minutes = daily_range(meeting.start_time, meeting.end_time).total_seconds() // 60
+        return ceil(days * max(daily_minutes, 0) / meeting.time_slot_minutes)
 
     def to_read_dto(
             self,

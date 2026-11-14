@@ -12,6 +12,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.crud import meeting as crud
 from app.domain.meeting.schema.dto import (
+    daily_range,
     MeetingRead,
     ParticipantRead,
     TimeSlotRead,
@@ -192,7 +193,7 @@ class MeetingResultService:
 
         # time 객체를 분 단위로 변환하여 계산
         start_minutes = start_time.hour * 60 + start_time.minute
-        end_minutes = end_time.hour * 60 + end_time.minute
+        end_minutes = start_minutes + int(daily_range(start_time, end_time).total_seconds() // 60)
         current_minutes = start_minutes
 
         while current_minutes < end_minutes:

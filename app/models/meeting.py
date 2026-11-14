@@ -48,12 +48,16 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
 
     # 시간 범위 설정
     start_time: time  # 하루 시작 시간
-    end_time: time  # 하루 종료 시간
+    end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 다음 날 00:00)
     time_slot_minutes: int = Field(default=30)  # 시간 선택 단위 (분)
 
     __table_args__ = (
         CheckConstraint("start_date <= end_date", name="ck_meeting_date_range"),
-        CheckConstraint("start_time < end_time", name="ck_meeting_time_range"),
+        # end_time 00:00은 하루의 끝. SQLite는 time을 'HH:MM:SS.ffffff' 문자열로 저장한다
+        CheckConstraint(
+            "start_time < end_time OR end_time IN ('00:00:00', '00:00:00.000000')",
+            name="ck_meeting_time_range",
+        ),
         CheckConstraint("time_slot_minutes > 0", name="ck_meeting_time_slot"),
     )
 

@@ -80,6 +80,9 @@ def test_display_name_rejected(e2e_client, display_name):
         {"time_slot_minutes": 5},
         {"start_time": "09:00:00", "end_time": "10:00:00", "time_slot_minutes": 60},  # 단위 = 하루 범위
         {"start_time": "00:00:00", "end_time": "23:59:00", "time_slot_minutes": 1439},  # 하루 전체를 한 칸으로
+        {"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440},  # 00:00 끝 = 하루의 끝
+        {"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 30},
+        {"start_time": "22:00:00", "end_time": "00:00:00", "time_slot_minutes": 120},
         {"available_days": [6]},
         {"title": "a" * 200},
         {"description": "d" * 2000},
@@ -106,6 +109,8 @@ def test_meeting_shape_accepted(e2e_client, overrides):
         {"start_time": "09:00:00", "end_time": "10:00:00", "time_slot_minutes": 61},
         {"start_time": "10:00:00", "end_time": "10:00:00"},
         {"start_time": "10:00:00", "end_time": "09:00:00"},
+        {"start_time": "10:00:00", "end_time": "00:30:00"},  # 00:00이 아닌 끝은 시작보다 뒤여야 한다
+        {"start_time": "22:00:00", "end_time": "00:00:00", "time_slot_minutes": 121},
         {"title": ""},
         {"title": "   "},
         {"title": "a" * 201},
@@ -192,6 +197,8 @@ def _shape(meeting: dict) -> dict:
         {"time_slot_minutes": 541},  # 저장된 하루 범위(540분)보다 김
         {"start_time": "17:45:00"},  # 하루 범위가 저장된 단위(30분)보다 짧아짐
         {"end_time": "09:20:00"},
+        {"end_time": "00:30:00"},
+        {"start_time": "23:45:00", "end_time": "00:00:00"},  # 하루 범위 15분 < 저장된 단위 30분
         {"start_time": "09:00:00", "end_time": "10:00:00", "time_slot_minutes": 90},
         {"time_slot_minutes": 4},
         {"time_slot_minutes": 1441},
@@ -223,6 +230,9 @@ def test_patch_making_invalid_meeting_is_422_and_keeps_stored(e2e_client, patch)
         ({"end_date": "2024-05-05"}, {"end_date": "2024-05-05"}),
         ({"start_date": "2024-02-09"}, {"start_date": "2024-02-09"}),
         ({"time_slot_minutes": 540}, {"time_slot_minutes": 540}),
+        ({"end_time": "00:00:00"}, {"end_time": "00:00:00"}),
+        ({"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440},
+         {"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}),
         ({"title": "  새 제목  "}, {"title": "새 제목"}),
         ({"description": None}, {"description": None}),
         ({"title": None}, {}),  # null은 NOT NULL 필드를 바꾸지 않는다
@@ -406,14 +416,21 @@ def test_slots_over_meeting_cell_count_rejected_and_stored_kept(e2e_client):
           "end_time": "10:00:00", "time_slot_minutes": 25}, 5),
         # 기간 7일 중 월요일만: 1일 x 540분 / 30분 = 18
         ({"start_date": "2024-02-05", "end_date": "2024-02-11", "available_days": [0]}, 18),
+        # 하루 전체(00:00–00:00) / 30분 = 48
+        ({"start_date": "2024-02-05", "end_date": "2024-02-05", "start_time": "00:00:00",
+          "end_time": "00:00:00"}, 48),
+        # 22:00–24:00 이틀 / 30분 = 8
+        ({"start_date": "2024-02-05", "end_date": "2024-02-06", "start_time": "22:00:00",
+          "end_time": "00:00:00"}, 8),
     ],
 )
 def test_slot_cap_is_meeting_cell_count(e2e_client, overrides, cell_count):
     meeting_id = _create_meeting(e2e_client, **overrides)
     participant_id = _participate(e2e_client, meeting_id)
     slots = [
-        {"slot_date": "2024-03-01", "start_time": f"{h:02d}:00:00", "end_time": f"{h:02d}:30:00"}
-        for h in range(cell_count + 1)
+        {"slot_date": "2024-03-01", "start_time": f"{i // 60:02d}:{i % 60:02d}:00",
+         "end_time": f"{(i + 1) // 60:02d}:{(i + 1) % 60:02d}:00"}
+        for i in range(cell_count + 1)
     ]
 
     assert _put_slots(e2e_client, meeting_id, participant_id, slots[:cell_count]).status_code == 200
