@@ -69,6 +69,7 @@ class RecurringScheduleService:
                 start_time=exception.start_time or instance_start,
                 end_time=exception.end_time or instance_end,
                 created_at=schedule.created_at,
+                owner_id=schedule.owner_id,
                 recurrence_rule=None,  # 가상 인스턴스는 반복 규칙 없음
                 recurrence_end=None,
                 parent_id=schedule.id,
@@ -82,6 +83,7 @@ class RecurringScheduleService:
             start_time=instance_start,
             end_time=instance_end,
             created_at=schedule.created_at,
+            owner_id=schedule.owner_id,
             recurrence_rule=None,
             recurrence_end=None,
             parent_id=schedule.id,

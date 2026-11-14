@@ -130,16 +130,13 @@ async def read_schedules(
 
     # 공유된 일정 조회 (scope=shared 또는 scope=all)
     if scope in (ResourceScope.SHARED, ResourceScope.ALL):
-        from app.domain.dateutil.service import ensure_utc_naive
-        start_date_naive = ensure_utc_naive(start_date)
-        end_date_naive = ensure_utc_naive(end_date)
-
-        shared_schedules = service.get_shared_schedules()
+        shared_schedules = service.get_shared_schedules_by_date_range(
+            start_date=start_date,
+            end_date=end_date,
+        )
         for schedule in shared_schedules:
-            # 날짜 범위 필터링 (shared에도 적용)
-            if schedule.start_time <= end_date_naive and schedule.end_time >= start_date_naive:
-                schedule_read = service.to_read_dto(schedule, is_shared=True)
-                result.append(schedule_read.to_timezone(tz_obj))
+            schedule_read = service.to_read_dto(schedule, is_shared=True)
+            result.append(schedule_read.to_timezone(tz_obj))
 
     return result
 

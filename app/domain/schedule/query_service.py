@@ -13,6 +13,7 @@ from app.crud import schedule as crud
 from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
 from app.domain.schedule.model import Schedule
 from app.domain.schedule.recurring_service import RecurringScheduleService
+from app.models.schedule import ScheduleException
 from app.models.tag import Tag, ScheduleTag
 from app.utils.recurrence import RecurrenceCalculator
 
@@ -92,10 +93,77 @@ class ScheduleQueryService:
             self.session, start_date_utc, end_date_utc, self.owner_id
         )
 
-        # 3. 예외 인스턴스 조회 및 인덱싱
+        # 3. 예외 인스턴스 조회
         exceptions = crud.get_schedule_exceptions(
             self.session, start_date_utc, end_date_utc, self.owner_id
         )
+
+        # 4. 반복 일정 확장 + 일반 일정 합치기 (시간순 정렬)
+        all_schedules = self.expand_in_range(
+            list(regular_schedules) + list(recurring_schedules),
+            exceptions,
+            start_date_utc,
+            end_date_utc,
+        )
+
+        # 5. 태그 필터링 적용
+        if tag_ids or group_ids:
+            all_schedules = self.filter_schedules_by_tags(
+                all_schedules, tag_ids, group_ids
+            )
+
+        return all_schedules
+
+    def get_shared_schedules_by_date_range(
+            self,
+            shared_schedules: list[Schedule],
+            start_date: datetime,
+            end_date: datetime,
+    ) -> list[Schedule]:
+        """
+        접근 가능한 공유 일정을 날짜 범위로 조회 (반복 일정은 가상 인스턴스로 확장)
+
+        예외 인스턴스는 넘겨받은 반복 일정의 것만 배치로 조회한다.
+
+        :param shared_schedules: 접근 권한이 확인된 타인 소유 일정
+        :param start_date: 시작 날짜
+        :param end_date: 종료 날짜
+        :return: 해당 날짜 범위와 겹치는 일정 (가상 인스턴스 포함, 시간순)
+        """
+        start_date_utc = ensure_utc_naive(start_date)
+        end_date_utc = ensure_utc_naive(end_date)
+
+        recurring_ids = [s.id for s in shared_schedules if s.recurrence_rule]
+        exceptions = crud.get_schedule_exceptions_by_parent_ids(
+            self.session, recurring_ids, start_date_utc, end_date_utc
+        )
+        return self.expand_in_range(shared_schedules, exceptions, start_date_utc, end_date_utc)
+
+    def expand_in_range(
+            self,
+            schedules: list[Schedule],
+            exceptions: list[ScheduleException],
+            start_date_utc: datetime,
+            end_date_utc: datetime,
+    ) -> list[Schedule]:
+        """
+        일정 목록을 날짜 범위 안의 항목으로 펼친다
+
+        - 일반 일정: 범위와 겹치면 그대로 포함
+        - 반복 일정: 범위 안의 회차를 가상 인스턴스로 확장 (삭제된 회차 제외, 수정된 회차는 예외 값)
+
+        :param schedules: 일정 리스트 (일반 + 반복 원본)
+        :param exceptions: 반복 일정들의 예외 인스턴스
+        :param start_date_utc: 시작 날짜 (UTC naive)
+        :param end_date_utc: 종료 날짜 (UTC naive)
+        :return: 범위와 겹치는 일정과 가상 인스턴스 (시간순)
+        """
+        regular_schedules = [
+            s for s in schedules
+            if not s.recurrence_rule
+            and s.start_time <= end_date_utc and s.end_time >= start_date_utc
+        ]
+        recurring_schedules = [s for s in schedules if s.recurrence_rule]
 
         # 예외를 한 번만 순회하여 dict와 parent별 그룹화 동시 생성
         exception_dict = {}
@@ -109,12 +177,9 @@ class ScheduleQueryService:
                 exceptions_by_parent[exc.parent_id] = []
             exceptions_by_parent[exc.parent_id].append(exc)
 
-        # 4. 반복 일정을 가상 인스턴스로 확장
+        # 반복 일정을 가상 인스턴스로 확장
         virtual_instances = []
         for schedule in recurring_schedules:
-            if not schedule.recurrence_rule:
-                continue
-
             instances = RecurrenceCalculator.expand_recurrence(
                 schedule.start_time,
                 schedule.end_time,
@@ -145,17 +210,8 @@ class ScheduleQueryService:
                 )
                 virtual_instances.append(virtual_schedule)
 
-        # 5. 일반 일정 + 가상 인스턴스 합치기
-        all_schedules = list(regular_schedules) + virtual_instances
-
-        # 6. 태그 필터링 적용
-        if tag_ids or group_ids:
-            all_schedules = self.filter_schedules_by_tags(
-                all_schedules, tag_ids, group_ids
-            )
-
-        # 7. 시간순 정렬
-        return sorted(all_schedules, key=lambda s: s.start_time)
+        # 일반 일정 + 가상 인스턴스 합치기 (시간순 정렬)
+        return sorted(regular_schedules + virtual_instances, key=lambda s: s.start_time)
 
     def filter_schedules_by_tags(
             self,

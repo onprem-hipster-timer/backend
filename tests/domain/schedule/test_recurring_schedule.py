@@ -400,6 +400,37 @@ def test_get_recurring_instance_not_recurring(test_session, sample_schedule, tes
         )
 
 
+def test_get_shared_schedules_by_date_range_expands_recurring(test_session, test_user, other_user):
+    """공유된 반복 일정은 범위 안의 회차로 확장되고 예외가 반영된다"""
+    from app.domain.visibility.enums import ResourceType, VisibilityLevel
+    from app.domain.visibility.service import VisibilityService
+
+    owner_service = ScheduleService(test_session, other_user)
+    parent = _create_weekly_until_jan_29(owner_service)
+    VisibilityService(test_session, other_user).set_visibility(
+        resource_type=ResourceType.SCHEDULE,
+        resource_id=parent.id,
+        level=VisibilityLevel.PUBLIC,
+    )
+    owner_service.delete_recurring_instance(parent.id, datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC))
+
+    viewer_service = ScheduleService(test_session, test_user)
+    schedules = viewer_service.get_shared_schedules_by_date_range(
+        datetime(2024, 1, 8, 0, 0, 0, tzinfo=UTC),
+        datetime(2024, 1, 28, 23, 59, 59, tzinfo=UTC),
+    )
+
+    assert [(s.parent_id, s.start_time) for s in schedules] == [
+        (parent.id, datetime(2024, 1, 8, 10, 0, 0)),
+        (parent.id, datetime(2024, 1, 22, 10, 0, 0)),
+    ]
+    assert all(s.owner_id == other_user.sub for s in schedules)
+    assert viewer_service.get_schedules_by_date_range(
+        datetime(2024, 1, 8, 0, 0, 0, tzinfo=UTC),
+        datetime(2024, 1, 28, 23, 59, 59, tzinfo=UTC),
+    ) == []
+
+
 # ==================== CASCADE DELETE 테스트 ====================
 
 def test_delete_recurring_schedule_cascade_delete(test_engine, test_user):

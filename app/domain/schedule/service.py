@@ -426,6 +426,16 @@ class ScheduleService:
         """날짜 범위로 일정 조회 (반복 일정 포함, 태그 필터링 지원)"""
         return self._query.get_schedules_by_date_range(start_date, end_date, tag_ids, group_ids)
 
+    def get_shared_schedules_by_date_range(
+            self,
+            start_date: datetime,
+            end_date: datetime,
+    ) -> list[Schedule]:
+        """공유된 일정을 날짜 범위로 조회 (반복 일정 포함, 접근 권한 있는 것만)"""
+        return self._query.get_shared_schedules_by_date_range(
+            self.get_shared_schedules(), start_date, end_date
+        )
+
     def get_schedule_tags(self, schedule_id: UUID) -> list:
         """일정의 태그 조회"""
         return self._query.get_schedule_tags(schedule_id)
