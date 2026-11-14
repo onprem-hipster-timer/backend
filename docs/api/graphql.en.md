@@ -95,6 +95,8 @@ Variables:
 }
 ```
 
+`startDate`–`endDate` is an inclusive range of UTC dates; the query returns schedules that intersect `[startDate 00:00, the day after endDate 00:00)`. A schedule is the interval `[startTime, endTime)`, so an `endTime` of 00:00 does not place it on that day.
+
 ### Get Todos
 
 ```graphql

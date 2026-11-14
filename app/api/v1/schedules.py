@@ -65,11 +65,11 @@ async def create_schedule(
 async def read_schedules(
         start_date: datetime = Query(
             ...,
-            description="조회 시작 날짜/시간 (ISO 8601 형식)"
+            description="조회 범위 시작 (포함, ISO 8601 형식)"
         ),
         end_date: datetime = Query(
             ...,
-            description="조회 종료 날짜/시간 (ISO 8601 형식)"
+            description="조회 범위 끝 (제외, ISO 8601 형식). 하루 전체는 다음 날 00:00"
         ),
         scope: ResourceScope = Query(
             ResourceScope.MINE,
@@ -100,9 +100,10 @@ async def read_schedules(
     - all: 내 일정 + 공유된 일정
     
     날짜 범위:
-    - start_date: 조회 시작 날짜/시간 (필수)
-    - end_date: 조회 종료 날짜/시간 (필수)
-    - 지정된 날짜 범위와 겹치는 모든 일정을 반환 (반복 일정은 가상 인스턴스로 확장)
+    - start_date: 조회 범위 시작 (포함, 필수)
+    - end_date: 조회 범위 끝 (제외, 필수)
+    - 일정은 [start_time, end_time) 구간이며, [start_date, end_date)와 겹치는 일정을 반환
+      (start_time < end_date AND end_time > start_date, 반복 일정은 가상 인스턴스로 확장)
     
     태그 필터링:
     - tag_ids: AND 방식 (모든 지정 태그를 포함한 일정만 반환)

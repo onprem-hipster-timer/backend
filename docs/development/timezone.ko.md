@@ -52,8 +52,8 @@
 | `to_utc_naive(dt)` | 입력 | `ensure_utc_naive`와 동일 의미 (저장용 정규화) |
 | `convert_utc_naive_to_timezone(dt, tz)` | 출력 | naive UTC → 지정 타임존 aware |
 | `parse_timezone(tz_str)` | 출력 | `"UTC"`, `"+09:00"`, `"Asia/Seoul"` 등을 `tzinfo`로 파싱 |
-| `get_year_range_utc(year)` | 조회 | KST 기준 연도 범위를 UTC naive 범위로 변환 |
-| `parse_locdate_to_datetime_range(locdate)` | 입력 | `YYYYMMDD`(KST)를 KST 기준 24시간 UTC naive 범위로 변환 |
+| `get_year_range_utc(year)` | 조회 | KST 기준 연도 `[1월 1일 00:00, 다음 해 1월 1일 00:00)`를 UTC naive 범위로 변환 (끝 제외) |
+| `parse_locdate_to_datetime_range(locdate)` | 입력 | `YYYYMMDD`(KST)를 `[00:00, 다음 날 00:00)` UTC naive 범위로 변환 (끝 제외) |
 
 ---
 

@@ -245,8 +245,8 @@ GET /v1/timers
 | `scope` | string | mine | 조회 범위: mine, shared, all |
 | `status` | string[] | - | 상태 필터 (RUNNING, PAUSED, COMPLETED, CANCELLED) |
 | `type` | string | - | 타입 필터: independent, schedule, todo |
-| `start_date` | datetime | - | 시작 날짜 필터 |
-| `end_date` | datetime | - | 종료 날짜 필터 |
+| `start_date` | datetime | - | `started_at` 범위 시작 (포함) |
+| `end_date` | datetime | - | `started_at` 범위 끝 (제외). 하루 전체는 다음 날 00:00 |
 | `include_schedule` | boolean | false | Schedule 정보 포함 |
 | `include_todo` | boolean | false | Todo 정보 포함 |
 | `tag_include_mode` | string | none | 태그 포함 모드 |

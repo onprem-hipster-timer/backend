@@ -95,6 +95,8 @@ Variables:
 }
 ```
 
+`startDate`~`endDate`는 두 날짜를 포함하는 UTC 날짜 범위로, `[startDate 00:00, endDate 다음 날 00:00)`와 겹치는 일정을 반환합니다. 일정은 `[startTime, endTime)` 구간이라 `endTime`이 00:00이면 그날에는 들어가지 않습니다.
+
 ### 투두 조회
 
 ```graphql

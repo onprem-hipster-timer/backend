@@ -16,6 +16,9 @@
 - `parent_id`가 `null` 또는 `undefined`
 
 **예시:**
+일정은 `[start_time, end_time)` 구간이며 `end_time` 시각은 일정에 포함되지 않습니다.
+하루 종일 일정은 그날 00:00에 시작해 다음 날 00:00에 끝납니다 (예: KST 1월 15일은 `2024-01-15T00:00:00+09:00` ~ `2024-01-16T00:00:00+09:00`).
+
 ```typescript
 interface Schedule {
   id: string;
@@ -175,11 +178,13 @@ if (isRegularSchedule(schedule)) {
 ### 일정 조회
 
 날짜 범위로 일정을 조회하면 반복 일정은 자동으로 가상 인스턴스로 확장되어 반환됩니다.
+`start_date`는 포함, `end_date`는 제외하는 `[start_date, end_date)` 범위이며, 이 범위와 겹치는(`start_time < end_date` 이고 `end_time > start_date`) 일정과 회차를 반환합니다.
+1월 전체는 `end_date`에 2월 1일 00:00을 넣어 조회합니다.
 
 ```typescript
-// GET /v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59
+// GET /v1/schedules?start_date=2024-01-01T00:00:00Z&end_date=2024-02-01T00:00:00Z
 const response = await fetch(
-  `/v1/schedules?start_date=2024-01-01T00:00:00&end_date=2024-01-31T23:59:59`
+  `/v1/schedules?start_date=2024-01-01T00:00:00Z&end_date=2024-02-01T00:00:00Z`
 );
 const schedules: Schedule[] = await response.json();
 
