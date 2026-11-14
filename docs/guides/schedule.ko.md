@@ -40,6 +40,7 @@ const regularSchedule: Schedule = {
   recurrence_rule: null,  // ✅ 일반 일정
   recurrence_end: null,
   parent_id: null,        // ✅ 일반 일정
+  instance_start: null,
   created_at: "2024-01-01T00:00:00",
   tags: []
 };
@@ -69,6 +70,7 @@ const parentRecurringSchedule: Schedule = {
   recurrence_rule: "FREQ=WEEKLY;BYDAY=MO",  // ✅ 반복 규칙 있음
   recurrence_end: "2024-01-29T23:59:59",   // 반복 종료일
   parent_id: null,                         // ✅ 원본이므로 null
+  instance_start: null,
   created_at: "2024-01-01T00:00:00",
   tags: []
 };
@@ -82,6 +84,12 @@ const parentRecurringSchedule: Schedule = {
 - `recurrence_rule`이 `null` 또는 `undefined` (가상 인스턴스는 반복 규칙 없음)
 - `parent_id`가 `null`이 아님 (원본 일정의 ID)
 
+`instance_start`는 회차의 원래 시작 시간입니다. 시간을 옮기지 않은 회차는 `start_time`과 같고,
+시간을 옮긴 회차는 `start_time`이 옮긴 시간, `instance_start`는 규칙상 원래 시간입니다.
+회차를 조회·수정·삭제할 때는 `start_time`이 아니라 이 값을 `instance_start` 쿼리 파라미터로 그대로 보냅니다.
+응답의 다른 시간 필드와 같이 `timezone` 파라미터에 따라 변환되며, 변환된 값을 그대로 보내도 같은 회차를 가리킵니다.
+일반 일정과 원본 반복 일정에서는 `null`입니다.
+
 **예시:**
 ```typescript
 // 가상 인스턴스 예시 (원본 반복 일정의 2024-01-08 인스턴스)
@@ -94,6 +102,7 @@ const virtualInstance: Schedule = {
   recurrence_rule: null,              // ✅ 가상 인스턴스는 반복 규칙 없음
   recurrence_end: null,
   parent_id: "223e4567-e89b-12d3-a456-426614174000",  // ✅ 원본 일정 ID
+  instance_start: "2024-01-08T10:00:00",  // 회차의 원래 시작 시간 (조회/수정/삭제에 사용)
   created_at: "2024-01-01T00:00:00",  // 원본 일정의 생성 시간
   tags: []
 };
@@ -113,6 +122,7 @@ interface Schedule {
   recurrence_rule: string | null;
   recurrence_end: string | null;
   parent_id: string | null;
+  instance_start: string | null;  // 가상 인스턴스만: 회차의 원래 시작 시간
   created_at: string;
   tags: Tag[];
 }
@@ -187,14 +197,14 @@ const schedules: Schedule[] = await response.json();
 // GET /v1/schedules/{parent_id}?instance_start={instance_start_time}
 // 수정/삭제와 같이 parent_id와 instance_start로 회차를 가리킨다
 const response = await fetch(
-  `/v1/schedules/${schedule.parent_id}?instance_start=${encodeURIComponent(schedule.start_time)}`
+  `/v1/schedules/${schedule.parent_id}?instance_start=${encodeURIComponent(schedule.instance_start)}`
 );
 const instance: Schedule = await response.json();
 ```
 
-- 목록의 인스턴스와 같은 모양을 반환합니다: `parent_id`는 원본 ID, `start_time`/`end_time`은 회차 시간, 수정된 회차는 예외 값, `recurrence_rule`은 `null`, `id`는 응답마다 새로 만들어집니다.
-- `instance_start`는 규칙상 회차의 원래 시작 시간이며 1분 허용 오차로 맞춥니다. 오프셋이 있으면 UTC로 바꿔 비교하고, 없으면 UTC로 봅니다. `timezone` 파라미터는 응답 시간대만 바꿉니다.
-- 시간을 옮긴 회차는 목록의 `start_time`이 옮긴 시간이므로 그 값으로는 찾을 수 없습니다(404). 원래 시작 시간으로 조회해야 합니다.
+- 목록의 인스턴스와 같은 모양을 반환합니다: `parent_id`는 원본 ID, `instance_start`는 회차의 원래 시작 시간, `start_time`/`end_time`은 회차 시간, 수정된 회차는 예외 값, `recurrence_rule`은 `null`, `id`는 응답마다 새로 만들어집니다.
+- `instance_start` 쿼리는 규칙상 회차의 원래 시작 시간이며 1분 허용 오차로 맞춥니다. 오프셋이 있으면 UTC로 바꿔 비교하고, 없으면 UTC로 봅니다. `timezone` 파라미터는 응답 시간대만 바꿉니다.
+- 시간을 옮긴 회차는 `start_time`(옮긴 시간)으로는 찾을 수 없습니다(404). 응답의 `instance_start` 필드를 보내세요.
 - 공유된 반복 일정도 일정 조회와 같은 접근 권한으로 조회할 수 있으며 `is_shared: true`로 반환됩니다.
 
 | 상황 | 응답 |
@@ -242,9 +252,9 @@ const response = await fetch(`/v1/schedules/${schedule.id}`, {
 #### 반복 일정의 특정 인스턴스 수정
 ```typescript
 // PATCH /v1/schedules/{parent_id}?instance_start={instance_start_time}
-// 가상 인스턴스를 수정할 때는 parent_id와 instance_start를 함께 전송
+// 가상 인스턴스를 수정할 때는 parent_id와 응답의 instance_start 필드를 함께 전송
 const response = await fetch(
-  `/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
+  `/v1/schedules/${schedule.parent_id}?instance_start=${encodeURIComponent(schedule.instance_start)}`,
   {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -279,9 +289,9 @@ const response = await fetch(`/v1/schedules/${schedule.id}`, {
 #### 반복 일정의 특정 인스턴스 삭제
 ```typescript
 // DELETE /v1/schedules/{parent_id}?instance_start={instance_start_time}
-// 가상 인스턴스를 삭제할 때는 parent_id와 instance_start를 함께 전송
+// 가상 인스턴스를 삭제할 때는 parent_id와 응답의 instance_start 필드를 함께 전송
 const response = await fetch(
-  `/v1/schedules/${schedule.parent_id}?instance_start=${schedule.start_time}`,
+  `/v1/schedules/${schedule.parent_id}?instance_start=${encodeURIComponent(schedule.instance_start)}`,
   {
     method: 'DELETE'
   }
@@ -387,7 +397,7 @@ function renderScheduleDetails(schedule: Schedule) {
 1. **가상 인스턴스는 DB에 저장되지 않습니다**
    - 날짜 범위 조회 시에만 동적으로 생성됩니다
    - 각 가상 인스턴스의 `id`는 응답마다 새로 만들어지며 요청 간에 유지되지 않습니다. 이 `id`로는 조회·수정·삭제할 수 없습니다
-   - 회차는 `parent_id`와 `instance_start`(회차의 원래 시작 시간)로 가리킵니다
+   - 회차는 `parent_id`와 응답의 `instance_start` 필드(회차의 원래 시작 시간)로 가리킵니다. 시간을 옮긴 회차는 `start_time`과 값이 다릅니다
 
 2. **가상 인스턴스 조회/수정/삭제 시**
    - `parent_id`와 `instance_start`를 함께 전송해야 합니다
@@ -410,6 +420,6 @@ function renderScheduleDetails(schedule: Schedule) {
 |---------|------------------|-------------|------|
 | 일반 일정 | `null` | `null` | 한 번만 발생하는 일정 |
 | 원본 반복 일정 | `"FREQ=..."` | `null` | 반복 일정의 원본 (DB에 저장) |
-| 가상 인스턴스 | `null` | 원본 ID | 반복 일정의 특정 날짜 인스턴스 (조회 시 생성) |
+| 가상 인스턴스 | `null` | 원본 ID | 반복 일정의 특정 날짜 인스턴스 (조회 시 생성, `instance_start`로 가리킴) |
 
 이 가이드를 참고하여 프론트엔드에서 일정을 올바르게 처리하세요!
