@@ -537,6 +537,8 @@ const oidcConfig = {
 
 ---
 
+로그인·가입·세션 조회·JWT 발급 요청이 지나는 `/auth/*` 경로는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
+
 ## 관련 코드 참조
 
 | 파일 | 설명 |

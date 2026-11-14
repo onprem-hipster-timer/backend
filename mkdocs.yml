@@ -82,6 +82,7 @@ nav:
     - WebSocket: api/websocket.md
   - Guides:
     - Authentication: guides/auth.md
+    - Auth Proxy: guides/auth-proxy.md
     - Schedule: guides/schedule.md
     - Timer: guides/timer.md
     - Todo: guides/todo.md
