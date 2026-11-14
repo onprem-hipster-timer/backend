@@ -263,24 +263,46 @@ class TestParticipant:
         service = MeetingService(test_session, test_user)
 
         participant_data = ParticipantCreate(display_name="참여자1")
-        participant = service.create_participant(sample_meeting.id, participant_data)
+        participant, created = service.create_participant(sample_meeting.id, participant_data)
 
+        assert created is True
         assert participant.meeting_id == sample_meeting.id
         assert participant.user_id == test_user.sub
         assert participant.display_name == "참여자1"
         assert isinstance(participant.id, UUID)
 
-    def test_get_participants_success(
+    def test_create_participant_again_renames_existing(
             self, test_session, test_user, sample_meeting
     ):
-        """참여자 목록 조회 성공"""
+        """같은 사용자가 다시 등록하면 새로 만들지 않고 기존 참여자의 표시 이름을 바꾼다"""
         service = MeetingService(test_session, test_user)
+        first, _ = service.create_participant(sample_meeting.id, ParticipantCreate(display_name="처음"))
+
+        again, created = service.create_participant(sample_meeting.id, ParticipantCreate(display_name="다음"))
+
+        assert created is False
+        assert again.id == first.id
+        assert again.display_name == "다음"
+        assert [p.id for p in service.get_participants(sample_meeting.id)] == [first.id]
+
+    def test_get_participants_success(
+            self, test_session, test_user, other_user, sample_meeting
+    ):
+        """참여자 목록 조회 성공"""
+        from app.domain.visibility.service import VisibilityService
+
+        service = MeetingService(test_session, test_user)
+        VisibilityService(test_session, test_user).set_visibility(
+            resource_type=ResourceType.MEETING,
+            resource_id=sample_meeting.id,
+            level=VisibilityLevel.PUBLIC,
+        )
 
         # 참여자 2명 등록
-        participant1 = service.create_participant(
+        participant1, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
-        participant2 = service.create_participant(
+        participant2, _ = MeetingService(test_session, other_user).create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자2")
         )
 
@@ -302,7 +324,7 @@ class TestTimeSlots:
         service = MeetingService(test_session, test_user)
 
         # 참여자 등록
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 
@@ -336,7 +358,7 @@ class TestTimeSlots:
         service = MeetingService(test_session, test_user)
 
         # 참여자 등록
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 
@@ -382,7 +404,7 @@ class TestTimeSlots:
 
         # test_user로 참여자 등록
         owner_service = MeetingService(test_session, test_user)
-        participant = owner_service.create_participant(
+        participant, _ = owner_service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 

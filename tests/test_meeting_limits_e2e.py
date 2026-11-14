@@ -200,3 +200,87 @@ def test_patch_making_valid_meeting_is_applied(e2e_client, patch, expected):
     assert response.status_code == 200, response.text
     assert _shape(response.json()) == {**before, **expected}
     assert _shape(e2e_client.get(f"/v1/meetings/{meeting_id}").json()) == {**before, **expected}
+
+
+# ============================================================
+# 참여: 미팅마다 사용자당 참여자 한 명
+# ============================================================
+
+_SLOT = {"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "10:00:00"}
+
+
+def _counts(client, meeting_id: str, slot_date: str = "2024-02-05") -> dict[str, int]:
+    result = client.get(f"/v1/meetings/{meeting_id}/result").json()
+    group = next(g for g in result["availability_grid"] if g["date"] == slot_date)
+    return {s["time"]: s["count"] for s in group["slots"]}
+
+
+@pytest.mark.e2e
+def test_repeat_participation_returns_same_participant_and_renames(e2e_client):
+    meeting_id = _create_meeting(e2e_client)
+
+    first = e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "처음"})
+    assert first.status_code == 201
+    participant_id = first.json()["id"]
+    assert e2e_client.put(
+        f"/v1/meetings/{meeting_id}/availability", params={"participant_id": participant_id}, json=[_SLOT],
+    ).status_code == 200
+
+    again = e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": " 바꾼 이름 "})
+
+    assert again.status_code == 200, again.text
+    assert again.json()["id"] == participant_id
+    assert again.json()["display_name"] == "바꾼 이름"
+    assert again.json()["created_at"] == first.json()["created_at"]
+    availability = e2e_client.get(f"/v1/meetings/{meeting_id}/availability").json()
+    assert [a["participant"]["id"] for a in availability] == [participant_id]
+    assert availability[0]["participant"]["display_name"] == "바꾼 이름"
+    assert len(availability[0]["time_slots"]) == 1  # 이름을 바꿔도 가능 시간은 그대로
+    assert _counts(e2e_client, meeting_id)["09:00"] == 1
+
+
+@pytest.mark.e2e
+def test_repeat_participation_with_same_name_is_200(e2e_client):
+    meeting_id = _create_meeting(e2e_client)
+    first = e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "같은 이름"})
+
+    again = e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "같은 이름"})
+
+    assert (first.status_code, again.status_code) == (201, 200)
+    assert again.json()["id"] == first.json()["id"]
+    assert len(e2e_client.get(f"/v1/meetings/{meeting_id}/availability").json()) == 1
+
+
+@pytest.mark.e2e
+def test_invalid_name_on_repeat_participation_keeps_existing_name(e2e_client):
+    meeting_id = _create_meeting(e2e_client)
+    e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "원래 이름"})
+
+    response = e2e_client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "  "})
+
+    assert response.status_code == 422
+    availability = e2e_client.get(f"/v1/meetings/{meeting_id}/availability").json()
+    assert [a["participant"]["display_name"] for a in availability] == ["원래 이름"]
+
+
+@pytest.mark.e2e
+def test_two_users_are_two_participants(multi_user_e2e):
+    owner = multi_user_e2e.as_user("owner")
+    member = multi_user_e2e.as_user("member")
+    meeting_id = _create_meeting(owner)
+    owner.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
+
+    ids = []
+    for client, name in ((owner, "주최자"), (member, "참여자"), (member, "참여자")):
+        response = client.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": name})
+        assert response.status_code in (200, 201), response.text
+        ids.append(response.json()["id"])
+        client.put(
+            f"/v1/meetings/{meeting_id}/availability", params={"participant_id": ids[-1]}, json=[_SLOT],
+        )
+
+    assert ids[0] != ids[1]
+    assert ids[1] == ids[2]
+    availability = owner.get(f"/v1/meetings/{meeting_id}/availability").json()
+    assert sorted(a["participant"]["user_id"] for a in availability) == ["member", "owner"]
+    assert _counts(owner, meeting_id)["09:00"] == 2

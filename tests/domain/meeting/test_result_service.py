@@ -46,17 +46,25 @@ class TestMeetingResult:
     """공통 가능 시간 분석 테스트"""
 
     def test_get_meeting_result_success(
-            self, test_session, test_user, sample_meeting
+            self, test_session, test_user, other_user, sample_meeting
     ):
         """공통 가능 시간 분석 성공"""
+        from app.domain.visibility.service import VisibilityService
+
         service = MeetingService(test_session, test_user)
+        other_service = MeetingService(test_session, other_user)
         result_service = MeetingResultService(test_session, test_user)
+        VisibilityService(test_session, test_user).set_visibility(
+            resource_type=ResourceType.MEETING,
+            resource_id=sample_meeting.id,
+            level=VisibilityLevel.PUBLIC,
+        )
 
         # 참여자 2명 등록
-        participant1 = service.create_participant(
+        participant1, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
-        participant2 = service.create_participant(
+        participant2, _ = other_service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자2")
         )
 
@@ -72,7 +80,7 @@ class TestMeetingResult:
         )
 
         # 참여자2: 2월 2일(금) 10:00-13:00 가능
-        service.set_time_slots(
+        other_service.set_time_slots(
             sample_meeting.id,
             participant2.id,
             [TimeSlotCreate(
@@ -167,7 +175,7 @@ class TestMeetingResult:
             time_slot_minutes=30,
         ))
 
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             meeting.id, ParticipantCreate(display_name="참여자")
         )
 
@@ -207,7 +215,7 @@ class TestMeetingResult:
             time_slot_minutes=30,
         ))
 
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             meeting.id, ParticipantCreate(display_name="참여자")
         )
 
@@ -261,7 +269,7 @@ class TestMeetingResult:
         )
 
         # 참여자1 (test_user): 09:00~11:00
-        p1 = service.create_participant(
+        p1, _ = service.create_participant(
             meeting.id, ParticipantCreate(display_name="참여자1")
         )
         service.set_time_slots(meeting.id, p1.id, [
@@ -270,7 +278,7 @@ class TestMeetingResult:
 
         # 참여자2 (other_user): 10:00~12:00
         other_service = MeetingService(test_session, other_user)
-        p2 = other_service.create_participant(
+        p2, _ = other_service.create_participant(
             meeting.id, ParticipantCreate(display_name="참여자2")
         )
         other_service.set_time_slots(meeting.id, p2.id, [
@@ -303,7 +311,7 @@ class TestMeetingResult:
             time_slot_minutes=30,
         ))
 
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             meeting.id, ParticipantCreate(display_name="참여자")
         )
 

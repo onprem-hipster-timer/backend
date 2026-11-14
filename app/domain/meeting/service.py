@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 from pydantic.experimental.missing_sentinel import MISSING
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
@@ -164,27 +165,49 @@ class MeetingService:
             self,
             meeting_id: UUID,
             data: ParticipantCreate,
-    ) -> MeetingParticipant:
+    ) -> tuple[MeetingParticipant, bool]:
         """
         참여자 등록
-        
+
+        미팅마다 사용자당 참여자는 한 명이다. 이미 참여했으면 그 참여자의 표시 이름을 바꿔 돌려준다.
+        같은 사용자의 요청 둘이 동시에 등록하려 하면 unique 제약(uq_meeting_participant_meeting_user)이
+        하나만 남긴다. 진 쪽은 SAVEPOINT만 되돌리고 이긴 쪽의 참여자를 다시 읽는다.
+
         :param meeting_id: 일정 조율 ID
         :param data: 참여자 생성 데이터
-        :return: 생성된 참여자
+        :return: (참여자, 새로 만들었는지)
         :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
         :raises AccessDeniedError: 접근 권한이 없는 경우
         """
         # 접근 권한 확인
         self.get_meeting_with_access_check(meeting_id)
 
-        # 참여자 생성 (user_id는 현재 사용자 ID)
-        participant = crud.create_participant(
-            self.session,
-            meeting_id,
-            user_id=self.owner_id,
-            display_name=data.display_name,
-        )
+        existing = crud.get_participant_by_user_id(self.session, meeting_id, self.owner_id)
+        if existing:
+            return self._rename_participant(existing, data), False
 
+        # 앞서 쌓인 변경은 SAVEPOINT 밖에서 먼저 flush해, 그 변경의 IntegrityError를 여기서 삼키지 않는다
+        self.session.flush()
+        try:
+            with self.session.begin_nested():
+                participant = crud.create_participant(
+                    self.session, meeting_id, user_id=self.owner_id, data=data,
+                )
+        except IntegrityError:
+            existing = crud.get_participant_by_user_id(self.session, meeting_id, self.owner_id)
+            if existing is None:
+                raise
+            return self._rename_participant(existing, data), False
+
+        return participant, True
+
+    def _rename_participant(
+            self,
+            participant: MeetingParticipant,
+            data: ParticipantCreate,
+    ) -> MeetingParticipant:
+        participant.display_name = data.display_name
+        self.session.flush()
         return participant
 
     def get_participant(

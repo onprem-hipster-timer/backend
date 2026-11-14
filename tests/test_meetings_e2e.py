@@ -255,8 +255,10 @@ def test_set_availability_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_get_availability_e2e(e2e_client):
+def test_get_availability_e2e(multi_user_e2e):
     """전체 참여자 가능 시간 조회 E2E 테스트"""
+    e2e_client = multi_user_e2e.as_user("owner")
+    other_client = multi_user_e2e.as_user("other")
     # 1. 일정 조율 생성
     create_response = e2e_client.post(
         "/v1/meetings",
@@ -271,6 +273,7 @@ def test_get_availability_e2e(e2e_client):
         },
     )
     meeting_id = create_response.json()["id"]
+    e2e_client.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
 
     # 2. 참여자 2명 등록 및 시간 설정
     participant1_response = e2e_client.post(
@@ -279,7 +282,7 @@ def test_get_availability_e2e(e2e_client):
     )
     participant1_id = participant1_response.json()["id"]
 
-    participant2_response = e2e_client.post(
+    participant2_response = other_client.post(
         f"/v1/meetings/{meeting_id}/participate",
         json={"display_name": "참여자2"},
     )
@@ -297,7 +300,7 @@ def test_get_availability_e2e(e2e_client):
     )
 
     # 참여자2 시간 설정 (2월 2일 금요일 - available_days에 포함)
-    e2e_client.put(
+    other_client.put(
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant2_id},
         json=[{
@@ -321,8 +324,10 @@ def test_get_availability_e2e(e2e_client):
 
 
 @pytest.mark.e2e
-def test_get_meeting_result_e2e(e2e_client):
+def test_get_meeting_result_e2e(multi_user_e2e):
     """공통 가능 시간 분석 결과 조회 E2E 테스트"""
+    e2e_client = multi_user_e2e.as_user("owner")
+    other_client = multi_user_e2e.as_user("other")
     # 1. 일정 조율 생성
     create_response = e2e_client.post(
         "/v1/meetings",
@@ -337,6 +342,7 @@ def test_get_meeting_result_e2e(e2e_client):
         },
     )
     meeting_id = create_response.json()["id"]
+    e2e_client.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
 
     # 2. 참여자 2명 등록 및 시간 설정
     participant1_response = e2e_client.post(
@@ -345,7 +351,7 @@ def test_get_meeting_result_e2e(e2e_client):
     )
     participant1_id = participant1_response.json()["id"]
 
-    participant2_response = e2e_client.post(
+    participant2_response = other_client.post(
         f"/v1/meetings/{meeting_id}/participate",
         json={"display_name": "참여자2"},
     )
@@ -363,7 +369,7 @@ def test_get_meeting_result_e2e(e2e_client):
     )
 
     # 참여자2: 2월 2일(금) 10:00-13:00 가능
-    e2e_client.put(
+    other_client.put(
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant2_id},
         json=[{
@@ -525,13 +531,14 @@ def test_participant_timezone_e2e(e2e_client):
     participant_id = participant_response_utc.json()["id"]
     created_at_utc = participant_response_utc.json()["created_at"]
 
-    # 3. 참여자 등록 (KST 타임존으로)
+    # 3. 같은 사용자의 다시 등록 (KST 타임존으로) - 기존 참여자를 200으로 반환
     participant_response_kst = e2e_client.post(
         f"/v1/meetings/{meeting_id}/participate",
         json={"display_name": "참여자2"},
         params={"timezone": "+09:00"},
     )
-    assert participant_response_kst.status_code == 201
+    assert participant_response_kst.status_code == 200
+    assert participant_response_kst.json()["id"] == participant_id
     data_kst = participant_response_kst.json()
 
     # 타임존 정보가 포함되어야 함
