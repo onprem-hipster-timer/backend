@@ -2,7 +2,8 @@
 Guest Domain DTO
 
 이름과 비밀번호는 먼저 NFC로 정규화한다. 기기마다 같은 글자가 다른 유니코드 형태로 올 수 있다.
-이름은 앞뒤 공백을 떼고 1~50자, 제어 문자는 받지 않는다. 같은 리소스 안에서 이름은 겹치지 않는다
+이름은 공백 문자(Python 공백, 유니코드 Zs)가 이어진 곳을 공백 하나(U+0020)로 바꾸고 앞뒤를 뗀 뒤 1~50자이고,
+Cc·Cf·Cs·Co·Cn·Zl·Zp 범주의 문자는 받지 않는다. 같은 리소스 안에서 이름은 겹치지 않는다
 (정규화한 이름이 정확히 같으면 같은 이름).
 비밀번호는 비어 있지 않고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
 """
@@ -18,13 +19,18 @@ GUEST_NAME_MAX_LENGTH = 50
 GUEST_PASSWORD_MAX_BYTES = 72
 
 
+# 이름에 쓸 수 없는 유니코드 범주 (제어, 서식, 서로게이트, 사용자 정의, 미지정, 줄·문단 구분)
+REFUSED_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
+
+
 def normalize_guest_name(value: str) -> str:
-    """NFC로 정규화하고 앞뒤 공백을 뗀 이름. 규칙에 맞지 않으면 ValueError"""
-    name = unicodedata.normalize("NFC", value).strip()
+    """이름의 정규형: NFC, 이어진 공백 문자는 공백 하나, 앞뒤 공백 없음. 규칙에 맞지 않으면 ValueError"""
+    name = unicodedata.normalize("NFC", value)
+    name = " ".join("".join(" " if ch.isspace() or unicodedata.category(ch) == "Zs" else ch for ch in name).split())
+    if any(unicodedata.category(ch) in REFUSED_NAME_CATEGORIES for ch in name):
+        raise ValueError("이름에 쓸 수 없는 문자가 있습니다")
     if not 1 <= len(name) <= GUEST_NAME_MAX_LENGTH:
         raise ValueError(f"이름은 1~{GUEST_NAME_MAX_LENGTH}자여야 합니다")
-    if any(unicodedata.category(ch) == "Cc" for ch in name):
-        raise ValueError("이름에 제어 문자를 쓸 수 없습니다")
     return name
 
 

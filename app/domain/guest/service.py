@@ -19,7 +19,6 @@ DB는 요청 세션이 아니라 자기 세션으로 쓰고 바로 커밋한다.
 import asyncio
 import hashlib
 import logging
-import unicodedata
 from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncIterator, Iterator
 from uuid import UUID, uuid4
@@ -172,7 +171,7 @@ async def _resource_lock(resource_type: ResourceType, resource_id: UUID) -> Asyn
 
 
 async def _find_by_name(guests: list[Guest], name: str) -> dict | None:
-    """게스트 중 지금 Kratos 이름이 name(NFC)인 게스트의 identity"""
+    """게스트 중 지금 Kratos 이름의 정규형이 name(정규형)인 게스트의 identity"""
     if not guests:
         return None
     identities = await kratos_admin.get_identities([guest.identity_id for guest in guests])
@@ -180,9 +179,12 @@ async def _find_by_name(guests: list[Guest], name: str) -> dict | None:
         raise GuestServiceUnavailableError()
     for identity in identities:
         stored = (identity.get("traits") or {}).get("name")
-        # Kratos에 다른 형태로 저장된 이름도 같은 이름으로 본다
-        if isinstance(stored, str) and unicodedata.normalize("NFC", stored) == name:
-            return identity
+        # Kratos에 다른 형태로 저장된 이름도 정규형으로 비교한다. 정규형을 만들 수 없는 이름은 겹치지 않는다
+        try:
+            if isinstance(stored, str) and normalize_guest_name(stored) == name:
+                return identity
+        except ValueError:
+            continue
     return None
 
 
@@ -252,7 +254,7 @@ async def login_allowed(identity_id: str, schema_id: str | None) -> bool:
 
 
 def _valid_name(name: object) -> bool:
-    """이름 규칙에 맞고 이미 NFC이며 앞뒤 공백이 없을 때 True (훅은 Kratos가 저장할 값을 바꿀 수 없다)"""
+    """이름 규칙에 맞고 이미 정규형일 때 True (훅은 Kratos가 저장할 값을 바꿀 수 없다)"""
     if not isinstance(name, str):
         return False
     try:

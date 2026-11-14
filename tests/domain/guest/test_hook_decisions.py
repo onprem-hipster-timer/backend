@@ -212,3 +212,26 @@ async def test_rename_refused_when_names_cannot_be_read(kratos, open_guest):
     kratos.fail_list = True
     traits = _traits(kratos, open_guest, name="철수")
     assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.parametrize("name", ["김  민수", "김\u3000민수", " 김 민수", "김\t민수"])
+@pytest.mark.asyncio
+async def test_rename_to_non_canonical_spacing_is_refused(kratos, open_guest, name):
+    traits = _traits(kratos, open_guest, name=name)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    traits = _traits(kratos, open_guest, name="김 민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True
+
+
+@pytest.mark.parametrize("name", ["철\u200b수", "철수\ufeff", "👨\u200d👩"])
+@pytest.mark.asyncio
+async def test_rename_to_name_with_refused_character_is_refused(kratos, open_guest, name):
+    traits = _traits(kratos, open_guest, name=name)
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_rename_to_name_of_other_guest_stored_in_other_spacing_is_refused(kratos, open_guest):
+    make_guest(kratos, open_guest.resource_id, name="김\u3000민수")
+    traits = _traits(kratos, open_guest, name="김 민수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False

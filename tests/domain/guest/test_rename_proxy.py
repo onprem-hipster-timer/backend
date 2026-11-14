@@ -143,3 +143,14 @@ def test_invalid_name_is_left_to_settings_hook(guest_client, kratos, resource):
     r = _rename(guest_client, kratos, guest, 3)
     assert r.status_code == 400
     assert kratos.name_of(guest.identity_id) == "민수"
+
+
+@pytest.mark.parametrize("name", ["김  민수", "김　민수", "철​수"])
+def test_rename_to_non_canonical_name_is_not_stored(guest_client, kratos, resource, name):
+    guest = make_guest(kratos, resource, name="민수")
+    make_guest(kratos, resource, name="김 민수")
+
+    r = _rename(guest_client, kratos, guest, name)
+
+    assert r.status_code in (400, 409)
+    assert kratos.name_of(guest.identity_id) == "민수"

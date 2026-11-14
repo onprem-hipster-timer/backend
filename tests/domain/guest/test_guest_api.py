@@ -286,3 +286,78 @@ def test_password_bytes_are_measured_after_normalisation(guest_client, kratos, r
     assert len(_nfd(password).encode()) > 72
     assert guest_client.post(CREATE, json=_body(resource, password=_nfd(password))).status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
+
+
+# ============ 이름 정규형 ============
+
+@pytest.mark.parametrize(
+    "variant",
+    ["민수\u200b", "\u200b민수", "민\u200d수", "민수\u2060", "민수\ufeff", "\u202e민수", "민\u00ad수",
+     "민수\ue000", "민수\u0378", "민\x07수"],
+    ids=["zwsp_end", "zwsp_start", "zwj", "word_joiner", "bom", "rlo", "soft_hyphen", "private_use",
+         "unassigned", "bell"],
+)
+@pytest.mark.parametrize("path", [CREATE, LOOKUP])
+def test_name_with_refused_character_is_422(guest_client, kratos, resource, variant, path):
+    assert guest_client.post(path, json=_body(resource, name=variant)).status_code == 422
+    assert kratos.identities == {}
+
+
+@pytest.mark.parametrize("variant", ["김  민수", "김 민수", "김\u3000민수", "김\t민수", "김\u00a0민수", " 김 \u2003 민수\n"])
+def test_whitespace_runs_are_one_space(guest_client, kratos, resource, variant):
+    created = guest_client.post(CREATE, json=_body(resource, name="김 민수")).json()
+
+    assert guest_client.post(CREATE, json=_body(resource, name=variant)).status_code == 409
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=variant)).json() == {
+        "handle": created["handle"]
+    }
+
+
+def test_name_is_stored_in_canonical_form(guest_client, kratos, resource):
+    guest_client.post(CREATE, json=_body(resource, name=" 김\u3000\u3000민수 "))
+    assert kratos.name_of(guest_rows()[0].identity_id) == "김 민수"
+
+
+def test_line_and_paragraph_separators_count_as_whitespace(guest_client, kratos, resource):
+    """Python에서 공백 문자인 U+2028·U+2029는 공백 하나로 바뀐다"""
+    guest_client.post(CREATE, json=_body(resource, name="김\u2028민수\u2029"))
+    assert kratos.name_of(guest_rows()[0].identity_id) == "김 민수"
+
+
+def test_name_length_is_measured_after_collapsing_whitespace(guest_client, resource):
+    name = "가 " * 25 + "      "  # 공백을 줄이면 49자
+    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
+    assert guest_client.post(CREATE, json=_body(resource, name="가" * 51)).status_code == 422
+
+
+@pytest.mark.parametrize("name", ["🙂", "👍🏽", "🇰🇷", "민수🙂"])
+def test_emoji_without_joiner_is_accepted(guest_client, resource, name):
+    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
+
+
+def test_emoji_sequence_with_zero_width_joiner_is_refused(guest_client, kratos, resource):
+    family = "👨\u200d👩\u200d👧"
+    assert guest_client.post(CREATE, json=_body(resource, name=family)).status_code == 422
+    assert kratos.identities == {}
+
+
+def test_stored_name_in_other_spacing_is_taken(guest_client, kratos, resource):
+    """Kratos에 정규형이 아닌 이름이 저장돼 있어도 정규형으로 비교한다"""
+    stored = make_guest(kratos, resource, name="김\u3000 민수")
+    assert guest_client.post(CREATE, json=_body(resource, name="김 민수")).status_code == 409
+    found = guest_client.post(LOOKUP, json=_lookup_body(resource, name="김 민수")).json()["handle"]
+    assert found == kratos.identities[stored.identity_id]["traits"]["handle"]
+
+
+def test_stored_name_without_canonical_form_never_matches(guest_client, kratos, resource):
+    make_guest(kratos, resource, name="민수\u200b")
+    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name="민수")).json() == {"handle": None}
+    assert guest_client.post(CREATE, json=_body(resource, name="민수")).status_code == 201
+
+
+def test_lookup_of_closed_resource_returns_no_handle(guest_client, host, resource):
+    assert guest_client.post(CREATE, json=_body(resource)).status_code == 201
+    host.statuses[resource] = GuestHostStatus.CLOSED
+    r = guest_client.post(LOOKUP, json=_lookup_body(resource))
+    assert r.status_code == 403
+    assert "handle" not in r.text
