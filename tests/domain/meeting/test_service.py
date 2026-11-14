@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 
-from app.domain.meeting.exceptions import MeetingNotFoundError
+from app.domain.meeting.exceptions import InvalidMeetingError, MeetingNotFoundError
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -207,6 +207,28 @@ class TestUpdateMeeting:
 
         with pytest.raises(MeetingNotFoundError):
             service.update_meeting(UUID("00000000-0000-0000-0000-000000000000"), update_data)
+
+
+    @pytest.mark.parametrize(
+        "update_data",
+        [
+            MeetingUpdate(start_time=time(18, 0)),
+            MeetingUpdate(end_date=date(2024, 1, 31)),
+            MeetingUpdate(end_date=date(2024, 5, 2)),
+            MeetingUpdate(time_slot_minutes=541),
+        ],
+    )
+    def test_update_meeting_rejects_invalid_merged_meeting(
+            self, test_session, test_user, sample_meeting, update_data
+    ):
+        """저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기면 거절하고 미팅을 바꾸지 않는다"""
+        service = MeetingService(test_session, test_user)
+        before = sample_meeting.model_dump()
+
+        with pytest.raises(InvalidMeetingError):
+            service.update_meeting(sample_meeting.id, update_data)
+
+        assert sample_meeting.model_dump() == before
 
 
 class TestDeleteMeeting:

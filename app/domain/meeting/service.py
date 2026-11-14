@@ -6,12 +6,15 @@ Meeting Service
 from typing import List
 from uuid import UUID
 
+from pydantic import ValidationError
+from pydantic.experimental.missing_sentinel import MISSING
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import meeting as crud
 from app.crud import visibility as visibility_crud
 from app.domain.meeting.exceptions import (
+    InvalidMeetingError,
     MeetingNotFoundError,
     MeetingParticipantNotFoundError,
 )
@@ -110,13 +113,34 @@ class MeetingService:
         :param data: 업데이트 데이터
         :return: 업데이트된 일정 조율
         :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
+        :raises InvalidMeetingError: 저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기는 경우
         """
         meeting = crud.get_meeting(self.session, meeting_id, self.owner_id)
         if not meeting:
             raise MeetingNotFoundError()
 
+        self._validate_merged(meeting, data)
         updated_meeting = crud.update_meeting(self.session, meeting, data)
         return updated_meeting
+
+    @staticmethod
+    def _validate_merged(meeting: Meeting, data: MeetingUpdate) -> None:
+        """저장된 값에 수정 내용을 합친 결과를 MeetingCreate 규칙으로 검증한다.
+
+        apply_update와 같이 보내지 않은 필드와 NOT NULL 필드의 null은 저장된 값을 쓴다.
+        """
+        merged = {name: getattr(meeting, name) for name in MeetingCreate.model_fields}
+        columns = Meeting.__table__.columns
+        for key, value in data.model_dump().items():
+            if value is MISSING or (value is None and not columns[key].nullable):
+                continue
+            merged[key] = value
+        try:
+            MeetingCreate.model_validate(merged)
+        except ValidationError as e:
+            raise InvalidMeetingError(
+                "; ".join(error["msg"] for error in e.errors(include_url=False))
+            ) from None
 
     def delete_meeting(self, meeting_id: UUID) -> None:
         """
