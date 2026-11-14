@@ -65,7 +65,7 @@ def test_set_visibility_resource_not_found(e2e_client):
 
 @pytest.mark.e2e
 def test_set_visibility_non_owner_denied(multi_user_e2e):
-    """소유자가 아닌 사용자는 접근권한 설정 불가 (403) E2E 테스트"""
+    """소유자가 아닌 사용자는 접근권한 설정 불가 (404) E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
 
@@ -75,12 +75,13 @@ def test_set_visibility_non_owner_denied(multi_user_e2e):
         f"/v1/visibility/schedule/{schedule_id}",
         json={"level": "public"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
+    assert client_a.get(f"/v1/visibility/schedule/{schedule_id}").status_code == 404
 
 
 @pytest.mark.e2e
 def test_delete_visibility_non_owner_denied(multi_user_e2e):
-    """소유자가 아닌 사용자는 접근권한 삭제 불가 (403) E2E 테스트"""
+    """소유자가 아닌 사용자는 접근권한 삭제 불가 (404) E2E 테스트"""
     client_a = multi_user_e2e.as_user("user-a")
     client_b = multi_user_e2e.as_user("user-b")
 
@@ -88,4 +89,5 @@ def test_delete_visibility_non_owner_denied(multi_user_e2e):
     client_a.put(f"/v1/visibility/schedule/{schedule_id}", json={"level": "public"})
 
     response = client_b.delete(f"/v1/visibility/schedule/{schedule_id}")
-    assert response.status_code == 403
+    assert response.status_code == 404
+    assert client_a.get(f"/v1/visibility/schedule/{schedule_id}").json()["level"] == "public"

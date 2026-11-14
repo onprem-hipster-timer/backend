@@ -256,3 +256,20 @@ def test_availability_for_others_participant_matches_missing_participant(multi_u
     assert existing.status_code == 404, existing.text
     assert existing.json()["error_type"] == "MeetingParticipantNotFoundError"
     assert _normalized(existing) == _normalized(missing)
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("resource", ["schedule", "todo", "timer", "meeting"])
+@pytest.mark.parametrize("level", ["private", "public"])
+@pytest.mark.parametrize(
+    ("method", "kwargs"),
+    [("get", {}), ("put", {"json": {"level": "public"}}), ("delete", {})],
+)
+def test_visibility_api_on_others_resource_matches_missing(multi_user_e2e, resource, level, method, kwargs):
+    owner = multi_user_e2e.as_user("owner")
+    viewer = multi_user_e2e.as_user("viewer")
+    resource_id = MAKERS[resource](owner)
+    if level == "public":
+        _share(owner, resource, resource_id, {"level": "public"})
+
+    _assert_same_as_missing(getattr(viewer, method), f"/v1/visibility/{resource}/{{id}}", resource_id, **kwargs)
