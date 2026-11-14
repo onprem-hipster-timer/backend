@@ -3,6 +3,7 @@ Meeting Domain DTO (Data Transfer Objects)
 
 일정 조율 관련 데이터 전송 객체
 """
+import unicodedata
 from datetime import date, datetime, time, timezone
 from typing import Optional, List
 from uuid import UUID
@@ -142,9 +143,23 @@ class MeetingRead(CustomModel):
         return MeetingRead.model_construct(**data)
 
 
+DISPLAY_NAME_MAX_LENGTH = 50
+
+
 class ParticipantCreate(CustomModel):
     """참여자 생성 DTO"""
     display_name: str  # 표시 이름 (닉네임)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        """앞뒤 공백을 뺀 1–50자, 제어 문자 불가"""
+        v = v.strip()
+        if not 1 <= len(v) <= DISPLAY_NAME_MAX_LENGTH:
+            raise ValueError(f"display_name must be 1-{DISPLAY_NAME_MAX_LENGTH} characters after trimming")
+        if any(unicodedata.category(ch) == "Cc" for ch in v):
+            raise ValueError("display_name must not contain control characters")
+        return v
 
 
 class ParticipantRead(CustomModel):
