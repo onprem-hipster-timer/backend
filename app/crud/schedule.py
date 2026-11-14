@@ -46,21 +46,21 @@ def get_schedules_by_date_range(
         owner_id: str,
 ) -> list[Schedule]:
     """
-    날짜 범위로 Schedule 객체를 조회합니다.
-    
+    [start_date, end_date) 범위와 겹치는 Schedule 객체를 조회합니다.
+
+    일정 구간 [start_time, end_time)과 범위가 겹치는 조건: start_time < end_date AND end_time > start_date
+
     :param session: DB 세션
-    :param start_date: 시작 날짜 (이 날짜 이후에 시작하는 일정 포함)
-    :param end_date: 종료 날짜 (이 날짜 이전에 종료하는 일정 포함)
+    :param start_date: 범위 시작 (포함)
+    :param end_date: 범위 끝 (제외)
     :param owner_id: 소유자 ID
     :return: 해당 날짜 범위와 겹치는 모든 일정
     """
-    # 일정이 주어진 날짜 범위와 겹치는 경우를 조회
-    # 일정의 start_time <= end_date AND 일정의 end_time >= start_date
     statement = (
         select(Schedule)
         .where(Schedule.owner_id == owner_id)
-        .where(Schedule.start_time <= end_date)
-        .where(Schedule.end_time >= start_date)
+        .where(Schedule.start_time < end_date)
+        .where(Schedule.end_time > start_date)
         .order_by(Schedule.start_time)
     )
     results = session.exec(statement)
@@ -171,20 +171,18 @@ def get_recurring_schedules(
     반복 일정은 조회 범위와 겹칠 수 있는 모든 반복 일정을 반환합니다.
     
     :param session: DB 세션
-    :param start_date: 조회 시작 날짜
-    :param end_date: 조회 종료 날짜
+    :param start_date: 범위 시작 (포함)
+    :param end_date: 범위 끝 (제외)
     :param owner_id: 소유자 ID
     :return: 반복 일정 리스트 (recurrence_rule이 있는 일정)
     """
-    # 반복 일정은 원본의 start_time이 조회 범위 이전이거나 겹치면 포함
-    # recurrence_end가 없거나 조회 범위와 겹치면 포함
     statement = (
         select(Schedule)
         .where(Schedule.owner_id == owner_id)
         .where(Schedule.recurrence_rule.isnot(None))
         .where(
-            # 원본 일정의 시작 시간이 조회 종료일 이전이고
-            (Schedule.start_time <= end_date)
+            # 첫 회차가 범위 끝 이전에 시작하고
+            (Schedule.start_time < end_date)
         )
         .where(
             # 반복 종료일이 없거나 조회 시작일 이후
@@ -225,11 +223,11 @@ def get_schedule_exceptions(
         owner_id: str,
 ) -> list[ScheduleException]:
     """
-    날짜 범위 내의 예외 인스턴스를 조회합니다.
-    
+    exception_date(회차의 원래 시작 시각)가 [start_date, end_date)인 예외 인스턴스를 조회합니다.
+
     :param session: DB 세션
-    :param start_date: 조회 시작 날짜
-    :param end_date: 조회 종료 날짜
+    :param start_date: 범위 시작 (포함)
+    :param end_date: 범위 끝 (제외)
     :param owner_id: 소유자 ID
     :return: 예외 인스턴스 리스트
     """
@@ -237,7 +235,7 @@ def get_schedule_exceptions(
         select(ScheduleException)
         .where(ScheduleException.owner_id == owner_id)
         .where(ScheduleException.exception_date >= start_date)
-        .where(ScheduleException.exception_date <= end_date)
+        .where(ScheduleException.exception_date < end_date)
     )
     results = session.exec(statement)
     return results.all()
@@ -250,14 +248,14 @@ def get_schedule_exceptions_by_parent_ids(
         end_date: datetime,
 ) -> list[ScheduleException]:
     """
-    지정한 반복 일정들의 날짜 범위 내 예외 인스턴스를 배치 조회합니다 (소유자 검증 없음).
+    지정한 반복 일정들의 exception_date가 [start_date, end_date)인 예외 인스턴스를 배치 조회합니다 (소유자 검증 없음).
 
     접근 권한이 확인된 일정의 ID만 넘겨야 합니다.
 
     :param session: DB 세션
     :param parent_ids: 원본 일정 ID 목록
-    :param start_date: 조회 시작 날짜
-    :param end_date: 조회 종료 날짜
+    :param start_date: 범위 시작 (포함)
+    :param end_date: 범위 끝 (제외)
     :return: 예외 인스턴스 리스트
     """
     if not parent_ids:
@@ -266,7 +264,7 @@ def get_schedule_exceptions_by_parent_ids(
         select(ScheduleException)
         .where(ScheduleException.parent_id.in_(parent_ids))
         .where(ScheduleException.exception_date >= start_date)
-        .where(ScheduleException.exception_date <= end_date)
+        .where(ScheduleException.exception_date < end_date)
     )
     return list(session.exec(statement).all())
 

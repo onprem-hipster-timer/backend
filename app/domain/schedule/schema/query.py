@@ -6,7 +6,7 @@ Schedule Domain GraphQL Query
 - Resolver는 thin하게, 실제 작업은 Domain Service에 위임
 - OIDC 인증 통합
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import List, TypedDict, Optional
 
 import strawberry
@@ -54,7 +54,10 @@ class ScheduleQuery:
             tag_filter: Optional[TagFilterInput] = None,
     ) -> Calendar:
         """
-        날짜 범위로 캘린더 데이터를 조회합니다.
+        start_date~end_date(두 날짜 포함, UTC)의 캘린더 데이터를 조회합니다.
+
+        조회 구간은 [start_date 00:00, end_date 다음 날 00:00)이고, 일정 [start_at, end_at)이
+        겹치는 날마다 들어간다 (end_at이 00:00이면 그 날은 포함하지 않는다).
         
         아키텍처 원칙 준수:
         - Resolver는 thin하게 유지
@@ -82,9 +85,9 @@ class ScheduleQuery:
         if not current_user:
             raise AuthenticationRequiredError()
 
-        # 날짜 범위를 datetime으로 변환 (하루의 시작과 끝)
-        start_datetime = datetime.combine(start_date, datetime.min.time())
-        end_datetime = datetime.combine(end_date, datetime.max.time())
+        # [start_date 00:00, end_date 다음 날 00:00)
+        start_datetime = datetime.combine(start_date, time.min)
+        end_datetime = datetime.combine(end_date + timedelta(days=1), time.min)
 
         # 태그 필터 파라미터 추출
         tag_ids = tag_filter.tag_ids if tag_filter else None
@@ -126,6 +129,8 @@ class ScheduleQuery:
             # 일정이 겹치는 모든 날짜에 추가
             schedule_start_date = schedule.start_time.date()
             schedule_end_date = schedule.end_time.date()
+            if schedule.end_time.time() == time.min and schedule_end_date > schedule_start_date:
+                schedule_end_date -= timedelta(days=1)
 
             current_date = max(schedule_start_date, start_date)
             end_date_inclusive = min(schedule_end_date, end_date)

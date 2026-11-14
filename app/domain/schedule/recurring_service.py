@@ -366,14 +366,15 @@ class RecurringScheduleService:
         if not schedule.recurrence_rule or not schedule.recurrence_end:
             return False
 
-        # 모든 인스턴스 확장
+        # 모든 인스턴스 확장: recurrence_end에 시작하는 마지막 회차까지 [start_time, range_end)에 든다
+        range_end = schedule.recurrence_end + (schedule.end_time - schedule.start_time)
         instances = RecurrenceCalculator.expand_recurrence(
             schedule.start_time,
             schedule.end_time,
             schedule.recurrence_rule,
             schedule.recurrence_end,
-            schedule.start_time,  # 시작부터
-            schedule.recurrence_end,  # 종료일까지
+            schedule.start_time,
+            range_end,
         )
 
         if not instances:
@@ -384,7 +385,7 @@ class RecurringScheduleService:
         all_exceptions = crud.get_schedule_exceptions(
             self.session,
             schedule.start_time,
-            schedule.recurrence_end,
+            range_end,
             self.owner_id,
         )
         parent_exceptions = [

@@ -25,19 +25,21 @@ class RecurrenceCalculator:
             query_end: datetime,
     ) -> List[tuple[datetime, datetime]]:
         """
-        반복 일정을 가상 인스턴스로 확장
-        
+        반복 일정을 [query_start, query_end)와 겹치는 가상 인스턴스로 확장
+
+        회차 [instance_start, instance_end)는 instance_start < query_end AND instance_end > query_start일 때 겹친다.
+
         :param start_time: 원본 일정 시작 시간
         :param end_time: 원본 일정 종료 시간
         :param recurrence_rule: RRULE 형식의 반복 규칙 (예: "FREQ=WEEKLY;BYDAY=MO")
         :param recurrence_end: 반복 종료일 (None이면 무한 반복)
-        :param query_start: 조회 시작 날짜
-        :param query_end: 조회 종료 날짜
+        :param query_start: 범위 시작 (포함)
+        :param query_end: 범위 끝 (제외)
         :return: [(start_time, end_time), ...] 리스트
         """
         if not recurrence_rule:
             # 반복 일정이 아니면 원본만 반환
-            if start_time <= query_end and end_time >= query_start:
+            if start_time < query_end and end_time > query_start:
                 return [(start_time, end_time)]
             return []
 
@@ -59,7 +61,7 @@ class RecurrenceCalculator:
             )
         except Exception:
             # RRULE 파싱 실패 시 원본만 반환
-            if start_time <= query_end and end_time >= query_start:
+            if start_time < query_end and end_time > query_start:
                 return [(start_time, end_time)]
             return []
 
@@ -67,12 +69,12 @@ class RecurrenceCalculator:
         instances = []
         for instance_start in rrule_obj:
             # 조회 범위를 벗어나면 중단
-            if instance_start > query_end:
+            if instance_start >= query_end:
                 break
 
             # 조회 범위 이전이면 스킵
             instance_end = instance_start + duration
-            if instance_end < query_start:
+            if instance_end <= query_start:
                 continue
 
             instances.append((instance_start, instance_end))

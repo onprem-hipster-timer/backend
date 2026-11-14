@@ -3,7 +3,7 @@ Schedule Query Service
 
 날짜 범위 조회 및 태그 필터링을 담당합니다.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
@@ -16,6 +16,15 @@ from app.domain.schedule.recurring_service import RecurringScheduleService
 from app.models.schedule import ScheduleException
 from app.models.tag import Tag, ScheduleTag
 from app.utils.recurrence import RecurrenceCalculator
+
+
+def _exception_window_start(recurring_schedules: list[Schedule], start_date_utc: datetime) -> datetime:
+    """범위와 겹치는 회차의 원래 시작 시각(exception_date)이 올 수 있는 가장 이른 시각"""
+    longest = max(
+        (s.end_time - s.start_time for s in recurring_schedules),
+        default=timedelta(0),
+    )
+    return start_date_utc - longest
 
 
 class ScheduleQueryService:
@@ -59,7 +68,7 @@ class ScheduleQueryService:
             group_ids: Optional[List[UUID]] = None,
     ) -> list[Schedule]:
         """
-        날짜 범위로 일정 조회 (반복 일정 포함, 태그 필터링 지원)
+        [start_date, end_date)와 겹치는 일정 조회 (반복 일정 포함, 태그 필터링 지원)
 
         비즈니스 로직:
         - 모든 datetime을 UTC naive로 변환하여 조회
@@ -68,8 +77,8 @@ class ScheduleQueryService:
         - 태그 필터링: AND 방식 (모든 지정 태그 포함)
         - 그룹 필터링: 해당 그룹의 태그 중 하나라도 있으면 포함
 
-        :param start_date: 시작 날짜
-        :param end_date: 종료 날짜
+        :param start_date: 범위 시작 (포함)
+        :param end_date: 범위 끝 (제외)
         :param tag_ids: 필터링할 태그 ID 리스트 (AND 방식)
         :param group_ids: 필터링할 그룹 ID 리스트
         :return: 해당 날짜 범위와 겹치는 모든 일정 (가상 인스턴스 포함)
@@ -95,7 +104,10 @@ class ScheduleQueryService:
 
         # 3. 예외 인스턴스 조회
         exceptions = crud.get_schedule_exceptions(
-            self.session, start_date_utc, end_date_utc, self.owner_id
+            self.session,
+            _exception_window_start(recurring_schedules, start_date_utc),
+            end_date_utc,
+            self.owner_id,
         )
 
         # 4. 반복 일정 확장 + 일반 일정 합치기 (시간순 정렬)
@@ -126,16 +138,19 @@ class ScheduleQueryService:
         예외 인스턴스는 넘겨받은 반복 일정의 것만 배치로 조회한다.
 
         :param shared_schedules: 접근 권한이 확인된 타인 소유 일정
-        :param start_date: 시작 날짜
-        :param end_date: 종료 날짜
+        :param start_date: 범위 시작 (포함)
+        :param end_date: 범위 끝 (제외)
         :return: 해당 날짜 범위와 겹치는 일정 (가상 인스턴스 포함, 시간순)
         """
         start_date_utc = ensure_utc_naive(start_date)
         end_date_utc = ensure_utc_naive(end_date)
 
-        recurring_ids = [s.id for s in shared_schedules if s.recurrence_rule]
+        recurring = [s for s in shared_schedules if s.recurrence_rule]
         exceptions = crud.get_schedule_exceptions_by_parent_ids(
-            self.session, recurring_ids, start_date_utc, end_date_utc
+            self.session,
+            [s.id for s in recurring],
+            _exception_window_start(recurring, start_date_utc),
+            end_date_utc,
         )
         return self.expand_in_range(shared_schedules, exceptions, start_date_utc, end_date_utc)
 
@@ -147,21 +162,21 @@ class ScheduleQueryService:
             end_date_utc: datetime,
     ) -> list[Schedule]:
         """
-        일정 목록을 날짜 범위 안의 항목으로 펼친다
+        일정 목록을 [start_date_utc, end_date_utc)와 겹치는 항목으로 펼친다
 
         - 일반 일정: 범위와 겹치면 그대로 포함
         - 반복 일정: 범위 안의 회차를 가상 인스턴스로 확장 (삭제된 회차 제외, 수정된 회차는 예외 값)
 
         :param schedules: 일정 리스트 (일반 + 반복 원본)
         :param exceptions: 반복 일정들의 예외 인스턴스
-        :param start_date_utc: 시작 날짜 (UTC naive)
-        :param end_date_utc: 종료 날짜 (UTC naive)
+        :param start_date_utc: 범위 시작 (UTC naive, 포함)
+        :param end_date_utc: 범위 끝 (UTC naive, 제외)
         :return: 범위와 겹치는 일정과 가상 인스턴스 (시간순)
         """
         regular_schedules = [
             s for s in schedules
             if not s.recurrence_rule
-            and s.start_time <= end_date_utc and s.end_time >= start_date_utc
+            and s.start_time < end_date_utc and s.end_time > start_date_utc
         ]
         recurring_schedules = [s for s in schedules if s.recurrence_rule]
 
