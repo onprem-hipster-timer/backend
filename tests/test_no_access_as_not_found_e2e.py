@@ -132,6 +132,19 @@ READS = [
     ("todo", "get", "/v1/todos/{id}/timers", {}),
     ("todo", "get", "/v1/todos/{id}/timers/active", {}),
     ("timer", "get", "/v1/timers/{id}", {}),
+    ("meeting", "get", "/v1/meetings/{id}", {}),
+    ("meeting", "post", "/v1/meetings/{id}/participate", {"json": {"display_name": "참여자"}}),
+    ("meeting", "get", "/v1/meetings/{id}/availability", {}),
+    ("meeting", "get", "/v1/meetings/{id}/result", {}),
+    (
+        "meeting",
+        "put",
+        "/v1/meetings/{id}/availability",
+        {
+            "params": {"participant_id": "00000000-0000-4000-8000-000000000000"},
+            "json": [{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}],
+        },
+    ),
 ]
 
 
@@ -220,4 +233,26 @@ def test_timer_linked_to_others_resource_matches_missing(multi_user_e2e, level, 
     missing = viewer.post("/v1/timers", json={"title": "t", "allocated_duration": 60, link: str(uuid4())})
 
     assert existing.status_code == 404, existing.text
+    assert _normalized(existing) == _normalized(missing)
+
+
+@pytest.mark.e2e
+def test_availability_for_others_participant_matches_missing_participant(multi_user_e2e):
+    """접근 가능한 미팅에서 다른 사용자의 참여자 ID는 없는 참여자 ID와 같은 응답"""
+    owner = multi_user_e2e.as_user("owner")
+    viewer = multi_user_e2e.as_user("viewer")
+    meeting_id = _make_meeting(owner)
+    _share(owner, "meeting", meeting_id, {"level": "public"})
+    owner_participant_id = owner.post(
+        f"/v1/meetings/{meeting_id}/participate", json={"display_name": "주최자"}
+    ).json()["id"]
+    slots = [{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}]
+
+    existing = viewer.put(
+        f"/v1/meetings/{meeting_id}/availability", params={"participant_id": owner_participant_id}, json=slots
+    )
+    missing = viewer.put(f"/v1/meetings/{meeting_id}/availability", params={"participant_id": str(uuid4())}, json=slots)
+
+    assert existing.status_code == 404, existing.text
+    assert existing.json()["error_type"] == "MeetingParticipantNotFoundError"
     assert _normalized(existing) == _normalized(missing)

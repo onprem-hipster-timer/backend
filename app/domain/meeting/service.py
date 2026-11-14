@@ -23,7 +23,6 @@ from app.domain.meeting.schema.dto import (
     TimeSlotCreate,
 )
 from app.domain.visibility.enums import ResourceType
-from app.domain.visibility.exceptions import AccessDeniedError
 from app.domain.visibility.service import VisibilityService
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 
@@ -72,8 +71,7 @@ class MeetingService:
         
         :param meeting_id: 일정 조율 ID
         :return: (일정 조율, is_shared) 튜플
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 먼저 ID로만 조회 (소유자 무관)
         meeting = crud.get_meeting_by_id(self.session, meeting_id)
@@ -86,11 +84,12 @@ class MeetingService:
 
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.require_access(
+        if not visibility_service.can_access(
             resource_type=ResourceType.MEETING,
             resource_id=meeting_id,
             owner_id=meeting.owner_id,
-        )
+        ):
+            raise MeetingNotFoundError()
 
         return meeting, True
 
@@ -147,8 +146,7 @@ class MeetingService:
         :param meeting_id: 일정 조율 ID
         :param data: 참여자 생성 데이터
         :return: 생성된 참여자
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
         self.get_meeting_with_access_check(meeting_id)
@@ -174,8 +172,7 @@ class MeetingService:
         :param meeting_id: 일정 조율 ID
         :param participant_id: 참여자 ID
         :return: 참여자
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         :raises MeetingParticipantNotFoundError: 참여자를 찾을 수 없는 경우
         """
         # 접근 권한 확인
@@ -197,8 +194,7 @@ class MeetingService:
         
         :param meeting_id: 일정 조율 ID
         :return: 참여자 리스트
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
         self.get_meeting_with_access_check(meeting_id)
@@ -220,9 +216,8 @@ class MeetingService:
         :param participant_id: 참여자 ID
         :param time_slots: 시간 슬롯 리스트
         :return: 생성된 시간 슬롯 리스트
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
-        :raises MeetingParticipantNotFoundError: 참여자를 찾을 수 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
+        :raises MeetingParticipantNotFoundError: 참여자가 없거나 본인 참여자가 아닌 경우
         """
         # 접근 권한 확인
         self.get_meeting_with_access_check(meeting_id)
@@ -232,7 +227,7 @@ class MeetingService:
 
         # 참여자가 본인인지 확인 (본인만 수정 가능)
         if participant.user_id != self.owner_id:
-            raise AccessDeniedError()
+            raise MeetingParticipantNotFoundError()
 
         # 기존 시간 슬롯 삭제
         crud.delete_participant_time_slots(self.session, participant_id)

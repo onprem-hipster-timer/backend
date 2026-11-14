@@ -71,7 +71,7 @@ def test_meeting_access_control_e2e(multi_user_e2e):
     assert client_a.get(f"/v1/meetings/{meeting_id}").json().get("visibility_level") == "allowed_emails"
 
     assert client_b.get(f"/v1/meetings/{meeting_id}").status_code == 200
-    assert client_c.get(f"/v1/meetings/{meeting_id}").status_code == 403
+    assert client_c.get(f"/v1/meetings/{meeting_id}").status_code == 404
 
 
 @pytest.mark.e2e
@@ -92,7 +92,7 @@ def test_meeting_domain_access_control_e2e(multi_user_e2e):
 
     assert client_company.get(f"/v1/meetings/{meeting_id}").status_code == 200
     assert client_partner.get(f"/v1/meetings/{meeting_id}").status_code == 200
-    assert client_external.get(f"/v1/meetings/{meeting_id}").status_code == 403
+    assert client_external.get(f"/v1/meetings/{meeting_id}").status_code == 404
 
 
 @pytest.mark.e2e
@@ -117,7 +117,7 @@ def test_meeting_mixed_email_domain_access_e2e(multi_user_e2e):
 
     assert client_allowed_email.get(f"/v1/meetings/{meeting_id}").status_code == 200
     assert client_allowed_domain.get(f"/v1/meetings/{meeting_id}").status_code == 200
-    assert client_not_allowed.get(f"/v1/meetings/{meeting_id}").status_code == 403
+    assert client_not_allowed.get(f"/v1/meetings/{meeting_id}").status_code == 404
 
 
 @pytest.mark.e2e
@@ -153,7 +153,7 @@ def test_meeting_participant_access_with_email_visibility_e2e(multi_user_e2e):
         f"/v1/meetings/{meeting_id}/participate",
         json={"display_name": "거부된 참여자"},
     )
-    assert denied_response.status_code == 403
+    assert denied_response.status_code == 404
 
 
 @pytest.mark.e2e
