@@ -27,6 +27,20 @@ class TestFriendRequestRule:
         assert rule.max_requests == 60
 
 
+class TestGuestEnterRule:
+    """게스트 입장 전용 rate limit 규칙"""
+
+    def test_guest_enter_post_has_stricter_limit(self):
+        rule = get_rule_for_request("POST", "/v1/guests/enter")
+        assert rule is not None
+        assert rule.max_requests == 10  # 전역 폴백(60)보다 엄격
+
+    def test_guest_self_delete_falls_back_to_global(self):
+        rule = get_rule_for_request("DELETE", "/v1/guests/me")
+        assert rule is not None
+        assert rule.max_requests == 60
+
+
 class TestRateLimitRule:
     """RateLimitRule 테스트"""
 
