@@ -10,7 +10,9 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - 리다이렉트는 따라가지 않고 클라이언트에 그대로 돌려준다
 - admin API에는 닿지 않는다. 요청은 KRATOS_PUBLIC_URL 한 곳으로만 간다
 - 설정 제출은 메일 코드로 본인 확인한 복구 세션의 비밀번호 변경만 넘긴다. 새어 나간 비밀번호만으로
-  비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다
+  비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다.
+  GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
+  정한다 (app/api/kratos_hooks.py)
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
@@ -173,14 +175,23 @@ def _settings_forbidden() -> JSONResponse:
     )
 
 
+def _is_guest_session(session: object) -> bool:
+    """whoami 세션의 identity가 게스트 schema인지"""
+    identity = session.get("identity") if isinstance(session, dict) else None
+    schema_id = identity.get("schema_id") if isinstance(identity, dict) else None
+    return isinstance(schema_id, str) and schema_id == settings.KRATOS_GUEST_SCHEMA_ID
+
+
 async def _settings_rejection(client: httpx.AsyncClient, request: Request, body: bytes) -> Response | None:
     """메일 코드로 본인 확인한 복구 세션의 비밀번호 변경이 아니면 거절 응답을 돌려준다.
 
     비밀번호 로그인·재인증 세션은 비밀번호만 알면 만들 수 있으므로 받지 않는다. 복구 세션이라도
     비밀번호로 다시 인증하면 마지막 인증 방법이 password가 되어 받지 않는다. 이메일 변경(profile)과
     소셜 계정 연결(oidc)은 앱이 쓰지 않으므로 복구 세션이어도 막는다.
+    GUEST_ENABLED면 게스트 세션의 profile 제출은 넘긴다 (로그인 식별자 변경은 Kratos 설정 훅이 거절한다).
     """
-    if _submitted_method(request.headers.get("content-type", ""), body) != "password":
+    method = _submitted_method(request.headers.get("content-type", ""), body)
+    if method != "password" and not (method == "profile" and settings.GUEST_ENABLED):
         return _settings_forbidden()
     token = request.headers.get("x-session-token")
     if not token:
@@ -189,11 +200,15 @@ async def _settings_rejection(client: httpx.AsyncClient, request: Request, body:
         "/sessions/whoami", headers={"x-session-token": token, "accept": "application/json"}
     )
     last_method = None
+    session = None
     if whoami.status_code == 200:
         try:
             session = whoami.json()
         except ValueError:
             session = None
+    if method == "profile":
+        return None if _is_guest_session(session) else _settings_forbidden()
+    if session is not None:
         methods = session.get("authentication_methods") if isinstance(session, dict) else None
         if isinstance(methods, list) and methods and isinstance(methods[-1], dict):
             last_method = methods[-1].get("method")

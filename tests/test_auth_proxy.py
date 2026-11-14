@@ -312,6 +312,80 @@ def test_settings_other_than_password_are_rejected_even_after_recovery(client, u
     assert settings_forwarded(upstream) == []
 
 
+GUEST_SESSION = {
+    "authentication_methods": [{"method": "password"}],
+    "identity": {"schema_id": "guest", "traits": {"handle": "h", "name": "민수"}},
+}
+MEMBER_SESSION = {
+    "authentication_methods": [{"method": "password"}],
+    "identity": {"schema_id": "default", "traits": {"email": "m@example.com"}},
+}
+GUEST_RENAME = {"method": "profile", "traits": {"handle": "h", "name": "철수"}}
+
+
+@pytest.fixture
+def guest_enabled(monkeypatch):
+    monkeypatch.setattr(auth_proxy, "settings", Settings(KRATOS_PUBLIC_URL=UPSTREAM, GUEST_ENABLED=True,
+                                                         KRATOS_ADMIN_URL="http://admin.test",
+                                                         KRATOS_HOOK_API_KEY="k"))
+
+
+def test_settings_profile_of_guest_session_is_forwarded_when_guest_enabled(client, upstream, guest_enabled):
+    """게스트의 이름 변경은 넘긴다. 바꿀 수 있는 항목은 Kratos 설정 훅이 정한다"""
+    kratos_with_session(upstream, GUEST_SESSION)
+
+    response = client.post(SETTINGS_SUBMIT, json=GUEST_RENAME, headers={"X-Session-Token": "ory_st_guest"})
+
+    assert response.status_code == 200
+    [forwarded] = settings_forwarded(upstream)
+    assert forwarded.headers["x-session-token"] == "ory_st_guest"
+
+
+def test_settings_profile_of_member_session_is_rejected_when_guest_enabled(client, upstream, guest_enabled):
+    kratos_with_session(upstream, MEMBER_SESSION)
+
+    response = client.post(
+        SETTINGS_SUBMIT,
+        json={"method": "profile", "traits": {"email": "other@example.com"}},
+        headers={"X-Session-Token": "ory_st_member"},
+    )
+
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
+
+
+def test_settings_profile_of_guest_session_is_rejected_when_guest_disabled(client, upstream):
+    kratos_with_session(upstream, GUEST_SESSION)
+
+    response = client.post(SETTINGS_SUBMIT, json=GUEST_RENAME, headers={"X-Session-Token": "ory_st_guest"})
+
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
+
+
+def test_settings_profile_with_ended_session_is_rejected_when_guest_enabled(client, upstream, guest_enabled):
+    kratos_with_session(upstream, GUEST_SESSION, whoami_status=401)
+
+    response = client.post(SETTINGS_SUBMIT, json=GUEST_RENAME, headers={"X-Session-Token": "ory_st_guest"})
+
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"method": "password", "password": "New-Pass-123"}, {"method": "oidc", "link": "google"}],
+    ids=["password", "oidc_link"],
+)
+def test_guest_session_other_settings_are_rejected(client, upstream, guest_enabled, body):
+    kratos_with_session(upstream, GUEST_SESSION)
+
+    response = client.post(SETTINGS_SUBMIT, json=body, headers={"X-Session-Token": "ory_st_guest"})
+
+    assert response.status_code == 403
+    assert settings_forwarded(upstream) == []
+
+
 def test_settings_without_session_token_is_rejected(client, upstream):
     kratos_with_session(upstream, RECOVERY_SESSION)
 
