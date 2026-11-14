@@ -86,7 +86,7 @@ const parentRecurringSchedule: Schedule = {
 ```typescript
 // 가상 인스턴스 예시 (원본 반복 일정의 2024-01-08 인스턴스)
 const virtualInstance: Schedule = {
-  id: "323e4567-e89b-12d3-a456-426614174000",  // 가상 인스턴스는 고유 ID를 가짐
+  id: "323e4567-e89b-12d3-a456-426614174000",  // 응답마다 새로 만들어지는 ID (요청 간에 유지되지 않음)
   title: "주간 회의",
   description: "매주 월요일 회의",
   start_time: "2024-01-08T10:00:00",  // 이 인스턴스의 시작 시간
@@ -178,6 +178,35 @@ const schedules: Schedule[] = await response.json();
 // - 반복 일정의 가상 인스턴스들 (각 날짜별로)
 // 이 포함됩니다.
 ```
+
+`scope=shared`/`scope=all`로 조회하면 공유된 타인의 반복 일정도 같은 방식으로 범위 안의 회차로 확장됩니다
+(예외 반영, `parent_id` 설정, `is_shared: true`, `owner_id`는 소유자). 자세한 내용은 [Visibility 가이드](visibility.ko.md)의 공유 리소스 조회를 참고하세요.
+
+#### 반복 일정의 특정 인스턴스 조회
+```typescript
+// GET /v1/schedules/{parent_id}?instance_start={instance_start_time}
+// 수정/삭제와 같이 parent_id와 instance_start로 회차를 가리킨다
+const response = await fetch(
+  `/v1/schedules/${schedule.parent_id}?instance_start=${encodeURIComponent(schedule.start_time)}`
+);
+const instance: Schedule = await response.json();
+```
+
+- 목록의 인스턴스와 같은 모양을 반환합니다: `parent_id`는 원본 ID, `start_time`/`end_time`은 회차 시간, 수정된 회차는 예외 값, `recurrence_rule`은 `null`, `id`는 응답마다 새로 만들어집니다.
+- `instance_start`는 규칙상 회차의 원래 시작 시간이며 1분 허용 오차로 맞춥니다. 오프셋이 있으면 UTC로 바꿔 비교하고, 없으면 UTC로 봅니다. `timezone` 파라미터는 응답 시간대만 바꿉니다.
+- 시간을 옮긴 회차는 목록의 `start_time`이 옮긴 시간이므로 그 값으로는 찾을 수 없습니다(404). 원래 시작 시간으로 조회해야 합니다.
+- 공유된 반복 일정도 일정 조회와 같은 접근 권한으로 조회할 수 있으며 `is_shared: true`로 반환됩니다.
+
+| 상황 | 응답 |
+|------|------|
+| 규칙에 해당 회차가 있음 | 200 |
+| 규칙에 해당 시간의 회차가 없음 (다른 요일·시각, 첫 회차 이전, `recurrence_end` 이후) | 404 |
+| 삭제된 회차 | 404 |
+| 반복 일정이 아닌 일정에 `instance_start` 지정 | 400 (`RecurringScheduleError`, 수정/삭제와 같음) |
+| 일정이 없음 | 404 |
+| 접근 권한 없음 | 403 (`instance_start` 없이 조회할 때와 같음) |
+
+`instance_start` 없이 호출하면 원본 반복 일정을 반환합니다.
 
 ### 일정 수정
 
@@ -357,11 +386,13 @@ function renderScheduleDetails(schedule: Schedule) {
 
 1. **가상 인스턴스는 DB에 저장되지 않습니다**
    - 날짜 범위 조회 시에만 동적으로 생성됩니다
-   - 각 가상 인스턴스는 고유한 ID를 가지지만, 이는 조회 시에만 유효합니다
+   - 각 가상 인스턴스의 `id`는 응답마다 새로 만들어지며 요청 간에 유지되지 않습니다. 이 `id`로는 조회·수정·삭제할 수 없습니다
+   - 회차는 `parent_id`와 `instance_start`(회차의 원래 시작 시간)로 가리킵니다
 
-2. **가상 인스턴스 수정/삭제 시**
+2. **가상 인스턴스 조회/수정/삭제 시**
    - `parent_id`와 `instance_start`를 함께 전송해야 합니다
    - 이렇게 하면 해당 인스턴스만 수정/삭제되고, 다른 인스턴스는 영향받지 않습니다
+   - 공유된 일정의 인스턴스는 다른 공유 일정과 같이 수정/삭제할 수 없습니다 (404)
 
 3. **원본 반복 일정 수정/삭제 시**
    - `instance_start` 쿼리 파라미터 없이 원본 일정 ID로 수정/삭제하면 모든 인스턴스에 영향을 줍니다
