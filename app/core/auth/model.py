@@ -30,13 +30,15 @@ class CurrentUser(BaseModel):
         호출 전에 `sub` 존재를 보장해야 한다(클레임→객체 매핑의 단일 출처).
         """
         verified = claims.get("email_verified")
+        schema_id = claims.get("schema_id")
         return cls(
             sub=claims.get("sub"),
             email=claims.get("email"),
             email_verified=(verified is True or verified == "true"),
             name=claims.get("name"),
             picture=claims.get("picture"),
-            schema_id=claims.get("schema_id"),
+            # 비어 있지 않은 문자열이 아니면 클레임이 없는 것과 같다
+            schema_id=schema_id if isinstance(schema_id, str) and schema_id else None,
             raw_claims=claims,
         )
 

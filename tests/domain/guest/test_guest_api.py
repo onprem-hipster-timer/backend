@@ -224,6 +224,22 @@ def test_flag_on_token_without_schema_id_is_401(guest_client, tokens):
     assert guest_client.get("/v1/users/me", headers=tokens.member()).status_code == 200
 
 
+@pytest.mark.parametrize("schema_id", [["guest"], {"id": "guest"}, 0, 1, True, False, ""])
+def test_token_with_non_text_schema_id_is_401(guest_client, tokens, schema_id):
+    token = tokens.make("member-1", schema_id, email="m@example.com", email_verified=True)
+    r = guest_client.get("/v1/todos", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
+
+
+@pytest.mark.parametrize("schema_id", ["Guest", "GUEST", " guest", "guest "])
+def test_schema_id_is_compared_exactly(guest_client, kratos, tokens, resource, schema_id):
+    guest = make_guest(kratos, resource)
+    token = tokens.make(guest.identity_id, schema_id)
+    r = guest_client.delete(ME, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+    assert len(guest_rows()) == 1
+
+
 def test_guest_token_is_refused_on_member_route(guest_client, kratos, tokens, resource):
     guest = make_guest(kratos, resource)
     r = guest_client.get("/v1/users/me", headers=tokens.guest(guest.identity_id))
