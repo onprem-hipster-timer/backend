@@ -1,6 +1,7 @@
 """
 Guest Domain DTO
 
+이름과 비밀번호는 먼저 NFC로 정규화한다. 기기마다 같은 글자가 다른 유니코드 형태로 올 수 있다.
 이름은 앞뒤 공백을 떼고 1~50자, 제어 문자는 받지 않는다. 같은 리소스 안에서도 이름은 겹칠 수 있다.
 비밀번호는 비어 있지 않고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
 """
@@ -17,8 +18,8 @@ GUEST_PASSWORD_MAX_BYTES = 72
 
 
 def normalize_guest_name(value: str) -> str:
-    """앞뒤 공백을 뗀 이름. 규칙에 맞지 않으면 ValueError"""
-    name = value.strip()
+    """NFC로 정규화하고 앞뒤 공백을 뗀 이름. 규칙에 맞지 않으면 ValueError"""
+    name = unicodedata.normalize("NFC", value).strip()
     if not 1 <= len(name) <= GUEST_NAME_MAX_LENGTH:
         raise ValueError(f"이름은 1~{GUEST_NAME_MAX_LENGTH}자여야 합니다")
     if any(unicodedata.category(ch) == "Cc" for ch in name):
@@ -41,6 +42,7 @@ class GuestEnter(CustomModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
+        v = unicodedata.normalize("NFC", v)
         if not v:
             raise ValueError("비밀번호를 입력하세요")
         if len(v.encode("utf-8")) > GUEST_PASSWORD_MAX_BYTES:

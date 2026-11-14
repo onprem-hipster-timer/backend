@@ -148,3 +148,14 @@ async def test_rename_refused_when_current_identity_cannot_be_read(kratos, open_
     kratos.fail_get = True
     traits = _traits(kratos, open_guest, name="철수")
     assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+
+
+@pytest.mark.asyncio
+async def test_guest_rename_to_non_nfc_name_is_refused(kratos, open_guest, guest_events):
+    import unicodedata
+
+    traits = _traits(kratos, open_guest, name=unicodedata.normalize("NFD", "철수"))
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is False
+    assert guest_events == []
+    traits = _traits(kratos, open_guest, name="철수")
+    assert await service.settings_change_allowed("profile", open_guest.identity_id, "guest", traits) is True

@@ -14,6 +14,7 @@ Kratos 호출 동안 트랜잭션을 열어 두지 않는다 (로그인 중에 K
 테스트: tests/domain/guest/
 """
 import logging
+import unicodedata
 from contextlib import contextmanager
 from typing import Iterator
 from uuid import UUID, uuid4
@@ -166,7 +167,13 @@ async def _same_name_guests(data: GuestEnter) -> list[tuple[Guest, str]]:
     matches = []
     for guest in guests:
         traits = traits_by_id.get(guest.identity_id, {})
-        if traits.get("name") == data.name and isinstance(traits.get("handle"), str):
+        name = traits.get("name")
+        # data.name은 NFC다. Kratos에 다른 형태로 저장된 이름도 같은 이름으로 본다
+        if (
+                isinstance(name, str)
+                and unicodedata.normalize("NFC", name) == data.name
+                and isinstance(traits.get("handle"), str)
+        ):
             matches.append((guest, traits["handle"]))
     return matches
 
@@ -238,6 +245,7 @@ async def login_allowed(identity_id: str, schema_id: str | None, verified: bool)
 
 
 def _valid_name(name: object) -> bool:
+    """이름 규칙에 맞고 이미 NFC이며 앞뒤 공백이 없을 때 True (훅은 Kratos가 저장할 값을 바꿀 수 없다)"""
     if not isinstance(name, str):
         return False
     try:

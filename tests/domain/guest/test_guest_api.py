@@ -179,3 +179,58 @@ def test_guest_token_is_refused_on_member_route(guest_client, kratos, tokens, re
     guest = make_guest(kratos, resource)
     r = guest_client.get("/v1/users/me", headers=tokens.guest(guest.identity_id))
     assert r.status_code == 403
+
+
+# ============ 유니코드 정규화 (NFC) ============
+
+def _nfd(text: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFD", text)
+
+
+def test_nfc_and_nfd_name_enter_same_guest(guest_client, kratos, resource):
+    assert _nfd("민수") != "민수"
+    first = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
+    again = guest_client.post(ENTER, json=_body(resource, name=_nfd("민수"))).json()
+
+    assert again["guest_id"] == first["guest_id"]
+    assert len(guest_rows()) == 1
+
+
+def test_nfd_name_is_stored_as_nfc(guest_client, kratos, resource):
+    guest_client.post(ENTER, json=_body(resource, name=_nfd("민수")))
+    assert kratos.name_of(guest_rows()[0].identity_id) == "민수"
+
+
+def test_nfc_and_nfd_password_enter_same_guest(guest_client, kratos, resource):
+    """가짜 Kratos는 저장된 문자열과 정확히 비교하므로 호출 전에 정규화해야 같은 게스트가 된다"""
+    first = guest_client.post(ENTER, json=_body(resource, password=_nfd("비밀"))).json()
+    assert kratos.passwords[guest_rows()[0].identity_id] == "비밀"
+    again = guest_client.post(ENTER, json=_body(resource, password="비밀")).json()
+    third = guest_client.post(ENTER, json=_body(resource, password=_nfd("비밀"))).json()
+
+    assert again["guest_id"] == third["guest_id"] == first["guest_id"]
+    assert len(guest_rows()) == 1
+
+
+def test_name_length_is_measured_after_normalisation(guest_client, kratos, resource):
+    name = "가" * 50
+    assert len(_nfd(name)) > 50
+    assert guest_client.post(ENTER, json=_body(resource, name=_nfd(name))).status_code == 200
+    assert kratos.name_of(guest_rows()[0].identity_id) == name
+
+
+def test_password_bytes_are_measured_after_normalisation(guest_client, kratos, resource):
+    password = "가" * 24  # NFC 72바이트
+    assert len(_nfd(password).encode()) > 72
+    assert guest_client.post(ENTER, json=_body(resource, password=_nfd(password))).status_code == 200
+    assert kratos.passwords[guest_rows()[0].identity_id] == password
+
+
+def test_identity_renamed_to_nfd_elsewhere_still_matches(guest_client, kratos, resource):
+    """Kratos에 NFC가 아닌 이름이 저장돼 있어도 NFC로 비교한다"""
+    first = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
+    kratos.identities[guest_rows()[0].identity_id]["traits"]["name"] = _nfd("민수")
+
+    again = guest_client.post(ENTER, json=_body(resource, name="민수")).json()
+    assert again["guest_id"] == first["guest_id"]
