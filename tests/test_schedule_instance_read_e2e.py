@@ -229,3 +229,151 @@ def test_instance_read_of_private_schedule_same_status_as_parent_read(multi_user
     assert instance_read.status_code == parent_read.status_code
     assert off_rule_read.status_code == parent_read.status_code
     assert "주간 회의" not in instance_read.text
+
+
+def _move_jan_8_to_jan_9(client, parent_id: str) -> dict:
+    response = client.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": "2024-01-08T10:00:00Z"},
+        json={"start_time": "2024-01-09T15:00:00Z", "end_time": "2024-01-09T16:00:00Z"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.e2e
+def test_moved_instance_carries_original_instance_start(e2e_client):
+    parent_id = _create_weekly(e2e_client)
+    patched = _move_jan_8_to_jan_9(e2e_client, parent_id)
+
+    listed = _list_instance(e2e_client, parent_id, "2024-01-08T00:00:00Z", "2024-01-10T23:59:59Z")
+
+    assert patched["instance_start"] == "2024-01-08T10:00:00+0000"
+    assert listed["instance_start"] == "2024-01-08T10:00:00+0000"
+    assert listed["start_time"] == "2024-01-09T15:00:00+0000"
+
+
+@pytest.mark.e2e
+def test_moved_instance_read_update_delete_by_returned_instance_start(e2e_client):
+    parent_id = _create_weekly(e2e_client)
+    _move_jan_8_to_jan_9(e2e_client, parent_id)
+    range_ = ("2024-01-08T00:00:00Z", "2024-01-10T23:59:59Z")
+    listed = _list_instance(e2e_client, parent_id, *range_)
+
+    read = _get_instance(e2e_client, parent_id, listed["instance_start"])
+    assert read.status_code == 200, read.text
+    assert _without_id(read.json()) == _without_id(listed)
+
+    patch = e2e_client.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": listed["instance_start"]},
+        json={"title": "두 번 수정된 회의"},
+    )
+    assert patch.status_code == 200, patch.text
+    relisted = _list_instance(e2e_client, parent_id, *range_)
+    assert relisted["title"] == "두 번 수정된 회의"
+    assert relisted["start_time"] == "2024-01-09T15:00:00+0000"
+    assert relisted["instance_start"] == listed["instance_start"]
+
+    delete = e2e_client.delete(
+        f"/v1/schedules/{parent_id}", params={"instance_start": relisted["instance_start"]}
+    )
+    assert delete.status_code == 200, delete.text
+    remaining = e2e_client.get(
+        "/v1/schedules", params={"start_date": range_[0], "end_date": range_[1]}
+    ).json()
+    assert [s for s in remaining if s["parent_id"] == parent_id] == []
+
+
+@pytest.mark.e2e
+def test_unmoved_instance_start_equals_start_time(e2e_client):
+    parent_id = _create_weekly(e2e_client)
+    e2e_client.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": "2024-01-15T10:00:00Z"},
+        json={"title": "제목만 변경"},
+    )
+
+    response = e2e_client.get(
+        "/v1/schedules", params={"start_date": "2024-01-01T00:00:00Z", "end_date": "2024-01-31T23:59:59Z"}
+    )
+
+    instances = [s for s in response.json() if s["parent_id"] == parent_id]
+    assert len(instances) == 5
+    assert all(s["instance_start"] == s["start_time"] for s in instances)
+
+
+@pytest.mark.e2e
+def test_instance_start_is_null_for_plain_schedule_and_parent(e2e_client):
+    parent_id = _create_weekly(e2e_client)
+    created = e2e_client.post(
+        "/v1/schedules",
+        json={"title": "단일 일정", "start_time": "2024-01-08T13:00:00Z", "end_time": "2024-01-08T14:00:00Z"},
+    )
+    plain_id = created.json()["id"]
+
+    listed = e2e_client.get(
+        "/v1/schedules", params={"start_date": "2024-01-08T00:00:00Z", "end_date": "2024-01-08T23:59:59Z"}
+    ).json()
+
+    assert created.json()["instance_start"] is None
+    assert [s["instance_start"] for s in listed if s["id"] == plain_id] == [None]
+    assert e2e_client.get(f"/v1/schedules/{plain_id}").json()["instance_start"] is None
+    assert e2e_client.get(f"/v1/schedules/{parent_id}").json()["instance_start"] is None
+
+
+@pytest.mark.e2e
+def test_instance_start_round_trips_in_timezone(e2e_client):
+    parent_id = _create_weekly(e2e_client)
+    _move_jan_8_to_jan_9(e2e_client, parent_id)
+    range_ = ("2024-01-08T00:00:00Z", "2024-01-10T23:59:59Z")
+    listed = _list_instance(e2e_client, parent_id, *range_, timezone="Asia/Seoul")
+    assert listed["instance_start"] == "2024-01-08T19:00:00+0900"
+    assert listed["start_time"] == "2024-01-10T00:00:00+0900"
+
+    read = _get_instance(e2e_client, parent_id, listed["instance_start"], timezone="Asia/Seoul")
+    assert read.status_code == 200, read.text
+    assert _without_id(read.json()) == _without_id(listed)
+
+    patch = e2e_client.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": listed["instance_start"], "timezone": "Asia/Seoul"},
+        json={"title": "서울 시간으로 수정"},
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["instance_start"] == "2024-01-08T19:00:00+0900"
+    assert _list_instance(e2e_client, parent_id, *range_)["title"] == "서울 시간으로 수정"
+
+    delete = e2e_client.delete(
+        f"/v1/schedules/{parent_id}", params={"instance_start": listed["instance_start"]}
+    )
+    assert delete.status_code == 200, delete.text
+    assert _get_instance(e2e_client, parent_id, listed["instance_start"]).status_code == 404
+
+
+@pytest.mark.e2e
+def test_every_listed_instance_reads_back_by_instance_start(e2e_client):
+    response = e2e_client.post("/v1/schedules", json={
+        "title": "주간 회의",
+        "start_time": "2024-01-01T10:00:00Z",
+        "end_time": "2024-01-01T12:00:00Z",
+        "recurrence_rule": "FREQ=WEEKLY;BYDAY=MO",
+    })
+    parent_id = response.json()["id"]
+    _move_jan_8_to_jan_9(e2e_client, parent_id)
+    e2e_client.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": "2024-02-12T10:00:00Z"},
+        json={"title": "제목만 변경"},
+    )
+
+    listed = e2e_client.get(
+        "/v1/schedules", params={"start_date": "2024-01-01T00:00:00Z", "end_date": "2024-02-29T23:59:59Z"}
+    ).json()
+
+    instances = [s for s in listed if s["parent_id"] == parent_id]
+    assert len(instances) == 9
+    for instance in instances:
+        read = _get_instance(e2e_client, parent_id, instance["instance_start"])
+        assert read.status_code == 200, (instance, read.text)
+        assert _without_id(read.json()) == _without_id(instance)

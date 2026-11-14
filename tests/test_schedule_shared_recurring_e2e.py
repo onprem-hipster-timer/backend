@@ -226,3 +226,24 @@ def test_viewer_cannot_update_or_delete_shared_instance(shared_weekly):
         _list(owner, "2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z", "mine"), parent_id
     )
     assert [s["title"] for s in owner_instances] == ["주간 회의"]
+
+
+@pytest.mark.e2e
+def test_viewer_reads_moved_shared_instance_by_listed_instance_start(shared_weekly):
+    owner, viewer, parent_id = shared_weekly
+    moved = owner.patch(
+        f"/v1/schedules/{parent_id}",
+        params={"instance_start": "2024-01-08T10:00:00Z"},
+        json={"start_time": "2024-01-09T15:00:00Z", "end_time": "2024-01-09T16:00:00Z"},
+    )
+    assert moved.status_code == 200, moved.text
+
+    listed = _instances(_list(viewer, "2024-01-08T00:00:00Z", "2024-01-10T23:59:59Z", "shared"), parent_id)
+
+    assert [(s["instance_start"], s["start_time"]) for s in listed] == [
+        ("2024-01-08T10:00:00+0000", "2024-01-09T15:00:00+0000")
+    ]
+    read = viewer.get(f"/v1/schedules/{parent_id}", params={"instance_start": listed[0]["instance_start"]})
+    assert read.status_code == 200, read.text
+    assert read.json()["is_shared"] is True
+    assert _comparable(read.json()) == _comparable(listed[0])
