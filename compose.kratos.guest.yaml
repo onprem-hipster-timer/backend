@@ -11,6 +11,7 @@
 #   GUEST_ENABLED=true
 #   KRATOS_ADMIN_URL=http://127.0.0.1:4434
 #   KRATOS_HOOK_API_KEY=dev-only-kratos-hook-key
+#   TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA  (Cloudflare 테스트 키, 항상 통과)
 # 설정 내용: dev/kratos/kratos.guest.yml, docs/deployment/kratos-guest.ko.md
 
 services:

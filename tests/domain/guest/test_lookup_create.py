@@ -22,7 +22,9 @@ pytestmark = pytest.mark.usefixtures("guest_db")
 
 
 def _create(resource, name="민수", password="1234", resource_type=ResourceType.MEETING) -> GuestCreate:
-    return GuestCreate(resource_type=resource_type, resource_id=resource, name=name, password=password)
+    return GuestCreate(
+        resource_type=resource_type, resource_id=resource, name=name, password=password, turnstile_token="t"
+    )
 
 
 def _lookup(resource, name="민수", resource_type=ResourceType.MEETING) -> GuestLookup:

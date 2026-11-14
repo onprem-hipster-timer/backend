@@ -8,6 +8,8 @@ from app.domain.guest.host import GuestHostStatus
 
 KRATOS_ADMIN = "http://kratos-admin.test"
 KRATOS_PUBLIC = "http://kratos-public.test"
+TURNSTILE_VERIFY = "http://turnstile.test/siteverify"
+TURNSTILE_SECRET = "turnstile-test-secret"
 
 
 class FakeKratos:
@@ -124,6 +126,31 @@ class FakeKratos:
             identity["traits"] = dict(traits)
             return httpx.Response(200, json={"state": "success", "identity": identity})
         return httpx.Response(404)
+
+
+class FakeTurnstile:
+    """Turnstile siteverify. 기본은 통과
+
+    - success: 돌려줄 success 값
+    - down / status / body: 연결 오류, 200이 아닌 상태, 그대로 돌려줄 본문
+    """
+
+    def __init__(self):
+        self.requests: list[httpx.Request] = []
+        self.success = True
+        self.down = False
+        self.status = 200
+        self.body: bytes | None = None
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if self.down:
+            raise httpx.ConnectError("turnstile down", request=request)
+        self.requests.append(request)
+        if self.status != 200:
+            return httpx.Response(self.status)
+        if self.body is not None:
+            return httpx.Response(200, content=self.body)
+        return httpx.Response(200, json={"success": self.success, "error-codes": []})
 
 
 class FakeHost:

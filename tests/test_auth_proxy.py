@@ -327,7 +327,7 @@ GUEST_RENAME = {"method": "profile", "traits": {"handle": "h", "name": "철수"}
 def guest_enabled(monkeypatch):
     monkeypatch.setattr(auth_proxy, "settings", Settings(KRATOS_PUBLIC_URL=UPSTREAM, GUEST_ENABLED=True,
                                                          KRATOS_ADMIN_URL="http://admin.test",
-                                                         KRATOS_HOOK_API_KEY="k"))
+                                                         KRATOS_HOOK_API_KEY="k", TURNSTILE_SECRET_KEY="s"))
 
 
 def test_settings_profile_of_guest_session_without_identity_id_is_rejected(client, upstream, guest_enabled):

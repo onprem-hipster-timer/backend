@@ -31,7 +31,13 @@ def rate_limited(guest_client, monkeypatch):
 
 
 def _body(resource, name="민수", password="1234") -> dict:
-    return {"resource_type": "meeting", "resource_id": str(resource), "name": name, "password": password}
+    return {
+        "resource_type": "meeting",
+        "resource_id": str(resource),
+        "name": name,
+        "password": password,
+        "turnstile_token": "t",
+    }
 
 
 def _login(client, path, identifier, password, headers=None):

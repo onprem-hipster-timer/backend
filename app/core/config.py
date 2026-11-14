@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     KRATOS_GUEST_SCHEMA_ID: str = "guest"  # Kratos의 게스트 identity schema id (JWT schema_id 클레임과 비교)
     # Kratos web_hook이 X-Kratos-Hook-Key 헤더로 보내는 값. /internal/kratos/hooks/*는 이 값이 맞아야 응답한다
     KRATOS_HOOK_API_KEY: str = ""
+    # Cloudflare Turnstile. POST /v1/guests는 turnstile_token을 이 비밀 키로 확인한다. 게스트를 켜면 필요하다
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_VERIFY_URL: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
     # 실시간 전달 (docs/development/realtime-adapter.ko.md)
     REALTIME_BACKEND: Literal["inprocess", "cloudflare"] = "inprocess"  # inprocess: /v1/ws/timers 연결로 전달, cloudflare: realtime Worker로 push
@@ -190,12 +193,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_guest(self) -> Self:
-        """GUEST_ENABLED인데 Kratos 주소·훅 키가 없으면 기동 실패 (게스트 생성·로그인·훅이 요청마다 실패하기 전에)"""
+        """GUEST_ENABLED인데 Kratos 주소·훅 키·Turnstile 비밀 키가 없으면 기동 실패 (게스트 생성·로그인·훅이 요청마다 실패하기 전에)"""
         if not self.GUEST_ENABLED:
             return self
         missing = [
             name
-            for name in ("KRATOS_PUBLIC_URL", "KRATOS_ADMIN_URL", "KRATOS_HOOK_API_KEY", "KRATOS_GUEST_SCHEMA_ID")
+            for name in (
+                "KRATOS_PUBLIC_URL",
+                "KRATOS_ADMIN_URL",
+                "KRATOS_HOOK_API_KEY",
+                "KRATOS_GUEST_SCHEMA_ID",
+                "TURNSTILE_SECRET_KEY",
+            )
             if not getattr(self, name)
         ]
         if missing:

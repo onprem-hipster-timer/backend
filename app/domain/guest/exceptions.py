@@ -28,3 +28,9 @@ class GuestServiceUnavailableError(DomainException):
     """Kratos에 닿지 않아 게스트 처리를 마치지 못함"""
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     detail = "인증 서비스에 연결할 수 없습니다"
+
+
+class GuestVerificationFailedError(DomainException):
+    """게스트 생성 요청의 Turnstile 토큰이 확인을 통과하지 못함"""
+    status_code = status.HTTP_403_FORBIDDEN
+    detail = "확인을 통과하지 못했습니다. 다시 시도하세요"

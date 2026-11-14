@@ -19,7 +19,13 @@ def resource(host):
 
 
 def _body(resource, name="민수", password="1234", resource_type="meeting") -> dict:
-    return {"resource_type": resource_type, "resource_id": str(resource), "name": name, "password": password}
+    return {
+        "resource_type": resource_type,
+        "resource_id": str(resource),
+        "name": name,
+        "password": password,
+        "turnstile_token": "t",
+    }
 
 
 def _lookup_body(resource, name="민수", resource_type="meeting") -> dict:

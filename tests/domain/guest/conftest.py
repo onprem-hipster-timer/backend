@@ -1,7 +1,8 @@
 """게스트 테스트 fixture
 
 - guest_db: 앱 세션 매니저를 테스트 엔진으로 바꾼다 (게스트 서비스는 자기 세션을 연다)
-- kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳)와 GUEST_ENABLED=true 설정
+- kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳), 가짜 Turnstile, GUEST_ENABLED=true 설정
+- turnstile: 가짜 Turnstile siteverify (kratos가 함께 켠다)
 - host: MEETING 리소스 종류에 등록한 가짜 호스트
 - guest_events: 발행된 게스트 이벤트 기록
 """
@@ -11,12 +12,20 @@ from sqlmodel import SQLModel
 
 import app.core.config as app_config
 from app.api import auth_proxy
-from app.core import kratos_admin
+from app.core import kratos_admin, turnstile as turnstile_client
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.host import register_guest_host, unregister_guest_host
 from app.models.visibility import ResourceType
 from app.shared import messagebus
-from tests.domain.guest.fakes import KRATOS_ADMIN, KRATOS_PUBLIC, FakeHost, FakeKratos
+from tests.domain.guest.fakes import (
+    KRATOS_ADMIN,
+    KRATOS_PUBLIC,
+    TURNSTILE_SECRET,
+    TURNSTILE_VERIFY,
+    FakeHost,
+    FakeKratos,
+    FakeTurnstile,
+)
 
 HOOK_KEY = "test-hook-key"
 
@@ -39,7 +48,16 @@ def guest_db():
 
 
 @pytest.fixture
-def kratos(monkeypatch):
+def turnstile(monkeypatch):
+    fake = FakeTurnstile()
+    monkeypatch.setattr(app_config.settings, "TURNSTILE_SECRET_KEY", TURNSTILE_SECRET)
+    monkeypatch.setattr(app_config.settings, "TURNSTILE_VERIFY_URL", TURNSTILE_VERIFY)
+    monkeypatch.setattr(turnstile_client, "_make_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake)))
+    return fake
+
+
+@pytest.fixture
+def kratos(monkeypatch, turnstile):
     fake = FakeKratos()
     monkeypatch.setattr(app_config.settings, "GUEST_ENABLED", True)
     monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", KRATOS_ADMIN)

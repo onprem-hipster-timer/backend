@@ -10,13 +10,14 @@ Cc·Cf·Cs·Co·Cn·Zl·Zp 범주의 문자는 받지 않는다. 같은 리소�
 import unicodedata
 from uuid import UUID
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from app.core.base_model import CustomModel
 from app.models.visibility import ResourceType
 
 GUEST_NAME_MAX_LENGTH = 50
 GUEST_PASSWORD_MAX_BYTES = 72
+TURNSTILE_TOKEN_MAX_LENGTH = 2048
 
 
 # 이름에 쓸 수 없는 유니코드 범주 (제어, 서식, 서로게이트, 사용자 정의, 미지정, 줄·문단 구분)
@@ -52,8 +53,9 @@ class GuestLookupRead(CustomModel):
 
 
 class GuestCreate(GuestLookup):
-    """게스트 생성 요청"""
+    """게스트 생성 요청. turnstile_token은 클라이언트가 Cloudflare Turnstile 위젯에서 받은 값"""
     password: str
+    turnstile_token: str = Field(min_length=1, max_length=TURNSTILE_TOKEN_MAX_LENGTH)
 
     @field_validator("password")
     @classmethod
