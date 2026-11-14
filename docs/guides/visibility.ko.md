@@ -61,9 +61,18 @@ Visibility(접근권한) 시스템은 리소스(Schedule, Timer, Todo, Meeting)�
 | `SELECTED` | 선택한 친구만 접근 가능 (AllowList 기반) |
 | `FRIENDS` | 모든 친구 접근 가능 |
 | `ALLOWED_EMAILS` | 허용된 이메일/도메인만 접근 가능 (비친구 포함) |
-| `PUBLIC` | 모든 사용자 접근 가능 |
+| `PUBLIC` | 모든 회원 접근 가능 |
 
 > **참고**: `ALLOWED_EMAILS`는 친구 관계와 무관하게 이메일 또는 도메인 기반으로 접근을 허용합니다.
+
+`PUBLIC`이 보이는 범위는 리소스마다 다릅니다.
+
+| 리소스 | `PUBLIC`일 때 |
+|--------|---------------|
+| Schedule, Todo, Timer | id로 조회할 수 있고, 다른 모든 회원의 `scope=shared`·`scope=all` 목록에 나온다(차단 관계와 휴면 계정 제외) |
+| Meeting | id(링크)를 아는 회원이 조회할 수 있다. 미팅 목록은 자기 미팅만 돌려주므로 다른 회원의 목록에는 나오지 않는다 |
+
+접근권한은 회원에게 적용됩니다. [게스트 계정](./guest.ko.md)의 토큰은 레벨과 상관없이 이 문서의 모든 경로에서 `403`이고, 게스트는 게스트를 받는 리소스의 게스트 경로로만 접근합니다.
 
 ### 접근 제어 규칙
 
@@ -391,6 +400,8 @@ DELETE /v1/visibility/schedule/{schedule_id}
 | `mine` | 내 리소스만 (기본값) |
 | `shared` | 공유된 타인의 리소스만 |
 | `all` | 내 리소스 + 공유된 리소스 |
+
+`shared`에 나오는 것은 내가 접근할 수 있는 타인의 리소스 전부입니다: 친구의 `FRIENDS` 리소스, 내가 AllowList에 든 `SELECTED` 리소스, 내 인증된 이메일이 허용된 `ALLOWED_EMAILS` 리소스, 그리고 모든 회원의 `PUBLIC` 리소스. 차단 관계인 사용자와 휴면 계정의 리소스는 빠집니다.
 
 #### Schedule 조회 예시
 
@@ -769,7 +780,7 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 1. **기본값 명시**: "비공개(기본)"으로 표시
 2. **친구 선택 UI**: `selected` 레벨 선택 시 친구 멀티 선택 UI 표시
-3. **경고 표시**: `public` 선택 시 "모든 사용자가 볼 수 있습니다" 경고
+3. **경고 표시**: `public` 선택 시 "모든 회원이 볼 수 있고, 다른 회원의 공유 목록에 나옵니다" 경고 (Schedule·Todo·Timer). Meeting은 "링크를 아는 모든 회원이 볼 수 있습니다"
 4. **친구 제한**: AllowList에 친구만 추가 가능함을 안내
 
 ### 공유된 리소스 표시 권장사항
@@ -845,8 +856,11 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 ### 7. 연관 리소스의 접근권한
 
-- Todo의 Schedule이 공유되면, 해당 Schedule에서 Todo 정보를 볼 수 있습니다.
-- Timer가 공유되면, 연관된 Schedule/Todo 정보도 함께 조회됩니다.
+접근권한은 리소스마다 따로 판정합니다. 공유된 리소스에 연결된 다른 리소스는 그 리소스 자신의 접근권한으로 다시 확인합니다.
+
+- Timer를 `include_schedule`·`include_todo`와 함께 조회하면, 보는 사람이 그 Schedule·Todo에 접근할 수 있을 때만 응답에 담깁니다. 접근할 수 없으면 `null`입니다.
+- Timer 응답의 Todo에 담기는 연관 Schedule도 하나씩 확인해, 접근할 수 있는 것만 담습니다.
+- Schedule 응답의 `source_todo_id`는 id만 알려 줍니다. 그 Todo의 내용은 Todo의 접근권한이 있어야 조회할 수 있습니다.
 
 ---
 

@@ -99,7 +99,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `GUEST_ENABLED` | 게스트 계정을 켠다. 켜면 `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`, `TURNSTILE_SECRET_KEY`가 없을 때 기동 실패하고, `schema_id` 클레임이 없는 토큰은 401. 끄면 `/v1/guests/*`·`/internal/kratos/hooks/*`는 404이고 게스트 토큰은 403 ([게스트 계정 설정](../deployment/kratos-guest.ko.md)) | `False` |
 | `KRATOS_GUEST_SCHEMA_ID` | Kratos의 게스트 identity schema id. 토큰의 `schema_id`가 이 값이면 게스트 | `guest` |
 | `KRATOS_HOOK_API_KEY` | Kratos web_hook이 `X-Kratos-Hook-Key` 헤더로 보내는 값. `/internal/kratos/hooks/*`는 이 값이 맞아야 응답한다 | - |
-| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 위젯의 비밀 키. 게스트 생성(`POST /v1/guests`)의 `turnstile_token`을 확인한다. `GUEST_ENABLED=true`면 필수 | - |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile 위젯의 비밀 키. 게스트 생성(`POST /v1/guests`)의 `turnstile_token`과 게스트 로그인 제출의 `X-Turnstile-Token` 헤더를 확인한다. `GUEST_ENABLED=true`면 필수 | - |
 | `TURNSTILE_VERIFY_URL` | Turnstile 토큰 확인 주소 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` |
 | `ACCOUNT_DELETION_GRACE_DAYS` | 탈퇴 신청 뒤 파기까지의 유예 기간(일) | `3` |
 | `UNVERIFIED_SIGNUP_RETENTION_HOURS` | 이메일 인증을 마치지 않은 가입 정보를 계정 정리 때 지우기까지의 시간 | `24` |

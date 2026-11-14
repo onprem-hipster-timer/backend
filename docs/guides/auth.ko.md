@@ -41,7 +41,8 @@ sequenceDiagram
 |------|------|------|
 | `model.py` | `CurrentUser` | 검증된 JWT 클레임에서 추출한 인증 주체. **DB에 영속되지 않는 휘발성 값 객체**(영속 표시 프로필 `UserProfile`과 별개 개념). `from_claims()`(클레임→객체 단일 매핑)·`mock()`(OIDC 비활성화 시 주입) 제공. |
 | `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | 외부 OIDC Provider 통신 전담. discovery 메타데이터·JWKS를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. |
-| `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
+| `dependencies.py` | `ensure_member` | **회원 판정**. 토큰의 `schema_id`가 게스트 schema면 `403`, `GUEST_ENABLED=true`인데 `schema_id`가 비어 있지 않은 문자열이 아니면 `401`. REST·GraphQL·WebSocket의 회원 인증이 모두 거친다([게스트 계정](./guest.ko.md#회원-경로)). |
+| `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). 검증한 토큰을 `ensure_member`로 넘겨 회원만 통과시킨다. `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
 | `dependencies.py` | `get_optional_current_user` | 선택적 인증(미인증 허용 엔드포인트용). 토큰이 없으면 `None` 반환. |
 | `dependencies.py` | `get_current_user_synced` | 인증 게이트 + 최소 표시 프로필 JIT 동기화. 인증 REST 라우터 dependency 전용(아래 「인증 라우터 구성」 참고). |
 | `middleware.py` | `AuthMiddleware` | 라우팅 이전 단계에서 토큰을 **best-effort로 검증**해 `request.state.current_user`를 사전 설정(거부하지 않음). 실패/무토큰이면 `None`. |
@@ -77,6 +78,7 @@ graph TD
     DEP["get_current_user<br/>(dependencies.py)"] -.->|state 있으면 재사용| MW
     DEP -->|state 없으면 직접 검증| OC
     SYNC["get_current_user_synced"] --> DEP
+    DEP -->|회원 판정| EM["ensure_member<br/>(dependencies.py)"]
     SYNC -->|JIT upsert| UPS["UserProfileService<br/>(domain/user)"]
     OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
     RL["RateLimitMiddleware"] -.->|user 키로 재사용| MW
@@ -87,8 +89,8 @@ graph TD
 미들웨어는 `app/main.py`에서 **AuthMiddleware가 RateLimitMiddleware보다 먼저 실행**되도록 등록됩니다.
 
 1. **AuthMiddleware** — 토큰을 best-effort 검증해 `request.state.current_user`를 채웁니다(거부하지 않음).
-2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반.
-3. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다.
+2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반. 규칙에 `per_ip`가 있으면(`/auth` 제출, 게스트 이름 찾기·생성) 토큰이 있어도 IP로 셉니다.
+3. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다. 토큰이 유효해도 `ensure_member`가 게스트 토큰을 `403`으로 거절합니다.
 
 결과적으로 토큰 검증은 사실상 1회(`AuthMiddleware`)만 수행되고, 미들웨어와 의존성이
 `request.state.current_user`를 공유해 중복 검증을 피합니다. `AuthMiddleware`는 게이트가
@@ -122,8 +124,9 @@ api_router.include_router(authed)
 기록하여 write 증폭을 방지합니다.
 
 !!! note "공개(무인증) 라우터"
-    `holidays`, `timers_ws`(WebSocket), `graphql`, `ws_playground`는 이 게이트 밖에
+    `holidays`, `timers_ws`(WebSocket), `graphql`, `ws_playground`, `guests`는 이 게이트 밖에
     별도로 등록됩니다. GraphQL은 컨텍스트 단계에서 인증을 처리합니다(5장 참고).
+    `guests`(`/v1/guests/*`)는 게스트 전용 의존성을 쓰고 회원 토큰을 받지 않습니다([게스트 계정](./guest.ko.md)).
 
 ### 데이터 격리
 
@@ -392,6 +395,26 @@ const response = await fetch('http://localhost:8000/graphql', {
 1. Refresh Token으로 새 Access Token 요청
 2. 실패 시 로그인 페이지로 리다이렉트
 
+`GUEST_ENABLED=true`이면 `schema_id` 클레임이 없거나 비어 있지 않은 문자열이 아닌 토큰도 `401`입니다.
+
+```json
+{
+  "detail": "Token missing 'schema_id' claim"
+}
+```
+
+**처리 방법**: OIDC Provider(Kratos)의 클레임 매퍼가 `schema_id`를 넣는지 확인합니다([게스트 계정 설정](../deployment/kratos-guest.ko.md)).
+
+#### 403 Forbidden (게스트 토큰)
+
+게스트 계정의 토큰으로 회원 경로를 부르면 `GUEST_ENABLED`와 상관없이 `403`입니다. WebSocket은 `1008`로 닫습니다.
+
+```json
+{
+  "detail": "Guest accounts cannot use this endpoint"
+}
+```
+
 #### 403 Forbidden (GraphQL)
 
 GraphQL에서 인증 없이 보호된 쿼리 실행 시:
@@ -521,7 +544,8 @@ const oidcConfig = {
 | `app/core/auth/` | OIDC 인증 패키지 (model·client·dependencies·middleware) |
 | `app/core/auth/model.py` | `CurrentUser` 인증 주체 값 객체 |
 | `app/core/auth/client.py` | `OIDCClient` / `oidc_client` (discovery·JWKS·토큰 검증) |
-| `app/core/auth/dependencies.py` | `get_current_user` / `get_current_user_synced` 의존성 |
+| `app/core/auth/dependencies.py` | `get_current_user` / `get_current_user_synced` 의존성, `ensure_member` |
+| `app/domain/guest/dependencies.py` | 게스트를 받는 경로의 의존성 (`get_current_guest`, `require_guest_access`) |
 | `app/core/auth/middleware.py` | `AuthMiddleware` (request.state 사전 설정) |
 | `app/api/v1/__init__.py` | 인증·공개 라우터 구성 (게이트 + JIT 동기화 선언) |
 | `app/core/config.py` | 환경변수 설정 |
@@ -536,6 +560,7 @@ class CurrentUser(BaseModel):
     email_verified: bool = False  # 이메일 기반 친추 인덱싱 조건 (OIDC email_verified)
     name: str | None = None
     picture: str | None = None    # avatar_url 출처 (OIDC picture)
+    schema_id: str | None = None  # Kratos identity schema id. 게스트 구분에 쓴다 (is_guest)
     raw_claims: dict = {}         # 전체 JWT 클레임 (필요시 확장용)
 ```
 

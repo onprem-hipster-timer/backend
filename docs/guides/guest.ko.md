@@ -16,10 +16,11 @@
 | 비밀번호 | Kratos 비밀번호 정책 | 비어 있지 않고 UTF-8로 72바이트 이하면 된다 |
 | 이메일 인증 | 로그인에 필요 | 없음. handle을 처음부터 인증된 주소로 만든다(메일이 가지 않는 주소) |
 | 만들 때 | Kratos 가입 플로우 | `POST /v1/guests`, Cloudflare Turnstile 토큰 필요 |
+| 로그인 | Kratos 로그인 플로우 | 같은 플로우. 제출마다 Turnstile 토큰(`X-Turnstile-Token` 헤더) 필요 |
 | 접근 범위 | 회원 경로 전체 | 자기 리소스의 게스트 경로만 |
 
 - 게스트 기능은 `GUEST_ENABLED=true`일 때만 켜집니다(기본 꺼짐). 꺼져 있으면 게스트 엔드포인트는 404이고, 게스트 토큰은 모든 경로에서 거부됩니다.
-- 게스트를 켜려면 Cloudflare Turnstile이 필요합니다. `TURNSTILE_SECRET_KEY`가 없으면 서버가 뜨지 않고, Turnstile 없이 게스트를 켜는 설정은 없습니다.
+- 게스트를 켜려면 Cloudflare Turnstile이 필요합니다. 게스트 생성과 게스트 로그인 제출이 토큰을 요구합니다. `TURNSTILE_SECRET_KEY`가 없으면 서버가 뜨지 않고, Turnstile 없이 게스트를 켜는 설정은 없습니다.
 - 게스트는 자기 이름만 바꿀 수 있습니다. 로그인 식별자·비밀번호 변경과 소셜 로그인 연결은 Kratos 설정 훅이 거절합니다.
 - 회원 경로(`/v1/*`의 인증 경로, GraphQL, WebSocket)는 게스트 토큰을 `403`으로 거부합니다.
 - 게스트를 켜도 회원 로그인은 Kratos 기본 동작 그대로입니다. 로그인에서 backend를 부르는 것은 게스트뿐입니다.
@@ -54,6 +55,7 @@ flowchart TB
     MW --> G
     MW --> AP
     G -->|"비밀 키 + 토큰"| TS
+    AP -->|"비밀 키 + 토큰<br/>(게스트 로그인)"| TS
     G -->|"내부 망"| KA
     AP -->|"세션 토큰"| KP
     KP -->|"X-Kratos-Hook-Key"| HK
@@ -68,10 +70,10 @@ flowchart TB
 |------|-----------|---------------|
 | 클라이언트 → `/v1/guests/lookup`, `POST /v1/guests` | 없음(인증 없는 경로). 생성은 Turnstile 토큰 | 생성 `403`/`422` |
 | 클라이언트 → 게스트 경로 | 게스트 JWT (`Authorization: Bearer`) | `401`/`403` |
-| 클라이언트 → `/auth/*` | Kratos 세션 토큰 (`X-Session-Token`) 또는 없음(로그인 전) | Kratos가 판정 |
+| 클라이언트 → `/auth/*` | Kratos 세션 토큰 (`X-Session-Token`) 또는 없음(로그인 전). 게스트 handle의 로그인 제출은 Turnstile 토큰 (`X-Turnstile-Token`) | Kratos가 판정. 게스트 로그인의 토큰은 `403`/`503` |
 | 앞단 프록시 → backend | `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET` (설정했을 때) | `403` |
 | backend → Kratos admin API | 망 분리(밖에 열지 않는다) | — |
-| backend → Turnstile | `TURNSTILE_SECRET_KEY` | 생성 `403`/`503` |
+| backend → Turnstile | `TURNSTILE_SECRET_KEY` | 생성·게스트 로그인 `403`/`503` |
 | Kratos → backend 훅 | `X-Kratos-Hook-Key` = `KRATOS_HOOK_API_KEY` | `401`, Kratos는 그 요청을 거절 |
 
 - 게스트의 비밀번호는 backend에 저장되지 않습니다. 생성 요청 한 번에서만 backend를 지나 Kratos admin API로 갑니다.
@@ -83,10 +85,10 @@ flowchart TB
 
 1. `POST /v1/guests/lookup`으로 그 리소스에 그 이름의 게스트가 있는지 찾는다.
 2. 없으면(`handle: null`) Turnstile 위젯에서 토큰을 받아 `POST /v1/guests`로 게스트를 만든다. 응답에 `handle`이 있다.
-3. `handle`과 비밀번호로 회원과 같은 Kratos 로그인 플로우를 `/auth`로 호출한다.
+3. Turnstile 위젯에서 새 토큰을 받아, `handle`과 비밀번호로 회원과 같은 Kratos 로그인 플로우를 `/auth`로 호출한다. 토큰은 `X-Turnstile-Token` 헤더에 넣는다.
 4. 세션 토큰으로 JWT를 받아(`GET /auth/sessions/whoami?tokenize_as=api`) 게스트 경로에 쓴다.
 
-이름이 이미 있으면 2번을 건너뜁니다. 3번에서 비밀번호가 틀리면 Kratos가 `400`으로 거절합니다.
+이름이 이미 있으면 2번을 건너뜁니다. 3번에서 비밀번호가 틀리면 Kratos가 `400`으로 거절합니다. Turnstile 토큰은 한 번만 쓸 수 있으므로 2번과 3번에 각각 하나가 필요하고, 로그인을 다시 시도할 때마다 새 토큰을 받습니다.
 
 ```http
 POST /v1/guests/lookup
@@ -101,6 +103,7 @@ GET  /auth/self-service/login/api
 → 200 {"id": "<flow id>", ...}
 
 POST /auth/self-service/login?flow=<flow id>
+X-Turnstile-Token: <위젯 토큰>
 {"method": "password", "identifier": "0b9c...@guest.invalid", "password": "1234"}
 → 200 {"session_token": "ory_st_...", ...}
 
@@ -164,6 +167,7 @@ sequenceDiagram
     autonumber
     participant C as 클라이언트
     participant P as backend<br/>/auth 프록시
+    participant T as Turnstile
     participant K as Kratos<br/>공개 API
     participant H as backend<br/>훅 수신
     participant D as guest 테이블
@@ -172,9 +176,13 @@ sequenceDiagram
     P->>K: 그대로 넘김
     K-->>C: flow id
 
-    C->>P: POST /auth/self-service/<br/>login?flow=…<br/>(handle, 비밀번호)
+    C->>P: POST /auth/self-service/<br/>login?flow=…<br/>(handle, 비밀번호)<br/>+ X-Turnstile-Token
     P->>P: 요청 한도 (IP당 분당 10회)<br/>쿼리 문자열에 flow만
-    P->>K: 넘김
+    opt identifier가 게스트 handle일 때만
+        P->>T: 비밀 키 + 토큰
+        T-->>P: success<br/>(false · 토큰 없음이면 403,<br/>닿지 않으면 503)
+    end
+    P->>K: 넘김 (토큰 헤더는 넘기지 않는다)
     K->>K: 비밀번호 확인<br/>(틀리면 400)
     opt identity의 schema가 guest일 때만
         K->>H: 로그인 훅<br/>(identity id, schema_id)<br/>+ X-Kratos-Hook-Key
@@ -190,14 +198,16 @@ sequenceDiagram
     K-->>C: JWT (sub, schema_id, name.<br/>게스트는 email 없음)
 ```
 
-- 회원 로그인에서는 8~11번이 일어나지 않습니다(Kratos 훅 본문의 `error 'cancel'`). 회원은 12번이 판정합니다.
-- 게스트는 handle이 처음부터 인증된 주소라 12번을 통과합니다.
+- 회원 로그인에서는 6~7번과 10~13번이 일어나지 않습니다. 프록시는 identifier가 게스트 handle(`@guest.invalid`)일 때만 토큰을 확인하고, Kratos는 게스트 identity일 때만 훅을 부릅니다(훅 본문의 `error 'cancel'`). 회원은 14번이 판정합니다.
+- 게스트는 handle이 처음부터 인증된 주소라 14번을 통과합니다.
+- 6~7번은 제출마다 합니다. 비밀번호가 틀려 9번에서 거절돼도 그 토큰은 다시 쓸 수 없습니다.
 - 로그인 훅은 로그인 시점에만 판정합니다. 그 뒤의 게스트 경로 요청은 [게스트 경로의 토큰 판정](#게스트-경로)이 요청마다 다시 확인합니다.
 - JWT의 `schema_id`는 Kratos 클레임 매퍼가 identity에서 읽습니다. identity의 schema는 본인이 바꿀 수 없습니다.
 
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 프록시의 한도·쿼리 문자열 | `app/api/auth_proxy.py`, `app/ratelimit/config.py` | `tests/test_auth_proxy.py`, `tests/domain/guest/test_rate_limits.py` |
+| 게스트 로그인 제출의 Turnstile 토큰 | `app/api/auth_proxy.py`, `app/core/turnstile.py` | `tests/domain/guest/test_guest_login_turnstile.py` |
 | 훅 키 | `app/api/kratos_hooks.py` (`_authorize`) | `tests/domain/guest/test_kratos_hooks.py` |
 | 로그인 판정 | `app/domain/guest/service.py` (`login_allowed`) | `tests/domain/guest/test_hook_decisions.py`, `test_client_login.py` |
 | Kratos 설정(훅 순서, 게스트만 호출, 클레임) | `dev/kratos/kratos.guest.yml`, `hook.login.jsonnet`, `api-jwt.claims.jsonnet` | `tests/domain/guest/test_kratos_config.py` |
@@ -454,11 +464,14 @@ flowchart TD
 ```http
 GET  /auth/self-service/login/api
 POST /auth/self-service/login?flow=<flow id>
+     X-Turnstile-Token: <위젯 토큰>
      {"method": "password", "identifier": "<handle>", "password": "<비밀번호>"}
 GET  /auth/sessions/whoami?tokenize_as=api
      X-Session-Token: ory_st_...
 ```
 
+- 로그인 제출의 `identifier`가 게스트 handle이면 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 Kratos에 넘깁니다. 헤더가 없거나 Turnstile이 받지 않으면 `403` `guest_verification_failed`, 확인할 수 없으면 `503` `guest_verification_unavailable`이고 Kratos에 넘기지 않습니다. 토큰은 제출마다 새로 받습니다.
+- `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문을 읽을 수 없으면 `400` `invalid_request_body`입니다.
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
 - JWT 클레임에는 `sub`(게스트의 Kratos identity id), `schema_id`(게스트 schema id), `name`이 있고 `email`은 없습니다. 이후 요청에는 `Authorization: Bearer <JWT>`를 붙입니다.
@@ -538,6 +551,9 @@ sequenceDiagram
 | 요청 | 응답 |
 |------|------|
 | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 | `400` `address_not_accepted` |
+| 게스트 handle의 로그인 제출에 `X-Turnstile-Token`이 없거나 Turnstile이 받지 않는다 (`GUEST_ENABLED`) | `403` `guest_verification_failed` |
+| 게스트 handle의 로그인 제출인데 Turnstile을 확인할 수 없다 (`GUEST_ENABLED`) | `503` `guest_verification_unavailable` |
+| 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
 | 로그인·가입·설정·인증·복구 제출(GET 밖)의 쿼리 문자열에 `flow` 밖의 값이 있다 | `400` `invalid_request_body` |
 
 #### `/auth` 프록시의 판정 순서
@@ -555,7 +571,11 @@ flowchart TD
     QS -->|"예"| AD{"인증 · 복구 제출"}
     AD -->|"본문을 읽을 수 없음"| R400a
     AD -->|"email이 @guest.invalid"| R400b["400 address_not_accepted"]
-    AD -->|"그 밖 · 해당 없음"| OI{"로그인 · 가입 제출의<br/>method: oidc"}
+    AD -->|"그 밖 · 해당 없음"| GL{"로그인 제출<br/>(GUEST_ENABLED)"}
+    GL -->|"identifier가 둘 이상 ·<br/>본문을 읽을 수 없음"| R400a
+    GL -->|"게스트 handle인데<br/>토큰 없음 · 거절"| R403g["403 guest_verification_failed"]
+    GL -->|"게스트 handle인데<br/>Turnstile 확인 불가"| R503["503 guest_verification_unavailable"]
+    GL -->|"게스트 handle + 토큰 통과 ·<br/>다른 identifier · 해당 없음"| OI{"로그인 · 가입 제출의<br/>method: oidc"}
     OI -->|"본문을 읽을 수 없음"| R400a
     OI -->|"traits.email을 버리고 계속 · 해당 없음"| ST{"설정 제출"}
     ST -->|"해당 없음"| FWD
@@ -570,7 +590,7 @@ flowchart TD
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 순서 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
-| 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키는 넘기지 않는다) | `tests/test_auth_proxy.py` |
+| 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_guest_login_turnstile.py` |
 
 ## 리소스가 게스트를 받게 하기
 
@@ -678,6 +698,6 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | `app/api/v1/guests.py` | `/v1/guests/*` |
 | `app/api/kratos_hooks.py` | Kratos 훅 수신 |
 | `app/api/auth_proxy.py` | `/auth` 프록시의 게스트 처리 |
-| `app/core/turnstile.py` | Turnstile 토큰 확인 |
+| `app/core/turnstile.py` | Turnstile 토큰 확인 (게스트 생성, 게스트 로그인 제출) |
 | `app/core/auth/dependencies.py` | `ensure_member` (회원 경로의 게스트 거부) |
 | `tests/domain/guest/` | 테스트 |
