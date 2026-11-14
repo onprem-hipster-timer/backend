@@ -4,13 +4,22 @@ Dateutil Domain Service
 datetime 변환 및 타임존 처리 서비스
 """
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Annotated, Optional
 from zoneinfo import ZoneInfo
+
+from pydantic import AfterValidator
 
 from app.domain.dateutil.exceptions import InvalidTimezoneError
 
 # 기본 시간 허용 오차 (1분)
 DEFAULT_TIME_TOLERANCE_SECONDS = 60
+
+
+def _astimezone_utc(dt: datetime) -> datetime:
+    try:
+        return dt.astimezone(timezone.utc)
+    except OverflowError:
+        raise ValueError("datetime is out of range") from None
 
 
 def to_utc_naive(dt: datetime | None) -> datetime | None:
@@ -27,13 +36,14 @@ def to_utc_naive(dt: datetime | None) -> datetime | None:
 
     :param dt: datetime 객체 (timezone 있거나 없음)
     :return: UTC naive datetime (timezone 정보 제거)
+    :raises ValueError: UTC로 바꾼 값이 datetime 표현 범위를 벗어나는 경우
     """
     if dt is None:
         return None
 
     # timezone이 있으면 UTC로 변환
     if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc)
+        dt = _astimezone_utc(dt)
 
     # timezone 정보 제거 (naive datetime)
     return dt.replace(tzinfo=None)
@@ -50,6 +60,7 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
 
     :param dt: datetime 객체
     :return: UTC naive datetime
+    :raises ValueError: UTC로 바꾼 값이 datetime 표현 범위를 벗어나는 경우
     """
     if dt is None:
         return None
@@ -58,12 +69,17 @@ def ensure_utc_naive(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         # UTC가 아니면 자동으로 UTC로 변환
         if dt.tzinfo != timezone.utc:
-            dt = dt.astimezone(timezone.utc)
+            dt = _astimezone_utc(dt)
         # UTC로 변환 후 naive datetime으로 변환
         return dt.replace(tzinfo=None)
 
     # timezone이 없으면 그대로 반환 (UTC로 가정)
     return dt
+
+
+# 요청 파라미터용: UTC naive로 바꾸고, 바꿀 수 없으면 422로 거절된다
+# 필수 파라미터는 `Annotated[UtcNaiveDatetime, Query(...)]`로 써야 검증이 적용된다 (`= Query(...)` 기본값 형태는 적용되지 않음)
+UtcNaiveDatetime = Annotated[datetime, AfterValidator(ensure_utc_naive)]
 
 
 def convert_utc_naive_to_timezone(

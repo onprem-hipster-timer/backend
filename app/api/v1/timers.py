@@ -18,7 +18,6 @@ FastAPI Best Practices:
 - 생성·일시정지·재개·종료·취소·수정·삭제는 `CommittingSession`으로 응답 전에 커밋한다. 커밋되면 변경이 실시간 이벤트로 나간다 (app/domain/timer/realtime.py)
 - 테스트: tests/test_timers_rest_commands.py
 """
-from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
@@ -29,7 +28,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import TagIncludeMode, ResourceScope
 from app.crud import schedule as schedule_crud
 from app.db.session import CommittingSession, get_db_transactional
-from app.domain.dateutil.service import ensure_utc_naive, parse_timezone
+from app.domain.dateutil.service import UtcNaiveDatetime, parse_timezone
 from app.domain.schedule.service import ScheduleService
 from app.domain.timer.schema.dto import (
     TimerCreate,
@@ -181,11 +180,11 @@ async def list_timers(
             alias="type",
             description="타입 필터: independent(독립 타이머), schedule(Schedule 연결), todo(Todo 연결)"
         ),
-        start_date: Optional[datetime] = Query(
+        start_date: Optional[UtcNaiveDatetime] = Query(
             None,
             description="started_at 범위 시작 (포함, ISO 8601 형식)"
         ),
-        end_date: Optional[datetime] = Query(
+        end_date: Optional[UtcNaiveDatetime] = Query(
             None,
             description="started_at 범위 끝 (제외, ISO 8601 형식)"
         ),
@@ -230,8 +229,6 @@ async def list_timers(
     todo_service = TodoService(session, current_user)
 
     tz_obj = parse_timezone(tz) if tz else None
-    start_date = ensure_utc_naive(start_date)
-    end_date = ensure_utc_naive(end_date)
     result = []
 
     # status 필터를 대문자로 변환 (API는 대문자, DB도 대문자 저장)

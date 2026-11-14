@@ -11,6 +11,8 @@ UTC 변환 및 datetime 처리 로직 검증:
 """
 from datetime import datetime, timezone, timedelta
 
+import pytest
+
 from app.domain.dateutil.service import (
     ensure_utc_naive,
     to_utc_naive,
@@ -261,3 +263,16 @@ class TestGetDatetimeRange:
 
         # 0.1초 허용 오차 밖에 있어야 함
         assert is_datetime_within_tolerance(dt1, dt2, tolerance_seconds=0) is False
+
+
+@pytest.mark.parametrize("convert", [ensure_utc_naive, to_utc_naive])
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=9))),
+        datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone(timedelta(hours=-12))),
+    ],
+)
+def test_conversion_out_of_datetime_range_raises_value_error(convert, value):
+    with pytest.raises(ValueError, match="datetime is out of range"):
+        convert(value)

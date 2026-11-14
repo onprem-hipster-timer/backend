@@ -19,6 +19,10 @@ from app.domain.holiday.service import HolidayReadService
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/holidays", tags=["Holidays"])
 
+# KST 연도 [1월 1일 00:00, 다음 해 1월 1일 00:00)를 UTC datetime으로 나타낼 수 있는 연도
+MIN_YEAR = 2
+MAX_YEAR = 9998
+
 
 @router.get(
     "",
@@ -42,9 +46,9 @@ router = APIRouter(prefix="/holidays", tags=["Holidays"])
     }
 )
 async def get_holidays(
-        year: Optional[int] = Query(None, description="조회 연도 (YYYY)"),
-        start_year: Optional[int] = Query(None, description="시작 연도 (YYYY)"),
-        end_year: Optional[int] = Query(None, description="종료 연도 (YYYY)"),
+        year: Optional[int] = Query(None, ge=MIN_YEAR, le=MAX_YEAR, description="조회 연도 (YYYY)"),
+        start_year: Optional[int] = Query(None, ge=MIN_YEAR, le=MAX_YEAR, description="시작 연도 (YYYY)"),
+        end_year: Optional[int] = Query(None, ge=MIN_YEAR, le=MAX_YEAR, description="종료 연도 (YYYY)"),
         auto_sync: bool = Query(
             False, description="데이터가 없을 경우 자동으로 동기화 실행"
         ),

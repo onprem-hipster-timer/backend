@@ -6,8 +6,7 @@ FastAPI Best Practices:
 - Dependencies를 활용한 검증
 - Service는 session을 받아서 CRUD 직접 사용
 """
-from datetime import datetime
-from typing import Optional, List
+from typing import Annotated, Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -16,7 +15,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import ResourceScope
 from app.db.session import get_db_transactional
-from app.domain.dateutil.service import parse_timezone
+from app.domain.dateutil.service import UtcNaiveDatetime, parse_timezone
 from app.domain.schedule.schema.dto import (
     ScheduleCreate,
     ScheduleRead,
@@ -63,14 +62,12 @@ async def create_schedule(
 
 @router.get("", response_model=list[ScheduleRead])
 async def read_schedules(
-        start_date: datetime = Query(
-            ...,
+        start_date: Annotated[UtcNaiveDatetime, Query(
             description="조회 범위 시작 (포함, ISO 8601 형식)"
-        ),
-        end_date: datetime = Query(
-            ...,
+        )],
+        end_date: Annotated[UtcNaiveDatetime, Query(
             description="조회 범위 끝 (제외, ISO 8601 형식). 하루 전체는 다음 날 00:00"
-        ),
+        )],
         scope: ResourceScope = Query(
             ResourceScope.MINE,
             description="조회 범위: mine(내 일정만), shared(공유된 일정만), all(모두)"
@@ -145,7 +142,7 @@ async def read_schedules(
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
         schedule_id: UUID,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: UtcNaiveDatetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -182,7 +179,7 @@ async def read_schedule(
 async def update_schedule(
         schedule_id: UUID,
         data: ScheduleUpdate,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: UtcNaiveDatetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -226,7 +223,7 @@ async def update_schedule(
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
 async def delete_schedule(
         schedule_id: UUID,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: UtcNaiveDatetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
         source_todo_policy: SourceTodoPolicy | None = Query(
             None,
             description=(
