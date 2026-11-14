@@ -4,6 +4,7 @@ import app.valid.tag  # noqa: F401
 import app.valid.todo_group  # noqa: F401
 from app.models.account_deletion import AccountDeletion
 from app.models.friendship import Friendship, FriendshipStatus
+from app.models.guest import Guest
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 from app.models.schedule import Schedule, ScheduleException
 from app.models.tag import TagGroup, Tag, ScheduleTag, ScheduleExceptionTag, TodoTag
@@ -37,6 +38,8 @@ __all__ = [
     "Meeting",
     "MeetingParticipant",
     "MeetingTimeSlot",
+    # Guest
+    "Guest",
     # Friend & Visibility
     "Friendship",
     "FriendshipStatus",

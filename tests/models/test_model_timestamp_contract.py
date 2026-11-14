@@ -17,6 +17,7 @@ from app.models.base import TimestampMixin, utc_now_naive
 
 TIMESTAMP_TABLE_NAMES = {
     "friendship",
+    "guest",
     "holiday_hashes",
     "holidays",
     "meeting",

@@ -36,6 +36,7 @@ from app.models import (  # noqa: E402, F401
     TodoTag,
     Todo,
     TodoGroup,
+    Guest,
 )
 from app.models.tag import TimerTag  # noqa: E402, F401
 from app.models.holiday import HolidayModel, HolidayHashModel  # noqa: E402, F401
