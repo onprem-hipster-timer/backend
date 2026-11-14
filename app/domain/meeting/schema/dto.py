@@ -3,11 +3,13 @@ Meeting Domain DTO (Data Transfer Objects)
 
 일정 조율 관련 데이터 전송 객체
 """
+import unicodedata
 from datetime import date, datetime, time, timezone
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from dateutil.relativedelta import relativedelta
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
@@ -15,8 +17,53 @@ from app.domain.dateutil.service import convert_utc_naive_to_timezone
 from app.models.visibility import VisibilityLevel
 
 
+TITLE_MAX_LENGTH = 200
+DESCRIPTION_MAX_LENGTH = 2000
+MAX_PERIOD = relativedelta(months=3)
+TIME_SLOT_MINUTES_MIN = 5
+TIME_SLOT_MINUTES_MAX = 1440
+
+
+def _validate_title(v: str) -> str:
+    """앞뒤 공백을 뺀 1–200자"""
+    v = v.strip()
+    if not 1 <= len(v) <= TITLE_MAX_LENGTH:
+        raise ValueError(f"title must be 1-{TITLE_MAX_LENGTH} characters after trimming")
+    return v
+
+
+def _validate_description(v: str | None) -> str | None:
+    if v is not None and len(v) > DESCRIPTION_MAX_LENGTH:
+        raise ValueError(f"description must be at most {DESCRIPTION_MAX_LENGTH} characters")
+    return v
+
+
+def _validate_available_days(v: list[int]) -> list[int]:
+    """요일 리스트 검증 (0-6, 중복 불가, 1개 이상)"""
+    if not isinstance(v, list):
+        raise ValueError("available_days must be a list")
+    if not v:
+        raise ValueError("available_days must not be empty")
+    if not all(isinstance(d, int) and 0 <= d <= 6 for d in v):
+        raise ValueError("available_days must contain integers 0-6")
+    if len(set(v)) != len(v):
+        raise ValueError("available_days must not contain duplicates")
+    return sorted(v)
+
+
+def _validate_time_slot_minutes(v: int) -> int:
+    if not TIME_SLOT_MINUTES_MIN <= v <= TIME_SLOT_MINUTES_MAX:
+        raise ValueError(
+            f"time_slot_minutes must be between {TIME_SLOT_MINUTES_MIN} and {TIME_SLOT_MINUTES_MAX}"
+        )
+    return v
+
+
 class MeetingCreate(CustomModel):
-    """일정 조율 생성 DTO"""
+    """일정 조율 생성 DTO
+
+    수정(PATCH) 때도 저장된 값에 수정 내용을 합쳐 이 DTO로 다시 검증한다 (MeetingService.update_meeting).
+    """
     title: str
     description: Optional[str] = None
     start_date: date
@@ -26,17 +73,21 @@ class MeetingCreate(CustomModel):
     end_time: time  # 하루 종료 시간
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
 
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v):
+        return _validate_title(v)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v):
+        return _validate_description(v)
+
     @field_validator("available_days")
     @classmethod
     def validate_available_days(cls, v):
         """요일 리스트 검증"""
-        if not isinstance(v, list):
-            raise ValueError("available_days must be a list")
-        if not all(isinstance(d, int) and 0 <= d <= 6 for d in v):
-            raise ValueError("available_days must contain integers 0-6")
-        if len(set(v)) != len(v):
-            raise ValueError("available_days must not contain duplicates")
-        return sorted(v)
+        return _validate_available_days(v)
 
     @field_validator("end_date")
     @classmethod
@@ -60,9 +111,17 @@ class MeetingCreate(CustomModel):
     @classmethod
     def validate_time_slot_minutes(cls, v):
         """시간 슬롯 단위 검증"""
-        if v <= 0:
-            raise ValueError("time_slot_minutes must be > 0")
-        return v
+        return _validate_time_slot_minutes(v)
+
+    @model_validator(mode="after")
+    def validate_shape(self):
+        """기간은 start_date + 3개월(같은 날, 없으면 그 달 말일)까지, 시간 단위는 하루 범위 이하"""
+        if self.end_date > self.start_date + MAX_PERIOD:
+            raise ValueError("end_date must be no later than 3 months after start_date")
+        daily_range = datetime.combine(date.min, self.end_time) - datetime.combine(date.min, self.start_time)
+        if self.time_slot_minutes * 60 > daily_range.total_seconds():
+            raise ValueError("time_slot_minutes must not exceed end_time - start_time")
+        return self
 
 
 class MeetingUpdate(CustomModel):
@@ -76,26 +135,32 @@ class MeetingUpdate(CustomModel):
     end_time: time | None = MISSING
     time_slot_minutes: int | None = MISSING
 
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v):
+        if isinstance(v, str):
+            return _validate_title(v)
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v):
+        return _validate_description(v)
+
     @field_validator("available_days")
     @classmethod
     def validate_available_days(cls, v):
         """요일 리스트 검증"""
         if v is not None:
-            if not isinstance(v, list):
-                raise ValueError("available_days must be a list")
-            if not all(isinstance(d, int) and 0 <= d <= 6 for d in v):
-                raise ValueError("available_days must contain integers 0-6")
-            if len(set(v)) != len(v):
-                raise ValueError("available_days must not contain duplicates")
-            return sorted(v)
+            return _validate_available_days(v)
         return v
 
     @field_validator("time_slot_minutes")
     @classmethod
     def validate_time_slot_minutes(cls, v):
         """시간 슬롯 단위 검증"""
-        if v is not None and v <= 0:
-            raise ValueError("time_slot_minutes must be > 0")
+        if v is not None:
+            return _validate_time_slot_minutes(v)
         return v
 
 
@@ -142,9 +207,23 @@ class MeetingRead(CustomModel):
         return MeetingRead.model_construct(**data)
 
 
+DISPLAY_NAME_MAX_LENGTH = 50
+
+
 class ParticipantCreate(CustomModel):
     """참여자 생성 DTO"""
     display_name: str  # 표시 이름 (닉네임)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str) -> str:
+        """앞뒤 공백을 뺀 1–50자, 제어 문자 불가"""
+        v = v.strip()
+        if not 1 <= len(v) <= DISPLAY_NAME_MAX_LENGTH:
+            raise ValueError(f"display_name must be 1-{DISPLAY_NAME_MAX_LENGTH} characters after trimming")
+        if any(unicodedata.category(ch) == "Cc" for ch in v):
+            raise ValueError("display_name must not contain control characters")
+        return v
 
 
 class ParticipantRead(CustomModel):

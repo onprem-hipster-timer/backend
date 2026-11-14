@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlmodel import Session, select, or_
 
 from app.crud.user_profile import dormant_subs
-from app.domain.meeting.schema.dto import MeetingCreate, MeetingUpdate
+from app.domain.meeting.schema.dto import MeetingCreate, MeetingUpdate, ParticipantCreate
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
 
 
@@ -92,13 +92,11 @@ def create_participant(
         session: Session,
         meeting_id: UUID,
         user_id: Optional[str],
-        display_name: str,
+        data: ParticipantCreate,
 ) -> MeetingParticipant:
     """참여자 생성"""
-    participant = MeetingParticipant(
-        meeting_id=meeting_id,
-        user_id=user_id,
-        display_name=display_name,
+    participant = MeetingParticipant.model_validate(
+        data, update={"meeting_id": meeting_id, "user_id": user_id}
     )
     session.add(participant)
     session.flush()

@@ -6,7 +6,7 @@ Meeting Router
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user, get_optional_current_user
@@ -160,6 +160,7 @@ async def delete_meeting(
 async def create_participant(
         meeting_id: UUID,
         data: ParticipantCreate,
+        response: Response,
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -172,9 +173,12 @@ async def create_participant(
     참여자 등록
     
     인증 필수: 접근 권한이 있는 사용자만 참여 가능합니다.
+    미팅마다 사용자당 참여자는 한 명입니다. 처음 등록하면 201, 이미 참여했으면 표시 이름을 바꾼 기존 참여자를 200으로 반환합니다.
     """
     service = MeetingService(session, current_user)
-    participant = service.create_participant(meeting_id, data)
+    participant, created = service.create_participant(meeting_id, data)
+    if not created:
+        response.status_code = status.HTTP_200_OK
     participant_read = ParticipantRead.model_validate(participant)
 
     # 타임존 변환
@@ -195,6 +199,8 @@ async def set_availability(
     
     인증 필수: 본인의 참여 시간만 설정 가능합니다.
     기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
+    슬롯 수는 미팅의 칸 수까지입니다 (넘으면 422). 슬롯이 미팅의 날짜·시간 범위 안에 있는지는 검사하지 않고,
+    범위 밖 슬롯은 결과에서 세지 않습니다.
     
     :param meeting_id: 일정 조율 ID
     :param participant_id: 참여자 ID (쿼리 파라미터)

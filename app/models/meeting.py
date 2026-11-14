@@ -7,7 +7,7 @@ from datetime import date, time
 from typing import List, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint
+from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -82,6 +82,11 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
     # 참여자 정보
     user_id: str | None = Field(default=None, index=True)  # OIDC sub (로그인한 경우)
     display_name: str  # 표시 이름 (닉네임)
+
+    # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "user_id", name="uq_meeting_participant_meeting_user"),
+    )
 
     # Relationships
     meeting: "Meeting" = Relationship(back_populates="participants")

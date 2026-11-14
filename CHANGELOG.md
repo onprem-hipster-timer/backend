@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **One participant per user in a meeting (breaking)**: `POST /v1/meetings/{meeting_id}/participate` returns 201 with a new participant the first time a user joins a meeting. When the same user sends it again, it returns 200 with the existing participant, keeping its `id`, `created_at` and time slots, and sets `display_name` to the new value. Concurrent requests from the same user also end with one participant. Migration `3f1fcd3dae5f` adds `UNIQUE (meeting_id, user_id)` to `meeting_participant`; before that it keeps the most recently created participant for each `(meeting_id, user_id)` and deletes the others together with their time slots. Participants without `user_id` are not affected. Previously every request created another participant, and the user was counted once per participant in `/availability` and `/result`.
+- **Meeting input limits (breaking)**: `POST /v1/meetings` returns 422 unless `title` is 1–200 characters after trimming (stored trimmed), `description` is at most 2000 characters, `end_date` is no later than 3 calendar months after `start_date` (the last day of the month when that day does not exist), `available_days` has at least one day, and `time_slot_minutes` is 5–1440 and not longer than `end_time - start_time`. Previously an empty title, an empty `available_days`, any period length and any positive `time_slot_minutes` were accepted.
+- **Participant display name limits (breaking)**: `display_name` in `POST /v1/meetings/{meeting_id}/participate` is trimmed and must be 1–50 characters without control characters (422 otherwise). Korean and emoji are allowed.
+- **Time slot count limit (breaking)**: `PUT /v1/meetings/{meeting_id}/availability` returns 422 and keeps the stored slots when the request has more slots than the meeting has cells: the number of days in the period that match `available_days` × the daily range in minutes ÷ `time_slot_minutes`, rounded up. Slots are still not checked against the meeting's dates, times or grid, and slots outside them are stored but not counted in `/result`.
+
+### Fixed
+
+- **Meeting updates are checked as a whole**: `PATCH /v1/meetings/{meeting_id}` applies the create limits to the stored meeting combined with the request and returns 422 without changing the meeting when the result breaks them, for example `start_time` at or after the stored `end_time`, or `end_date` before the stored `start_date`. Previously such requests failed with 500.
 
 ---
 
