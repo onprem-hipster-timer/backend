@@ -819,6 +819,8 @@ const allSchedules = await fetchSchedules(start, end, "all");
 - `allowed_emails`: 특정 이메일 주소만 허용 (예: `["alice@partner.com"]`)
 - `allowed_domains`: 해당 도메인의 모든 이메일 허용 (예: `["company.com"]` → `anyone@company.com` 허용)
 - 서브도메인은 **정확히 매칭**되어야 합니다 (`sub.example.com` ≠ `example.com`)
+- 이메일과 도메인은 **대소문자를 구분하지 않고** 비교합니다 (`Alice@Partner.com` = `alice@partner.com`, `Company.com` = `company.com`)
+- 저장할 때 앞뒤 공백을 지우고 소문자로 바꾸며, 그렇게 바꿔 같아진 값은 하나만 남깁니다. 조회 응답에도 이 형태로 나옵니다
 - 허용 목록이 비어있으면 아무도 접근할 수 없습니다 (소유자 제외)
 
 ### 3. 차단 시 접근 제한

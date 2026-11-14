@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 
 from app.core.base_model import CustomModel
 from app.models.visibility import VisibilityLevel, ResourceType
@@ -19,6 +19,14 @@ class VisibilityUpdate(CustomModel):
     allowed_user_ids: Optional[List[str]] = None  # SELECTED_FRIENDS 레벨에서만 사용
     allowed_emails: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
     allowed_domains: Optional[List[str]] = None  # ALLOWED_EMAILS 레벨에서만 사용
+
+    @field_validator("allowed_emails", "allowed_domains")
+    @classmethod
+    def _normalize_email_entries(cls, values: Optional[List[str]]) -> Optional[List[str]]:
+        """이메일·도메인은 대소문자를 구분하지 않으므로 앞뒤 공백을 지우고 소문자로 바꾼 뒤 중복을 없앤다."""
+        if values is None:
+            return None
+        return list(dict.fromkeys(value.strip().lower() for value in values))
 
 
 class VisibilityRead(CustomModel):
