@@ -511,7 +511,7 @@ GET  /auth/sessions/whoami?tokenize_as=api
 ```
 
 - 로그인 제출의 `identifier`가 게스트 handle이면 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 Kratos에 넘깁니다. 헤더가 없거나 Turnstile이 받지 않았거나 이미 쓴 토큰이면 `403` `guest_verification_failed`, 확인할 수 없으면 `503` `guest_verification_unavailable`이고 Kratos에 넘기지 않습니다. 토큰은 제출마다 새로 받습니다.
-- `identifier`(`password_identifier` 포함, JSON 키는 대소문자 구분 없이)는 NFKC, 앞뒤 공백 제거, 대소문자 접기 뒤 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
+- `identifier`(`password_identifier` 포함, JSON 키는 대소문자 구분 없이)는 Kratos가 식별자를 찾을 때처럼 앞뒤 공백을 떼고 소문자로 바꾼 뒤(U+0130은 `i`) NFKC와 대소문자 접기를 더한 값이 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
 - `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문을 읽을 수 없으면 `400` `invalid_request_body`입니다.
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.

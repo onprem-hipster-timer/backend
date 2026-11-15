@@ -65,7 +65,7 @@ flowchart TD
     T -->|"통과"| FWD
 ```
 
-`identifier`와 `password_identifier`는 키를 대소문자 구분 없이(JSON은 유니코드 대소문자 접기로) 찾습니다. 값은 NFKC, 앞뒤 공백 제거, 대소문자 접기(U+0130은 i) 뒤 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
+`identifier`와 `password_identifier`는 키를 대소문자 구분 없이(JSON은 유니코드 대소문자 접기로) 찾습니다. 값은 Kratos가 식별자를 찾을 때처럼 앞뒤 공백을 떼고 소문자로 바꾼 뒤(U+0130은 `i`) NFKC와 대소문자 접기를 더한 값(`normalize_identifier`)이 `@guest.invalid`로 끝나면 게스트 handle로 봅니다. 인증·복구 제출의 `email`과 같은 IP·식별자 요청 한도의 식별자도 같은 값으로 비교합니다.
 
 **설정 제출**
 
