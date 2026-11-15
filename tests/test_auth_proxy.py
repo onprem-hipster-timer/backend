@@ -500,7 +500,7 @@ def test_allowed_settings_submit_drops_other_session_header(client, upstream):
 
 
 def test_settings_body_with_keys_differing_only_in_case_is_rejected(client, upstream):
-    """Kratos는 JSON 키를 대소문자 구분 없이 읽어 Method도 method로 받는다"""
+    """키는 대소문자 구분 없이 비교해 Method와 method를 겹친 키로 본다"""
     kratos_with_session(upstream, RECOVERY_SESSION)
 
     response = client.post(

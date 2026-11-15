@@ -120,7 +120,7 @@ def _make_client() -> httpx.AsyncClient:
 
 
 def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
-    # Kratos(Go)는 JSON 키를 대소문자 구분 없이 읽으므로 대소문자만 다른 키도 겹친 것으로 본다
+    # 키는 대소문자 구분 없이 비교해 대소문자만 다른 키도 겹친 것으로 본다 (Kratos가 같은 키로 읽는 것보다 넓다)
     keys = [key.lower() for key, _ in pairs]
     if len(keys) != len(set(keys)):
         raise ValueError("duplicate key")
@@ -173,7 +173,7 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
             return _UNREADABLE
         if not isinstance(data, dict):
             return None
-        # Kratos(Go)는 JSON 키를 유니코드 단순 대소문자 접기로 맞춘다(U+017F는 s와 같다). casefold로 비교한다
+        # 키는 casefold로 비교한다(U+017F는 s와 같다). Kratos가 식별자로 읽는 키보다 많은 표기를 식별자로 본다
         values = [value for key, value in data.items() if key.casefold() in IDENTIFIER_KEYS]
     if len(values) > 1:
         return _UNREADABLE
@@ -192,7 +192,7 @@ def _is_guest_handle(identifier: object) -> bool:
 
 
 def _submitted_name(content_type: str, body: bytes) -> object:
-    """설정 제출 본문의 traits.name. 없거나 읽을 수 없으면 None (키는 Kratos처럼 대소문자 구분 없이 찾는다)"""
+    """설정 제출 본문의 traits.name. 없거나 읽을 수 없으면 None (키는 대소문자 구분 없이 찾는다)"""
     try:
         if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
             values = parse_qs(body.decode(), keep_blank_values=True).get("traits.name", [])
@@ -213,7 +213,7 @@ def _get_ignoring_case(data: object, key: str) -> object:
 def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> object:
     """제출 본문에서 path(예: ("traits", "email"))의 값. 없으면 None, 본문을 읽을 수 없거나 값이 겹치면 _UNREADABLE.
 
-    키는 Kratos처럼 대소문자 구분 없이 찾는다. 폼 본문의 키는 path를 점으로 이은 것이다.
+    키는 대소문자 구분 없이 찾는다. 폼 본문의 키는 path를 점으로 이은 것이다.
     """
     if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
         try:

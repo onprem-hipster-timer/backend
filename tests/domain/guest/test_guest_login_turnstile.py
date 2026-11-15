@@ -170,7 +170,7 @@ def test_identifier_keys_are_read_ignoring_case(guest_client, kratos, guest, key
 
 @pytest.mark.parametrize("key", ["pa\u017f\u017fword_identifier", "PA\u017fSWORD_IDENTIFIER"])
 def test_identifier_keys_are_read_with_unicode_case_folding(guest_client, kratos, guest, key):
-    """Go JSON 디코더는 키를 유니코드 단순 대소문자 접기로 맞춘다 (U+017F는 s와 같다)"""
+    """JSON 키는 casefold로 비교한다 (U+017F는 s와 같다). Kratos가 식별자로 읽는 키보다 많은 표기를 식별자로 본다"""
     body = {"method": "password", key: _handle(kratos, guest), "password": "1234"}
     r = _login(guest_client, body, token=None)
     assert r.status_code == 403
