@@ -459,6 +459,7 @@ flowchart TD
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
 | `422` | | 입력 규칙 위반 (`turnstile_token` 누락 포함) |
 | `429` | | IP당 분당 100회를 넘었다 (이름 찾기와 따로 센다) |
+| `429` | `GuestServiceBusyError` | Kratos 자리(게스트 1)를 2초 안에 잡지 못했다. 잠시 뒤 새 Turnstile 토큰으로 다시 보낸다 |
 
 ### 로그인과 JWT
 

@@ -38,7 +38,7 @@ flowchart TD
     QS -->|"예"| NEXT["경로별 확인"]
 ```
 
-**경로별 확인.** 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다.
+**경로별 확인.** 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다. 로그인·가입·설정 제출은 넘기기 전에 Kratos 자리를 잡습니다. 자리는 회원 2개, 게스트(게스트 handle 로그인, 게스트 이름 변경, 게스트 생성) 1개이고, 2초 안에 잡지 못하면 `429`입니다(`app/core/kratos_slots.py`).
 
 | 제출 경로 | 확인 | 거절 응답 |
 |-----------|------|-----------|
@@ -99,7 +99,7 @@ flowchart TD
 
 | 상태 | `id` | 언제 |
 |------|------|------|
-| `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청이 IP당 분당 60회, 로그인·가입·인증·복구 제출이 같은 IP·식별자로 분당 5회, 설정 제출이 identity당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다 |
+| `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청이 IP당 분당 60회, 로그인·가입·인증·복구 제출이 같은 IP·식별자로 분당 5회, 설정 제출이 identity당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다. 또는 로그인·가입·설정 제출이 Kratos 자리를 2초 안에 잡지 못했다(본문 `detail`, `retry_after`, 헤더 `Retry-After: 1`) |
 | `400` | `invalid_request_body` | 검사하는 제출의 쿼리 문자열에 `flow` 밖의 키가 있다. 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
 | `403` | `settings_require_email_recovery` | 설정 제출이 메일 복구 세션의 비밀번호 변경도, 게스트 세션의 이름 변경도 아니다 |
@@ -134,6 +134,7 @@ backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 �
 | 프록시 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
 | 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_guest_login_turnstile.py` |
 | 요청 한도 | `app/api/auth_proxy.py` (`_submit_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
+| Kratos 자리 | `app/core/kratos_slots.py`, `app/api/auth_proxy.py` (`HASHING_SUBMIT_PATHS`) | `tests/domain/guest/test_kratos_slots.py` |
 | 게스트 로그인의 Turnstile | `app/core/turnstile.py` | `tests/domain/guest/test_guest_login_turnstile.py` |
 | 게스트 이름 변경 | `app/domain/guest/service.py` (`name_taken_by_other`) | `tests/domain/guest/test_rename_proxy.py` |
 | 메일 잡 | `app/core/courier.py` | `tests/core/test_courier.py` |
