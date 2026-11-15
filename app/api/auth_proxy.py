@@ -24,6 +24,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
   넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
+- 게스트 handle 판정(로그인 식별자, 인증·복구 email)과 같은 식별자의 요청 한도는 값을 normalize_identifier로 맞춰
+  비교한다. Kratos가 같은 식별자로 찾는 표기는 같은 값이 된다
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
@@ -184,15 +186,27 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
     return values[0] if values else None
 
 
-def _is_guest_handle(identifier: object) -> bool:
-    """NFKC·앞뒤 공백 제거·casefold 뒤 게스트 handle 도메인 주소인지.
+# Go 문자열(UTF-8)에 담을 수 없는 서로게이트. JSON의 짝 없는 \ud800 같은 이스케이프를 Go는 U+FFFD로 읽는다
+_SURROGATES = re.compile("[\ud800-\udfff]")
 
-    Kratos(Go strings.ToLower)는 식별자의 U+0130을 i로 바꾸므로 casefold 전에 I로 바꾼다.
+
+def normalize_identifier(value: str) -> str:
+    """Kratos가 같은 식별자로 찾는 표기를 같은 값으로 맞춘다. Kratos보다 더 많은 표기를 같은 값으로 모을 수 있다.
+
+    Kratos는 식별자를 Go strings.ToLower(strings.TrimSpace(v))로 찾는다. 먼저 그와 같게 서로게이트를 U+FFFD로, 앞뒤 공백을
+    떼고, 소문자로 바꾼다(U+0130은 Go처럼 i 한 글자, lower의 끝 시그마 ς는 뒤의 casefold가 σ로 맞춘다). 그 뒤 NFKC·앞뒤 공백
+    제거·casefold로 더 모은다. 앞 단계에서 같아진 표기는 뒤 단계에서도 같다.
+    게스트 handle 판정, 인증·복구 email의 게스트 주소 판정, 같은 식별자의 요청 한도 키(app/middleware/guest_gate.py)가 쓴다.
     """
-    if not isinstance(identifier, str):
-        return False
-    normalized = unicodedata.normalize("NFKC", identifier).replace("İ", "I").strip().casefold()
-    return normalized.endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
+    resolved = _SURROGATES.sub("\ufffd", value).strip().replace("İ", "i").lower()
+    return unicodedata.normalize("NFKC", resolved).strip().casefold()
+
+
+def _is_guest_handle(identifier: object) -> bool:
+    """normalize_identifier로 맞춘 값이 게스트 handle 도메인 주소인지"""
+    return isinstance(identifier, str) and normalize_identifier(identifier).endswith(
+        f"@{guest_service.GUEST_HANDLE_DOMAIN}"
+    )
 
 
 def _submitted_name(content_type: str, body: bytes) -> object:
@@ -241,12 +255,12 @@ def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> o
 def _is_guest_address(content_type: str, body: bytes) -> bool | None:
     """제출한 email이 게스트 handle 도메인 주소면 True. 본문을 읽을 수 없거나 email이 겹치면 None.
 
-    값은 앞뒤 공백을 떼고 대소문자 구분 없이 비교한다.
+    값은 게스트 handle 로그인과 같게 normalize_identifier로 맞춰 비교한다.
     """
     email = _submitted_value(content_type, body, ("email",))
     if email is _UNREADABLE:
         return None
-    return isinstance(email, str) and email.strip().lower().endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
+    return _is_guest_handle(email)
 
 
 def _submitted_rate_limit_identifier(submit_path: str, content_type: str, body: bytes) -> object:

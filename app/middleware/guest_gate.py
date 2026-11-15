@@ -25,7 +25,8 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
 1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출과 GET 제출은 IP 단위로,
-   로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다
+   로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일, auth_proxy.normalize_identifier로 맞춘 값)
+   단위로도 센다
 2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
 3. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
 4. 게스트 제출이면 Turnstile
@@ -40,7 +41,6 @@ CORS 안쪽에 둔다. 거절 응답에도 CORS 헤더가 붙고, preflight는 C
 """
 import hashlib
 import logging
-import unicodedata
 
 import httpx
 from starlette._utils import get_route_path
@@ -127,12 +127,12 @@ async def _auth_step_refusal(request: Request) -> Response | None:
 def _identifier_key(ip_key: str, submit_path: str, identifier: object) -> str | None:
     """같은 IP·제출 경로·식별자의 한도 키. 식별자가 없으면 None.
 
-    문자열은 NFKC·앞뒤 공백 제거·casefold로 맞춘다. 읽을 수 없거나 문자열이 아닌 값은 IP·경로마다 한 칸으로 센다.
-    키에는 식별자 대신 해시를 둔다.
+    문자열은 auth_proxy.normalize_identifier로 맞춘다(Kratos가 같은 식별자로 찾는 표기는 같은 키). 읽을 수 없거나
+    문자열이 아닌 값은 IP·경로마다 한 칸으로 센다. 키에는 식별자 대신 해시를 둔다.
     """
     if identifier is None:
         return None
-    normalized = unicodedata.normalize("NFKC", identifier).strip().casefold() if isinstance(identifier, str) else ""
+    normalized = auth_proxy.normalize_identifier(identifier) if isinstance(identifier, str) else ""
     digest = hashlib.sha256(f"{submit_path}\n{normalized}".encode()).hexdigest()
     return f"{ip_key}:identifier:{digest}"
 

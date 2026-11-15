@@ -702,7 +702,15 @@ def _forwarded(upstream, path):
 @pytest.mark.parametrize("path", ADDRESS_FLOWS)
 @pytest.mark.parametrize(
     "email",
-    ["x@guest.invalid", "x@GUEST.Invalid", "  x@guest.invalid  ", "X@Guest.INVALID\n"],
+    [
+        "x@guest.invalid",
+        "x@GUEST.Invalid",
+        "  x@guest.invalid  ",
+        "X@Guest.INVALID\n",
+        "x@guest.\u0130nvalid",
+        "x@guest.inval\u0130d",
+        "\u3000X@GUEST.\u0130NVAL\u0130D\u00a0",
+    ],
 )
 def test_address_flow_to_guest_domain_is_refused_json(client, upstream, monkeypatch, path, email):
     calls = []
