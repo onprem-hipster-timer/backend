@@ -21,12 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Guest tokens are refused on member routes**: Authenticated REST routes, GraphQL and the timer WebSocket refuse tokens whose `schema_id` claim equals `KRATOS_GUEST_SCHEMA_ID` (403; the WebSocket closes with 1008), whether or not guests are on. With `GUEST_ENABLED=true`, tokens without a `schema_id` claim are refused (401). The local Kratos claims mapper adds `schema_id` and works for identities without an `email` trait.
+- **Guest tokens are refused on member routes**: Authenticated REST routes, GraphQL and the timer WebSocket refuse tokens whose `schema_id` claim equals `KRATOS_GUEST_SCHEMA_ID` (403; the WebSocket closes with 1008), whether or not guests are on. Tokens without a `schema_id` claim are refused (401) on member and guest routes, whether or not guests are on (breaking): the token issuer must set `schema_id` for every identity before this version is deployed. The local Kratos claims mapper adds `schema_id` and works for identities without an `email` trait.
 - **Guest name changes through `/auth`**: With `GUEST_ENABLED=true`, the proxy forwards `method: profile` settings submissions of guest sessions to Kratos, and answers 409 `guest_name_taken` without forwarding when another guest of the resource has that name. Other settings submissions are handled as before.
 - **Rate limit on `/auth` submissions**: requests other than GET under `/auth/` are limited to 10 per 60 seconds per client IP, for members and guests alike. `POST /v1/guests` and `POST /v1/guests/lookup` are limited to 10 per 60 seconds per client IP each. These three limits count by IP even when the request carries a token (`per_ip` on `RateLimitRule`).
 - **Query string on `/auth` submissions (breaking)**: on requests other than GET to the login, registration, settings, verification and recovery submit paths, the query string may only contain `flow`; any other key returns 400 `invalid_request_body` and the request is not forwarded.
 - **Verification and recovery for guest addresses**: the `/auth` proxy answers 400 `address_not_accepted` to verification and recovery submissions whose `email` ends with `@guest.invalid` and does not forward them, with or without `GUEST_ENABLED`. Submissions on these two paths with an unreadable body, or with `email` given more than once, return 400 `invalid_request_body`.
-- **`schema_id` claim values**: with `GUEST_ENABLED=true`, a token whose `schema_id` is not a non-empty string is refused like a token without the claim (401).
+- **`schema_id` claim values**: a token whose `schema_id` is not a non-empty string is refused like a token without the claim (401), whether or not guests are on.
 
 ---
 

@@ -334,7 +334,7 @@ REST의 인증 경로, GraphQL, WebSocket이 모두 `ensure_member`를 거칩니
 flowchart TD
     A["토큰"] --> B{"서명 · iss · aud · exp"}
     B -->|"틀림 · 없음"| B401["401"]
-    B -->|"맞음"| C{"GUEST_ENABLED이고<br/>schema_id가 비어 있지 않은<br/>문자열이 아니다"}
+    B -->|"맞음"| C{"schema_id가 비어 있지 않은<br/>문자열이 아니다"}
     C -->|"예"| C401["401"]
     C -->|"아니오"| D{"schema_id ==<br/>KRATOS_GUEST_SCHEMA_ID"}
     D -->|"예"| D403["403<br/>(GUEST_ENABLED와 무관)"]
@@ -351,7 +351,9 @@ flowchart TD
     B -->|"꺼짐"| X403["403"]
     B -->|"켜짐"| C{"서명 · iss · aud · exp"}
     C -->|"틀림 · 없음"| C401["401"]
-    C -->|"맞음"| D{"schema_id ==<br/>KRATOS_GUEST_SCHEMA_ID"}
+    C -->|"맞음"| S{"schema_id가 비어 있지 않은<br/>문자열인가"}
+    S -->|"아니오"| C401
+    S -->|"예"| D{"schema_id ==<br/>KRATOS_GUEST_SCHEMA_ID"}
     D -->|"아니오"| X403
     D -->|"예"| E{"guest 행이 있다<br/>(identity id = 토큰의 sub)"}
     E -->|"없음"| X403
@@ -378,7 +380,7 @@ flowchart TD
 | `/v1/guests/*` | `404` |
 | `/internal/kratos/hooks/*` | `404` |
 | 게스트 schema의 토큰 | 모든 인증 경로에서 `403` |
-| `schema_id` 클레임이 없는 토큰 | 회원으로 받는다 |
+| `schema_id` 클레임이 없는 토큰 | `401` (켜져 있을 때와 같다) |
 | `/auth`에서 게스트 세션의 `method: profile` 제출 | `403` |
 
 게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시](auth-proxy.ko.md#판정-순서)).
@@ -545,7 +547,7 @@ sequenceDiagram
 
 ### 자기 삭제 — `DELETE /v1/guests/me`
 
-게스트 JWT가 필요합니다. 응답은 `204`이고, 다시 불러도 `204`입니다. 회원 토큰은 `403`, 토큰이 없으면 `401`입니다.
+게스트 JWT가 필요합니다. 응답은 `204`이고, 다시 불러도 `204`입니다. 회원 토큰은 `403`, 토큰이 없거나 `schema_id` 클레임이 없으면 `401`입니다.
 
 ### `/auth` 프록시가 받지 않는 게스트 관련 요청
 
@@ -621,7 +623,7 @@ async def guest_view(guest: Guest = Depends(require_guest_access(ResourceType.ME
     ...
 ```
 
-- 토큰이 게스트 토큰이고, 게스트 행이 있고, 그 행의 리소스가 경로 파라미터의 리소스와 같고, 접근 정책이 허용할 때만 통과합니다. 아니면 `403`(토큰이 없으면 `401`)입니다. `GUEST_ENABLED`가 꺼져 있으면 토큰과 상관없이 `403`입니다.
+- 토큰이 게스트 토큰이고, 게스트 행이 있고, 그 행의 리소스가 경로 파라미터의 리소스와 같고, 접근 정책이 허용할 때만 통과합니다. 아니면 `403`입니다. 토큰이 없거나 `schema_id` 클레임이 없으면 `401`이고, `GUEST_ENABLED`가 꺼져 있으면 토큰과 상관없이 `403`입니다.
 - 게스트를 받는 경로는 회원 게이트(`get_current_user_synced`)가 걸린 `/v1` 인증 라우터 밖에 둡니다.
 - 새 경로가 게스트 토큰을 거부하지 않으면 `tests/domain/guest/test_route_guard.py`가 실패합니다. 게스트를 받는 경로는 그 테스트의 허용 목록에 올립니다.
 

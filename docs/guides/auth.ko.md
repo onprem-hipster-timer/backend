@@ -78,7 +78,7 @@ sequenceDiagram
 | **JWT** | 세션 토큰으로 받은 토큰(`whoami?tokenize_as=api`의 `tokenized`). API 요청의 `Authorization: Bearer`로 보낸다 |
 | **JWKS** | JWT 서명 검증에 쓰는 공개 키 (`OIDC_JWKS`) |
 | **sub claim** | JWT 내 사용자 고유 식별자(Kratos identity id), 데이터 소유권(owner_id)에 사용 |
-| **schema_id claim** | Kratos identity schema id. 회원과 [게스트 계정](guest.ko.md)을 가린다 |
+| **schema_id claim** | Kratos identity schema id. 회원과 [게스트 계정](guest.ko.md)을 가린다. 모든 토큰에 있어야 하고, 없으면 `401`이다 |
 
 ---
 
@@ -119,7 +119,7 @@ sequenceDiagram
 | `session.lifespan` | `720h` | 세션 토큰의 수명 |
 | `session.whoami.tokenizer.templates.api.ttl` | `10m` | JWT의 수명. 클라이언트가 이 주기로 다시 받는다 |
 | `session.whoami.tokenizer.templates.api.jwks_url` | 서명 키 (비밀) | 그 공개 키가 backend의 `OIDC_JWKS`다 |
-| `session.whoami.tokenizer.templates.api.claims_mapper_url` | `api-jwt.claims.jsonnet` | JWT에 `aud`(= `OIDC_AUDIENCE`), `schema_id`, `email`, `email_verified`, `name`을 넣는다 |
+| `session.whoami.tokenizer.templates.api.claims_mapper_url` | `api-jwt.claims.jsonnet` | JWT에 `aud`(= `OIDC_AUDIENCE`), `schema_id`, `email`, `email_verified`, `name`을 넣는다. `schema_id`는 모든 identity에 넣어야 한다(없으면 backend가 `401`) |
 | `identity.schemas` | `default` (`identity.schema.json`) | traits는 `email`(로그인 식별자, 인증·복구 주소)과 `name` |
 | `courier.smtp` | 로컬 mailpit | 인증·복구 코드 메일 |
 
@@ -188,7 +188,7 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
 | `model.py` | `CurrentUser` | 검증된 JWT 클레임에서 추출한 인증 주체. **DB에 영속되지 않는 휘발성 값 객체**(영속 표시 프로필 `UserProfile`과 별개 개념). `from_claims()`(클레임→객체 단일 매핑)·`mock()`(OIDC 비활성화 시 주입) 제공. |
 | `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | JWT 검증 전담. `OIDC_JWKS`의 공개 키(없으면 discovery의 `jwks_uri`)를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. |
 | `dependencies.py` | `authenticate_request` | 토큰 검증만 한다(회원·게스트 구분 없음). `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. `get_current_user`와 게스트 의존성이 쓴다. |
-| `dependencies.py` | `ensure_member` | **회원 판정**. 토큰의 `schema_id`가 게스트 schema면 `403`, `GUEST_ENABLED=true`인데 `schema_id`가 비어 있지 않은 문자열이 아니면 `401`. REST·GraphQL·WebSocket의 회원 인증이 모두 거친다([게스트 계정](./guest.ko.md#회원-경로)). |
+| `dependencies.py` | `ensure_member` | **회원 판정**. 토큰의 `schema_id`가 게스트 schema면 `403`, `schema_id`가 비어 있지 않은 문자열이 아니면 `GUEST_ENABLED`와 상관없이 `401`(`require_schema_id`). REST·GraphQL·WebSocket의 회원 인증이 모두 거친다([게스트 계정](./guest.ko.md#회원-경로)). |
 | `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). 검증한 토큰을 `ensure_member`로 넘겨 회원만 통과시킨다. `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
 | `dependencies.py` | `get_optional_current_user` | 선택적 인증(미인증 허용 엔드포인트용). 토큰이 없으면 `None` 반환. |
 | `dependencies.py` | `get_current_user_synced` | 인증 게이트 + 최소 표시 프로필 JIT 동기화. 인증 REST 라우터 dependency 전용(아래 「인증 라우터 구성」 참고). |
@@ -248,7 +248,7 @@ graph TD
     OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
 ```
 
-토큰 검증은 `authenticate_request` 한 곳에서 합니다. 회원 경로(`get_current_user`)는 그 결과를 `ensure_member`로 넘기고, 게스트를 받는 경로(`get_current_guest`)는 `ensure_member`를 거치지 않고 같은 `CurrentUser`를 받습니다. 그 뒤의 의존성은 [게스트 계정 가이드의 객체 의존성](guest.ko.md#객체-의존성)에 있습니다.
+토큰 검증은 `authenticate_request` 한 곳에서 합니다. 회원 경로(`get_current_user`)는 그 결과를 `ensure_member`로 넘기고, 게스트를 받는 경로(`get_current_guest`)는 `ensure_member`를 거치지 않고 같은 `CurrentUser`를 받습니다. `schema_id` 클레임이 없는 토큰은 두 경로 모두 `401`입니다(`require_schema_id`). 그 뒤의 의존성은 [게스트 계정 가이드의 객체 의존성](guest.ko.md#객체-의존성)에 있습니다.
 
 #### 요청 수명주기에서의 협력
 
@@ -439,7 +439,7 @@ const response = await fetch('http://localhost:2614/v1/graphql', {
 1. 세션 토큰으로 JWT를 다시 받는다 (`GET /auth/sessions/whoami?tokenize_as=api`)
 2. 그 요청도 `401`이면 세션이 끝난 것이므로 로그인 화면으로 보낸다
 
-`GUEST_ENABLED=true`이면 `schema_id` 클레임이 없거나 비어 있지 않은 문자열이 아닌 토큰도 `401`입니다.
+`schema_id` 클레임이 없거나 비어 있지 않은 문자열이 아닌 토큰도 `401`입니다. 게스트 계정을 켰는지와 상관없습니다.
 
 ```json
 {
@@ -567,7 +567,7 @@ backend의 토큰 검증은 표준 OIDC JWT를 받으므로 다른 Provider의 �
 | `/auth/*` 프록시 | Kratos 공개 API로 넘긴다 |
 | 회원 탈퇴의 세션 폐기·identity 삭제 | Kratos admin API를 부른다 |
 | [게스트 계정](guest.ko.md) | Kratos identity schema, 훅, admin API를 쓴다 |
-| JWT의 `schema_id`·`email_verified` | Kratos 클레임 매퍼가 넣는다 |
+| JWT의 `schema_id`·`email_verified` | Kratos 클레임 매퍼가 넣는다. `schema_id`가 없는 토큰은 `401`이므로, 다른 Provider를 쓰면 그 Provider가 `schema_id` 클레임(게스트 schema id가 아닌 값)을 넣어야 한다 |
 
 
 ---
