@@ -26,7 +26,7 @@
 
 목표는 **공개 동작(계약)을 바꾸지 않고 구현 결합도만 낮추는** 것입니다.
 
-초기 마이그레이션 범위는 Todo/Schedule 전파와 read path 정리입니다. `TagService.delete_tag_group()`처럼 다른 도메인 쓰기를 호출하는 경로도 존재하지만, 이 문서의 초기 이벤트 카탈로그에는 포함하지 않고 후속 정리 범위로 둡니다.
+초기 마이그레이션 범위는 Todo/Schedule 전파와 read path 정리입니다. `TodoGroupService.delete_todo_group()`(목록의 Todo를 기본 목록으로 옮김)이나, Todo·Schedule 쓰기에서 기본 해야 할 일 목록을 만드는 `TodoGroupService.resolve_group_id()`처럼 다른 도메인 쓰기를 직접 호출하는 경로도 존재하지만, 이 문서의 초기 이벤트 카탈로그에는 포함하지 않고 후속 정리 범위로 둡니다.
 
 ---
 
@@ -66,6 +66,7 @@ GET은 `get_db`(commit 없음, rollback만)를 사용합니다. 단, 다음은 r
 
 - **Timer `elapsed_time`**: 조회 메서드는 ORM을 변경하지 않습니다. 조회 응답의 `elapsed_time`은 저장값이고, RUNNING 타이머의 현재 구간(`now - started_at`)은 클라이언트가 더합니다. 누적은 `pause_timer`/`stop_timer` 같은 **write transition**에서만 합니다(`_add_running_segment_to_elapsed`). 조회가 DB를 쓰지 않는다는 보장은 `tests/test_timers_read_no_write.py`가 지킵니다.
 - **인증 parent dependency**: 모든 인증 라우터에 걸린 `get_current_user_synced`가 자체 `get_db_transactional` + 프로필 JIT sync를 엽니다. **auth-only 게이트**와 **profile-sync write 경로**로 분리해야 GET이 진짜 read-only가 됩니다.
+- **해야 할 일 목록 전체**: `GET /v1/todos/groups`는 read-only 전환의 예외로, 쓰는 GET입니다. 기본 해야 할 일 목록이 없으면 만들고, 받은 기본 목록 `id`로 곧바로 Todo를 만들 수 있게 `CommittingSession`으로 응답 전에 커밋합니다.
 
 !!! tip "쓰기 경로 구현이 읽기 전환에 주는 순풍"
     - [#52](https://github.com/onprem-hipster-timer/backend/issues/52): `get_db`의 rollback 경계에
@@ -271,8 +272,9 @@ def handle(events, session):
 - 핸들러는 변경 대상의 `owner_id == event.owner_id`를 확인한 뒤에만 수정합니다.
 - `current_user`를 요구하는 기존 Service를 그대로 호출하지 않고, `owner_id` 기반 lower-level operation을 사용합니다.
   예외로 Todo 상태를 타이머에 반영하는 핸들러는 소유자를 행위자로 만든 `TimerService`의
-  `mark_completed`·`mark_cancelled`를 씁니다. 완료·취소(경과 시간 확정, `pause_history`, 실시간 이벤트,
+  `mark_completed`·`mark_cancelled`를 씁니다. 완료·취소(만료 확정, 경과 시간 확정, `pause_history`, 실시간 이벤트,
   `TimerCompleted`·`TimerCancelled` 수집)를 `stop_timer`·`cancel_timer`와 한 경로로 두기 위해서입니다.
+  연결 해제와 `UNSCHEDULED`·`SCHEDULED` 반영의 `update`도 같은 `TimerService._materialize_expiry`로 만료를 먼저 확정합니다.
   이 메서드는 권한을 검증하지 않으므로 핸들러가 `owner_id`로 조회한 타이머만 넘깁니다.
 - 자동 생성 리소스에 **visibility를 복사하지 않습니다** (생성 후 별도 `/visibility` API로 관리, 기본 PRIVATE).
 - 삭제 핸들러는 `delete_visibility_by_resource` cleanup을 유지합니다(orphan visibility 방지).
@@ -303,10 +305,11 @@ def handle(events, session):
 - `TodoContentChanged`: 제목·설명 변경의 투영 반영 (기존에는 전파 자체가 없던 공백)
 - `TodoDeadlineRemoved`/`TodoDeleted`는 클라이언트가 지정한 `linked_schedule_policy`(`delete`|`unlink`)를 payload로 운반 ([#61](https://github.com/onprem-hipster-timer/backend/issues/61))
 - `ScheduleDeleted`/`ScheduleUnlinkedFromTodo`는 클라이언트가 지정한 `source_todo_policy`(`clear_deadline`|`keep_deadline`)를 운반
+- `ScheduleCreatedWithTodoOption`은 발행 전에 소유 확인과 기본 목록 결정을 마친 `todo_group_id`를 운반 — todo 핸들러는 그 값으로 Todo를 만들 뿐 목록을 다시 검사하지 않습니다
 - `TodoDeleted`는 삭제 전 스냅샷한 `linked_schedule_ids`를 운반 (`source_todo_id`가 `ondelete=SET NULL`이라 삭제 flush 후에는 조회 불가)
 - `TodoDeleted`/`ScheduleDeleted`는 삭제 전 스냅샷한 `linked_timer_ids`(`TimerSession.todo_id`·`schedule_id`도 `ondelete=SET NULL`)와 클라이언트가 지정한 `linked_timer_policy`(`delete`|`unlink`)를 운반. `TodoDeleted`는 연결 투영이 없어도 항상 발행
 - 투영을 지우는 schedule 핸들러는 연결 타이머를 위해 `ScheduleDeleted(origin=TODO, 정책 없음)`를 수집 — 타이머 핸들러는 일정 연결만 해제하고, todo 핸들러는 origin 가드로 무시
-- `TodoStatusChanged`는 status가 실제로 바뀔 때마다 하나 수집됩니다 — `update_todo`의 명시 전이와 자동 전이(마감 설정·제거), todo 핸들러의 전이(투영 삭제·반복 전환의 플래그 해제, 타이머 완료·취소). 타이머 핸들러는 그 Todo의 RUNNING·PAUSED 타이머를 `DONE`이면 완료, `CANCELLED`면 취소하고, `UNSCHEDULED`·`SCHEDULED`면 바꾸지 않고 `updated_at`만 갱신해 `timer.updated`(`update`)를 보냅니다
+- `TodoStatusChanged`는 status가 실제로 바뀔 때마다 하나 수집됩니다 — `update_todo`의 명시 전이와 자동 전이(마감 설정·제거), todo 핸들러의 전이(투영 삭제·반복 전환의 플래그 해제, 타이머 완료·취소). 타이머 핸들러는 그 Todo의 RUNNING·PAUSED 타이머를 `DONE`이면 완료, `CANCELLED`면 취소하고, `UNSCHEDULED`·`SCHEDULED`면 바꾸지 않고 `updated_at`만 갱신해 `timer.updated`(`update`)를 보냅니다. 어느 쪽이든 만료된 타이머는 먼저 만료를 확정해 `expire`가 앞섭니다
 - `TimerCompleted`·`TimerCancelled`는 `stop_timer`·`cancel_timer`와 위 타이머 핸들러가 수집하고, todo 핸들러가 연결 Todo를 `DONE`·`CANCELLED`로 바꿉니다. **이미 `DONE`·`CANCELLED`인 Todo면 아무것도 하지 않습니다(터미널 상태 no-op)** — 그래서 Todo `DONE` → 타이머 완료 → `TimerCompleted`에서, 타이머 완료 → Todo `DONE` → `TodoStatusChanged` → 같은 Todo의 다른 타이머 완료 → `TimerCompleted`에서 연쇄가 멈춥니다
 - 이 연쇄는 활성 타이머마다 이벤트가 하나씩 늘어 `MAX_DISPATCH_DEPTH`(총 10개)를 함께 씁니다. 한 Todo에 활성 타이머가 아홉 개를 넘으면 상한에 걸립니다
 

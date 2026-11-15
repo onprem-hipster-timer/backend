@@ -22,7 +22,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser, get_current_user
 from app.core.constants import ResourceScope
 from app.crud import schedule as schedule_crud
-from app.db.session import get_db_transactional
+from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.schedule.schema.dto import ScheduleRead
 from app.domain.schedule.service import ScheduleService
@@ -38,6 +38,8 @@ from app.domain.todo.schema.dto import (
     TodoIncludeReason,
 )
 from app.domain.todo.service import TodoService
+from app.domain.todo_group.schema.dto import TodoGroupCreate, TodoGroupRead, TodoGroupUpdate
+from app.domain.todo_group.service import TodoGroupService
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
@@ -114,9 +116,9 @@ async def read_todos(
             None,
             description="태그 ID 리스트 (AND 방식: 모든 지정 태그를 포함한 Todo만 반환)"
         ),
-        group_ids: Optional[List[UUID]] = Query(
+        todo_group_ids: Optional[List[UUID]] = Query(
             None,
-            description="태그 그룹 ID 리스트 (해당 그룹에 속한 Todo 반환 - 직접 연결 또는 태그 기반)"
+            description="할 일 그룹 ID 리스트 (해당 할 일 그룹에 속한 Todo만 반환)"
         ),
         tz: Optional[str] = Query(
             None,
@@ -134,10 +136,8 @@ async def read_todos(
     - shared: 공유된 타인의 Todo만
     - all: 내 Todo + 공유된 Todo
     
-    그룹 필터링:
-    - group_ids: 해당 그룹에 속한 Todo 반환
-      - tag_group_id로 직접 연결된 Todo
-      - OR 해당 그룹의 태그를 가진 Todo
+    할 일 그룹 필터링:
+    - todo_group_ids: 해당 할 일 그룹에 속한 Todo 반환
     
     태그 필터링:
     - tag_ids: AND 방식 (모든 지정 태그를 포함한 Todo만 반환)
@@ -147,7 +147,7 @@ async def read_todos(
     - MATCH: 필터 조건에 직접 매칭된 Todo
     - ANCESTOR: 매칭된 Todo의 조상이라 포함된 Todo
     
-    둘 다 지정 시: 그룹 필터링 후 태그 필터링 적용
+    둘 다 지정 시: 할 일 그룹 필터링 후 태그 필터링 적용
     """
     todo_service = TodoService(session, current_user)
     schedule_service = ScheduleService(session, current_user)
@@ -156,7 +156,7 @@ async def read_todos(
 
     # 내 Todo 조회 (scope=mine 또는 scope=all)
     if scope in (ResourceScope.MINE, ResourceScope.ALL):
-        result = todo_service.get_all_todos(tag_ids=tag_ids, group_ids=group_ids)
+        result = todo_service.get_all_todos(tag_ids=tag_ids, todo_group_ids=todo_group_ids)
         for todo in result.todos:
             # 연관 Schedule 조회 (라우터에서 orchestration)
             schedule_reads = _get_related_schedule_reads(todo, schedule_service, is_shared=False)
@@ -172,8 +172,8 @@ async def read_todos(
     if scope in (ResourceScope.SHARED, ResourceScope.ALL):
         shared_todos = todo_service.get_shared_todos()
         for todo in shared_todos:
-            # group_ids 필터 적용 (shared에도)
-            if group_ids and todo.tag_group_id not in group_ids:
+            # todo_group_ids 필터 적용 (shared에도)
+            if todo_group_ids and todo.todo_group_id not in todo_group_ids:
                 continue
 
             # tag_ids 필터 적용 (AND 방식)
@@ -191,11 +191,70 @@ async def read_todos(
     return [todo_read.to_timezone(tz_obj) for todo_read in result_list]
 
 
+# ============================================================
+# TodoGroup Endpoints — `/{todo_id}`보다 먼저 선언해야 "groups"가 todo_id로 해석되지 않는다
+# ============================================================
+
+@router.post("/groups", response_model=TodoGroupRead, status_code=status.HTTP_201_CREATED)
+async def create_todo_group(
+        data: TodoGroupCreate,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 생성"""
+    return TodoGroupService(session, current_user).create_todo_group(data)
+
+
+@router.get("/groups", response_model=list[TodoGroupRead])
+async def read_todo_groups(
+        session: Session = CommittingSession,
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    모든 할 일 그룹 조회 (기본 그룹 먼저, 나머지는 이름순)
+
+    기본 그룹이 없으면 만든다. 받은 기본 그룹 id로 곧바로 할 일을 만들 수 있게 응답 전에 커밋한다.
+    """
+    return TodoGroupService(session, current_user).get_all_todo_groups()
+
+
+@router.get("/groups/{group_id}", response_model=TodoGroupRead)
+async def read_todo_group(
+        group_id: UUID,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 조회"""
+    return TodoGroupService(session, current_user).get_todo_group(group_id)
+
+
+@router.patch("/groups/{group_id}", response_model=TodoGroupRead)
+async def update_todo_group(
+        group_id: UUID,
+        data: TodoGroupUpdate,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹의 이름·색·설명 수정 (기본 그룹 포함)"""
+    return TodoGroupService(session, current_user).update_todo_group(group_id, data)
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_200_OK)
+async def delete_todo_group(
+        group_id: UUID,
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """할 일 그룹 삭제. 기본 그룹은 409"""
+    TodoGroupService(session, current_user).delete_todo_group(group_id)
+    return {"ok": True}
+
+
 @router.get("/stats", response_model=TodoStats)
 async def get_todo_stats(
-        group_id: Optional[UUID] = Query(
+        todo_group_id: Optional[UUID] = Query(
             None,
-            description="필터링할 태그 그룹 ID"
+            description="필터링할 할 일 그룹 ID"
         ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
@@ -203,11 +262,11 @@ async def get_todo_stats(
     """
     Todo 통계 조회
     
-    그룹별 태그 통계를 반환합니다.
-    group_id가 지정되면 해당 그룹의 태그만 집계합니다.
+    태그별 할 일 수를 반환합니다.
+    todo_group_id가 지정되면 그 할 일 그룹의 할 일만 셉니다.
     """
     todo_service = TodoService(session, current_user)
-    return todo_service.get_todo_stats(group_id=group_id)
+    return todo_service.get_todo_stats(todo_group_id=todo_group_id)
 
 
 @router.get("/{todo_id}", response_model=TodoRead)

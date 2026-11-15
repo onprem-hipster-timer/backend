@@ -42,7 +42,7 @@ def test_schedule_read_openapi_keeps_source_todo_id():
 @pytest.mark.e2e
 def test_omitted_todo_status_is_derived_from_deadline_in_rest_response(e2e_client):
     group_response = e2e_client.post(
-        "/v1/tags/groups",
+        "/v1/todos/groups",
         json={"name": "Todo status contract", "color": "#3366FF"},
     )
     assert group_response.status_code == 201
@@ -52,14 +52,14 @@ def test_omitted_todo_status_is_derived_from_deadline_in_rest_response(e2e_clien
         "/v1/todos",
         json={
             "title": "No deadline",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
         },
     )
     with_deadline = e2e_client.post(
         "/v1/todos",
         json={
             "title": "Has deadline",
-            "tag_group_id": group_id,
+            "todo_group_id": group_id,
             "deadline": "2030-01-01T12:00:00Z",
         },
     )

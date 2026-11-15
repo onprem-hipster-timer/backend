@@ -166,3 +166,90 @@ class TestGlobalProfileSync:
         received_a = a.get("/v1/friends/requests/received").json()
         assert len(received_a) == 1
         assert received_a[0]["requester_display_name"] == "Bob"
+
+
+class TestConsent:
+    """이용약관·개인정보처리방침·만 14세 이상 동의 (PUT /v1/users/me/consent)"""
+
+    @staticmethod
+    def _agree(client, **overrides):
+        """클라이언트처럼 GET /users/me가 알려 준 버전으로 동의"""
+        body = {
+            "version": client.get("/v1/users/me").json()["consent_version"],
+            "age_over_14": True,
+            "terms": True,
+            "privacy": True,
+        }
+        body.update(overrides)
+        return client.put("/v1/users/me/consent", json=body)
+
+    def test_new_user_requires_consent(self, e2e_client):
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is True
+
+    def test_consent_clears_requirement_and_persists(self, e2e_client):
+        r = self._agree(e2e_client)
+        assert r.status_code == 200, r.json()
+        assert r.json()["consent_required"] is False
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is False
+
+    def test_consent_before_profile_exists(self, e2e_client):
+        """GET /users/me를 거치지 않은 첫 요청이 동의여도 프로필이 생기고 기록된다"""
+        import app.core.config as app_config
+
+        body = {
+            "version": app_config.settings.CONSENT_VERSION,
+            "age_over_14": True,
+            "terms": True,
+            "privacy": True,
+        }
+        r = e2e_client.put("/v1/users/me/consent", json=body)
+        assert r.status_code == 200, r.json()
+        assert r.json()["friend_code"]
+        assert r.json()["consent_required"] is False
+
+    def test_profile_reports_current_version(self, e2e_client, monkeypatch):
+        import app.core.config as app_config
+
+        monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+        assert e2e_client.get("/v1/users/me").json()["consent_version"] == "2099-01-01"
+
+    def test_consent_is_idempotent(self, e2e_client):
+        assert self._agree(e2e_client).status_code == 200
+        r = self._agree(e2e_client)
+        assert r.status_code == 200
+        assert r.json()["consent_required"] is False
+
+    def test_each_item_must_be_true(self, e2e_client):
+        for field in ("age_over_14", "terms", "privacy"):
+            r = self._agree(e2e_client, **{field: False})
+            assert r.status_code == 422, field
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is True
+
+    def test_missing_item_is_rejected(self, e2e_client):
+        version = e2e_client.get("/v1/users/me").json()["consent_version"]
+        body = {"version": version, "terms": True, "privacy": True}
+        r = e2e_client.put("/v1/users/me/consent", json=body)
+        assert r.status_code == 422
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is True
+
+    def test_stale_version_is_rejected(self, e2e_client):
+        r = self._agree(e2e_client, version="2000-01-01")
+        assert r.status_code == 409
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is True
+
+    def test_new_version_requires_consent_again(self, e2e_client, monkeypatch):
+        import app.core.config as app_config
+
+        assert self._agree(e2e_client).status_code == 200
+        monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is True
+
+        assert self._agree(e2e_client).status_code == 200
+        assert e2e_client.get("/v1/users/me").json()["consent_required"] is False
+
+    def test_consent_is_per_user(self, multi_user_e2e):
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        assert self._agree(a).status_code == 200
+        assert a.get("/v1/users/me").json()["consent_required"] is False
+        assert b.get("/v1/users/me").json()["consent_required"] is True

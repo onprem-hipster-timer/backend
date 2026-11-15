@@ -142,28 +142,41 @@ OIDC_AUDIENCE=https://api.example.com
 OIDC_JWKS='{"keys":[...]}'
 # /auth/* 프록시 대상. 비우면 /auth/*는 404
 KRATOS_PUBLIC_URL=http://127.0.0.1:4433
+# 회원 탈퇴 때 세션 폐기·identity 삭제
+KRATOS_ADMIN_URL=http://127.0.0.1:4434
 ```
 
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
 - 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다.
+- 로그인·가입·설정 제출 경로(`/auth/self-service/login`, `/auth/self-service/registration`, `/auth/self-service/settings`)로 가는 요청은 GET을 포함해 메서드와 상관없이 쿼리 문자열에 `flow`만 받습니다(키는 대소문자 구분 없이 비교). 다른 키가 있으면 400 `invalid_request_body`로 거절하고 넘기지 않습니다. Kratos가 쿼리 문자열의 제출 값도 읽기 때문에 본문만 검사해서는 넘길 값을 정할 수 없습니다.
 - 소셜 로그인·가입 제출(`method: oidc`)에서는 클라이언트가 보낸 `traits.email`을 버립니다. 이메일은 제공자가 검증해 준 값만 씁니다. 키가 겹쳐 `method`를 하나로 읽을 수 없는 본문은 400으로 거절합니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
 
 #### 메일 발송 (courier 잡)
 
-Kratos 메일은 Cloud Run 잡이 보냅니다. 가입, 인증·복구 코드 요청, 설정 변경 제출이 성공하면 backend가 백그라운드에서 `COURIER_REQUEUE_JOB`을 실행해 성공을 기다린 뒤 `KRATOS_COURIER_JOB`을 실행합니다.
+Kratos 메일은 Cloud Run 잡이 보냅니다. 가입, 인증·복구 코드 요청, 설정 변경 제출이 성공하면 backend가 응답하기 전에 `KRATOS_COURIER_JOB` 실행을 요청하고, 접수까지만 기다립니다.
 
 ```bash
-COURIER_REQUEUE_JOB=projects/<project>/locations/<region>/jobs/courier-requeue
 KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 ```
 
-- `kratos-courier`가 이미 실행 중이면 둘 다 건너뜁니다. 30초 안의 반복 요청도 건너뜁니다.
+- 실행 중인 courier와 겹치지 않게 하는 것과 처리 중에 멈춘 메일 복구는 잡이 맡습니다. backend는 요청마다 실행을 요청합니다.
 - 실패해도 요청은 실패하지 않습니다. 로그에만 남습니다.
-- 런타임 서비스 계정에 두 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
-- 컨테이너가 `cpu_idle=true`(요청 중에만 CPU 할당)이면 응답 뒤 requeue를 기다리는 동안 CPU가 줄어 메일이 늦어질 수 있습니다.
+- 런타임 서비스 계정에 잡의 `roles/run.developer`가 필요합니다. 토큰은 메타데이터 서버에서 받습니다.
+
+#### 회원 탈퇴 파기
+
+탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다. 같은 실행이 가입 뒤 `UNVERIFIED_SIGNUP_RETENTION_HOURS`(기본 24시간)가 지나도 이메일을 인증하지 않은 가입 정보도 Kratos에서 지웁니다.
+
+```bash
+ACCOUNT_PURGE_TOKEN=<무작위 값>   # 호출할 때 X-Purge-Token 헤더로 보낸다. 비우면 404
+```
+
+- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수}`입니다. 남은 identity는 다음 호출이 다시 지웁니다.
+- `ORIGIN_VERIFY_HEADER`를 쓰면 스케줄러 요청에도 그 헤더를 붙입니다.
+- 로그인·가입·탈퇴 신청·취소·파기는 stdout에 `{"audit": "account_access", "event", "identity_id", "ip", "at"}` JSON 한 줄로 남습니다. 보존 기간은 로그 설정에서 정합니다.
 
 > 📖 **상세 가이드**: [Authentication Guide](../guides/auth.ko.md)
 

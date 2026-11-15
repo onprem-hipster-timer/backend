@@ -114,7 +114,8 @@ class FriendService:
         :return: 업데이트된 친구 관계
         """
         friendship = crud.get_friendship(self.session, friendship_id)
-        if not friendship:
+        # 휴면 계정이 보낸 요청은 목록에서처럼 없는 것으로 본다
+        if not friendship or profile_crud.is_dormant(self.session, friendship.requester_id):
             raise FriendshipNotFoundError()
 
         # 수신자만 수락 가능
@@ -309,11 +310,11 @@ class FriendService:
 
     def get_friends(self) -> list[FriendRead]:
         """
-        친구 목록 조회
+        친구 목록 조회 (휴면 계정 제외)
 
         :return: 친구 목록
         """
-        friendships = crud.get_friends(self.session, self.owner_id)
+        friendships = self._without_dormant(crud.get_friends(self.session, self.owner_id))
 
         # 상대방 표시정보 배치 조회 (N+1 방지)
         friend_ids = [
@@ -339,29 +340,39 @@ class FriendService:
 
     def get_friend_ids(self) -> list[str]:
         """
-        친구 ID 목록만 조회 (효율적인 쿼리)
+        친구 ID 목록만 조회 (휴면 계정 제외)
 
         :return: 친구 ID 목록
         """
-        return crud.get_friend_ids(self.session, self.owner_id)
+        friend_ids = crud.get_friend_ids(self.session, self.owner_id)
+        dormant = profile_crud.get_dormant_subs(self.session, friend_ids)
+        return [friend_id for friend_id in friend_ids if friend_id not in dormant]
 
     def get_pending_requests_received(self) -> list[PendingRequestRead]:
         """
-        받은 친구 요청 목록 조회
+        받은 친구 요청 목록 조회 (휴면 계정이 보낸 요청 제외)
 
         :return: 대기 중인 친구 요청 목록
         """
-        friendships = crud.get_pending_requests_received(self.session, self.owner_id)
+        friendships = self._without_dormant(crud.get_pending_requests_received(self.session, self.owner_id))
         return self._to_pending_reads(friendships)
 
     def get_pending_requests_sent(self) -> list[PendingRequestRead]:
         """
-        보낸 친구 요청 목록 조회
+        보낸 친구 요청 목록 조회 (휴면 계정에 보낸 요청 제외)
 
         :return: 대기 중인 친구 요청 목록
         """
-        friendships = crud.get_pending_requests_sent(self.session, self.owner_id)
+        friendships = self._without_dormant(crud.get_pending_requests_sent(self.session, self.owner_id))
         return self._to_pending_reads(friendships)
+
+    def _without_dormant(self, friendships: list[Friendship]) -> list[Friendship]:
+        """상대가 휴면 계정인 관계를 뺀다"""
+        def other(f: Friendship) -> str:
+            return f.addressee_id if f.requester_id == self.owner_id else f.requester_id
+
+        dormant = profile_crud.get_dormant_subs(self.session, [other(f) for f in friendships])
+        return [f for f in friendships if other(f) not in dormant]
 
     def _to_pending_reads(self, friendships: list[Friendship]) -> list[PendingRequestRead]:
         """Friendship 목록을 PendingRequestRead로 변환 (요청자 표시정보 배치 조회)"""

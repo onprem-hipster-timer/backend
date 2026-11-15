@@ -25,7 +25,9 @@ from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.schedule.exceptions import ScheduleNotFoundError
 from app.domain.tag.service import TagService
 from app.domain.timer.events import TimerCancelled, TimerCompleted
+from app.domain.timer.expiry import expired_fields
 from app.domain.timer.exceptions import (
+    AllocatedDurationTooShortError,
     TimerNotFoundError,
     InvalidTimerStatusError,
 )
@@ -68,9 +70,24 @@ class TimerService:
 
     @staticmethod
     def _add_running_segment_to_elapsed(timer: TimerSession, now: datetime) -> None:
-        """RUNNING 타이머의 현재 세그먼트(started_at ~ now)를 elapsed_time에 누적. started_at 있을 때만 호출."""
+        """RUNNING 타이머의 현재 세그먼트(started_at ~ now)를 elapsed_time에 누적. started_at 있을 때만 호출.
+
+        elapsed_time은 allocated_duration을 넘지 않는다.
+        """
         current_segment = int((now - timer.started_at).total_seconds())
-        timer.elapsed_time += max(0, current_segment)
+        timer.elapsed_time = min(timer.allocated_duration, timer.elapsed_time + max(0, current_segment))
+
+    def _materialize_expiry(self, timer: TimerSession, now: datetime) -> bool:
+        """만료된 RUNNING 타이머를 행에 만료 표현으로 확정하고 expire 이벤트 적재 (app/domain/timer/expiry.py)"""
+        fields = expired_fields(timer, now)
+        if fields is None:
+            return False
+        for name, value in fields.items():
+            setattr(timer, name, value)
+        self.session.flush()
+        self.session.refresh(timer)
+        self._enqueue_realtime(TimerAction.EXPIRE, timer)
+        return True
 
     def create_timer(self, data: TimerCreate) -> TimerSession:
         """
@@ -155,6 +172,23 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        return timer
+
+    def _get_timer_for_finish(self, timer_id: UUID) -> TimerSession:
+        """
+        완료·취소 전에 연결 Todo 행 → 타이머 행 순서로 잠근 뒤 최신 값의 타이머를 반환
+
+        Todo status 변경도 Todo 행을 먼저 쓰고 핸들러가 타이머를 쓰므로, 같은 순서로 잠가
+        교착을 막는다. 두 조회 사이에 연결 Todo가 바뀌면 새 Todo는 타이머보다 늦게 잠긴다.
+
+        :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
+        """
+        timer = self.get_timer(timer_id)
+        if timer.todo_id is not None:
+            todo_crud.get_todo(self.session, timer.todo_id, self.owner_id, for_update=True)
+        timer = crud.get_timer(self.session, timer_id, self.owner_id, for_update=True)
+        if not timer:
+            raise TimerNotFoundError()
         return timer
 
     def get_timer_with_access_check(self, timer_id: UUID) -> tuple[TimerSession, bool]:
@@ -315,6 +349,7 @@ class TimerService:
         타이머 일시정지
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 확정해 반환 (이미 만료로 멈춘 타이머도 그대로 반환)
         - status가 RUNNING이어야 함
         - elapsed_time을 현재까지 경과한 시간으로 업데이트
         - status를 PAUSED로 변경
@@ -329,12 +364,17 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        now = ensure_utc_naive(datetime.now(UTC))
+        if self._materialize_expiry(timer, now):
+            return timer
+        if timer.status == TimerStatus.PAUSED.value and timer.elapsed_time >= timer.allocated_duration:
+            return timer
+
         if timer.status != TimerStatus.RUNNING.value:
             raise InvalidTimerStatusError(
                 detail=f"Cannot pause timer with status {timer.status}"
             )
 
-        now = ensure_utc_naive(datetime.now(UTC))
         if timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -362,6 +402,7 @@ class TimerService:
         
         비즈니스 로직:
         - status가 PAUSED이어야 함
+        - elapsed_time이 allocated_duration에 닿았으면 거부 (PATCH로 allocated_duration을 먼저 늘린다)
         - status를 RUNNING으로 변경
         - started_at을 현재 시간으로 재설정 (경과 시간은 그대로 유지)
         - paused_at을 None으로 설정
@@ -375,13 +416,19 @@ class TimerService:
         if not timer:
             raise TimerNotFoundError()
 
+        now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
+
         if timer.status != TimerStatus.PAUSED.value:
             raise InvalidTimerStatusError(
                 detail=f"Cannot resume timer with status {timer.status}"
             )
+        if timer.elapsed_time >= timer.allocated_duration:
+            raise InvalidTimerStatusError(
+                detail="Cannot resume timer: allocated_duration is used up. Extend allocated_duration first."
+            )
 
         # 상태 변경
-        now = ensure_utc_naive(datetime.now(UTC))
         timer.status = TimerStatus.RUNNING.value
         timer.started_at = now  # 재개 시간으로 재설정
         timer.paused_at = None
@@ -404,20 +451,19 @@ class TimerService:
         타이머 종료
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 먼저 확정 (mark_completed)
         - status가 RUNNING 또는 PAUSED이어야 함
         - elapsed_time을 최종 경과 시간으로 업데이트
         - status를 COMPLETED로 변경
         - ended_at을 현재 시간으로 설정
         - 연결 Todo가 DONE·CANCELLED가 아니면 DONE으로 (TimerCompleted → app/domain/todo/event_handlers.py)
-        
+
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id, self.owner_id)
-        if not timer:
-            raise TimerNotFoundError()
+        timer = self._get_timer_for_finish(timer_id)
 
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
@@ -433,9 +479,11 @@ class TimerService:
         """
         RUNNING·PAUSED 타이머를 COMPLETED로 바꾸고 실시간 이벤트 적재, TimerCompleted 수집
 
+        만료된 타이머는 만료를 먼저 확정한다 (expire → stop).
         상태 검증과 dispatch는 호출자 몫이다 (stop_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
         if timer.status == TimerStatus.RUNNING.value and timer.started_at:
             self._add_running_segment_to_elapsed(timer, now)
 
@@ -467,19 +515,18 @@ class TimerService:
         타이머 취소
         
         비즈니스 로직:
+        - 만료된 타이머는 만료를 먼저 확정 (mark_cancelled)
         - status가 RUNNING 또는 PAUSED이어야 함
         - status를 CANCELLED로 변경
         - ended_at을 현재 시간으로 설정
         - 연결 Todo가 DONE·CANCELLED가 아니면 CANCELLED로 (TimerCancelled → app/domain/todo/event_handlers.py)
-        
+
         :param timer_id: 타이머 ID
         :return: 업데이트된 타이머
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises InvalidTimerStatusError: 잘못된 상태 전이
         """
-        timer = crud.get_timer(self.session, timer_id, self.owner_id)
-        if not timer:
-            raise TimerNotFoundError()
+        timer = self._get_timer_for_finish(timer_id)
 
         if timer.status not in [TimerStatus.RUNNING.value, TimerStatus.PAUSED.value]:
             raise InvalidTimerStatusError(
@@ -494,9 +541,11 @@ class TimerService:
         """
         RUNNING·PAUSED 타이머를 CANCELLED로 바꾸고 실시간 이벤트 적재, TimerCancelled 수집
 
+        만료된 타이머는 만료를 먼저 확정한다 (expire → cancel).
         상태 검증과 dispatch는 호출자 몫이다 (cancel_timer, app/domain/timer/event_handlers.py).
         """
         now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
         timer.status = TimerStatus.CANCELLED.value
         timer.ended_at = now
 
@@ -535,7 +584,7 @@ class TimerService:
 
     def update_timer(self, timer_id: UUID, data: TimerUpdate) -> TimerSession:
         """
-        타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id)
+        타이머 메타데이터 업데이트 (title, description, tags, todo_id, schedule_id, allocated_duration)
 
         todo_id, schedule_id 동작:
         - 필드가 요청에 포함되지 않음: 기존 값 유지
@@ -543,6 +592,8 @@ class TimerService:
         - 필드가 null: 연결 해제
 
         Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
+        만료된 타이머는 만료를 먼저 확정한다. allocated_duration은 그 뒤의 현재 경과 시간
+        (실행 중이면 지금까지 실행한 구간 포함)보다 커야 한다.
         
         :param timer_id: 타이머 ID
         :param data: 업데이트 데이터
@@ -550,13 +601,24 @@ class TimerService:
         :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
         :raises TodoNotFoundError: todo_id가 있지만 Todo를 찾을 수 없는 경우
         :raises ScheduleNotFoundError: schedule_id가 있지만 Schedule을 찾을 수 없는 경우
+        :raises AllocatedDurationTooShortError: allocated_duration이 현재 경과 시간 이하인 경우
         """
         timer = crud.get_timer(self.session, timer_id, self.owner_id)
         if not timer:
             raise TimerNotFoundError()
 
+        now = ensure_utc_naive(datetime.now(UTC))
+        self._materialize_expiry(timer, now)
+
         # MISSING 필드는 자동 제외
         update_data = data.model_dump()
+
+        if 'allocated_duration' in update_data:
+            used = timer.elapsed_time
+            if timer.status == TimerStatus.RUNNING.value and timer.started_at:
+                used += max(0, int((now - timer.started_at).total_seconds()))
+            if update_data['allocated_duration'] <= used:
+                raise AllocatedDurationTooShortError()
 
         # 서비스에서 수동 처리할 컬럼 추적
         exclude_fields = []

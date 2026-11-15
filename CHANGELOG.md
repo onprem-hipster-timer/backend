@@ -11,6 +11,114 @@ _No unreleased changes._
 
 ---
 
+## [v2026.11.15-da99ae8] - 2026-11-15
+
+### Added
+
+- **Reading one occurrence of a recurring schedule**: `GET /v1/schedules/{parent_id}?instance_start=<datetime>` returns that occurrence in the same shape as the instance in `GET /v1/schedules`: `parent_id` set to the recurring schedule, `instance_start` set to the occurrence's original start time, the occurrence's `start_time`/`end_time`, values from a modified occurrence, `recurrence_rule: null` and an `id` generated per response. The `instance_start` query parameter is the occurrence's original start time and matches within 1 minute, as in `PATCH`/`DELETE`; `timezone` only changes the response time zone. Returns 404 when the rule has no occurrence at that time (including before the first occurrence and after `recurrence_end`) or the occurrence was deleted, 400 (`RecurringScheduleError`) for a schedule that is not recurring, and the same status as `GET /v1/schedules/{schedule_id}` when the schedule is missing or not accessible. Shared recurring schedules can be read this way with `is_shared: true`. Without `instance_start` the endpoint returns the schedule itself, as before.
+- **`instance_start` on recurring instances**: `ScheduleRead` has `instance_start`, the occurrence's original start time, on every recurring instance returned by `GET /v1/schedules` (own and shared), `GET /v1/schedules/{parent_id}?instance_start=...` and `PATCH /v1/schedules/{parent_id}?instance_start=...`; it is `null` for other schedules. It equals `start_time` unless the occurrence was moved, is converted by `timezone` like the other times, and can be sent back unchanged as the `instance_start` query parameter to read, update or delete that occurrence. Instance `id`s are generated per response and cannot be used to address an occurrence.
+
+### Changed
+
+- **Meeting time zone (breaking)**: meetings have a `timezone` field, an IANA time zone name such as `Asia/Seoul`. It is required in `POST /v1/meetings`, returned in meeting responses and can be changed with `PATCH /v1/meetings/{meeting_id}`; unknown names, UTC offset strings such as `+09:00` and `null` return 422. `start_date`, `end_date`, `available_days`, `start_time` and `end_time` are wall-clock values in that time zone. Migration `f3a39109a3ef` sets `timezone` to `UTC` for existing meetings.
+- **Meeting end time is exclusive and `00:00` ends the day (breaking)**: a meeting's daily range is `[start_time, end_time)`, and `end_time` `00:00:00` means the next day's 00:00, so `start_time` `00:00:00` with `end_time` `00:00:00` covers the whole day. Any other `end_time` must be after `start_time`. `time_slot_minutes` and the time slot count limit use the daily range up to 24:00 for such meetings. Migration `5fdfd93be2c3` updates the `ck_meeting_time_range` check.
+- **Availability is a list of UTC time intervals (breaking)**: in `PUT /v1/meetings/{meeting_id}/availability` a time slot is `{start_time, end_time}` with ISO 8601 date-times (UTC when no offset is given) and `end_time` after `start_time` (422 otherwise); `slot_date` is removed. Slots are stored exactly as sent, converted to UTC, without being checked against, split by or merged into the meeting's dates or grid; the count limit is unchanged. Slot responses of `PUT` and `GET /v1/meetings/{meeting_id}/availability` return date-times converted by the `timezone` query parameter, which `PUT` now accepts. Changing a meeting does not change its stored slots. Migration `911321f82154` converts existing slots to `slot_date` + time read as UTC.
+- **Meeting result grid (breaking)**: `availability_grid` in `GET /v1/meetings/{meeting_id}/result` is a flat list of cells ordered by start, each `{start_time, end_time, count}` with date-times converted by the `timezone` query parameter. Cells are built in the meeting's time zone for each matching date from `start_time` to `end_time` in `time_slot_minutes` steps of elapsed time, so days with a daylight saving change have consecutive cells; the last cell of a day ends at the end of the daily range. A participant counts once in a cell when the union of their slots fully covers it. Previously the grid was grouped by date with `HH:MM` keys, and the last cell of a range ending at `23:59` could not be covered.
+
+- **One participant per user in a meeting (breaking)**: `POST /v1/meetings/{meeting_id}/participate` returns 201 with a new participant the first time a user joins a meeting. When the same user sends it again, it returns 200 with the existing participant, keeping its `id`, `created_at` and time slots, and sets `display_name` to the new value. Concurrent requests from the same user also end with one participant. Migration `3f1fcd3dae5f` adds `UNIQUE (meeting_id, user_id)` to `meeting_participant`; before that it keeps the most recently created participant for each `(meeting_id, user_id)` and deletes the others together with their time slots. Participants without `user_id` are not affected. Previously every request created another participant, and the user was counted once per participant in `/availability` and `/result`.
+- **Meeting input limits (breaking)**: `POST /v1/meetings` returns 422 unless `title` is 1–200 characters after trimming (stored trimmed), `description` is at most 2000 characters, `end_date` is no later than 3 calendar months after `start_date` (the last day of the month when that day does not exist), `available_days` has at least one day, and `time_slot_minutes` is 5–1440 and not longer than `end_time - start_time`. Previously an empty title, an empty `available_days`, any period length and any positive `time_slot_minutes` were accepted.
+- **Participant display name limits (breaking)**: `display_name` in `POST /v1/meetings/{meeting_id}/participate` is trimmed and must be 1–50 characters without control characters (422 otherwise). Korean and emoji are allowed.
+- **Time slot count limit (breaking)**: `PUT /v1/meetings/{meeting_id}/availability` returns 422 and keeps the stored slots when the request has more slots than the meeting has cells: the number of days in the period that match `available_days` × the daily range in minutes ÷ `time_slot_minutes`, rounded up. Slots are still not checked against the meeting's dates, times or grid, and slots outside them are stored but not counted in `/result`.
+
+### Fixed
+
+- **Shared recurring schedules in the schedule list**: `GET /v1/schedules` with `scope=shared` or `scope=all` expands shared recurring schedules into their occurrences within `start_date`–`end_date`, like the caller's own recurring schedules: deleted occurrences are left out, modified ones show the modified values, and each has `parent_id`, `is_shared: true` and the owner's `owner_id`. `tag_ids` and `group_ids` still apply only to the caller's own schedules. Recurring instances in the list and in instance responses now carry the owner's `owner_id`. Previously a shared recurring schedule appeared once, as the schedule itself, and only in ranges overlapping its first occurrence, and instances had `owner_id: null`.
+- **Meeting updates are checked as a whole**: `PATCH /v1/meetings/{meeting_id}` applies the create limits to the stored meeting combined with the request and returns 422 without changing the meeting when the result breaks them, for example `start_time` at or after the stored `end_time`, or `end_date` before the stored `start_date`. Previously such requests failed with 500.
+
+---
+
+## [v2026.11.15-ea415eb] - 2026-11-15
+
+### Changed
+
+- **Query string on `/auth` submissions (breaking)**: on requests of any method, GET included, to the login, registration and settings submit paths, the query string may only contain `flow` (the key is compared without regard to letter case); any other key returns 400 `invalid_request_body` and the request is not forwarded. Other `/auth/*` requests keep their query string.
+
+---
+
+## [v2026.11.14-27a3ef9] - 2026-11-14
+
+### Fixed
+
+- **Allowed emails and domains ignore letter case**: for the `allowed_emails` visibility level, emails and domains are compared without regard to letter case, on both the allow list and the viewer's verified email, so `Alice@Partner.com` matches `alice@partner.com` and `Company.com` matches `user@company.com`. Domains still match exactly apart from case (`sub.example.com` does not match `example.com`). `PUT /v1/visibility/{resource_type}/{resource_id}` stores `allowed_emails` and `allowed_domains` trimmed and lower-cased, keeping one entry where values become equal, and responses return them in that form. Migration `aeb221d93ba3` converts stored entries the same way.
+
+---
+
+## [v2026.11.13-541f2db] - 2026-11-13
+
+### Added
+
+- **Todo groups**: `POST /v1/todos/groups` (201), `GET /v1/todos/groups`, `GET /v1/todos/groups/{group_id}`, `PATCH /v1/todos/groups/{group_id}` and `DELETE /v1/todos/groups/{group_id}` manage the groups that hold Todos (`id`, `name`, `color`, `description`, `is_default`, `created_at`, `updated_at`). Each user has one default group (`is_default: true`, named `기본` with color `#2196F3`), created by the server when it is first needed; `GET /v1/todos/groups` creates it if missing and commits before responding, so the returned `id` can be used right away. The list shows the default group first, then the other groups by name. `is_default` is read-only. The default group can be renamed or recolored but not deleted (409); deleting another group moves its Todos to the default group, keeping their parent-child links. Another user's group returns 404. `POST /v1/todos/groups` is limited to 30 requests per 60 seconds, separately from the `/v1/todos/*` rule. Purging an account deletes its todo groups.
+- **Moving a Todo to another todo group**: `PATCH /v1/todos/{todo_id}` with a different `todo_group_id` moves the Todo together with all its descendants, keeping the tree shape. If the Todo's parent stays in the old group, the Todo becomes a root Todo in the new group. A `parent_id` sent in the same request is checked against the new group (400 if that parent is not in it). `todo_group_id: null` is ignored. Previously changing `tag_group_id` moved only that Todo and kept its parent and child links across groups.
+
+### Changed
+
+- **Todos belong to todo groups (breaking)**: Todos have `todo_group_id` instead of `tag_group_id` in `POST /v1/todos`, `PATCH /v1/todos/{todo_id}` and Todo responses. In `POST /v1/todos` it is optional: without it the Todo goes to the caller's default group, and a `tag_group_id` in the body is ignored. A child Todo must be in its parent's todo group (400). The `GET /v1/todos` filter `group_ids` is renamed to `todo_group_ids`; `group_ids` is no longer read. Migrations `c1d5e9a3f7b2` and `d4a8b2c6e1f9` copy every tag group that has Todos to a todo group with the same `id`, name, color and description and move its Todos there. Each Todo ends up in a group owned by its own owner (a new group with the same name, color and description is created where needed), and Todos whose parent is in another group become root Todos. Previously Todos belonged to a tag group through a required `tag_group_id`.
+- **Todo stats by todo group (breaking)**: `GET /v1/todos/stats` takes `todo_group_id` instead of `group_id` and returns it as `todo_group_id`. `by_tag` counts the Todos' tags from every tag group. Previously `group_id` selected a tag group and also limited `by_tag` to that group's tags.
+- **Todo group when creating a Todo from a schedule (breaking)**: `create_todo_options.todo_group_id` in `POST /v1/schedules` and the `todo_group_id` query parameter of `POST /v1/schedules/{schedule_id}/todo` replace `tag_group_id` and are optional; without them the Todo goes to the default group. Previously `tag_group_id` was required.
+- **Deleting a group keeps its Todos**: `DELETE /v1/tags/groups/{group_id}` deletes the tag group and its tags, which also removes those tags from Todos, schedules and timers, and leaves the Todos in place. `DELETE /v1/todos/groups/{group_id}` moves the group's Todos to the default group. Previously deleting a tag group also deleted its Todos together with their projected schedules, unlinked those Todos' timers and cleared `tag_group_id` on schedules.
+
+### Removed
+
+- **`tag_group_id` on schedules and Todos (breaking)**: `POST /v1/schedules`, `PATCH /v1/schedules/{schedule_id}` and schedule responses no longer have `tag_group_id`; a value sent in a request is ignored. Todos use `todo_group_id` instead (see Changed). Migration `e7f3a9c5b1d8` drops `schedule.tag_group_id`, and `d4a8b2c6e1f9` drops `todo.tag_group_id`.
+
+### Fixed
+
+- **Todo group ownership is checked**: creating a Todo (`POST /v1/todos`), moving one (`PATCH /v1/todos/{todo_id}`) and creating one from a schedule (`create_todo_options` in `POST /v1/schedules`, `POST /v1/schedules/{schedule_id}/todo`) return 404 when `todo_group_id` is not one of the caller's todo groups, and change nothing; with `create_todo_options` the schedule is not created either.
+
+---
+
+## [v2026.11.13-dc73273] - 2026-11-13
+
+### Fixed
+
+- **GraphQL requests close their database session**: every request to `/v1/graphql` closes its database session when the request ends, including requests that do not run the `calendar` resolver (such as `{ __typename }` or introspection) and requests rejected during parsing or validation.
+
+---
+
+## [v2026.11.11-e2c26af] - 2026-11-11
+
+### Changed
+
+- **Mail job is requested before the `/auth/*` response**: after a sign-up, verification or recovery code request, or settings submit succeeds, the backend requests a run of `KRATOS_COURIER_JOB` and responds once the run is accepted. The job itself skips a run while another courier is sending and requeues mail stuck in processing. `COURIER_REQUEUE_JOB` is no longer read.
+
+---
+
+## [v2026.11.10-8cb773e] - 2026-11-10
+
+### Fixed
+
+- **Concurrent `POST /v1/schedules/{schedule_id}/todo` creates one Todo**: when two requests create a Todo from the same schedule at the same time, one creates and links the Todo and the other gets the same 400 as for an already linked schedule. Previously both succeeded, and the first Todo was left `SCHEDULED` with no projected schedule.
+- **No deadlock between a Todo and its projected schedule**: changing a Todo's deadline (`PATCH /v1/todos/{todo_id}`) while its projected schedule's time is changed (`PATCH /v1/schedules/{schedule_id}`) or the schedule is deleted no longer fails one request with a PostgreSQL deadlock. Both requests complete one after the other, and when the schedule remains, its start time matches the Todo's deadline.
+- **No deadlock between finishing a timer and its Todo**: stopping or cancelling a timer (`POST /v1/timers/{timer_id}/stop`, `/cancel`) while its linked Todo is set to `DONE` or `CANCELLED` (`PATCH /v1/todos/{todo_id}`) no longer fails one request with a PostgreSQL deadlock. The requests run one after the other; if the Todo change goes first, it finishes the timer and the stop or cancel gets the usual 400 for a timer that is no longer running. Two requests that stop or cancel the same timer at once are handled the same way; previously both could succeed, and the second overwrote the first.
+
+---
+
+## [v2026.11.10-a4dbac3] - 2026-11-10
+
+### Added
+
+- **Timer expiry**: a RUNNING timer expires at `started_at + (allocated_duration - elapsed_time)`. Reads (`GET /v1/timers`, `/v1/timers/active`, `/v1/timers/{id}` and timers embedded in schedule and Todo responses) show an expired timer as `PAUSED` with `elapsed_time = allocated_duration`, `paused_at` at the expiry instant and an `expire` entry in `pause_history`, without writing the row. The next command on the timer (`pause`, `stop`, `cancel`, a successful `PATCH`) and changes that reach the timer from its Todo or schedule (applying a Todo status, deleting the Todo or schedule with `linked_timer_policy=unlink`) store that state first and send `timer.updated` with `action: expire` before their own event; no event is sent at the expiry instant. A `resume` that returns 400 and a `PATCH` that returns 422 store nothing and send no event. `pause` on an expired timer returns 200, `resume` returns 400 until `allocated_duration` is extended, and `stop`/`cancel` finish with `elapsed_time = allocated_duration`. Status filters still match the stored status, so an expired timer not yet stored is matched by `status=RUNNING`.
+- **Extending a timer**: `PATCH /v1/timers/{timer_id}` accepts `allocated_duration`. It must be greater than the time used so far (the stored `elapsed_time` plus the running segment while the timer runs), otherwise 422 (`AllocatedDurationTooShortError`). An expired timer can be resumed after it is extended.
+- **Maximum `allocated_duration`**: `POST /v1/timers` and `PATCH /v1/timers/{timer_id}` reject an `allocated_duration` above 2147483647 with a 422 validation error.
+
+### Changed
+
+- **`elapsed_time` is capped at `allocated_duration`**: `pause`, `stop` and completing a timer through its Todo no longer add running time beyond the allocated duration.
+- **Client rule for timer state**: the realtime and timer guides now tell clients to apply a timer value only when its `updated_at` is newer than the held one; on an equal `updated_at` the value with the longer `pause_history` wins and equal lengths keep the held value, except that the response to the client's own command is applied (a `PATCH` such as extending `allocated_duration` may add no `pause_history` entry). A timer seen as COMPLETED or CANCELLED is never made active again by a later value.
+- **Active timers over their allocation**: a migration raises `allocated_duration` to `elapsed_time` for RUNNING and PAUSED timers whose `elapsed_time` exceeds it. COMPLETED and CANCELLED timers keep their values, so finished timers can still have `elapsed_time` greater than `allocated_duration`. The migration's downgrade does not restore the previous values.
+
+---
+
 ## [v2026.11.08-099ab9f] - 2026-11-08
 
 ### Fixed
@@ -368,7 +476,15 @@ _No unreleased changes._
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-da99ae8...HEAD
+[v2026.11.15-da99ae8]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...v2026.11.15-da99ae8
+[v2026.11.15-ea415eb]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...v2026.11.15-ea415eb
+[v2026.11.14-27a3ef9]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-541f2db...v2026.11.14-27a3ef9
+[v2026.11.13-541f2db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...v2026.11.13-541f2db
+[v2026.11.13-dc73273]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...v2026.11.13-dc73273
+[v2026.11.11-e2c26af]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-8cb773e...v2026.11.11-e2c26af
+[v2026.11.10-8cb773e]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.10-a4dbac3...v2026.11.10-8cb773e
+[v2026.11.10-a4dbac3]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.08-099ab9f...v2026.11.10-a4dbac3
 [v2026.11.08-099ab9f]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-f65a7fe...v2026.11.08-099ab9f
 [v2026.11.07-f65a7fe]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-c7b2408...v2026.11.07-f65a7fe
 [v2026.11.07-c7b2408]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.07-acb5673...v2026.11.07-c7b2408

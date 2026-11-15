@@ -89,14 +89,15 @@ sequenceDiagram
 | `type` | `action` | `payload.timer` |
 |---|---|---|
 | `timer.created` | `start` | 타이머 |
-| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update` | 타이머 |
+| `timer.updated` | `pause`, `resume`, `stop`, `cancel`, `update`, `expire` | 타이머 |
 | `timer.deleted` | `delete` | `null` (`timer_id`로 식별) |
 | `connected` | — | — (`payload`는 `{}`) |
 
 - 연결 Todo의 status가 바뀌면 그 Todo의 RUNNING·PAUSED 타이머마다 `timer.updated`가 나갑니다. `DONE`은 `stop`, `CANCELLED`는 `cancel`, `UNSCHEDULED`·`SCHEDULED`는 `update`(타이머는 그대로이고 `updated_at`만 바뀜)입니다 ([도메인 이벤트](domain-events.ko.md) §5).
 - 한 트랜잭션에서 같은 타이머의 `update`는 마지막 상태로 하나만 나갑니다.
 - 시각은 REST 응답(`timezone=UTC`)과 같은 형식(`2026-11-06T10:30:00+0000`, `CustomModel`)으로 직렬화합니다. 같은 타이머 상태면 이벤트와 REST 응답의 `updated_at` 문자열이 같습니다.
-- `elapsed_time`은 저장된 누적값입니다. RUNNING이면 클라이언트가 `now - started_at`을 더해 표시합니다 ([타이머 가이드](../guides/timer.ko.md)의 elapsed_time 계산 규칙).
+- `expire`는 만료된 RUNNING 타이머를 PAUSED로 확정했을 때 나갑니다. 같은 요청의 `stop`·`cancel`·`update`가 뒤따를 수 있습니다 ([타이머 가이드](../guides/timer.ko.md)의 "만료").
+- `elapsed_time`은 저장된 누적값입니다. RUNNING이면 클라이언트가 `min(allocated_duration, elapsed_time + now - started_at)`으로 표시합니다 ([타이머 가이드](../guides/timer.ko.md)의 elapsed_time 계산 규칙).
 - 클라이언트 → 서버 메시지는 문자열 `ping`뿐이고 서버는 `pong`으로 답합니다. 그 외는 무시합니다.
 - 연결 직후 서버가 `connected`를 보냅니다. 연결 시 타이머 목록을 보내지 않으므로 클라이언트가 REST로 맞춥니다 (5장).
 
@@ -173,7 +174,7 @@ session: Session = CommittingSession
 
 - **연결·재연결 직후 REST로 다시 맞춥니다.** 소켓은 연결 전이나 끊긴 동안의 메시지를 다시 보내지 않습니다.
 - `id`가 이미 처리한 메시지면 버립니다.
-- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 같거나 나중이면 반영합니다. REST 응답에도 같은 규칙을 씁니다.
+- `payload.timer.updated_at`이 가진 값보다 이전이면 버리고, 나중이면 반영합니다. `updated_at`은 초 단위라 같을 수 있으므로, 같으면 `pause_history`가 더 긴 쪽을 반영하고(명령마다 항목이 하나씩 늘어난다) 길이도 같으면 가진 값을 유지합니다. 단, 이 클라이언트가 보낸 명령의 REST 응답은 반영합니다(`allocated_duration`을 늘리는 `PATCH`처럼 항목이 늘지 않을 수 있다). COMPLETED·CANCELLED로 끝난 타이머는 다시 활성이 되지 않으므로, 끝난 것을 본 타이머의 끝나지 않은 값은 `updated_at`과 상관없이 버립니다. REST 응답에도 같은 규칙을 씁니다.
 - `timer.deleted`를 받으면 그 `timer_id`를 지운 것으로 기록하고, 이후 같은 ID의 이전 이벤트는 버립니다.
 - 이벤트의 `payload.timer`는 타이머 자체 필드만 담습니다. 관계 필드(`schedule`, `todo`, `tags`, `visibility_level`, `is_shared`)는 REST 응답에만 있습니다.
 - 이벤트는 가진 타이머를 **덮어쓰지 않고 자체 필드만 갱신**합니다. 관계 필드는 가진 값을 유지합니다.

@@ -1475,22 +1475,12 @@ def test_to_read_dto_shared_timer_includes_schedule(test_session, test_user, oth
     from datetime import datetime, UTC
     from app.domain.schedule.schema.dto import ScheduleCreate, ScheduleRead
     from app.domain.schedule.service import ScheduleService
-    from app.domain.tag.schema.dto import TagGroupCreate
-    from app.domain.tag.service import TagService
-
-    tag_service = TagService(test_session, other_user)
-    other_group = tag_service.create_tag_group(TagGroupCreate(
-        name="Other User Group",
-        color="#FF0000",
-    ))
-    test_session.flush()
 
     schedule_service = ScheduleService(test_session, other_user)
     schedule = schedule_service.create_schedule(ScheduleCreate(
         title="Other User Schedule",
         start_time=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
-        tag_group_id=other_group.id,
     ))
     test_session.flush()
 
@@ -1520,13 +1510,12 @@ def test_to_read_dto_shared_timer_includes_todo(test_session, test_user, other_u
     
     [보안 설계] 연관 리소스는 외부(라우터)에서 권한 검증 후 주입받습니다.
     """
-    from app.domain.tag.schema.dto import TagGroupCreate
-    from app.domain.tag.service import TagService
     from app.domain.todo.schema.dto import TodoCreate
     from app.domain.todo.service import TodoService
+    from app.domain.todo_group.schema.dto import TodoGroupCreate
+    from app.domain.todo_group.service import TodoGroupService
 
-    tag_service = TagService(test_session, other_user)
-    other_group = tag_service.create_tag_group(TagGroupCreate(
+    other_group = TodoGroupService(test_session, other_user).create_todo_group(TodoGroupCreate(
         name="Other User Group",
         color="#00FF00",
     ))
@@ -1535,7 +1524,7 @@ def test_to_read_dto_shared_timer_includes_todo(test_session, test_user, other_u
     todo_service = TodoService(test_session, other_user)
     todo = todo_service.create_todo(TodoCreate(
         title="Other Todo",
-        tag_group_id=other_group.id,
+        todo_group_id=other_group.id,
     ))
     test_session.flush()
 

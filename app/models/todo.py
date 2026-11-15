@@ -17,7 +17,7 @@ from app.models.tag import TodoTag
 
 if TYPE_CHECKING:
     from app.models.schedule import Schedule
-    from app.models.tag import Tag, TagGroup
+    from app.models.tag import Tag
     from app.models.timer import TimerSession
 
 
@@ -32,10 +32,10 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     description: Optional[str] = None
     deadline: Optional[NaiveDatetime] = None  # 마감기간
 
-    # TagGroup 참조 (필수)
-    tag_group_id: UUID = Field(
+    # 할 일 그룹 참조 (필수). 그룹을 지울 때는 서비스가 할 일을 기본 그룹으로 먼저 옮긴다
+    todo_group_id: UUID = Field(
         sa_column=Column(
-            ForeignKey("tag_group.id", ondelete="RESTRICT"),
+            ForeignKey("todo_group.id", ondelete="RESTRICT", name="fk_todo_todo_group_id"),
             nullable=False,
             index=True,
         )
@@ -63,7 +63,6 @@ class Todo(UUIDBase, TimestampMixin, table=True):
     )
 
     # Relationships
-    tag_group: "TagGroup" = Relationship()
     parent: Optional["Todo"] = Relationship(
         back_populates="children",
         sa_relationship_kwargs={"remote_side": "Todo.id"}

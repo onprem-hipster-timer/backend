@@ -6,17 +6,18 @@ Timer Domain DTO (Data Transfer Objects)
 - REST API와 GraphQL 모두에서 사용
 - Pydantic을 사용한 데이터 검증
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Optional, List, TYPE_CHECKING, Any
 from uuid import UUID
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.core.constants import TagIncludeMode, TimerStatus
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
 from app.domain.schedule.schema.dto import ScheduleRead
+from app.domain.timer.expiry import expired_fields
 from app.domain.tag.schema.dto import TagRead
 from app.models.visibility import VisibilityLevel
 
@@ -50,7 +51,7 @@ class TimerCreate(CustomModel):
     todo_id: Optional[UUID] = None  # Optional (독립 타이머 또는 Schedule 전용 타이머 가능)
     title: Optional[str] = None
     description: Optional[str] = None
-    allocated_duration: int  # 할당 시간 (초 단위)
+    allocated_duration: int = Field(le=2_147_483_647)  # 할당 시간 (초 단위, timersession INTEGER 최대값 이하)
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
 
     @field_validator("allocated_duration")
@@ -119,6 +120,7 @@ class TimerRead(CustomModel):
         TimerSession 모델에서 TimerRead DTO를 안전하게 생성
         
         관계 필드(schedule, todo, tags)를 제외하고 변환하여 의도치 않은 DB 쿼리 방지
+        만료된 RUNNING 타이머는 만료 표현으로 반환하고 timer는 바꾸지 않음 (app/domain/timer/expiry.py)
         include_schedule=True일 때만 schedule 정보를 포함
         include_todo=True일 때만 todo 정보를 포함
         tag_include_mode에 따라 tags 정보를 포함
@@ -134,6 +136,7 @@ class TimerRead(CustomModel):
         """
         # schedule, todo, tags 관계를 제외하여 안전하게 변환 (의도치 않은 lazy load 방지)
         timer_data = timer.model_dump(exclude={"schedule", "todo", "tags"})
+        timer_data.update(expired_fields(timer, ensure_utc_naive(datetime.now(UTC))) or {})
         timer_read = cls.model_validate(timer_data)
 
         # schedule 필드 명시적으로 설정
@@ -207,6 +210,8 @@ class TimerUpdate(CustomModel):
     - 필드가 UUID 값: 해당 ID로 연결 변경
     - 필드가 null: 연결 해제
 
+    allocated_duration: 현재 경과 시간(실행 중이면 지금까지 실행한 구간 포함)보다 커야 함 (아니면 422). 만료된 타이머는 늘린 뒤 재개할 수 있다
+
     Note: 자동 연결 기능은 적용되지 않음 (명시적 변경만 수행)
     """
     title: str | None = MISSING
@@ -214,6 +219,7 @@ class TimerUpdate(CustomModel):
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
     todo_id: UUID | None = MISSING  # Todo 연결 변경 (null로 연결 해제)
     schedule_id: UUID | None = MISSING  # Schedule 연결 변경 (null로 연결 해제)
+    allocated_duration: int = Field(default=MISSING, le=2_147_483_647)  # 할당 시간 (초 단위, timersession INTEGER 최대값 이하)
 
 
 # Forward reference 해결

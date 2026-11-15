@@ -67,15 +67,27 @@ def get_schedules_by_date_range(
     return results.all()
 
 
-def get_schedule(session: Session, schedule_id: UUID, owner_id: str) -> Schedule | None:
+def get_schedule(
+        session: Session,
+        schedule_id: UUID,
+        owner_id: str,
+        for_update: bool = False,
+) -> Schedule | None:
     """
     ID로 Schedule 조회 (owner_id 검증 포함, 없으면 None 반환)
+
+    for_update=True면 트랜잭션 끝까지 행을 잠그고(FOR NO KEY UPDATE, SQLite에서는 무시),
+    세션에 이미 올라온 객체도 잠근 뒤의 DB 값으로 덮어쓴다.
     """
     statement = (
         select(Schedule)
         .where(Schedule.id == schedule_id)
         .where(Schedule.owner_id == owner_id)
     )
+    if for_update:
+        statement = statement.with_for_update(key_share=True).execution_options(
+            populate_existing=True
+        )
     return session.exec(statement).first()
 
 
@@ -231,6 +243,34 @@ def get_schedule_exceptions(
     return results.all()
 
 
+def get_schedule_exceptions_by_parent_ids(
+        session: Session,
+        parent_ids: list[UUID],
+        start_date: datetime,
+        end_date: datetime,
+) -> list[ScheduleException]:
+    """
+    지정한 반복 일정들의 날짜 범위 내 예외 인스턴스를 배치 조회합니다 (소유자 검증 없음).
+
+    접근 권한이 확인된 일정의 ID만 넘겨야 합니다.
+
+    :param session: DB 세션
+    :param parent_ids: 원본 일정 ID 목록
+    :param start_date: 조회 시작 날짜
+    :param end_date: 조회 종료 날짜
+    :return: 예외 인스턴스 리스트
+    """
+    if not parent_ids:
+        return []
+    statement = (
+        select(ScheduleException)
+        .where(ScheduleException.parent_id.in_(parent_ids))
+        .where(ScheduleException.exception_date >= start_date)
+        .where(ScheduleException.exception_date <= end_date)
+    )
+    return list(session.exec(statement).all())
+
+
 def get_schedule_exception_by_date(
         session: Session,
         parent_id: UUID,
@@ -304,39 +344,6 @@ def create_schedule_exception(
     session.flush()
     session.refresh(exception)
     return exception
-
-
-def get_schedules_by_tag_group_id(session: Session, group_id: UUID, owner_id: str) -> list[Schedule]:
-    """
-    그룹에 속한 일정 조회 (Todo가 아닌 Schedule만)
-    
-    :param session: DB 세션
-    :param group_id: 태그 그룹 ID
-    :param owner_id: 소유자 ID
-    :return: 해당 그룹에 속한 일정 리스트
-    """
-    statement = (
-        select(Schedule)
-        .where(Schedule.owner_id == owner_id)
-        .where(Schedule.tag_group_id == group_id)
-        .where(Schedule.source_todo_id.is_(None))  # Todo에서 생성된 Schedule 제외
-    )
-    results = session.exec(statement)
-    return list(results.all())
-
-
-def clear_tag_group_id_from_schedules(session: Session, group_id: UUID, owner_id: str) -> None:
-    """
-    일정의 tag_group_id를 NULL로 설정 (Todo가 아닌 Schedule만)
-    
-    :param session: DB 세션
-    :param group_id: 태그 그룹 ID
-    :param owner_id: 소유자 ID
-    """
-    schedules = get_schedules_by_tag_group_id(session, group_id, owner_id)
-    for schedule in schedules:
-        schedule.tag_group_id = None
-    # commit은 get_db_transactional이 처리
 
 
 def get_schedules_by_source_todo_id(session: Session, todo_id: UUID, owner_id: str) -> list[Schedule]:

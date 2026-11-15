@@ -28,10 +28,12 @@ TIMESTAMP_TABLE_NAMES = {
     "tag_group",
     "timersession",
     "todo",
+    "todo_group",
     "user_profile",
 }
 
 TIMESTAMPLESS_TABLE_NAMES = {
+    "account_deletion",
     "meeting_time_slot",
     "schedule_exception_tag",
     "schedule_tag",

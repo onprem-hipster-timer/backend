@@ -33,7 +33,7 @@ class TestAuthenticationDisabled:
         """OIDC 비활성화 시 토큰 없이 Todo 생성 가능"""
         # 1. 먼저 태그 그룹 생성 (Todo에 필수)
         group_response = e2e_client.post(
-            "/v1/tags/groups",
+            "/v1/todos/groups",
             json={
                 "name": "Todo 그룹",
                 "color": "#FF0000",
@@ -47,7 +47,7 @@ class TestAuthenticationDisabled:
             "/v1/todos",
             json={
                 "title": "테스트 Todo",
-                "tag_group_id": group_id,
+                "todo_group_id": group_id,
             },
         )
 
@@ -120,7 +120,7 @@ class TestOwnerIsolation:
         """사용자는 자신의 Todo만 볼 수 있음"""
         # 1. 태그 그룹 생성
         group_response = e2e_client.post(
-            "/v1/tags/groups",
+            "/v1/todos/groups",
             json={
                 "name": "할일 그룹",
                 "color": "#00FF00",
@@ -134,7 +134,7 @@ class TestOwnerIsolation:
             "/v1/todos",
             json={
                 "title": "내 할일",
-                "tag_group_id": group_id,
+                "todo_group_id": group_id,
             },
         )
         assert create_response.status_code == 201

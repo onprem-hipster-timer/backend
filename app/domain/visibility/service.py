@@ -14,6 +14,7 @@ from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import friendship as friendship_crud
+from app.crud import user_profile as profile_crud
 from app.crud import visibility as crud
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
 from app.domain.visibility.exceptions import (
@@ -38,6 +39,7 @@ class VisibilityService:
 
     접근 제어 로직:
     1. 소유자 → 항상 허용
+    1-1. 소유자가 탈퇴를 신청한 휴면 계정 → 거부
     2. PUBLIC → 모든 사용자 허용
     3. FRIENDS → 친구만 허용
     4. SELECTED_FRIENDS → AllowList에 있는 사용자만 허용
@@ -66,6 +68,10 @@ class VisibilityService:
         # 1. 소유자는 항상 접근 가능
         if self.user_id == owner_id:
             return True
+
+        # 1-1. 휴면 계정의 리소스는 다른 사용자에게 보이지 않는다
+        if profile_crud.is_dormant(self.session, owner_id):
+            return False
 
         # 2. 차단 관계 확인 (양방향)
         if self._is_blocked_relation(owner_id):
@@ -119,11 +125,13 @@ class VisibilityService:
     @property
     def _verified_email(self) -> str | None:
         """허용 이메일 규칙에 쓸 이메일. IdP가 검증한(email_verified) 이메일만 믿는다.
+        허용 목록과 같은 형태(앞뒤 공백 없음, 소문자)로 바꿔 돌려준다.
 
         Kratos는 가입 직후 이메일 인증 전에도 세션을 준다. 검증 안 된 이메일을 믿으면
         남의 이메일이나 도메인으로 가입만 해서 그 이메일에 공유된 항목을 볼 수 있다.
         """
-        return self.current_user.email if self.current_user.email_verified else None
+        email = self.current_user.email
+        return email.strip().lower() if email and self.current_user.email_verified else None
 
     def _is_blocked_relation(self, other_user_id: str) -> bool:
         """차단 관계 확인 (양방향)"""
@@ -142,6 +150,7 @@ class VisibilityService:
         리소스 변경을 실시간으로 받을 사용자 ID (소유자 제외)
 
         실시간 전달은 소유자의 친구까지만 한다. 결과는 can_access가 허용하는 사용자의 부분집합이다.
+        - 소유자가 휴면 계정 → 없음. 휴면 계정인 친구는 빠진다
         - 설정 없음·PRIVATE·ALLOWED_EMAILS → 없음
         - FRIENDS·PUBLIC → 친구 전원
         - SELECTED_FRIENDS → 친구 ∩ 허용 목록
@@ -156,11 +165,14 @@ class VisibilityService:
         ):
             return set()
 
+        if profile_crud.is_dormant(self.session, owner_id):
+            return set()
+
         recipients = set(friendship_crud.get_friend_ids(self.session, owner_id))
         if visibility.level == VisibilityLevel.SELECTED_FRIENDS:
             recipients &= set(crud.get_allowed_user_ids(self.session, visibility.id))
         recipients.discard(owner_id)
-        return recipients
+        return recipients - profile_crud.get_dormant_subs(self.session, recipients)
 
     def require_access(
             self,
@@ -413,6 +425,7 @@ class VisibilityService:
 
         # 나를 차단한 사용자들 조회를 위해 모든 owner_id에 대해 확인
         owner_ids = {v.owner_id for v in visibilities}
+        dormant_owners = profile_crud.get_dormant_subs(self.session, owner_ids - {self.user_id})
         for owner_id in owner_ids:
             if friendship_crud.is_blocked(self.session, owner_id, self.user_id):
                 blocked_me.add(owner_id)
@@ -467,8 +480,8 @@ class VisibilityService:
                 accessible_resources.append(resource)
                 continue
 
-            # 차단 관계 확인
-            if owner_id in blocked_by_me or owner_id in blocked_me:
+            # 휴면 계정의 리소스와 차단 관계 제외
+            if owner_id in dormant_owners or owner_id in blocked_by_me or owner_id in blocked_me:
                 continue
 
             # 접근권한 레벨에 따른 접근 제어

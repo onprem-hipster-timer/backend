@@ -370,7 +370,7 @@ def sample_tag_group(test_session, test_user):
     return service.create_tag_group(data)
 
 
-def test_create_schedule_with_todo_options(test_session, test_user, sample_tag_group):
+def test_create_schedule_with_todo_options(test_session, test_user, sample_todo_group):
     """Schedule 생성 시 create_todo_options로 Todo 동시 생성 테스트"""
     from app.domain.schedule.schema.dto import CreateTodoOptions
     from app.domain.todo.enums import TodoStatus
@@ -381,7 +381,7 @@ def test_create_schedule_with_todo_options(test_session, test_user, sample_tag_g
         start_time=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         create_todo_options=CreateTodoOptions(
-            tag_group_id=sample_tag_group.id
+            todo_group_id=sample_todo_group.id
         )
     )
 
@@ -400,11 +400,11 @@ def test_create_schedule_with_todo_options(test_session, test_user, sample_tag_g
     assert todo.title == "회의"
     assert todo.description == "팀 회의"
     assert todo.deadline == schedule.start_time
-    assert todo.tag_group_id == sample_tag_group.id
+    assert todo.todo_group_id == sample_todo_group.id
     assert todo.status == TodoStatus.SCHEDULED
 
 
-def test_create_schedule_with_todo_options_and_tags(test_session, test_user, sample_tag_group):
+def test_create_schedule_with_todo_options_and_tags(test_session, test_user, sample_tag_group, sample_todo_group):
     """Schedule 생성 시 태그와 함께 Todo 동시 생성 테스트"""
     from app.domain.schedule.schema.dto import CreateTodoOptions
     from app.domain.tag.schema.dto import TagCreate
@@ -424,7 +424,7 @@ def test_create_schedule_with_todo_options_and_tags(test_session, test_user, sam
         end_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
         tag_ids=[tag.id],
         create_todo_options=CreateTodoOptions(
-            tag_group_id=sample_tag_group.id
+            todo_group_id=sample_todo_group.id
         )
     )
 
@@ -444,19 +444,19 @@ def test_create_schedule_with_todo_options_and_tags(test_session, test_user, sam
     assert todo_tags[0].id == tag.id
 
 
-def test_create_todo_from_schedule_success(test_session, test_user, sample_tag_group, sample_schedule):
+def test_create_todo_from_schedule_success(test_session, test_user, sample_todo_group, sample_schedule):
     """기존 Schedule에서 Todo 생성 성공 테스트"""
     from app.domain.todo.enums import TodoStatus
 
     service = ScheduleService(test_session, test_user)
-    todo = service.create_todo_from_schedule(sample_schedule.id, sample_tag_group.id)
+    todo = service.create_todo_from_schedule(sample_schedule.id, sample_todo_group.id)
 
     # Todo가 생성되어야 함
     assert todo.id is not None
     assert todo.title == sample_schedule.title
     assert todo.description == sample_schedule.description
     assert todo.deadline == sample_schedule.start_time
-    assert todo.tag_group_id == sample_tag_group.id
+    assert todo.todo_group_id == sample_todo_group.id
     assert todo.status == TodoStatus.SCHEDULED
 
     # Schedule의 source_todo_id가 업데이트되어야 함
@@ -464,21 +464,21 @@ def test_create_todo_from_schedule_success(test_session, test_user, sample_tag_g
     assert sample_schedule.source_todo_id == todo.id
 
 
-def test_create_todo_from_schedule_already_linked(test_session, test_user, sample_tag_group, sample_schedule):
+def test_create_todo_from_schedule_already_linked(test_session, test_user, sample_todo_group, sample_schedule):
     """이미 Todo와 연결된 Schedule에서 다시 Todo 생성 시 에러 테스트"""
     from app.domain.schedule.exceptions import ScheduleAlreadyLinkedToTodoError
 
     service = ScheduleService(test_session, test_user)
 
     # 첫 번째 호출: 성공
-    service.create_todo_from_schedule(sample_schedule.id, sample_tag_group.id)
+    service.create_todo_from_schedule(sample_schedule.id, sample_todo_group.id)
 
     # 두 번째 호출: 에러
     with pytest.raises(ScheduleAlreadyLinkedToTodoError):
-        service.create_todo_from_schedule(sample_schedule.id, sample_tag_group.id)
+        service.create_todo_from_schedule(sample_schedule.id, sample_todo_group.id)
 
 
-def test_create_todo_from_schedule_with_tags(test_session, test_user, sample_tag_group):
+def test_create_todo_from_schedule_with_tags(test_session, test_user, sample_tag_group, sample_todo_group):
     """태그가 있는 Schedule에서 Todo 생성 시 태그 복사 테스트"""
     from app.domain.tag.schema.dto import TagCreate
     from app.domain.tag.service import TagService
@@ -503,7 +503,7 @@ def test_create_todo_from_schedule_with_tags(test_session, test_user, sample_tag
     schedule = service.create_schedule(schedule_data)
 
     # Schedule에서 Todo 생성
-    todo = service.create_todo_from_schedule(schedule.id, sample_tag_group.id)
+    todo = service.create_todo_from_schedule(schedule.id, sample_todo_group.id)
 
     # Todo에도 태그가 복사되어야 함
     from app.domain.todo.service import TodoService
@@ -514,7 +514,7 @@ def test_create_todo_from_schedule_with_tags(test_session, test_user, sample_tag
     assert todo_tags[0].id == tag.id
 
 
-def test_create_todo_from_schedule_not_found(test_session, test_user, sample_tag_group):
+def test_create_todo_from_schedule_not_found(test_session, test_user, sample_todo_group):
     """존재하지 않는 Schedule에서 Todo 생성 시 에러 테스트"""
     from uuid import uuid4
     from app.domain.schedule.exceptions import ScheduleNotFoundError
@@ -522,4 +522,4 @@ def test_create_todo_from_schedule_not_found(test_session, test_user, sample_tag
     service = ScheduleService(test_session, test_user)
 
     with pytest.raises(ScheduleNotFoundError):
-        service.create_todo_from_schedule(uuid4(), sample_tag_group.id)
+        service.create_todo_from_schedule(uuid4(), sample_todo_group.id)

@@ -30,6 +30,8 @@ from app.domain.timer.service import TimerService
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
+INSTANCE_START_DESCRIPTION = "반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"
+
 
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
 async def create_schedule(
@@ -130,16 +132,13 @@ async def read_schedules(
 
     # 공유된 일정 조회 (scope=shared 또는 scope=all)
     if scope in (ResourceScope.SHARED, ResourceScope.ALL):
-        from app.domain.dateutil.service import ensure_utc_naive
-        start_date_naive = ensure_utc_naive(start_date)
-        end_date_naive = ensure_utc_naive(end_date)
-
-        shared_schedules = service.get_shared_schedules()
+        shared_schedules = service.get_shared_schedules_by_date_range(
+            start_date=start_date,
+            end_date=end_date,
+        )
         for schedule in shared_schedules:
-            # 날짜 범위 필터링 (shared에도 적용)
-            if schedule.start_time <= end_date_naive and schedule.end_time >= start_date_naive:
-                schedule_read = service.to_read_dto(schedule, is_shared=True)
-                result.append(schedule_read.to_timezone(tz_obj))
+            schedule_read = service.to_read_dto(schedule, is_shared=True)
+            result.append(schedule_read.to_timezone(tz_obj))
 
     return result
 
@@ -147,6 +146,7 @@ async def read_schedules(
 @router.get("/{schedule_id}", response_model=ScheduleRead)
 async def read_schedule(
         schedule_id: UUID,
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -156,13 +156,20 @@ async def read_schedule(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    ID로 일정 조회 (공유된 일정 포함)
-    
+    ID로 일정 조회 (공유된 일정, 반복 일정 인스턴스 포함)
+
     본인 소유 일정 또는 공유 접근 권한이 있는 일정을 조회합니다.
     접근 권한이 없으면 403 Forbidden을 반환합니다.
+
+    반복 일정 인스턴스: schedule_id를 parent_id로 사용하고 instance_start를 쿼리 파라미터로 전송.
+    목록의 인스턴스와 같은 모양(parent_id, 회차 시간, 예외 반영)을 반환하며,
+    규칙에 해당 회차가 없거나 삭제된 회차면 404, 반복 일정이 아니면 400을 반환합니다.
     """
     service = ScheduleService(session, current_user)
-    schedule, is_shared = service.get_schedule_with_access_check(schedule_id)
+    if instance_start:
+        schedule, is_shared = service.get_recurring_instance(schedule_id, instance_start)
+    else:
+        schedule, is_shared = service.get_schedule_with_access_check(schedule_id)
 
     # Schedule 모델을 ScheduleRead로 변환 (접근권한 정보 포함)
     schedule_read = service.to_read_dto(schedule, is_shared=is_shared)
@@ -176,7 +183,7 @@ async def read_schedule(
 async def update_schedule(
         schedule_id: UUID,
         data: ScheduleUpdate,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -220,7 +227,7 @@ async def update_schedule(
 @router.delete("/{schedule_id}", status_code=status.HTTP_200_OK)
 async def delete_schedule(
         schedule_id: UUID,
-        instance_start: datetime | None = Query(None, description="반복 일정 인스턴스 시작 시간 (ISO 8601 형식)"),
+        instance_start: datetime | None = Query(None, description=INSTANCE_START_DESCRIPTION),
         source_todo_policy: SourceTodoPolicy | None = Query(
             None,
             description=(
@@ -355,9 +362,9 @@ async def get_active_timer(
 @router.post("/{schedule_id}/todo", status_code=status.HTTP_201_CREATED)
 async def create_todo_from_schedule(
         schedule_id: UUID,
-        tag_group_id: UUID = Query(
-            ...,
-            description="Todo가 속할 TagGroup ID (필수)"
+        todo_group_id: Optional[UUID] = Query(
+            None,
+            description="Todo가 속할 할 일 그룹 ID. 없으면 기본 그룹"
         ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
@@ -373,16 +380,16 @@ async def create_todo_from_schedule(
     
     제약사항:
     - 이미 Todo와 연결된 Schedule에서는 호출 불가 (400 에러)
-    - tag_group_id는 필수 파라미터
+    - todo_group_id가 남의 그룹이면 404
     
     :param schedule_id: Schedule ID
-    :param tag_group_id: Todo가 속할 TagGroup ID
+    :param todo_group_id: Todo가 속할 할 일 그룹 ID (없으면 기본 그룹)
     :return: 생성된 Todo
     """
     from app.domain.todo.service import TodoService
 
     schedule_service = ScheduleService(session, current_user)
-    todo = schedule_service.create_todo_from_schedule(schedule_id, tag_group_id)
+    todo = schedule_service.create_todo_from_schedule(schedule_id, todo_group_id)
 
     # TodoService를 사용하여 TodoRead DTO로 변환
     todo_service = TodoService(session, current_user)

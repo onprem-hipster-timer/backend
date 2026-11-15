@@ -11,7 +11,7 @@ Sec-WebSocket-Protocol 헤더에서 토큰을 추출합니다.
 import logging
 from typing import Optional
 
-from fastapi import WebSocket, WebSocketException, status
+from fastapi import Depends, WebSocket, WebSocketException, status
 
 from app.core.auth import CurrentUser, oidc_client
 from app.core.config import settings
@@ -84,6 +84,27 @@ async def get_ws_current_user(websocket: WebSocket) -> CurrentUser:
     except WebSocketException:
         await websocket.accept(subprotocol=get_websocket_subprotocol(websocket))
         raise  # Starlette가 수락된 소켓을 예외의 code·reason으로 닫는다
+
+
+async def get_ws_active_user(
+        websocket: WebSocket,
+        current_user: CurrentUser = Depends(get_ws_current_user),
+) -> CurrentUser:
+    """
+    FastAPI Dependency: 탈퇴를 신청했거나 파기한 계정이면 연결을 수락한 뒤 1008로 닫는다
+    """
+    from app.db.session import get_db
+    from app.domain.user.service import AccountState, account_state
+
+    session_gen = get_db()
+    try:
+        state = account_state(next(session_gen), current_user.sub)
+    finally:
+        session_gen.close()
+    if state != AccountState.ACTIVE:
+        await websocket.accept(subprotocol=get_websocket_subprotocol(websocket))
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Account not active")
+    return current_user
 
 
 def get_websocket_subprotocol(websocket: WebSocket) -> Optional[str]:

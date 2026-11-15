@@ -32,6 +32,18 @@ from app.models.todo import Todo
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LEGACY_REVISION = "b9e4d2a1c3f5"
 
+# 옛 스키마의 todo 행. 지금 모델(Todo.__table__)에는 tag_group_id가 없어 쓸 수 없다
+_LEGACY_TODO = sa.table(
+    "todo",
+    sa.column("id", sa.Uuid()),
+    sa.column("owner_id", sa.String()),
+    sa.column("title", sa.String()),
+    sa.column("tag_group_id", sa.Uuid()),
+    sa.column("status", sa.String()),
+    sa.column("created_at", sa.DateTime()),
+    sa.column("updated_at", sa.DateTime()),
+)
+
 
 @dataclass(frozen=True)
 class LegacyDatabase:
@@ -98,13 +110,16 @@ def _insert_todo(
     status: TodoStatus,
 ) -> UUID:
     todo_id = uuid4()
+    created_at = datetime(2026, 7, 20, 9, 0)
     connection.execute(
-        Todo.__table__.insert().values(
+        _LEGACY_TODO.insert().values(
             id=todo_id,
             owner_id=owner_id,
             title=f"legacy todo {todo_id}",
             tag_group_id=tag_group_id,
-            status=status,
+            status=status.value,
+            created_at=created_at,
+            updated_at=created_at,
         )
     )
     return todo_id

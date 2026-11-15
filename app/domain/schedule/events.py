@@ -66,6 +66,6 @@ class ScheduleCreatedWithTodoOption(ScheduleEvent):
     핸들러가 low-level로 Todo를 생성하므로 TodoDeadlineSet이 재발화하지
     않는다 (A→B→A 순환의 구조적 차단).
 
-    :param tag_group_id: 생성될 Todo가 속할 TagGroup
+    :param todo_group_id: 생성될 Todo가 속할 할 일 그룹 (발행 전에 소유 확인·기본 그룹 결정을 마친 값)
     """
-    tag_group_id: UUID
+    todo_group_id: UUID

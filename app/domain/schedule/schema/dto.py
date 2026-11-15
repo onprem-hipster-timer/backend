@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class CreateTodoOptions(CustomModel):
     """Schedule 생성 시 함께 생성할 Todo 옵션"""
-    tag_group_id: UUID  # Todo가 속할 그룹 (필수)
+    todo_group_id: Optional[UUID] = None  # 할 일 그룹. 없으면 기본 그룹
 
 
 class ScheduleCreate(CustomModel):
@@ -38,7 +38,6 @@ class ScheduleCreate(CustomModel):
     recurrence_rule: Optional[str] = None  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: Optional[datetime] = None  # 반복 종료일
     tag_ids: Optional[List[UUID]] = None  # 태그 ID 리스트
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
     # source_todo_id는 쓰기 불가 — 투영 연결 수명주기는 전용 흐름
     # (deadline, create_todo_options, POST /schedules/{id}/todo,
     # linked_schedule_policy)만이 관리한다. 전송 시 422로 거절하되,
@@ -100,7 +99,8 @@ class ScheduleRead(CustomModel):
     recurrence_rule: Optional[str] = None
     recurrence_end: Optional[datetime] = None
     parent_id: Optional[UUID] = None  # 원본 일정 ID (가상 인스턴스인 경우)
-    tag_group_id: Optional[UUID] = None  # Todo 그룹 직접 연결 (레거시)
+    # 회차의 원래 시작 시간 (가상 인스턴스인 경우). 조회/수정/삭제의 instance_start 쿼리로 그대로 보낸다
+    instance_start: Optional[datetime] = None
     source_todo_id: Optional[UUID] = None  # Todo에서 생성된 Schedule 추적
     state: ScheduleState  # 상태
     created_at: datetime
@@ -124,7 +124,7 @@ class ScheduleRead(CustomModel):
 
         # datetime 필드만 타임존 변환
         update_data = {}
-        for field_name in ["start_time", "end_time", "recurrence_end", "created_at"]:
+        for field_name in ["start_time", "end_time", "recurrence_end", "created_at", "instance_start"]:
             value = getattr(self, field_name, None)
             if value is not None and isinstance(value, datetime):
                 if validate:
@@ -150,7 +150,6 @@ class ScheduleUpdate(CustomModel):
     recurrence_rule: str | None = MISSING  # RRULE 형식: "FREQ=WEEKLY;BYDAY=MO"
     recurrence_end: datetime | None = MISSING  # 반복 종료일
     tag_ids: list[UUID] | None = MISSING  # 태그 ID 리스트
-    tag_group_id: UUID | None = MISSING  # Todo 그룹 직접 연결 (레거시)
     # source_todo_id는 쓰기 불가 — 전송 시 422, OpenAPI에는 미노출 (ScheduleCreate 주석 참조)
     source_todo_id: SkipJsonSchema[UUID | None] = MISSING
     state: ScheduleState | None = MISSING  # 상태

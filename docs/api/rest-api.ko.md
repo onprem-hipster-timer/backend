@@ -32,22 +32,27 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 ### 투두 (Todos)
 
 ```http
-GET    /v1/todos          # 투두 목록 조회
-POST   /v1/todos          # 투두 생성
-GET    /v1/todos/{id}     # 특정 투두 조회
-PATCH  /v1/todos/{id}     # 투두 수정
-DELETE /v1/todos/{id}     # 투두 삭제
-GET    /v1/todos/stats    # 통계 조회
+GET    /v1/todos                 # 투두 목록 조회
+POST   /v1/todos                 # 투두 생성
+GET    /v1/todos/{id}            # 특정 투두 조회
+PATCH  /v1/todos/{id}            # 투두 수정 (해야 할 일 목록 이동 포함)
+DELETE /v1/todos/{id}            # 투두 삭제
+GET    /v1/todos/stats           # 통계 조회
+GET    /v1/todos/groups          # 해야 할 일 목록 전체 조회 (기본 목록이 없으면 생성)
+POST   /v1/todos/groups          # 해야 할 일 목록 생성
+GET    /v1/todos/groups/{id}     # 특정 해야 할 일 목록 조회
+PATCH  /v1/todos/groups/{id}     # 해야 할 일 목록 수정
+DELETE /v1/todos/groups/{id}     # 해야 할 일 목록 삭제 (투두는 기본 목록으로 이동)
 ```
 
 ### 태그 (Tags)
 
 ```http
-GET    /v1/tags/groups           # 태그 그룹 목록 조회
+GET    /v1/tags/groups           # 태그 그룹 목록 조회 (태그 포함)
 POST   /v1/tags/groups           # 태그 그룹 생성
-GET    /v1/tags/groups/{id}      # 특정 그룹 조회
-PATCH  /v1/tags/groups/{id}      # 그룹 수정
-DELETE /v1/tags/groups/{id}      # 그룹 삭제
+GET    /v1/tags/groups/{id}      # 특정 태그 그룹 조회
+PATCH  /v1/tags/groups/{id}      # 태그 그룹 수정
+DELETE /v1/tags/groups/{id}      # 태그 그룹 삭제 (그룹의 태그도 삭제)
 GET    /v1/tags                  # 태그 목록 조회
 POST   /v1/tags                  # 태그 생성
 DELETE /v1/tags/{id}             # 태그 삭제
@@ -88,7 +93,12 @@ DELETE /v1/friends/block/{user_id}        # 차단 해제
 
 ```http
 GET    /v1/users/me                       # 본인 표시정보 + 친구코드(공유용)
+POST   /v1/users/me/deletion              # 회원 탈퇴 신청 (휴면)
+DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 ```
+
+!!! info "회원 탈퇴"
+    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 위 세 경로 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
 
 ### 공휴일 (Holidays)
 

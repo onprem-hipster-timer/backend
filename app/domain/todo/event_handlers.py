@@ -140,7 +140,7 @@ def create_todo_for_schedule(
         title=schedule.title,
         description=schedule.description,
         deadline=schedule.start_time,
-        tag_group_id=event.tag_group_id,
+        todo_group_id=event.todo_group_id,
         parent_id=None,
         status=TodoStatus.SCHEDULED,  # 투영(이 Schedule)이 있으므로 SCHEDULED
     )

@@ -32,22 +32,27 @@ DELETE /v1/timers/{id}           # Delete timer
 ### Todos
 
 ```http
-GET    /v1/todos          # List todos
-POST   /v1/todos          # Create todo
-GET    /v1/todos/{id}     # Get specific todo
-PATCH  /v1/todos/{id}     # Update todo
-DELETE /v1/todos/{id}     # Delete todo
-GET    /v1/todos/stats    # Get statistics
+GET    /v1/todos                 # List todos
+POST   /v1/todos                 # Create todo
+GET    /v1/todos/{id}            # Get specific todo
+PATCH  /v1/todos/{id}            # Update todo (including moving it to another todo group)
+DELETE /v1/todos/{id}            # Delete todo
+GET    /v1/todos/stats           # Get statistics
+GET    /v1/todos/groups          # List todo groups (creates the default group if missing)
+POST   /v1/todos/groups          # Create todo group
+GET    /v1/todos/groups/{id}     # Get specific todo group
+PATCH  /v1/todos/groups/{id}     # Update todo group
+DELETE /v1/todos/groups/{id}     # Delete todo group (its todos move to the default group)
 ```
 
 ### Tags
 
 ```http
-GET    /v1/tags/groups           # List tag groups
+GET    /v1/tags/groups           # List tag groups (with tags)
 POST   /v1/tags/groups           # Create tag group
-GET    /v1/tags/groups/{id}      # Get specific group
-PATCH  /v1/tags/groups/{id}      # Update group
-DELETE /v1/tags/groups/{id}      # Delete group
+GET    /v1/tags/groups/{id}      # Get specific tag group
+PATCH  /v1/tags/groups/{id}      # Update tag group
+DELETE /v1/tags/groups/{id}      # Delete tag group (and its tags)
 GET    /v1/tags                  # List tags
 POST   /v1/tags                  # Create tag
 DELETE /v1/tags/{id}             # Delete tag
@@ -88,7 +93,12 @@ DELETE /v1/friends/block/{user_id}        # Unblock user
 
 ```http
 GET    /v1/users/me                       # Own display info + friend code (for sharing)
+POST   /v1/users/me/deletion              # Request account deletion (dormant)
+DELETE /v1/users/me/deletion              # Cancel account deletion
 ```
+
+!!! info "Account deletion"
+    A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
 
 ### Holidays
 

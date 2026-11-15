@@ -82,6 +82,12 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=30,
     ),
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/todos/groups",
+        window_seconds=60,
+        max_requests=30,
+    ),
     # 친구 요청: 이메일 경로 대량 시도(열거/스팸) 억제를 위해 더 엄격하게 제한
     RateLimitRule(
         methods=["POST"],

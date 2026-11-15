@@ -8,11 +8,11 @@ import pytest
 
 def _make_todo(client, title="테스트 Todo"):
     group_id = client.post(
-        "/v1/tags/groups", json={"name": "업무", "color": "#FF5733"}
+        "/v1/todos/groups", json={"name": "업무", "color": "#FF5733"}
     ).json()["id"]
     return client.post(
         "/v1/todos",
-        json={"title": title, "tag_group_id": group_id},
+        json={"title": title, "todo_group_id": group_id},
     ).json()["id"]
 
 

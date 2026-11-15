@@ -7,7 +7,8 @@ from datetime import date, time
 from typing import List, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint
+from pydantic import NaiveDatetime
+from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -36,6 +37,9 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     start_date: date
     end_date: date
 
+    # 날짜·요일·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
+    timezone: str
+
     # 요일 기반 설정 (JSON array of integers 0-6, 0=월요일)
     # 예: [0, 2, 4] = 월, 수, 금
     available_days: List[int] = Field(
@@ -45,17 +49,25 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
 
     # 시간 범위 설정
     start_time: time  # 하루 시작 시간
-    end_time: time  # 하루 종료 시간
+    end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 다음 날 00:00)
     time_slot_minutes: int = Field(default=30)  # 시간 선택 단위 (분)
 
     __table_args__ = (
         CheckConstraint("start_date <= end_date", name="ck_meeting_date_range"),
-        CheckConstraint("start_time < end_time", name="ck_meeting_time_range"),
+        # end_time 00:00은 하루의 끝. SQLite는 time을 'HH:MM:SS.ffffff' 문자열로 저장한다
+        CheckConstraint(
+            "start_time < end_time OR end_time IN ('00:00:00', '00:00:00.000000')",
+            name="ck_meeting_time_range",
+        ),
         CheckConstraint("time_slot_minutes > 0", name="ck_meeting_time_slot"),
     )
 
     # Relationships
-    participants: List["MeetingParticipant"] = Relationship(back_populates="meeting")
+    # 참여자·가능 시간은 DB의 ON DELETE CASCADE가 지운다 (ORM이 FK를 NULL로 바꾸지 않게)
+    participants: List["MeetingParticipant"] = Relationship(
+        back_populates="meeting",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True},
+    )
 
 
 class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
@@ -79,16 +91,24 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
     user_id: str | None = Field(default=None, index=True)  # OIDC sub (로그인한 경우)
     display_name: str  # 표시 이름 (닉네임)
 
+    # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "user_id", name="uq_meeting_participant_meeting_user"),
+    )
+
     # Relationships
     meeting: "Meeting" = Relationship(back_populates="participants")
-    time_slots: List["MeetingTimeSlot"] = Relationship(back_populates="participant")
+    time_slots: List["MeetingTimeSlot"] = Relationship(
+        back_populates="participant",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True},
+    )
 
 
 class MeetingTimeSlot(UUIDBase, table=True):
     """
     참여자가 선택한 가능 시간 슬롯
-    
-    각 참여자가 특정 날짜와 시간 구간을 선택한 것을 저장
+
+    반열린 구간 [start_time, end_time)을 받은 그대로 저장한다. 미팅의 날짜·시간·칸과는 무관하다
     """
     __tablename__ = "meeting_time_slot"
 
@@ -101,10 +121,9 @@ class MeetingTimeSlot(UUIDBase, table=True):
         )
     )
 
-    # 시간 슬롯 정보
-    slot_date: date = Field(index=True)  # 날짜
-    start_time: time  # 시작 시간
-    end_time: time  # 종료 시간
+    # 가능 시간 (UTC naive, end_time은 포함하지 않음)
+    start_time: NaiveDatetime
+    end_time: NaiveDatetime
 
     __table_args__ = (
         CheckConstraint("start_time < end_time", name="ck_time_slot_range"),

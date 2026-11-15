@@ -13,6 +13,7 @@ def _make_meeting(client, title="테스트 미팅"):
             "title": title,
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
+            "timezone": "UTC",
             "available_days": [0, 2, 4],
             "start_time": "09:00:00",
             "end_time": "18:00:00",
@@ -145,7 +146,7 @@ def test_meeting_participant_access_with_email_visibility_e2e(multi_user_e2e):
     availability_response = client_allowed.put(
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant_id},
-        json=[{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}],
+        json=[{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}],
     )
     assert availability_response.status_code == 200
 
@@ -154,3 +155,39 @@ def test_meeting_participant_access_with_email_visibility_e2e(multi_user_e2e):
         json={"display_name": "거부된 참여자"},
     )
     assert denied_response.status_code == 403
+
+
+@pytest.mark.e2e
+def test_owner_deletes_meeting_with_participants_e2e(multi_user_e2e):
+    """참여자와 가능 시간이 있는 미팅도 삭제되고, 참여 기록과 가능 시간이 함께 사라진다"""
+    from sqlmodel import Session, select
+
+    from app.db.session import _session_manager
+    from app.models.meeting import MeetingParticipant, MeetingTimeSlot
+
+    client_owner = multi_user_e2e.as_user("owner", email="owner@company.com")
+    client_member = multi_user_e2e.as_user("member", email="member@company.com")
+
+    meeting_id = _make_meeting(client_owner, "참여자 있는 회의")
+    client_owner.put(
+        f"/v1/visibility/meeting/{meeting_id}",
+        json={"level": "allowed_emails", "allowed_domains": ["company.com"]},
+    )
+    for client, name in ((client_owner, "주최자"), (client_member, "참여자")):
+        participant_id = client.post(
+            f"/v1/meetings/{meeting_id}/participate", json={"display_name": name}
+        ).json()["id"]
+        r = client.put(
+            f"/v1/meetings/{meeting_id}/availability",
+            params={"participant_id": participant_id},
+            json=[{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}],
+        )
+        assert r.status_code == 200
+
+    response = client_owner.delete(f"/v1/meetings/{meeting_id}")
+
+    assert response.status_code == 200, response.text
+    assert client_member.get(f"/v1/meetings/{meeting_id}").status_code == 404
+    with Session(_session_manager.engine) as session:
+        assert session.exec(select(MeetingParticipant)).all() == []
+        assert session.exec(select(MeetingTimeSlot)).all() == []

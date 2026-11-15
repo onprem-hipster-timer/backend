@@ -17,8 +17,6 @@ from sqlmodel import Session
 from app.crud import schedule as schedule_crud
 from app.domain.schedule.enums import SourceTodoPolicy
 from app.domain.schedule.service import ScheduleService
-from app.domain.tag.schema.dto import TagGroupCreate
-from app.domain.tag.service import TagService
 from app.domain.timer.events import TimerCancelled, TimerCompleted
 from app.domain.timer.model import TimerSession
 from app.domain.timer.schema.dto import TimerCreate, TimerUpdate
@@ -28,6 +26,8 @@ from app.domain.todo.events import TodoStatusChanged
 from app.domain.todo.model import Todo
 from app.domain.todo.schema.dto import TodoCreate, TodoUpdate
 from app.domain.todo.service import TodoService
+from app.domain.todo_group.schema.dto import TodoGroupCreate
+from app.domain.todo_group.service import TodoGroupService
 from app.domain.user.service import UserProfileService
 from app.shared.events import EventOrigin
 from app.shared.messagebus import HANDLERS
@@ -57,13 +57,13 @@ def handled(monkeypatch) -> list:
 
 @pytest.fixture
 def group_id(session) -> UUID:
-    group = TagService(session, OWNER).create_tag_group(TagGroupCreate(name="그룹", color="#FF5733"))
+    group = TodoGroupService(session, OWNER).create_todo_group(TodoGroupCreate(name="그룹", color="#FF5733"))
     session.commit()
     return group.id
 
 
 def _todo(session, group_id, **fields) -> Todo:
-    todo = TodoService(session, OWNER).create_todo(TodoCreate(title="할 일", tag_group_id=group_id, **fields))
+    todo = TodoService(session, OWNER).create_todo(TodoCreate(title="할 일", todo_group_id=group_id, **fields))
     session.commit()
     return todo
 

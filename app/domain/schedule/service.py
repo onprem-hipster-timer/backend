@@ -23,6 +23,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.crud import schedule as crud
 from app.crud import timer as timer_crud
+from app.crud import todo as todo_crud
 from app.crud import visibility as visibility_crud
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
@@ -98,6 +99,14 @@ class ScheduleService:
             if data.recurrence_end and data.recurrence_end < data.start_time:
                 raise InvalidRecurrenceEndError()
 
+        # 함께 만들 할 일의 그룹은 일정보다 먼저 정한다 (남의 그룹이면 일정을 만들기 전에 404)
+        todo_group_id = None
+        if data.create_todo_options:
+            from app.domain.todo_group.service import TodoGroupService
+            todo_group_id = TodoGroupService(self.session, self.current_user).resolve_group_id(
+                data.create_todo_options.todo_group_id
+            )
+
         schedule = crud.create_schedule(self.session, data, self.owner_id)
 
         # 태그 설정
@@ -113,7 +122,7 @@ class ScheduleService:
                 owner_id=self.owner_id,
                 origin=EventOrigin.SCHEDULE,
                 schedule_id=schedule.id,
-                tag_group_id=data.create_todo_options.tag_group_id,
+                todo_group_id=todo_group_id,
             ))
 
         # 응답 조립 전에 dispatch해야 source_todo_id가 응답에 보인다
@@ -132,6 +141,26 @@ class ScheduleService:
         :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
         """
         schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
+        if not schedule:
+            raise ScheduleNotFoundError()
+        return schedule
+
+    def _get_schedule_for_write(self, schedule_id: UUID) -> Schedule:
+        """
+        source Todo 행 → Schedule 행 순서로 잠근 뒤 최신 값의 일정을 반환
+
+        Todo 쪽 쓰기도 Todo 행을 먼저 쓰고 투영 핸들러가 Schedule 행을 쓰므로,
+        연결된 두 행을 같은 순서로 잠가 교착을 막는다. 두 조회 사이에 연결 Todo가 바뀌면
+        새 Todo는 일정보다 늦게 잠긴다.
+
+        :raises ScheduleNotFoundError: 일정을 찾을 수 없는 경우
+        """
+        schedule = self.get_schedule(schedule_id)
+        if schedule.source_todo_id is not None:
+            todo_crud.get_todo(
+                self.session, schedule.source_todo_id, self.owner_id, for_update=True
+            )
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id, for_update=True)
         if not schedule:
             raise ScheduleNotFoundError()
         return schedule
@@ -156,9 +185,7 @@ class ScheduleService:
         :raises InvalidRecurrenceRuleError: RRULE 형식이 잘못된 경우
         :raises InvalidRecurrenceEndError: 반복 종료일이 시작일 이전인 경우
         """
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
+        schedule = self._get_schedule_for_write(schedule_id)
 
         # 설정된 필드만 가져오기 (MISSING 필드는 자동 제외)
         update_dict = data.model_dump()
@@ -249,9 +276,7 @@ class ScheduleService:
         :raises SourceTodoPolicyRequiredError: source-linked 일정인데 정책 누락
         :raises LinkedTimerPolicyRequiredError: 연결 타이머가 있는데 정책 누락
         """
-        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id)
-        if not schedule:
-            raise ScheduleNotFoundError()
+        schedule = self._get_schedule_for_write(schedule_id)
 
         # source-linked 일정이면 source Todo 처리 정책 필수 (연결 없으면 불필요)
         if schedule.source_todo_id is not None and source_todo_policy is None:
@@ -401,6 +426,16 @@ class ScheduleService:
         """날짜 범위로 일정 조회 (반복 일정 포함, 태그 필터링 지원)"""
         return self._query.get_schedules_by_date_range(start_date, end_date, tag_ids, group_ids)
 
+    def get_shared_schedules_by_date_range(
+            self,
+            start_date: datetime,
+            end_date: datetime,
+    ) -> list[Schedule]:
+        """공유된 일정을 날짜 범위로 조회 (반복 일정 포함, 접근 권한 있는 것만)"""
+        return self._query.get_shared_schedules_by_date_range(
+            self.get_shared_schedules(), start_date, end_date
+        )
+
     def get_schedule_tags(self, schedule_id: UUID) -> list:
         """일정의 태그 조회"""
         return self._query.get_schedule_tags(schedule_id)
@@ -408,6 +443,19 @@ class ScheduleService:
     # ========================================
     # 반복 일정 인스턴스 관리 (→ RecurringScheduleService)
     # ========================================
+
+    def get_recurring_instance(
+            self,
+            parent_id: UUID,
+            instance_start: datetime,
+    ) -> tuple[Schedule, bool]:
+        """
+        반복 일정의 특정 인스턴스 조회 (공유 리소스 접근 제어 포함)
+
+        :return: (가상 인스턴스, is_shared) 튜플
+        """
+        parent_schedule, is_shared = self.get_schedule_with_access_check(parent_id)
+        return self._recurring.get_recurring_instance(parent_schedule, instance_start), is_shared
 
     def update_recurring_instance(
             self,
@@ -436,7 +484,7 @@ class ScheduleService:
     # Todo 연동
     # ========================================
 
-    def create_todo_from_schedule(self, schedule_id: UUID, tag_group_id: UUID) -> "Todo":
+    def create_todo_from_schedule(self, schedule_id: UUID, todo_group_id: Optional[UUID] = None) -> "Todo":
         """
         기존 Schedule에서 연관된 Todo 생성
 
@@ -447,13 +495,16 @@ class ScheduleService:
         - Todo 생성 후 Schedule의 source_todo_id 업데이트
 
         :param schedule_id: Schedule ID
-        :param tag_group_id: Todo가 속할 그룹 ID (필수)
+        :param todo_group_id: Todo가 속할 할 일 그룹 ID. 없으면 기본 그룹
         :return: 생성된 Todo
         :raises ScheduleNotFoundError: Schedule을 찾을 수 없는 경우
         :raises ScheduleAlreadyLinkedToTodoError: 이미 Todo와 연결된 Schedule인 경우
         """
 
-        schedule = self.get_schedule(schedule_id)
+        # 동시 요청은 이 잠금에서 줄을 서고, 뒤에 온 요청은 앞 요청이 연결한 상태를 읽는다
+        schedule = crud.get_schedule(self.session, schedule_id, self.owner_id, for_update=True)
+        if not schedule:
+            raise ScheduleNotFoundError()
 
         # 이미 Todo와 연결된 경우 에러
         if schedule.source_todo_id is not None:
@@ -463,16 +514,18 @@ class ScheduleService:
         if schedule.recurrence_rule:
             raise RecurringScheduleCannotLinkTodoError()
 
+        from app.domain.todo_group.service import TodoGroupService
+        resolved_group_id = TodoGroupService(self.session, self.current_user).resolve_group_id(todo_group_id)
+
         collect_event(self.session, ScheduleCreatedWithTodoOption(
             owner_id=self.owner_id,
             origin=EventOrigin.SCHEDULE,
             schedule_id=schedule.id,
-            tag_group_id=tag_group_id,
+            todo_group_id=resolved_group_id,
         ))
         flush_and_dispatch_events(self.session)
         self.session.refresh(schedule)
 
-        from app.crud import todo as todo_crud
         todo = todo_crud.get_todo(self.session, schedule.source_todo_id, self.owner_id)
         return todo
 

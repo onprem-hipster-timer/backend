@@ -13,7 +13,9 @@ DTO에 Pydantic validator를 추가할 때의 패턴과 주의사항을 설명�
 | 함수 | 용도 | 사용처 |
 |------|------|--------|
 | `validate_time_order` | `end_time > start_time` 검증 | `ScheduleCreate`, `ScheduleUpdate` |
-| `validate_color` | HEX 색상 코드 (`#FFF`, `#FFFFFF`) 검증 | `TagCreate`, `TagUpdate`, `TagGroupCreate`, `TagGroupUpdate` |
+| `validate_color` | HEX 색상 코드 (`#FFF`, `#FFFFFF`) 검증 | `TagCreate`, `TagUpdate`, `TagGroupCreate`, `TagGroupUpdate`, `TodoGroupCreate`, `TodoGroupUpdate` |
+
+DB에 저장하기 직전에도 같은 함수로 한 번 더 검사합니다. 모델별 SQLAlchemy 리스너(`before_insert`·`before_update`)가 `app/valid/`(`schedule.py`, `tag.py`, `todo_group.py`)에 있고, `app/models/__init__.py`가 import해 등록합니다.
 
 ### UTC 변환 (`app/domain/dateutil/service.py`)
 
