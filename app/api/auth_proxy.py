@@ -24,6 +24,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
   넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
+- GET 밖의 로그인·가입·인증·복구 제출의 식별자(로그인 identifier·password_identifier, 가입 traits.email, 인증·복구 email)가
+  ASCII 밖의 문자를 담은 문자열이면 400 invalid_identifier로 거절하고 넘기지 않는다 (identifier_refusal, GUEST_ENABLED와 상관없이)
 - 게스트 handle 판정(로그인 식별자, 인증·복구 email)과 같은 식별자의 요청 한도는 값을 normalize_identifier로 맞춰
   비교한다. Kratos가 같은 식별자로 찾는 표기는 같은 값이 된다
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
@@ -364,6 +366,20 @@ def _address_not_accepted() -> JSONResponse:
     )
 
 
+def _invalid_identifier() -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": {
+                "id": "invalid_identifier",
+                "code": 400,
+                "status": "Bad Request",
+                "reason": "로그인 식별자와 이메일에는 ASCII 문자만 쓸 수 있습니다.",
+            }
+        },
+        status_code=400,
+    )
+
+
 def _guest_name_taken() -> JSONResponse:
     return JSONResponse(
         {"error": {"id": "guest_name_taken", "code": 409, "status": "Conflict", "reason": "같은 이름의 게스트가 이미 있습니다."}},
@@ -411,7 +427,8 @@ class Submission:
     path: str  # 검사 경로 (_submit_path)
     content_type: str
     body: bytes
-    # 같은 식별자 단위로 셀 값 (로그인 identifier, 가입 traits.email, 인증·복구 email). 없으면 None, 읽을 수 없으면 _UNREADABLE
+    # 식별자 (로그인 identifier, 가입 traits.email, 인증·복구 email). ASCII 규칙과 같은 식별자 단위 요청 한도가 본다.
+    # 없으면 None, 읽을 수 없으면 _UNREADABLE
     identifier: object = None
     identity_id: str | None = None  # 설정 제출: 검사를 통과한 세션의 identity id
     guest: bool = False  # 게스트 handle 로그인이나 게스트 세션의 설정 제출 (Turnstile, 게스트 Kratos 자리)
@@ -494,6 +511,18 @@ def read_submission(method: str, path: str, query: str, content_type: str, body:
     return Submission(
         method=method, url=url, path=submit_path, content_type=content_type, body=body, identifier=identifier
     )
+
+
+def identifier_refusal(submission: Submission) -> Response | None:
+    """식별자가 ASCII 밖의 문자를 담은 문자열이면 400 invalid_identifier, 아니면 None.
+
+    식별자가 없거나 문자열이 아니거나 읽을 수 없으면(_UNREADABLE) 이 검사로는 거절하지 않는다.
+    인터셉터(app/middleware/guest_gate.py)가 IP 단위로 센 뒤, 같은 식별자 단위로 세기 전에 부른다.
+    """
+    identifier = submission.identifier
+    if isinstance(identifier, str) and not identifier.isascii():
+        return _invalid_identifier()
+    return None
 
 
 async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:

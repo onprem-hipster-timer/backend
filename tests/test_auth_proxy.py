@@ -702,15 +702,7 @@ def _forwarded(upstream, path):
 @pytest.mark.parametrize("path", ADDRESS_FLOWS)
 @pytest.mark.parametrize(
     "email",
-    [
-        "x@guest.invalid",
-        "x@GUEST.Invalid",
-        "  x@guest.invalid  ",
-        "X@Guest.INVALID\n",
-        "x@guest.\u0130nvalid",
-        "x@guest.inval\u0130d",
-        "\u3000X@GUEST.\u0130NVAL\u0130D\u00a0",
-    ],
+    ["x@guest.invalid", "x@GUEST.Invalid", "  x@guest.invalid  ", "X@Guest.INVALID\n"],
 )
 def test_address_flow_to_guest_domain_is_refused_json(client, upstream, monkeypatch, path, email):
     calls = []
@@ -791,6 +783,166 @@ def test_address_flow_unreadable_body_is_400(client, upstream, path, content, co
 def test_address_flow_refusal_does_not_depend_on_guest_flag(client, upstream, guest_enabled, path):
     assert client.post(path, json={"method": "code", "email": "x@guest.invalid"}).status_code == 400
     assert upstream.requests == []
+
+
+# ============ 식별자의 문자 ============
+
+INVALID_IDENTIFIER = {
+    "error": {
+        "id": "invalid_identifier",
+        "code": 400,
+        "status": "Bad Request",
+        "reason": "로그인 식별자와 이메일에는 ASCII 문자만 쓸 수 있습니다.",
+    }
+}
+# (제출 경로, 식별자의 키) 로그인은 identifier·password_identifier, 가입은 traits.email, 인증·복구는 email
+IDENTIFIER_FIELDS = [
+    ("/auth/self-service/login?flow=f1", ("identifier",)),
+    ("/auth/self-service/login?flow=f1", ("password_identifier",)),
+    ("/auth/self-service/registration?flow=f1", ("traits", "email")),
+    ("/auth/self-service/verification?flow=f1", ("email",)),
+    ("/auth/self-service/recovery?flow=f1", ("email",)),
+]
+IDENTIFIER_FIELD_IDS = ["login", "login_password_identifier", "registration", "verification", "recovery"]
+NON_ASCII_IDENTIFIERS = {
+    "fullwidth_letter": "ｍember@example.com",
+    "fullwidth_at": "member＠example.com",
+    "dotted_capital_i": "İnfo@example.com",
+    "no_break_space_before": " member@example.com",
+    "ideographic_space_after": "member@example.com　",
+    "local_part_letter": "mémber@example.com",
+    "domain_letter": "member@exämple.com",
+}
+
+
+def _submission_body(path: str, keys: tuple[str, ...], value: object, form: bool = False) -> dict:
+    """keys 자리에 value를 둔 제출 본문. 폼 본문의 키는 keys를 점으로 이은 것이다"""
+    method = "password" if "/login" in path or "/registration" in path else "code"
+    if form:
+        return {"method": method, ".".join(keys): value}
+    return {"method": method, keys[0]: value if len(keys) == 1 else {keys[1]: value}}
+
+
+@pytest.mark.parametrize("path,keys", IDENTIFIER_FIELDS, ids=IDENTIFIER_FIELD_IDS)
+@pytest.mark.parametrize("identifier", list(NON_ASCII_IDENTIFIERS.values()), ids=list(NON_ASCII_IDENTIFIERS))
+@pytest.mark.parametrize("form", [False, True], ids=["json", "form"])
+def test_non_ascii_identifier_is_refused(client, upstream, guest_enabled, siteverify, path, keys, identifier, form):
+    body = _submission_body(path, keys, identifier, form)
+
+    response = client.post(
+        path, **({"data": body} if form else {"json": body}), headers={"X-Turnstile-Token": "t1"}
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_IDENTIFIER
+    assert upstream.requests == []
+    assert siteverify == []
+
+
+@pytest.mark.parametrize("path,keys", IDENTIFIER_FIELDS, ids=IDENTIFIER_FIELD_IDS)
+@pytest.mark.parametrize("form", [False, True], ids=["json_escape", "form_encoded"])
+def test_identifier_with_surrogate_is_refused(client, upstream, guest_enabled, siteverify, path, keys, form):
+    if form:
+        content_type = "application/x-www-form-urlencoded"
+        content = f"{'.'.join(keys)}=member%ED%A0%80%40example.com".encode()
+    else:
+        content_type = "application/json"
+        content = json.dumps(_submission_body(path, keys, "member\ud800@example.com")).encode()
+        assert b"\\ud800" in content
+
+    response = client.post(path, content=content, headers={"content-type": content_type, "X-Turnstile-Token": "t1"})
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_IDENTIFIER
+    assert upstream.requests == []
+    assert siteverify == []
+
+
+@pytest.mark.parametrize("path,keys", IDENTIFIER_FIELDS, ids=IDENTIFIER_FIELD_IDS)
+def test_non_ascii_identifier_refusal_does_not_depend_on_guest_flag(client, upstream, path, keys):
+    response = client.post(path, json=_submission_body(path, keys, "mémber@example.com"))
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_IDENTIFIER
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("path,keys", IDENTIFIER_FIELDS, ids=IDENTIFIER_FIELD_IDS)
+@pytest.mark.parametrize("identifier", ["member@example.com", "\tMember@Example.COM \n", "x+tag@sub.example.com"])
+@pytest.mark.parametrize("form", [False, True], ids=["json", "form"])
+def test_ascii_identifier_is_forwarded(client, upstream, guest_enabled, siteverify, path, keys, identifier, form):
+    body = _submission_body(path, keys, identifier, form)
+
+    response = client.post(path, **({"data": body} if form else {"json": body}))
+
+    assert response.status_code == 200
+    assert len(_forwarded(upstream, path)) == 1
+    assert siteverify == []
+
+
+@pytest.mark.parametrize("path,keys", IDENTIFIER_FIELDS, ids=IDENTIFIER_FIELD_IDS)
+@pytest.mark.parametrize("value", [123, True, None, ["mémber@example.com"], {"address": "mémber@example.com"}])
+def test_identifier_that_is_not_a_string_is_forwarded(client, upstream, guest_enabled, path, keys, value):
+    response = client.post(path, json=_submission_body(path, keys, value))
+
+    assert response.status_code == 200
+    assert len(_forwarded(upstream, path)) == 1
+
+
+@pytest.mark.parametrize(
+    "path,content,content_type",
+    [
+        ("/auth/self-service/login?flow=f1",
+         '{"identifier": "mémber@example.com", "Identifier": "member@example.com"}', "application/json"),
+        ("/auth/self-service/login?flow=f1",
+         '{"identifier": "member@example.com", "password_identifier": "mémber@example.com"}', "application/json"),
+        ("/auth/self-service/login?flow=f1",
+         "identifier=m%C3%A9mber%40example.com&identifier=member%40example.com", "application/x-www-form-urlencoded"),
+        ("/auth/self-service/verification?flow=f1",
+         '{"email": "mémber@example.com", "Email": "member@example.com"}', "application/json"),
+        ("/auth/self-service/recovery?flow=f1",
+         "email=member%40example.com&Email=m%C3%A9mber%40example.com", "application/x-www-form-urlencoded"),
+    ],
+    ids=["login_json_case", "login_json_two_keys", "login_form_repeated", "verification_json_case",
+         "recovery_form_case"],
+)
+def test_identifier_given_twice_keeps_unreadable_body_answer(client, upstream, guest_enabled, siteverify, path,
+                                                             content, content_type):
+    response = client.post(path, content=content.encode(), headers={"content-type": content_type})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+def test_unbuildable_url_is_answered_before_identifier_check(client, upstream):
+    response = client.post(
+        "/auth/self-service/login%00?flow=f1", json={"method": "password", "identifier": "mémber@example.com"}
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_REQUEST_URL
+    assert upstream.requests == []
+
+
+def test_identifier_check_comes_before_query_check(client, upstream):
+    response = client.post(
+        "/auth/self-service/recovery?flow=f1&x=1", json={"method": "code", "email": "mémber@example.com"}
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_IDENTIFIER
+    assert upstream.requests == []
+
+
+def test_get_submission_values_are_not_checked_as_identifier(client, upstream, guest_enabled):
+    refused = client.get("/auth/self-service/login?flow=f1&identifier=m%C3%A9mber%40example.com")
+    forwarded = client.get("/auth/self-service/verification?flow=f1&code=%C3%A9")
+
+    assert refused.status_code == 400
+    assert refused.json()["error"]["id"] == "invalid_request_body"
+    assert forwarded.status_code == 200
+    assert len(upstream.requests) == 1
 
 
 # ============ 검사하는 제출의 쿼리 문자열 ============
@@ -1149,6 +1301,19 @@ def test_full_app_refusal_of_unbuildable_url_carries_cors_headers(app_client, up
 
     assert response.status_code == 400
     assert response.json() == INVALID_REQUEST_URL
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert upstream.requests == []
+
+
+def test_full_app_refusal_of_non_ascii_identifier_carries_cors_headers(app_client, upstream):
+    response = app_client.post(
+        "/auth/self-service/login?flow=f1",
+        json={"method": "password", "identifier": "mémber@example.com", "password": "x"},
+        headers={"Origin": "http://localhost:3000"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_IDENTIFIER
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
     assert upstream.requests == []
 

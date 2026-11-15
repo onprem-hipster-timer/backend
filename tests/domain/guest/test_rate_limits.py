@@ -113,7 +113,7 @@ def test_identifier_spellings_share_one_counter(rate_limited):
         _login(rate_limited, LOGIN, "x@guest.invalid"),
         _login(rate_limited, LOGIN, "X@GUEST.INVALID"),
         _login(rate_limited, LOGIN, "  x@guest.invalid "),
-        _login(rate_limited, LOGIN, "ｘ@guest.invalid"),  # 전각 x
+        _login(rate_limited, LOGIN, "\tx@guest.invalid\n"),
         _submit(rate_limited, LOGIN, content="method=password&Identifier=x%40Guest.Invalid&password=1", headers=FORM),
         _submit(rate_limited, LOGIN, {"method": "password", "password_identifier": "x@guest.invalid", "password": "1"}),
     ]
@@ -192,13 +192,42 @@ def test_spellings_resolved_alike_share_one_key(first, second):
     )
 
 
-def test_logins_in_dotted_capital_i_spellings_share_one_identifier_counter(rate_limited, kratos):
-    spellings = ["info@mail.test", *DOTTED_CAPITAL_I_SPELLINGS]
-    responses = [_login(rate_limited, LOGIN, spelling) for spelling in spellings]
+# ============ ASCII 밖의 문자가 있는 식별자: IP로 세고 식별자로는 세지 않는다 ============
 
-    _assert_limited_after([r.status_code for r in responses], 5)
-    assert all(r.status_code == 429 for r in responses[5:])
-    assert len([r for r in kratos.public_requests if r.url.path == "/self-service/login"]) == 5
+# (제출 경로, 식별자를 받아 본문을 만드는 함수)
+IDENTIFIER_SUBMITS = [
+    (LOGIN, lambda identifier: {"method": "password", "identifier": identifier, "password": "1"}),
+    ("/auth/self-service/registration",
+     lambda identifier: {"method": "password", "traits": {"email": identifier}, "password": "pw"}),
+    ("/auth/self-service/verification", lambda identifier: {"method": "code", "email": identifier}),
+    ("/auth/self-service/recovery", lambda identifier: {"method": "code", "email": identifier}),
+]
+IDENTIFIER_SUBMIT_IDS = ["login", "registration", "verification", "recovery"]
+
+
+def test_non_ascii_identifier_submissions_are_counted_per_ip(rate_limited, kratos):
+    refused = []
+    for i in range(60):
+        path, body = IDENTIFIER_SUBMITS[i % len(IDENTIFIER_SUBMITS)]
+        refused.append(_submit(rate_limited, path, body("mémber@example.com")))
+
+    limited = [_login(rate_limited, LOGIN, "mémber@example.com"), _login(rate_limited, LOGIN, "member@example.com")]
+
+    assert [r.status_code for r in refused] == [400] * 60
+    assert {r.json()["error"]["id"] for r in refused} == {"invalid_identifier"}
+    assert [r.status_code for r in limited] == [429, 429]
+    assert kratos.public_requests == []
+
+
+@pytest.mark.parametrize("path,body", IDENTIFIER_SUBMITS, ids=IDENTIFIER_SUBMIT_IDS)
+def test_non_ascii_identifier_submissions_do_not_use_the_identifier_counter(rate_limited, kratos, path, body):
+    refused = [_submit(rate_limited, path, body("İnfo@mail.test")) for _ in range(5)]
+
+    statuses = [_submit(rate_limited, path, body("info@mail.test")).status_code for _ in range(6)]
+
+    assert {(r.status_code, r.json()["error"]["id"]) for r in refused} == {(400, "invalid_identifier")}
+    _assert_limited_after(statuses, 5)
+    assert len([r for r in kratos.public_requests if r.url.path == path.removeprefix("/auth")]) == 5
 
 
 # ============ 가입·인증·복구: 같은 IP의 같은 이메일 ============

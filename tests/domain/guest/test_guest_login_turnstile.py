@@ -145,21 +145,35 @@ def test_wrong_password_with_passed_token_gets_kratos_answer(guest_client, krato
         lambda h: h.upper(),
         lambda h: h.replace("guest.invalid", "Guest.INVALID"),
         lambda h: f"  {h}  ",
+    ],
+    ids=["upper", "mixed_case_domain", "spaces"],
+)
+def test_other_spellings_of_guest_handle_need_token(guest_client, kratos, turnstile, guest, transform):
+    r = _login(guest_client, _password(transform(_handle(kratos, guest))), token=None)
+    assert r.status_code == 403
+    assert r.json()["error"]["id"] == "guest_verification_failed"
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
         lambda h: h.replace("guest.invalid", "ｇｕｅｓｔ．ｉｎｖａｌｉｄ"),
         lambda h: h.replace("@", "＠"),
         lambda h: h.replace("invalid", "\u0130nvalid"),
         lambda h: h.replace("invalid", "inval\u0130d"),
         lambda h: f"\u00a0{h}\u3000",
     ],
-    ids=[
-        "upper", "mixed_case_domain", "spaces", "fullwidth_domain", "fullwidth_at",
-        "dotted_capital_i", "dotted_capital_i_last", "unicode_spaces",
-    ],
+    ids=["fullwidth_domain", "fullwidth_at", "dotted_capital_i", "dotted_capital_i_last", "unicode_spaces"],
 )
-def test_other_spellings_of_guest_handle_need_token(guest_client, kratos, turnstile, guest, transform):
-    r = _login(guest_client, _password(transform(_handle(kratos, guest))), token=None)
-    assert r.status_code == 403
-    assert r.json()["error"]["id"] == "guest_verification_failed"
+def test_non_ascii_spellings_of_guest_handle_are_refused_without_verification(guest_client, kratos, turnstile, guest,
+                                                                              transform):
+    r = _login(guest_client, _password(transform(_handle(kratos, guest))))
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_identifier"
+    assert turnstile.requests == []
+    assert _login_submits(kratos) == []
+    assert kratos.sessions == {}
 
 
 @pytest.mark.parametrize("key", ["identifier", "Identifier", "password_identifier", "PASSWORD_IDENTIFIER"])

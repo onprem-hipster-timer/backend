@@ -24,12 +24,14 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 않는다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
-1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출과 GET 제출은 IP 단위로,
-   로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일, auth_proxy.normalize_identifier로 맞춘 값)
+1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출과 GET 제출은 IP 단위로 센다
+2. 식별자의 ASCII 규칙 (auth_proxy.identifier_refusal: GET 밖의 로그인·가입·인증·복구 제출의 식별자가 ASCII 밖의 문자를
+   담으면 400 invalid_identifier)
+3. 로그인·가입·인증·복구 제출을 같은 IP에서 같은 식별자(로그인 식별자, 이메일, auth_proxy.normalize_identifier로 맞춘 값)
    단위로도 센다
-2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
-3. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
-4. 게스트 제출이면 Turnstile
+4. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
+5. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+6. 게스트 제출이면 Turnstile
 
 프록시 라우트로 가는 요청(GET 포함)의 Kratos URL을 만들 수 없으면(auth_proxy.kratos_url이 httpx.InvalidURL) 위 단계 없이
 400 invalid_request_url로 답한다.
@@ -149,18 +151,19 @@ async def _rate_limit_refusal(key: str, method: str, rule: RateLimitRule) -> Res
 
 
 async def _submit_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
-    """설정 밖의 제출과 GET 제출을 IP 단위로 세고, 로그인·가입·인증·복구 제출은 같은 IP의 같은 식별자 단위로도 센다"""
+    """설정 밖의 제출과 GET 제출을 IP 단위로 센다"""
     if not app_config.settings.RATE_LIMIT_ENABLED:
         return None
     if submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
         return None
-    ip_key = await client_ip_key(request)
-    refusal = await _rate_limit_refusal(ip_key, request.method, AUTH_SUBMIT_PER_IP)
-    if refusal is not None:
-        return refusal
-    key = _identifier_key(ip_key, submission.path, submission.identifier)
-    if key is None:
+    return await _rate_limit_refusal(await client_ip_key(request), request.method, AUTH_SUBMIT_PER_IP)
+
+
+async def _identifier_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """로그인·가입·인증·복구 제출을 같은 IP의 같은 식별자 단위로 센다 (식별자가 없으면 세지 않는다)"""
+    if not app_config.settings.RATE_LIMIT_ENABLED or submission.identifier is None:
         return None
+    key = _identifier_key(await client_ip_key(request), submission.path, submission.identifier)
     return await _rate_limit_refusal(key, request.method, AUTH_SUBMIT_PER_IDENTIFIER)
 
 
@@ -184,6 +187,10 @@ async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Resp
         return None
     request.state.auth_submission = submission
     refusal = await _submit_rate_limit_refusal(request, submission)
+    if refusal is None:
+        refusal = auth_proxy.identifier_refusal(submission)
+    if refusal is None:
+        refusal = await _identifier_rate_limit_refusal(request, submission)
     if refusal is None:
         refusal = await auth_proxy.inspect_submission(submission, request.headers.get("x-session-token"))
     if refusal is None and submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
