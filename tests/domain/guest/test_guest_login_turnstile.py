@@ -156,6 +156,23 @@ def test_identifier_keys_are_read_ignoring_case(guest_client, kratos, guest, key
     assert _login(guest_client, body, token=None).status_code == 403
 
 
+@pytest.mark.parametrize("key", ["pa\u017f\u017fword_identifier", "PA\u017fSWORD_IDENTIFIER"])
+def test_identifier_keys_are_read_with_unicode_case_folding(guest_client, kratos, guest, key):
+    """Go JSON 디코더는 키를 유니코드 단순 대소문자 접기로 맞춘다 (U+017F는 s와 같다)"""
+    body = {"method": "password", key: _handle(kratos, guest), "password": "1234"}
+    r = _login(guest_client, body, token=None)
+    assert r.status_code == 403
+    assert r.json()["error"]["id"] == "guest_verification_failed"
+
+
+def test_identifier_and_folded_identifier_key_together_are_400(guest_client, kratos, turnstile, guest):
+    body = {"method": "password", "identifier": "member@example.com", "pa\u017f\u017fword_identifier": _handle(kratos, guest)}
+    r = _login(guest_client, body, token=None)
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert turnstile.requests == []
+
+
 @pytest.mark.parametrize("key", ["identifier", "password_identifier"])
 def test_form_body_identifier_is_read(guest_client, kratos, guest, key):
     form = {"method": "password", key: _handle(kratos, guest), "password": "1234"}

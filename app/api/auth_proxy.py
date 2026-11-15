@@ -162,7 +162,8 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
             return _UNREADABLE
         if not isinstance(data, dict):
             return None
-        values = [value for key, value in data.items() if key.lower() in IDENTIFIER_KEYS]
+        # Kratos(Go)는 JSON 키를 유니코드 단순 대소문자 접기로 맞춘다(U+017F는 s와 같다). casefold로 비교한다
+        values = [value for key, value in data.items() if key.casefold() in IDENTIFIER_KEYS]
     if len(values) > 1:
         return _UNREADABLE
     return values[0] if values else None
