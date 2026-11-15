@@ -251,8 +251,7 @@ class TodoService:
         
         :param todo_id: Todo ID
         :return: (Todo, is_shared) 튜플
-        :raises TodoNotFoundError: Todo를 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises TodoNotFoundError: Todo가 없거나 접근할 수 없는 경우
         """
 
         # 먼저 ID로만 조회 (소유자 무관)
@@ -266,11 +265,12 @@ class TodoService:
 
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.require_access(
+        if not visibility_service.can_access(
             resource_type=ResourceType.TODO,
             resource_id=todo_id,
             owner_id=todo.owner_id,
-        )
+        ):
+            raise TodoNotFoundError()
 
         return todo, True
 

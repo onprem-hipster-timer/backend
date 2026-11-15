@@ -43,6 +43,8 @@ flowchart TD
 
 모든 미팅 경로는 회원 로그인이 필요합니다. `public`도 같습니다.
 
+접근할 수 없는 미팅은 없는 미팅과 같은 `404` `MeetingNotFoundError`를 받습니다. 조회, 참여 등록, 가능 시간 조회·설정, 결과 조회가 모두 같고, 수정·삭제는 생성자만 할 수 있어 다른 회원에게는 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 ### 게스트 계정
 
 [게스트 계정](./guest.ko.md)은 회원 가입 없이 리소스 하나에 속한 계정입니다. 미팅은 게스트를 받는 리소스로 등록되어 있지 않습니다.
@@ -270,7 +272,7 @@ interface ParticipantCreate {
 **PUT /v1/meetings/{meeting_id}/availability**
 
 쿼리 파라미터:
-- `participant_id` (required): 참여자 ID
+- `participant_id` (required): 참여자 ID. 본인의 참여자만 설정할 수 있고, 다른 사용자의 참여자 ID는 없는 참여자 ID와 같은 `404` `MeetingParticipantNotFoundError`입니다
 
 ```typescript
 // Request
@@ -703,27 +705,38 @@ function TimeSlotSelector({
 
 | 코드 | 상황 | 설명 |
 |------|------|------|
-| `400` | 잘못된 요청 | 필수 필드 누락, 잘못된 날짜 형식 등 |
-| `401` | 인증 필요 | 로그인이 필요한 작업 |
-| `403` | 접근 거부 | 권한이 없는 리소스 접근 |
-| `404` | 찾을 수 없음 | 존재하지 않는 일정 조율 |
+| `401` | 인증 필요 | 토큰이 없거나 유효하지 않다 |
+| `403` | 게스트 토큰 | 게스트 계정의 토큰으로 미팅 경로 호출 ([게스트 계정](#게스트-계정)) |
+| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자 |
+| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·요일, 입력 제한을 넘는 값 |
+| `429` | 요청 한도 초과 | [레이트 리밋](../development/rate-limit.ko.md) |
 
 ### 에러 응답 예시
 
+`404`는 아래 모양입니다. 존재하지 않는 일정 조율과 접근할 수 없는 일정 조율은 `error_id`·`timestamp`·`path` 밖의 값이 같습니다.
+
 ```json
-// 403 Forbidden - 접근 권한 없음
 {
-  "detail": "You don't have permission to access this meeting"
+  "error_id": "0f2c6f0e-...",
+  "status_code": 404,
+  "error_type": "MeetingNotFoundError",
+  "message": "Meeting not found",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "path": "/v1/meetings/6f1c2a9e-..."
 }
+```
 
-// 404 Not Found - 존재하지 않음
-{
-  "detail": "Meeting not found"
-}
+`422`는 어느 필드가 왜 거절됐는지를 `detail` 목록으로 줍니다.
 
-// 400 Bad Request - 잘못된 요일
+```json
 {
-  "detail": "available_days must contain integers 0-6"
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "title"],
+      "msg": "Field required"
+    }
+  ]
 }
 ```
 
@@ -732,18 +745,16 @@ function TimeSlotSelector({
 ```typescript
 async function handleMeetingError(response: Response): Promise<never> {
   const error = await response.json();
-  
+
   switch (response.status) {
-    case 400:
-      throw new Error(`잘못된 요청: ${error.detail}`);
     case 401:
       throw new Error('로그인이 필요합니다');
-    case 403:
-      throw new Error('이 일정 조율에 접근할 권한이 없습니다');
     case 404:
       throw new Error('일정 조율을 찾을 수 없습니다');
+    case 422:
+      throw new Error(`입력을 확인해 주세요: ${error.detail?.[0]?.msg ?? ''}`);
     default:
-      throw new Error(error.detail || '알 수 없는 오류가 발생했습니다');
+      throw new Error(error.message || '알 수 없는 오류가 발생했습니다');
   }
 }
 ```

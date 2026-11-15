@@ -33,7 +33,7 @@ def _assert_can_view(viewer, schedule_id: str) -> None:
 
 
 def _assert_cannot_view(viewer, schedule_id: str) -> None:
-    assert viewer.get(f"/v1/schedules/{schedule_id}").status_code == 403
+    assert viewer.get(f"/v1/schedules/{schedule_id}").status_code == 404
     shared = viewer.get("/v1/schedules", params=SHARED_PARAMS)
     assert shared.status_code == 200
     assert schedule_id not in [s["id"] for s in shared.json()]

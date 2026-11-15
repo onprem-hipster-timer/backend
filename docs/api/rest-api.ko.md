@@ -69,6 +69,9 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRI
 !!! info "`resource_type`"
     `schedule`, `timer`, `todo`, `meeting` 중 하나를 사용합니다.
 
+!!! info "접근할 수 없는 리소스"
+    일정·타이머·투두·미팅 경로는 접근할 수 없는 리소스에 그 리소스가 없을 때와 같은 `404`를 돌려줍니다. 접근권한 경로는 리소스가 없거나 소유자가 아니면 `404`입니다. 자세한 내용은 [공개 범위 가이드](../guides/visibility.ko.md#접근-제어-규칙)를 봅니다.
+
 ### 친구 (Friends)
 
 ```http

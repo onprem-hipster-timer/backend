@@ -266,6 +266,8 @@ GET /v1/timers/active
 GET /v1/timers/{timer_id}
 ```
 
+타이머가 없거나 접근할 수 없으면 같은 `404` `TimerNotFoundError`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 ### 타이머 메타데이터 업데이트
 
 ```http

@@ -179,6 +179,8 @@ const schedules: Schedule[] = await response.json();
 // 이 포함됩니다.
 ```
 
+`GET /v1/schedules/{id}`(`instance_start` 포함)와 `/v1/schedules/{id}/timers`, `/v1/schedules/{id}/timers/active`는 일정이 없거나 접근할 수 없으면 같은 `404` `ScheduleNotFoundError`입니다. 수정·삭제는 소유자만 할 수 있고, 다른 사용자의 일정이면 공유 여부와 상관없이 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 ### 일정 수정
 
 #### 일반 일정 수정

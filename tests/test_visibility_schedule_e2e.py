@@ -142,7 +142,7 @@ def test_schedule_visibility_non_friend_cannot_access(multi_user_e2e):
     assert shared_response.status_code == 200
     assert schedule_id not in [s["id"] for s in shared_response.json()]
 
-    assert client_c.get(f"/v1/schedules/{schedule_id}").status_code == 403
+    assert client_c.get(f"/v1/schedules/{schedule_id}").status_code == 404
 
 
 @pytest.mark.e2e

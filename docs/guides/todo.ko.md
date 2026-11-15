@@ -250,6 +250,8 @@ GET /v1/todos?tag_ids=uuid1&tag_ids=uuid2
 GET /v1/todos/{todo_id}
 ```
 
+Todo가 없거나 접근할 수 없으면 같은 `404` `TodoNotFoundError`입니다. `/v1/todos/{todo_id}/timers`, `/v1/todos/{todo_id}/timers/active`도 같고, 수정·삭제는 소유자만 할 수 있어 다른 사용자의 Todo면 공유 여부와 상관없이 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 #### Todo 수정
 
 ```http

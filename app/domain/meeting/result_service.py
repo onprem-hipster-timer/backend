@@ -41,8 +41,7 @@ class MeetingResultService:
 
         :param meeting_id: 일정 조율 ID
         :return: 참여자별 가능 시간 리스트
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
         self._meeting_service.get_meeting_with_access_check(meeting_id)
@@ -74,8 +73,7 @@ class MeetingResultService:
 
         :param meeting_id: 일정 조율 ID
         :return: 공통 가능 시간 분석 결과
-        :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
         meeting, is_shared = self._meeting_service.get_meeting_with_access_check(meeting_id)

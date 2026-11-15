@@ -69,7 +69,6 @@ def _build_timer_read_with_relations(
     :param tag_include_mode: 태그 포함 모드
     :return: TimerRead DTO
     """
-    from app.domain.visibility.exceptions import AccessDeniedError
     from app.domain.todo.exceptions import TodoNotFoundError
 
     schedule_read = None
@@ -97,7 +96,7 @@ def _build_timer_read_with_relations(
                     schedule_reads.append(s_read)
 
             todo_read = todo_service.to_read_dto(todo, is_shared=todo_is_shared, schedules=schedule_reads)
-        except (TodoNotFoundError, AccessDeniedError):
+        except TodoNotFoundError:
             # 접근 불가한 Todo는 None으로 처리
             pass
 
@@ -368,7 +367,7 @@ async def get_timer(
     타이머 조회 (공유된 타이머 포함)
     
     본인 소유 타이머 또는 공유 접근 권한이 있는 타이머를 조회합니다.
-    접근 권한이 없으면 403 Forbidden을 반환합니다.
+    없거나 접근 권한이 없으면 404를 반환합니다.
     """
     timer_service = TimerService(session, current_user)
     schedule_service = ScheduleService(session, current_user)

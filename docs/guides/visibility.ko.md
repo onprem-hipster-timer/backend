@@ -84,12 +84,14 @@ flowchart TD
 
     Start([접근 요청]) --> Owner{소유자?}:::decision
     Owner -- 예 --> Allow1([접근 허용]):::allow
-    Owner -- 아니오 --> Blocked{차단 여부}:::decision
-    Blocked -- 예 --> Deny1([접근 불가]):::deny
+    Owner -- 아니오 --> Dormant{소유자가 휴면 계정?}:::decision
+    Dormant -- 예 --> Deny0([404 Not Found]):::deny
+    Dormant -- 아니오 --> Blocked{차단 여부}:::decision
+    Blocked -- 예 --> Deny1([404 Not Found]):::deny
     Blocked -- 아니오 --> Level{접근권한 레벨}:::decision
 
     Level -->|PUBLIC| Allow2([접근 허용]):::allow
-    Level -->|PRIVATE| Deny2([접근 불가]):::deny
+    Level -->|PRIVATE| Deny2([404 Not Found]):::deny
 
     subgraph 상세조건 [조건 확인]
         direction TB
@@ -99,9 +101,23 @@ flowchart TD
     end
 
     F & L & E -->|예| Allow3([접근 허용]):::allow
-    F & L & E -->|아니오| Deny3([접근 불가]):::deny
+    F & L & E -->|아니오| Deny3([404 Not Found]):::deny
     linkStyle default interpolate monotoneY
 ```
+
+판정 순서는 소유자, 소유자의 휴면 여부(탈퇴를 신청한 계정), 차단 관계(어느 쪽이 차단했든), 접근권한 레벨입니다. 접근권한 설정이 없는 리소스는 `PRIVATE`으로 봅니다.
+
+회원이 접근할 수 없는 리소스는 없는 리소스와 같은 응답을 받습니다. 상태 코드 `404`, `error_type`, `message`, 헤더가 같고 `error_id`·`timestamp`·`path`만 요청마다 다릅니다.
+
+| 리소스 | 응답 (`404`) | 경로 |
+|--------|--------------|------|
+| Schedule | `ScheduleNotFoundError` | `GET /v1/schedules/{id}`(`instance_start` 포함), `GET /v1/schedules/{id}/timers`, `GET /v1/schedules/{id}/timers/active` |
+| Todo | `TodoNotFoundError` | `GET /v1/todos/{id}`, `GET /v1/todos/{id}/timers`, `GET /v1/todos/{id}/timers/active` |
+| Timer | `TimerNotFoundError` | `GET /v1/timers/{id}` |
+| Meeting | `MeetingNotFoundError` | `GET /v1/meetings/{id}`, `POST /v1/meetings/{id}/participate`, `GET`·`PUT /v1/meetings/{id}/availability`, `GET /v1/meetings/{id}/result` |
+
+- 수정·삭제와 타이머 제어는 소유자만 할 수 있고, 다른 회원의 리소스면 접근권한 레벨과 상관없이 같은 `404`입니다.
+- Visibility API(`/v1/visibility/*`)는 다른 회원의 리소스에 `404` `VisibilityNotFoundError`입니다.
 
 ### 게스트 계정의 접근 확인
 
@@ -154,7 +170,7 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRI
 
 !!! info "소유권 검증"
     모든 Visibility API는 **리소스 소유자만** 호출할 수 있습니다.
-    소유자가 아닌 사용자가 호출하면 `403 Forbidden`이 반환됩니다.
+    리소스가 없거나 소유자가 아니면 `404` `VisibilityNotFoundError`가 반환됩니다. 두 경우의 응답은 같습니다.
 
 ### PUT — 접근권한 설정/변경
 
@@ -908,8 +924,8 @@ const allSchedules = await fetchSchedules(start, end, "all");
 | 코드 | 상황 | 설명 |
 |------|------|------|
 | `400` | 잘못된 요청 | 친구가 아닌 사용자를 AllowList에 추가 시도 |
-| `403` | 접근 거부 | 소유자가 아닌 사용자가 접근권한 설정 시도 / 접근권한 권한이 없는 리소스 접근 |
-| `404` | 찾을 수 없음 | 존재하지 않는 리소스 또는 접근권한 미설정 리소스 조회 |
+| `403` | 게스트 토큰 | 게스트 계정의 토큰으로 회원 경로 호출 ([게스트 계정의 접근 확인](#게스트-계정의-접근-확인)) |
+| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 리소스, 소유자가 아닌 사용자의 Visibility API 호출, 접근권한 미설정 리소스의 접근권한 조회 |
 
 ### 에러 처리 예시 코드
 
@@ -923,9 +939,6 @@ async function handleVisibilityError(response: Response): Promise<never> {
         throw new Error("선택한 사용자 중 친구가 아닌 사람이 있습니다.");
       }
       throw new Error("잘못된 요청입니다.");
-
-    case 403:
-      throw new Error("이 리소스에 접근할 권한이 없습니다.");
 
     case 404:
       throw new Error("리소스를 찾을 수 없습니다.");

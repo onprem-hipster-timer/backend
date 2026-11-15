@@ -83,4 +83,4 @@ def test_timer_visibility_private_blocks_access(multi_user_e2e):
     # 접근권한 미설정 → PRIVATE (기본값)
 
     response = client_b.get(f"/v1/timers/{timer_id}")
-    assert response.status_code == 403
+    assert response.status_code == 404
