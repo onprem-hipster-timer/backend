@@ -36,7 +36,7 @@ KRATOS_ADMIN_URL=http://127.0.0.1:4434
 TURNSTILE_SECRET_KEY=<Turnstile 비밀 키>
 ```
 
-`GUEST_ENABLED=true`이면 backend는 `schema_id` 클레임이 없는 토큰을 `401`로 거부합니다. 그래서 Kratos의 클레임 매퍼(2.3)를 먼저 바꾸고, 바꾼 매퍼로 발급한 토큰이 퍼진 뒤(tokenizer `ttl`, 기본 10분) backend에서 `GUEST_ENABLED`를 켭니다.
+backend는 `GUEST_ENABLED`와 상관없이 `schema_id` 클레임이 없는 토큰을 `401`로 거부합니다. Kratos의 클레임 매퍼(2.3)가 `schema_id`를 넣지 않는 배포에서는 매퍼를 먼저 바꾸고, 바꾼 매퍼로 발급한 토큰이 퍼진 뒤(tokenizer `ttl`, 기본 10분) 이 backend를 배포합니다. 순서가 바뀌면 그동안 모든 회원 토큰이 `401`입니다.
 
 ### 1.1 Cloudflare Turnstile
 
@@ -165,7 +165,7 @@ local verified = [
 }
 ```
 
-- `schema_id`: backend는 이 값이 `KRATOS_GUEST_SCHEMA_ID`와 같으면 게스트로 보고 회원 경로에서 `403`, `GUEST_ENABLED=true`인데 클레임이 없으면 `401`로 거부한다
+- `schema_id`: backend는 이 값이 `KRATOS_GUEST_SCHEMA_ID`와 같으면 게스트로 보고 회원 경로에서 `403`, 클레임이 없거나 비어 있지 않은 문자열이 아니면 `GUEST_ENABLED`와 상관없이 `401`로 거부한다
 - `aud`: backend `OIDC_AUDIENCE`와 같은 값
 
 ### 2.4 로그인 훅
@@ -317,13 +317,13 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 
 - `/v1/guests/*`와 `/internal/kratos/hooks/*`는 `404`입니다
 - `schema_id`가 게스트 schema인 토큰은 모든 경로에서 거부됩니다(`403`)
-- `schema_id` 클레임이 없는 토큰도 받습니다
+- `schema_id` 클레임이 없는 토큰은 켜져 있을 때와 같이 `401`입니다
 - 게스트 훅 설정을 남긴 채 backend만 끄면 게스트 로그인은 훅이 `404`를 받아 거절되고, 회원 로그인은 영향이 없습니다
 
 게스트를 켰다가 끌 때:
 
 - 게스트 행과 Kratos의 게스트 identity는 자동으로 지워지지 않습니다. `guest` 테이블의 `identity_id`로 Kratos admin API에서 identity를 지우고 행을 지웁니다.
-- `GUEST_ENABLED=false`인 backend는 `schema_id` 클레임이 없는 토큰을 회원 토큰으로 받습니다. Kratos에 게스트 identity가 남아 있는 동안에는 클레임 매퍼의 `schema_id`와 게스트 로그인 훅을 그대로 둡니다. 매퍼에서 `schema_id`를 빼는 것은 게스트 identity를 모두 지운 뒤에 합니다.
+- 클레임 매퍼의 `schema_id`는 게스트를 꺼도 그대로 둡니다. backend는 `schema_id`가 없는 토큰을 모두 `401`로 거부하고, 게스트 schema의 토큰은 `GUEST_ENABLED`와 상관없이 회원 경로에서 `403`입니다.
 
 ## 4. 설정 후 확인
 

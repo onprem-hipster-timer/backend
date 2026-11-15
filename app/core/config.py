@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
 
     # OIDC 인증 설정
+    # 토큰에는 schema_id 클레임(Kratos identity schema id)이 있어야 한다. 없거나 빈 문자열·문자열이 아니면 401
     OIDC_ENABLED: bool = True  # False로 설정하면 인증 비활성화 (개발/테스트용)
     OIDC_ISSUER_URL: str = ""  # 예: https://accounts.google.com, https://your-keycloak/realms/your-realm
     OIDC_AUDIENCE: str = ""  # Client ID (Access Token의 aud 클레임과 매칭)
@@ -82,7 +83,8 @@ class Settings(BaseSettings):
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
 
     # 게스트 계정 (docs/guides/guest.ko.md, docs/deployment/kratos-guest.ko.md). 끄면 게스트 엔드포인트와
-    # Kratos 훅 엔드포인트는 404이고, 게스트 schema의 토큰은 모든 경로에서 거부된다
+    # Kratos 훅 엔드포인트는 404이고, 게스트 schema의 토큰은 모든 경로에서 거부된다 (켜고 끄는 것과 상관없이
+    # 토큰에는 schema_id 클레임이 있어야 한다)
     GUEST_ENABLED: bool = False
     KRATOS_GUEST_SCHEMA_ID: str = "guest"  # Kratos의 게스트 identity schema id (JWT schema_id 클레임과 비교)
     # Kratos web_hook이 X-Kratos-Hook-Key 헤더로 보내는 값. /internal/kratos/hooks/*는 이 값이 맞아야 응답한다

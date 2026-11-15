@@ -58,3 +58,14 @@ def test_claims_mapper_takes_email_only_from_email_trait():
     assert "handle" not in code
     assert re.search(r"\[if email != null then 'email' else null\]: email", code)
     assert "schema_id: identity.schema_id" in code
+
+
+def test_claims_mapper_emits_schema_id_for_every_identity():
+    """backend는 schema_id 클레임이 없는 토큰을 받지 않으므로 매퍼는 schema_id를 조건 없이 넣는다"""
+    mapper = (KRATOS_DIR / "api-jwt.claims.jsonnet").read_text()
+    code = [line.strip() for line in mapper.splitlines() if not line.lstrip().startswith("//")]
+    claims = code[code.index("claims: {") + 1:]
+    claims = claims[:claims.index("},")]
+    assert "schema_id: identity.schema_id," in claims
+    assert not any("schema_id" in line and line.startswith("[if") for line in claims)
+    assert sum("schema_id" in line for line in code) == 1

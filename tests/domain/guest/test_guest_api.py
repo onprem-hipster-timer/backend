@@ -227,19 +227,23 @@ def test_flag_off_lookup_and_create_do_not_call_kratos(guest_client, guest_off, 
 def test_flag_off_guest_token_is_refused_on_member_routes(guest_client, guest_off, tokens):
     guest_off()
     assert guest_client.get("/v1/users/me", headers=tokens.guest("g-1")).status_code == 403
-    # 클레임이 없는 회원 토큰은 플래그가 꺼져 있으면 받는다
-    legacy = tokens.make("member-2", None, email="m2@example.com", email_verified=True)
-    assert guest_client.get("/v1/users/me", headers={"Authorization": f"Bearer {legacy}"}).status_code == 200
+    assert guest_client.get("/v1/users/me", headers=tokens.member()).status_code == 200
 
 
-def test_flag_on_token_without_schema_id_is_401(guest_client, tokens):
+@pytest.mark.parametrize("flag", ["on", "off"])
+def test_token_without_schema_id_is_401(guest_client, guest_off, tokens, flag):
+    if flag == "off":
+        guest_off()
     legacy = tokens.make("member-2", None, email="m2@example.com", email_verified=True)
     assert guest_client.get("/v1/users/me", headers={"Authorization": f"Bearer {legacy}"}).status_code == 401
     assert guest_client.get("/v1/users/me", headers=tokens.member()).status_code == 200
 
 
+@pytest.mark.parametrize("flag", ["on", "off"])
 @pytest.mark.parametrize("schema_id", [["guest"], {"id": "guest"}, 0, 1, True, False, ""])
-def test_token_with_non_text_schema_id_is_401(guest_client, tokens, schema_id):
+def test_token_with_non_text_schema_id_is_401(guest_client, guest_off, tokens, schema_id, flag):
+    if flag == "off":
+        guest_off()
     token = tokens.make("member-1", schema_id, email="m@example.com", email_verified=True)
     r = guest_client.get("/v1/todos", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401

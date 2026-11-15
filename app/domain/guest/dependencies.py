@@ -3,7 +3,7 @@
 
 회원 의존성(get_current_user 등)은 게스트 토큰을 403으로 거부한다. 게스트를 받는 경로는 여기 의존성을 명시해서 쓴다.
 
-- get_current_guest: 게스트 토큰만 통과 (GUEST_ENABLED가 꺼져 있으면 403)
+- get_current_guest: 게스트 토큰만 통과 (GUEST_ENABLED가 꺼져 있으면 403, schema_id 클레임이 없으면 401)
 - require_guest_access(resource_type, id_param): 경로 파라미터 id_param의 리소스에 접근할 수 있는 게스트 행.
   요청마다 게스트 행과 접근 정책(app/domain/guest/service.py check_access)을 확인하므로, 폐기된 게스트는
   JWT가 아직 유효해도 거부된다
@@ -17,7 +17,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials
 
 import app.core.config as app_config
-from app.core.auth import CurrentUser, authenticate_request, security
+from app.core.auth import CurrentUser, authenticate_request, require_schema_id, security
 from app.domain.guest import service
 from app.domain.guest.exceptions import GuestAccessDeniedError
 from app.domain.guest.model import Guest
@@ -32,6 +32,8 @@ async def get_current_guest(
     if not app_config.settings.GUEST_ENABLED:
         raise GuestAccessDeniedError()
     user = await authenticate_request(request, credentials)
+    if app_config.settings.OIDC_ENABLED:
+        require_schema_id(user)
     if not user.is_guest:
         raise GuestAccessDeniedError()
     return user

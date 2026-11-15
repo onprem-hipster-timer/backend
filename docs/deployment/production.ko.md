@@ -148,6 +148,8 @@ KRATOS_ADMIN_URL=http://127.0.0.1:4434
 
 프록시의 판정 순서와 응답 전체는 [`/auth` 프록시](../guides/auth-proxy.ko.md)에 있습니다.
 
+Kratos의 클레임 매퍼는 모든 identity의 JWT에 `schema_id`를 넣어야 합니다. backend는 `schema_id`가 없는 토큰을 `401`로 거부합니다. 매퍼가 `schema_id`를 넣지 않던 배포에서는 매퍼를 먼저 바꾸고 tokenizer `ttl`(기본 10분)이 지난 뒤 backend를 배포합니다([인증 가이드](../guides/auth.ko.md)).
+
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
