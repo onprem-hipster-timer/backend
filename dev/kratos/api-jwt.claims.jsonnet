@@ -1,6 +1,6 @@
 // Claims for the JWT the backend accepts (session to JWT, template "api"). Kratos already sets iss,
 // sub (identity ID), sid, iat, nbf, exp and jti. The backend reads schema_id, email, email_verified and name.
-// schema_id tells guests apart; with GUEST_ENABLED=true the backend refuses tokens without it.
+// schema_id tells guests apart; the backend refuses tokens without it, so it is set for every identity.
 // Guest identities have no email trait, so email is only added when the trait exists.
 local session = std.extVar('session');
 local identity = session.identity;
