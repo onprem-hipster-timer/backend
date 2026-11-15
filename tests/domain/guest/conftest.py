@@ -1,7 +1,8 @@
 """게스트 테스트 fixture
 
 - guest_db: 앱 세션 매니저를 테스트 엔진으로 바꾼다 (게스트 서비스는 자기 세션을 연다)
-- kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳), 가짜 Turnstile, GUEST_ENABLED=true 설정
+- kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳), 가짜 Turnstile, GUEST_ENABLED=true 설정,
+  테스트마다 새 Kratos 자리(app/core/kratos_slots.py에 정한 크기)
 - turnstile: 가짜 Turnstile siteverify와 Cloudflare 테스트 키 (kratos가 함께 켠다). 토큰 재사용을 거절하지 않는다
 - strict_turnstile: 운영 비밀 키의 Turnstile. 토큰은 한 번만 받는다
 - host: MEETING 리소스 종류에 등록한 가짜 호스트
@@ -13,7 +14,7 @@ from sqlmodel import SQLModel
 
 import app.core.config as app_config
 from app.api import auth_proxy
-from app.core import kratos_admin, turnstile as turnstile_client
+from app.core import kratos_admin, kratos_slots, turnstile as turnstile_client
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.host import register_guest_host, unregister_guest_host
 from app.models.visibility import ResourceType
@@ -82,6 +83,9 @@ def kratos(monkeypatch, turnstile):
         "_make_client",
         lambda: httpx.AsyncClient(base_url=KRATOS_PUBLIC, transport=httpx.MockTransport(fake.public)),
     )
+    # 자리의 asyncio.Semaphore는 처음 기다린 이벤트 루프에 묶이므로 테스트(이벤트 루프)마다 새로 둔다
+    monkeypatch.setattr(kratos_slots, "member_slots", kratos_slots.Slots(kratos_slots.MEMBER_SLOTS))
+    monkeypatch.setattr(kratos_slots, "guest_slots", kratos_slots.Slots(kratos_slots.GUEST_SLOTS))
     return fake
 
 
