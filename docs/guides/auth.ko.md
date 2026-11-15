@@ -241,7 +241,11 @@ graph TD
     SYNC -->|JIT upsert| UPS["UserProfileService<br/>(domain/user)"]
     OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
     RL["RateLimitMiddleware"] -.->|user 키로 재사용| MW
+    GG["get_current_guest<br/>(domain/guest)"] -.->|state 있으면 재사용| MW
+    GG -->|state 없으면 직접 검증| OC
 ```
+
+게스트를 받는 경로는 `ensure_member`를 거치지 않고 `get_current_guest`로 같은 `CurrentUser`를 받습니다. 그 뒤의 의존성은 [게스트 계정 가이드의 객체 의존성](guest.ko.md#객체-의존성)에 있습니다.
 
 #### 요청 수명주기에서의 협력
 

@@ -644,6 +644,54 @@ from app.domain.guest.service import discard_resource_guests
 await discard_resource_guests(ResourceType.MEETING, meeting_id)
 ```
 
+## 객체 의존성
+
+화살표는 "쓴다"입니다. 테두리가 굵은 것이 게스트 도메인(`app/domain/guest/`)입니다.
+
+```mermaid
+graph TD
+    R1["/v1/guests/*<br/>(api/v1/guests.py)"]
+    R2["Kratos 훅 수신<br/>(api/kratos_hooks.py)"]
+    R3["/auth 프록시<br/>(api/auth_proxy.py)"]
+    R4["리소스의 게스트 경로"]
+
+    DEP["get_current_guest<br/>require_guest_access<br/>(dependencies.py)"]
+    SVC["service.py<br/>찾기 · 생성 · 접근 정책 ·<br/>폐기 · 훅 판정"]
+    HOST["host.py<br/>GuestHost 등록부"]
+    EV["events.py<br/>GuestDiscarded · GuestRenamed"]
+
+    AUTH["authenticate_request<br/>(core/auth)"]
+    CRUD["crud/guest.py"]
+    TBL[("guest 테이블")]
+    KA["kratos_admin<br/>(core)"]
+    TS["turnstile<br/>(core)"]
+    RES["리소스 도메인<br/>(호스트 구현 · 이벤트 핸들러)"]
+
+    R1 --> SVC
+    R1 --> DEP
+    R2 --> SVC
+    R3 --> SVC
+    R3 --> TS
+    R4 --> DEP
+    DEP --> AUTH
+    DEP --> SVC
+    SVC --> HOST
+    SVC --> CRUD --> TBL
+    SVC --> KA
+    SVC --> TS
+    SVC --> EV
+    RES -.->|"register_guest_host"| HOST
+    RES -.->|"핸들러 등록"| EV
+
+    classDef guest stroke-width:3px
+    class DEP,SVC,HOST,EV guest
+```
+
+- 게스트 도메인은 리소스 도메인을 import하지 않습니다. 리소스가 호스트와 이벤트 핸들러를 등록하고(점선), 게스트 도메인은 등록부를 통해서만 리소스의 상태를 묻습니다.
+- 토큰 검증은 회원과 같은 `authenticate_request`를 씁니다. 그 뒤 회원 판정(`ensure_member`) 대신 게스트 판정으로 갑니다([인증 가이드](auth.ko.md)).
+- Kratos에 닿는 곳은 둘입니다. 게스트 도메인은 admin API(`kratos_admin`)로 identity를 만들고 지우고, 공개 API는 `/auth` 프록시만 부릅니다.
+- DB는 `service.py`가 자기 세션으로 `crud/guest.py`를 통해서만 씁니다.
+
 ## 제한
 
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
