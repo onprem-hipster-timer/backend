@@ -30,7 +30,7 @@ class TestFriendRequestRule:
 class TestGuestEntryRules:
     """게스트 이름 찾기·생성 전용 rate limit 규칙"""
 
-    @pytest.mark.parametrize("path,limit", [("/v1/guests", 100), ("/v1/guests/lookup", 10)])
+    @pytest.mark.parametrize("path,limit", [("/v1/guests", 100), ("/v1/guests/lookup", 100)])
     def test_guest_lookup_and_create_have_own_limits(self, path, limit):
         rule = get_rule_for_request("POST", path)
         assert rule is not None

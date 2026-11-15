@@ -55,7 +55,7 @@ backend는 `GUEST_ENABLED`와 상관없이 `schema_id` 클레임이 없는 토�
 
 ### 1.2 접속 주소와 요청 한도
 
-게스트 이름 찾기는 IP당 분당 10회, 게스트 생성은 IP당 분당 100회, `/auth` 제출은 IP당 분당 60회로 제한하고, 로그인 제출은 같은 IP에서 같은 식별자로 분당 5회까지 받습니다. 이 한도는 backend가 방문자의 주소를 바르게 알 때만 지켜집니다.
+게스트 이름 찾기와 생성은 각각 IP당 분당 100회, `/auth` 제출은 IP당 분당 60회로 제한하고, 로그인 제출은 같은 IP에서 같은 식별자로 분당 5회까지 받습니다. 이 한도는 backend가 방문자의 주소를 바르게 알 때만 지켜집니다.
 
 - backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
 - uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.

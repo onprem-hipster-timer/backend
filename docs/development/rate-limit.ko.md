@@ -222,7 +222,7 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 | `/v1/tags` | POST | 60초 | 30 | Tag 생성 제한 |
 | `/v1/tags/groups` | POST | 60초 | 30 | TagGroup 생성 제한 |
 | `/v1/todos/groups` | POST | 60초 | 30 | TodoGroup 생성 제한 |
-| `/v1/guests/lookup` | POST | 60초 | 10 | 게스트 이름 찾기 (IP 단위) |
+| `/v1/guests/lookup` | POST | 60초 | 100 | 게스트 이름 찾기 (IP 단위) |
 | `/v1/guests` | POST | 60초 | 100 | 게스트 생성 (IP 단위) |
 | `/v1/friends/requests` | POST | 60초 | 20 | 친구 요청(이메일 열거·스팸 억제, 더 엄격) |
 | `/v1/todos/*` | ALL | 60초 | 100 | Todo 일반 작업 |
