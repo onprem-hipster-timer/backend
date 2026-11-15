@@ -702,7 +702,14 @@ def _forwarded(upstream, path):
 @pytest.mark.parametrize("path", ADDRESS_FLOWS)
 @pytest.mark.parametrize(
     "email",
-    ["x@guest.invalid", "x@GUEST.Invalid", "  x@guest.invalid  ", "X@Guest.INVALID\n"],
+    [
+        "x@guest.invalid",
+        "x@GUEST.Invalid",
+        "  x@guest.invalid  ",
+        "X@Guest.INVALID\n",
+        "\tx@guest.invalid\r\n",
+        "\v\fX@GUEST.INVALID \r",
+    ],
 )
 def test_address_flow_to_guest_domain_is_refused_json(client, upstream, monkeypatch, path, email):
     calls = []
@@ -913,6 +920,21 @@ def test_identifier_given_twice_keeps_unreadable_body_answer(client, upstream, g
     assert response.status_code == 400
     assert response.json()["error"]["id"] == "invalid_request_body"
     assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "value,normalized",
+    [
+        ("Member@Example.COM", "member@example.com"),
+        (" \t\n\v\f\rmember@example.com\r\f\v\n\t ", "member@example.com"),
+        ("\x1cmember@example.com\x1f", "\x1cmember@example.com\x1f"),
+        ("mem ber@example.com", "mem ber@example.com"),
+    ],
+    ids=["case", "ascii_spaces", "other_control_characters", "inner_space"],
+)
+def test_normalize_identifier_trims_ascii_spaces_and_lowercases(value, normalized):
+    """Kratos(Go strings.ToLower(strings.TrimSpace(v)))와 같다. TrimSpace는 U+001C~U+001F를 떼지 않는다"""
+    assert auth_proxy.normalize_identifier(value) == normalized
 
 
 def test_unbuildable_url_is_answered_before_identifier_check(client, upstream):

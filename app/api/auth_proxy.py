@@ -45,7 +45,6 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 import json
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass
 from urllib.parse import parse_qs, parse_qsl, urlencode
 
@@ -188,20 +187,14 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
     return values[0] if values else None
 
 
-# Go 문자열(UTF-8)에 담을 수 없는 서로게이트. JSON의 짝 없는 \ud800 같은 이스케이프를 Go는 U+FFFD로 읽는다
-_SURROGATES = re.compile("[\ud800-\udfff]")
-
-
 def normalize_identifier(value: str) -> str:
-    """Kratos가 같은 식별자로 찾는 표기를 같은 값으로 맞춘다. Kratos보다 더 많은 표기를 같은 값으로 모을 수 있다.
+    """Kratos가 같은 식별자로 찾는 표기를 같은 값으로 맞춘다.
 
-    Kratos는 식별자를 Go strings.ToLower(strings.TrimSpace(v))로 찾는다. 먼저 그와 같게 서로게이트를 U+FFFD로, 앞뒤 공백을
-    떼고, 소문자로 바꾼다(U+0130은 Go처럼 i 한 글자, lower의 끝 시그마 ς는 뒤의 casefold가 σ로 맞춘다). 그 뒤 NFKC·앞뒤 공백
-    제거·casefold로 더 모은다. 앞 단계에서 같아진 표기는 뒤 단계에서도 같다.
+    Kratos는 식별자를 Go strings.ToLower(strings.TrimSpace(v))로 찾는다. 식별자는 ASCII 문자만 받으므로(identifier_refusal)
+    앞뒤의 ASCII 공백(\\t \\n \\v \\f \\r, 스페이스)을 떼고 A-Z를 소문자로 바꾸면 같다.
     게스트 handle 판정, 인증·복구 email의 게스트 주소 판정, 같은 식별자의 요청 한도 키(app/middleware/guest_gate.py)가 쓴다.
     """
-    resolved = _SURROGATES.sub("\ufffd", value).strip().replace("İ", "i").lower()
-    return unicodedata.normalize("NFKC", resolved).strip().casefold()
+    return value.strip(" \t\n\v\f\r").lower()
 
 
 def _is_guest_handle(identifier: object) -> bool:

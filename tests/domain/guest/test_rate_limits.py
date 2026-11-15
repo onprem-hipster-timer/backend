@@ -161,35 +161,29 @@ def test_identifier_key_does_not_contain_identifier():
     assert key.startswith("ip:1.2.3.4:")
 
 
-# Kratos가 info@mail.test와 같은 식별자로 찾는 표기 (U+0130은 i, 대소문자, 앞뒤 유니코드 공백)
-DOTTED_CAPITAL_I_SPELLINGS = [
-    "\u0130nfo@mail.test",
-    "info@ma\u0130l.test",
-    "\u0130NFO@MA\u0130L.TEST",
-    "Info@Ma\u0130l.test",
-    "\u3000\u0130nfo@mail.test\u00a0",
-    "\u2003INFO@MA\u0130L.test\u2009",
+# Kratos가 info@mail.test와 같은 식별자로 찾는 표기 (대소문자, 앞뒤의 \t \n \v \f \r 스페이스)
+ASCII_SPELLINGS = [
+    "INFO@MAIL.TEST",
+    "Info@Mail.Test",
+    " info@mail.test ",
+    "\tinfo@mail.test\n",
+    "\v\f\rINFO@mail.test \r\f\v",
 ]
 
 
-@pytest.mark.parametrize("spelling", DOTTED_CAPITAL_I_SPELLINGS)
-def test_identifier_key_of_dotted_capital_i_spelling_equals_plain_key(spelling):
+@pytest.mark.parametrize("spelling", ASCII_SPELLINGS)
+def test_identifier_key_of_ascii_spelling_equals_plain_key(spelling):
     plain = _identifier_key("ip:1.2.3.4", "/self-service/login", "info@mail.test")
     assert _identifier_key("ip:1.2.3.4", "/self-service/login", spelling) == plain
 
 
-@pytest.mark.parametrize(
-    "first,second",
-    [
-        ("I\u0307nfo@mail.test", "i\u0307nfo@mail.test"),  # 결합 점(U+0307) 앞의 I와 i
-        ("info\ud800@mail.test", "info\udc00@mail.test"),  # JSON의 짝 없는 서로게이트는 U+FFFD로 읽힌다
-        ("info\ud800@mail.test", "info\ufffd@mail.test"),
-    ],
-)
-def test_spellings_resolved_alike_share_one_key(first, second):
-    assert _identifier_key("ip:1.2.3.4", "/self-service/login", first) == _identifier_key(
-        "ip:1.2.3.4", "/self-service/login", second
-    )
+def test_logins_in_ascii_spellings_share_one_identifier_counter(rate_limited, kratos):
+    spellings = ["info@mail.test", *ASCII_SPELLINGS]
+    responses = [_login(rate_limited, LOGIN, spelling) for spelling in spellings]
+
+    _assert_limited_after([r.status_code for r in responses], 5)
+    assert all(r.status_code == 429 for r in responses[5:])
+    assert len([r for r in kratos.public_requests if r.url.path == "/self-service/login"]) == 5
 
 
 # ============ ASCII 밖의 문자가 있는 식별자: IP로 세고 식별자로는 세지 않는다 ============

@@ -145,8 +145,10 @@ def test_wrong_password_with_passed_token_gets_kratos_answer(guest_client, krato
         lambda h: h.upper(),
         lambda h: h.replace("guest.invalid", "Guest.INVALID"),
         lambda h: f"  {h}  ",
+        lambda h: f"\t{h.upper()}\n",
+        lambda h: f"\v\f\r {h} \r\f\v",
     ],
-    ids=["upper", "mixed_case_domain", "spaces"],
+    ids=["upper", "mixed_case_domain", "spaces", "tab_newline_upper", "other_ascii_spaces"],
 )
 def test_other_spellings_of_guest_handle_need_token(guest_client, kratos, turnstile, guest, transform):
     r = _login(guest_client, _password(transform(_handle(kratos, guest))), token=None)
