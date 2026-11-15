@@ -11,8 +11,8 @@
 | Python 버전 | 상태 | 서비스명 |
 |-------------|------|----------|
 | 3.15 | 최신 | `python315` |
-| 3.14 | 지원 | `python314` |
-| 3.13 | 기본 (프로덕션) | `python313` |
+| 3.14 | 기본 (프로덕션) | `python314` |
+| 3.13 | 지원 | `python313` |
 | 3.12 | 지원 | `python312` |
 | 3.11 | 최소 지원 | `python311` |
 
@@ -64,7 +64,7 @@ docker compose -f docker-compose.python-matrix.yaml --profile postgres up --buil
 
 ## 새 Python 버전 추가하기
 
-Python 3.14가 출시되었다고 가정하고, 테스트 매트릭스에 추가하는 방법입니다.
+Python 3.16이 출시되었다고 가정하고, 테스트 매트릭스에 추가하는 방법입니다.
 
 ### 1단계: docker-compose.python-matrix.yaml 수정
 
@@ -72,15 +72,15 @@ Python 3.14가 출시되었다고 가정하고, 테스트 매트릭스에 추가
 
 ```yaml
   # ============================================
-  # Python 3.14
+  # Python 3.16
   # ============================================
-  python314:
-    container_name: test-python314
+  python316:
+    container_name: test-python316
     build:
       context: .
       dockerfile: Dockerfile.test
       args:
-        PYTHON_VERSION: "3.14"
+        PYTHON_VERSION: "3.16"
     volumes:
       - ./test-results:/app/test-results
     environment:
@@ -105,7 +105,7 @@ DEFAULT_VERSIONS=("3.16", "3.15", "3.14", "3.13", "3.12", "3.11")
 ### 3단계: 테스트 실행
 
 ```powershell
-docker compose -f docker-compose.python-matrix.yaml up --build python314 --abort-on-container-exit
+docker compose -f docker-compose.python-matrix.yaml up --build python316 --abort-on-container-exit
 ```
 
 ---
@@ -240,7 +240,7 @@ else:
 캐시를 무시하고 새로 빌드:
 
 ```powershell
-docker compose -f docker-compose.python-matrix.yaml build --no-cache python313
+docker compose -f docker-compose.python-matrix.yaml build --no-cache python314
 ```
 
 ---
