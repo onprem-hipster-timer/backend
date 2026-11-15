@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Reading one occurrence of a recurring schedule**: `GET /v1/schedules/{parent_id}?instance_start=<datetime>` returns that occurrence in the same shape as the instance in `GET /v1/schedules`: `parent_id` set to the recurring schedule, `instance_start` set to the occurrence's original start time, the occurrence's `start_time`/`end_time`, values from a modified occurrence, `recurrence_rule: null` and an `id` generated per response. The `instance_start` query parameter is the occurrence's original start time and matches within 1 minute, as in `PATCH`/`DELETE`; `timezone` only changes the response time zone. Returns 404 when the rule has no occurrence at that time (including before the first occurrence and after `recurrence_end`) or the occurrence was deleted, 400 (`RecurringScheduleError`) for a schedule that is not recurring, and the same status as `GET /v1/schedules/{schedule_id}` when the schedule is missing or not accessible. Shared recurring schedules can be read this way with `is_shared: true`. Without `instance_start` the endpoint returns the schedule itself, as before.
+- **`instance_start` on recurring instances**: `ScheduleRead` has `instance_start`, the occurrence's original start time, on every recurring instance returned by `GET /v1/schedules` (own and shared), `GET /v1/schedules/{parent_id}?instance_start=...` and `PATCH /v1/schedules/{parent_id}?instance_start=...`; it is `null` for other schedules. It equals `start_time` unless the occurrence was moved, is converted by `timezone` like the other times, and can be sent back unchanged as the `instance_start` query parameter to read, update or delete that occurrence. Instance `id`s are generated per response and cannot be used to address an occurrence.
+
 ### Changed
 
 - **Meeting time zone (breaking)**: meetings have a `timezone` field, an IANA time zone name such as `Asia/Seoul`. It is required in `POST /v1/meetings`, returned in meeting responses and can be changed with `PATCH /v1/meetings/{meeting_id}`; unknown names, UTC offset strings such as `+09:00` and `null` return 422. `start_date`, `end_date`, `available_days`, `start_time` and `end_time` are wall-clock values in that time zone. Migration `f3a39109a3ef` sets `timezone` to `UTC` for existing meetings.
@@ -21,7 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shared recurring schedules in the schedule list**: `GET /v1/schedules` with `scope=shared` or `scope=all` expands shared recurring schedules into their occurrences within `start_date`–`end_date`, like the caller's own recurring schedules: deleted occurrences are left out, modified ones show the modified values, and each has `parent_id`, `is_shared: true` and the owner's `owner_id`. `tag_ids` and `group_ids` still apply only to the caller's own schedules. Recurring instances in the list and in instance responses now carry the owner's `owner_id`. Previously a shared recurring schedule appeared once, as the schedule itself, and only in ranges overlapping its first occurrence, and instances had `owner_id: null`.
 - **Meeting updates are checked as a whole**: `PATCH /v1/meetings/{meeting_id}` applies the create limits to the stored meeting combined with the request and returns 422 without changing the meeting when the result breaks them, for example `start_time` at or after the stored `end_time`, or `end_date` before the stored `start_date`. Previously such requests failed with 500.
+
+---
+
+## [v2026.11.15-ea415eb] - 2026-11-15
+
+### Changed
+
+- **Query string on `/auth` submissions (breaking)**: on requests of any method, GET included, to the login, registration and settings submit paths, the query string may only contain `flow` (the key is compared without regard to letter case); any other key returns 400 `invalid_request_body` and the request is not forwarded. Other `/auth/*` requests keep their query string.
 
 ---
 
@@ -456,7 +470,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...HEAD
+[v2026.11.15-ea415eb]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...v2026.11.15-ea415eb
 [v2026.11.14-27a3ef9]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-541f2db...v2026.11.14-27a3ef9
 [v2026.11.13-541f2db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...v2026.11.13-541f2db
 [v2026.11.13-dc73273]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...v2026.11.13-dc73273
