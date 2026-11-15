@@ -1,5 +1,5 @@
 """참여자·가능 시간이 있는 미팅 삭제 (ORM 관계를 미리 불러온 경우 포함)"""
-from datetime import date, time
+from datetime import date, datetime, time
 
 from sqlmodel import select
 
@@ -12,6 +12,7 @@ def _meeting_with_participant(session) -> Meeting:
         title="회의",
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
+        timezone="UTC",
         available_days=[0, 1, 2, 3, 4],
         start_time=time(9),
         end_time=time(18),
@@ -24,9 +25,8 @@ def _meeting_with_participant(session) -> Meeting:
     session.flush()
     session.add(MeetingTimeSlot(
         participant_id=participant.id,
-        slot_date=date(2024, 2, 5),
-        start_time=time(9),
-        end_time=time(12),
+        start_time=datetime(2024, 2, 5, 9),
+        end_time=datetime(2024, 2, 5, 12),
     ))
     session.flush()
     return meeting

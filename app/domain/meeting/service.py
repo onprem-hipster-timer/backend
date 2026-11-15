@@ -23,6 +23,7 @@ from app.domain.meeting.exceptions import (
     TooManyTimeSlotsError,
 )
 from app.domain.meeting.schema.dto import (
+    daily_range,
     MeetingCreate,
     MeetingUpdate,
     MeetingRead,
@@ -265,7 +266,8 @@ class MeetingService:
         참여자의 가능 시간 설정
         
         기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
-        슬롯 수는 미팅의 칸 수(_cell_count)까지입니다. 슬롯이 미팅의 날짜·시간 범위 안에 있는지는 검사하지 않습니다.
+        슬롯 수는 미팅의 칸 수(_cell_count)까지입니다. 슬롯은 보낸 구간 그대로 저장하고
+        미팅의 날짜·시간 범위나 칸에 맞는지는 검사하지 않습니다.
         
         :param meeting_id: 일정 조율 ID
         :param participant_id: 참여자 ID
@@ -296,13 +298,7 @@ class MeetingService:
         # 새로운 시간 슬롯 생성
         created_slots = []
         for slot_data in time_slots:
-            slot = crud.create_time_slot(
-                self.session,
-                participant_id,
-                slot_data.slot_date,
-                slot_data.start_time,
-                slot_data.end_time,
-            )
+            slot = crud.create_time_slot(self.session, participant_id, slot_data)
             created_slots.append(slot)
 
         return created_slots
@@ -314,9 +310,8 @@ class MeetingService:
             (meeting.start_date + timedelta(days=offset)).weekday() in meeting.available_days
             for offset in range((meeting.end_date - meeting.start_date).days + 1)
         )
-        start_minutes = meeting.start_time.hour * 60 + meeting.start_time.minute
-        end_minutes = meeting.end_time.hour * 60 + meeting.end_time.minute
-        return ceil(days * max(end_minutes - start_minutes, 0) / meeting.time_slot_minutes)
+        daily_minutes = daily_range(meeting.start_time, meeting.end_time).total_seconds() // 60
+        return ceil(days * max(daily_minutes, 0) / meeting.time_slot_minutes)
 
     def to_read_dto(
             self,

@@ -3,24 +3,28 @@ Meeting Result Service
 
 공통 가능 시간 분석 비즈니스 로직
 """
-from datetime import date, time, timedelta
+from bisect import bisect_left
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
 from typing import List
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import meeting as crud
+from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.meeting.schema.dto import (
     MeetingRead,
     ParticipantRead,
     TimeSlotRead,
     AvailabilityRead,
-    AvailabilityTimeSlot,
-    AvailabilityDateGroup,
+    AvailabilityCell,
     MeetingResultRead,
 )
 from app.domain.meeting.service import MeetingService
+from app.models.meeting import Meeting
 
 
 class MeetingResultService:
@@ -70,7 +74,8 @@ class MeetingResultService:
         """
         공통 가능 시간 분석 결과 조회
 
-        모든 참여자의 시간 선택을 집계하여 겹치는 시간대와 인원 수를 계산합니다.
+        미팅의 시간대에서 날짜·요일·하루 범위·시간 단위로 칸을 만들고, 칸마다 그 칸을 모두 덮는
+        가능 시간을 가진 참여자 수를 셉니다. 한 참여자의 슬롯은 합친 구간으로 봅니다.
 
         :param meeting_id: 일정 조율 ID
         :return: 공통 가능 시간 분석 결과
@@ -80,70 +85,66 @@ class MeetingResultService:
         # 접근 권한 확인
         meeting, is_shared = self._meeting_service.get_meeting_with_access_check(meeting_id)
 
-        # 요일 기반 날짜 생성
-        available_dates = self._generate_available_dates(
-            meeting.start_date,
-            meeting.end_date,
-            meeting.available_days,
-        )
-
-        # 시간 슬롯 생성 (time_slot_minutes 단위)
-        time_slots = self._generate_time_slots(
-            meeting.start_time,
-            meeting.end_time,
-            meeting.time_slot_minutes,
-        )
-
-        # 그리드 초기화
-        counts: dict[str, dict[str, int]] = {}
-        for date_obj in available_dates:
-            date_str = date_obj.isoformat()
-            counts[date_str] = {}
-            for time_slot in time_slots:
-                time_str = time_slot.strftime("%H:%M")
-                counts[date_str][time_str] = 0
+        cells = self._generate_cells(meeting)
+        cell_starts = [start for start, _ in cells]
+        counts = [0] * len(cells)
 
         # 모든 참여자의 시간 슬롯을 JOIN 한 번으로 조회 (N+1 제거)
-        all_slots = crud.get_time_slots_by_meeting(self.session, meeting_id)
+        intervals_by_participant: dict[UUID, list[tuple[datetime, datetime]]] = defaultdict(list)
+        for slot in crud.get_time_slots_by_meeting(self.session, meeting_id):
+            intervals_by_participant[slot.participant_id].append((slot.start_time, slot.end_time))
 
-        # 인덱스 직접 계산으로 집계 (불필요한 순회 제거)
-        grid_start_minutes = meeting.start_time.hour * 60 + meeting.start_time.minute
-        slot_minutes = meeting.time_slot_minutes
-
-        for slot in all_slots:
-            date_str = slot.slot_date.isoformat()
-            if date_str not in counts:
-                continue
-
-            slot_start_minutes = slot.start_time.hour * 60 + slot.start_time.minute
-            slot_end_minutes = slot.end_time.hour * 60 + slot.end_time.minute
-
-            start_idx = (slot_start_minutes - grid_start_minutes) // slot_minutes
-            end_idx = (slot_end_minutes - grid_start_minutes) // slot_minutes
-
-            # 그리드 범위 내로 클램핑
-            start_idx = max(0, start_idx)
-            end_idx = min(len(time_slots), end_idx)
-
-            for i in range(start_idx, end_idx):
-                time_str = time_slots[i].strftime("%H:%M")
-                counts[date_str][time_str] += 1
-
-        availability_grid = [
-            AvailabilityDateGroup(
-                date=date_str,
-                slots=[
-                    AvailabilityTimeSlot(time=time_str, count=count)
-                    for time_str, count in time_map.items()
-                ],
-            )
-            for date_str, time_map in counts.items()
-        ]
+        # 합친 구간은 서로 겹치지 않으므로 참여자는 칸마다 많아야 한 번 센다
+        for intervals in intervals_by_participant.values():
+            for start, end in self._merge_intervals(intervals):
+                i = bisect_left(cell_starts, start)
+                while i < len(cells) and cells[i][1] <= end:
+                    counts[i] += 1
+                    i += 1
 
         return MeetingResultRead(
             meeting=MeetingRead.model_validate(meeting),
-            availability_grid=availability_grid,
+            availability_grid=[
+                AvailabilityCell(start_time=start, end_time=end, count=count)
+                for (start, end), count in zip(cells, counts)
+            ],
         )
+
+    def _generate_cells(self, meeting: Meeting) -> List[tuple[datetime, datetime]]:
+        """
+        결과 그리드의 칸 [start, end) (UTC naive, 시작 순)
+
+        날마다 미팅 시간대의 start_time~end_time(00:00이면 다음 날 00:00)을 UTC 시각으로 바꾸고,
+        그 사이를 실제 경과 시간 time_slot_minutes마다 나눕니다. 일광 절약 시간 전환이 있는 날도
+        칸은 이어지는 실제 시각이고, 마지막 칸은 하루 범위의 끝에서 자릅니다.
+        """
+        zone = ZoneInfo(meeting.timezone)
+        step = timedelta(minutes=meeting.time_slot_minutes)
+        cells = []
+        for day in self._generate_available_dates(
+                meeting.start_date, meeting.end_date, meeting.available_days,
+        ):
+            end_day = day + timedelta(days=1) if meeting.end_time == time(0) else day
+            current = ensure_utc_naive(datetime.combine(day, meeting.start_time, zone))
+            day_end = ensure_utc_naive(datetime.combine(end_day, meeting.end_time, zone))
+            while current < day_end:
+                cell_end = min(current + step, day_end)
+                cells.append((current, cell_end))
+                current = cell_end
+        return cells
+
+    @staticmethod
+    def _merge_intervals(
+            intervals: List[tuple[datetime, datetime]],
+    ) -> List[tuple[datetime, datetime]]:
+        """겹치거나 맞닿은 반열린 구간을 합친다"""
+        merged: List[tuple[datetime, datetime]] = []
+        for start, end in sorted(intervals):
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        return merged
 
     def _generate_available_dates(
             self,
@@ -171,36 +172,3 @@ class MeetingResultService:
             current_date += timedelta(days=1)
 
         return available_dates
-
-    def _generate_time_slots(
-            self,
-            start_time: time,
-            end_time: time,
-            slot_minutes: int,
-    ) -> List[time]:
-        """
-        시간 슬롯 생성
-
-        start_time ~ end_time 범위를 slot_minutes 단위로 나눕니다.
-
-        :param start_time: 시작 시간
-        :param end_time: 종료 시간
-        :param slot_minutes: 시간 슬롯 단위 (분)
-        :return: 시간 슬롯 리스트
-        """
-        time_slots = []
-
-        # time 객체를 분 단위로 변환하여 계산
-        start_minutes = start_time.hour * 60 + start_time.minute
-        end_minutes = end_time.hour * 60 + end_time.minute
-        current_minutes = start_minutes
-
-        while current_minutes < end_minutes:
-            hours = current_minutes // 60
-            minutes = current_minutes % 60
-            time_slots.append(time(hours, minutes))
-
-            # 다음 슬롯으로 이동
-            current_minutes += slot_minutes
-
-        return time_slots
