@@ -19,8 +19,8 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
   이름 중복·게스트 수·게스트 JWT 판정보다 먼저다. /v1 경로는 바깥의 RateLimitMiddleware가 먼저 센다
 - X-Turnstile-Token은 Kratos에 넘기지 않는다 (프록시의 요청 헤더 허용 목록에 없다)
 
-/auth 제출(프록시 라우트가 받는 메서드 중 GET 밖의 요청과, Kratos로 보낼 경로가 설정·로그인·가입·인증·복구 제출
-경로인 GET)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고 다음을 거친다. 그 밖의 GET은 거치지
+/auth 제출(프록시 라우트가 받는 메서드 중 GET 밖의 요청과, 검사 경로(auth_proxy._submit_path)가 설정·로그인·가입·인증·복구
+제출 경로인 GET)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고 다음을 거친다. 그 밖의 GET은 거치지
 않는다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
@@ -200,7 +200,7 @@ def _is_v1_step(scope: Scope) -> bool:
 
 
 def _auth_submit_path(scope: Scope) -> str | None:
-    """프록시 라우트로 갈 제출이면 라우트의 path 값. GET은 Kratos로 보낼 경로가 검사하는 제출 경로일 때만 제출이다"""
+    """프록시 라우트로 갈 제출이면 라우트의 path 값. GET은 검사 경로가 검사하는 제출 경로일 때만 제출이다"""
     method = scope["method"]
     if method != "GET" and method not in AUTH_SUBMIT_METHODS:
         return None

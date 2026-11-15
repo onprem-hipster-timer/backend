@@ -12,9 +12,10 @@ from fastapi.testclient import TestClient
 
 import app.core.config as app_config
 from app.api import auth_proxy
-from app.core import courier
+from app.core import courier, turnstile
 from app.core.config import Settings
 from app.middleware.guest_gate import GuestGateMiddleware
+from app.ratelimit.config import AUTH_SUBMIT_PER_IP
 
 UPSTREAM = "http://kratos.test"
 
@@ -229,11 +230,11 @@ REFRESHED_RECOVERY_SESSION = {
 SETTINGS_SUBMIT = "/auth/self-service/settings?flow=f1"
 
 
-def kratos_with_session(upstream, session, whoami_status=200):
-    """whoami는 session으로, 설정 제출은 성공으로 답하는 가짜 Kratos"""
+def kratos_with_session(upstream, session, whoami_status=200, base_path=""):
+    """whoami는 session으로, 설정 제출은 성공으로 답하는 가짜 Kratos (base_path: KRATOS_PUBLIC_URL의 경로)"""
 
     def handler(request):
-        if request.url.path == "/sessions/whoami":
+        if request.url.path == f"{base_path}/sessions/whoami":
             return httpx.Response(whoami_status, json=session)
         return httpx.Response(200, json={"state": "success"})
 
@@ -1141,3 +1142,173 @@ def test_full_app_refusal_of_unbuildable_url_carries_cors_headers(app_client, up
     assert response.json() == INVALID_REQUEST_URL
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
     assert upstream.requests == []
+
+
+# ============ KRATOS_PUBLIC_URL의 경로 ============
+
+# (KRATOS_PUBLIC_URL, Kratos로 나가는 경로의 접두사)
+BASE_URLS = [
+    ("http://kratos.test", ""),
+    ("http://kratos.test/", ""),
+    ("http://kratos.test/kratos", "/kratos"),
+    ("http://kratos.test/kratos/", "/kratos"),
+]
+
+
+@pytest.fixture(params=BASE_URLS, ids=[url for url, _ in BASE_URLS])
+def base_path(request, upstream, monkeypatch):
+    """KRATOS_PUBLIC_URL을 바꾸고(GUEST_ENABLED) Kratos로 나가는 경로의 접두사를 돌려준다"""
+    base_url, prefix = request.param
+    monkeypatch.setattr(auth_proxy, "settings", Settings(KRATOS_PUBLIC_URL=base_url, GUEST_ENABLED=True,
+                                                         KRATOS_ADMIN_URL="http://admin.test",
+                                                         KRATOS_HOOK_API_KEY="k", TURNSTILE_SECRET_KEY="s"))
+    monkeypatch.setattr(
+        auth_proxy,
+        "_make_client",
+        lambda: httpx.AsyncClient(base_url=base_url, transport=httpx.MockTransport(upstream)),
+    )
+    return prefix
+
+
+@pytest.fixture
+def siteverify(monkeypatch):
+    """Turnstile 확인을 통과시키고 받은 토큰을 기록한다"""
+    tokens = []
+
+    async def verify(token):
+        tokens.append(token)
+        return True
+
+    monkeypatch.setattr(turnstile, "verify", verify)
+    return tokens
+
+
+@pytest.fixture
+def rate_limited(upstream, monkeypatch):
+    from app.ratelimit.limiter import reset_limiter
+    from app.ratelimit.storage.memory import reset_storage
+
+    monkeypatch.setattr(app_config.settings, "RATE_LIMIT_ENABLED", True)
+    # 클라이언트 IP는 프록시 설정 없이 request.client.host로 센다
+    monkeypatch.setattr(app_config.settings, "PROXY_FORCE", False)
+    monkeypatch.setattr(app_config.settings, "CF_ENABLED", False)
+    reset_storage()
+    reset_limiter()
+    yield
+    reset_storage()
+    reset_limiter()
+
+
+def sent_requests(upstream) -> list[tuple[str, str, str]]:
+    return [(r.method, r.url.path, r.url.query.decode()) for r in upstream.requests]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_settings_query_rule_applies_under_base_url(client, upstream, base_path, method):
+    kratos_with_session(upstream, RECOVERY_SESSION, base_path=base_path)
+
+    refused = send(client, method, "/auth/self-service/settings?flow=f1&method=password")
+    forwarded = send(client, method, "/auth/self-service/settings?flow=f1")
+
+    assert refused.status_code == 400
+    assert refused.json()["error"]["id"] == "invalid_request_body"
+    assert forwarded.status_code == 200
+    whoami = [] if method == "GET" else [("GET", f"{base_path}/sessions/whoami", "")]
+    assert sent_requests(upstream) == [*whoami, (method, f"{base_path}/self-service/settings", "flow=f1")]
+
+
+def test_settings_session_check_applies_under_base_url(client, upstream, base_path):
+    kratos_with_session(upstream, PASSWORD_SESSION, base_path=base_path)
+
+    response = client.post(
+        SETTINGS_SUBMIT, json={"method": "password", "password": "New-Pass-123"}, headers={"X-Session-Token": "ory_st_x"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["id"] == "settings_require_email_recovery"
+    assert sent_requests(upstream) == [("GET", f"{base_path}/sessions/whoami", "")]
+
+
+def test_guest_handle_login_needs_token_under_base_url(client, upstream, base_path, siteverify):
+    body = {"method": "password", "identifier": "g1@guest.invalid", "password": "1234"}
+
+    refused = client.post("/auth/self-service/login?flow=f1", json=body)
+    forwarded = client.post("/auth/self-service/login?flow=f1", json=body, headers={"X-Turnstile-Token": "t1"})
+
+    assert refused.status_code == 403
+    assert refused.json()["error"]["id"] == "guest_verification_failed"
+    assert forwarded.status_code == 200
+    assert siteverify == ["t1"]
+    assert sent_requests(upstream) == [("POST", f"{base_path}/self-service/login", "flow=f1")]
+
+
+def test_get_submission_is_counted_under_base_url(client, upstream, base_path, rate_limited):
+    limit = AUTH_SUBMIT_PER_IP.max_requests
+
+    statuses = [client.get("/auth/self-service/login?flow=f1").status_code for _ in range(limit + 1)]
+
+    assert statuses == [200] * limit + [429]
+    assert sent_requests(upstream) == [("GET", f"{base_path}/self-service/login", "flow=f1")] * limit
+
+
+def test_verification_link_under_base_url(client, upstream, base_path):
+    forwarded = client.get("/auth/self-service/verification?flow=f1&code=123456")
+    refused = client.get("/auth/self-service/verification?flow=f1&code=123456&email=user%40example.com")
+
+    assert forwarded.status_code == 200
+    assert refused.status_code == 400
+    assert sent_requests(upstream) == [("GET", f"{base_path}/self-service/verification", "flow=f1&code=123456")]
+
+
+@pytest.mark.parametrize(
+    "path", ["/auth/sessions/whoami?tokenize_as=api", "/auth/self-service/login/api?refresh=true", "/auth/health/ready"]
+)
+def test_other_get_is_forwarded_under_base_url(client, upstream, base_path, path):
+    request_path, _, query = path.removeprefix("/auth").partition("?")
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert sent_requests(upstream) == [("GET", f"{base_path}{request_path}", query)]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/Settings/?flow=f1&method=password",
+        "/auth/self-service/%73ettings?flow=f1&method=password",
+        "/auth/self-service/x/%2e%2e/settings?flow=f1&method=password",
+        "/auth/%2e%2e/self-service/settings?flow=f1&method=password",
+        "/auth/self-service%2Fsettings?flow=f1&method=password",
+        "/auth/self-service/settings%3Fmethod=password",
+        "/auth/%2e%2e/%2e%2e/self-service/login?flow=f1&identifier=user%40example.com",
+        "/auth/self-service/recover%79/?flow=f1&email=user%40example.com",
+    ],
+)
+def test_submit_path_spellings_are_checked_under_base_url(client, upstream, base_path, method, path):
+    kratos_with_session(upstream, RECOVERY_SESSION, base_path=base_path)
+
+    response = send(client, method, path)
+
+    assert response.status_code == 400
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "method,path,request_path,query",
+    [
+        ("GET", "/auth/%2e%2e/%2e%2e/sessions/whoami?tokenize_as=api", "/sessions/whoami", "tokenize_as=api"),
+        ("GET", "/auth/sessions/x/%2e%2e/%2e%2e/%2e%2e/whoami", "/whoami", ""),
+        ("GET", "/auth/self-service/%2e%2e/%2e%2e/self-service/login?flow=f1", "/self-service/login", "flow=f1"),
+        ("POST", "/auth/%2e%2e/self-service/login?flow=f1", "/self-service/login", "flow=f1"),
+        ("POST", "/auth/self-service/log%69n/?flow=f1", "/self-service/login/", "flow=f1"),
+    ],
+)
+def test_path_spellings_are_sent_under_base_url(client, upstream, base_path, method, path, request_path, query):
+    body = None if method == "GET" else {"method": "password", "identifier": "member@example.com", "password": "x"}
+
+    response = client.request(method, path, json=body)
+
+    assert response.status_code == 200
+    assert sent_requests(upstream) == [(method, f"{base_path}{request_path}", query)]

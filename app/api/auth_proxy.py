@@ -2,7 +2,8 @@
 Kratos 공개 API 리버스 프록시
 
 Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다.
-/auth/* 요청을 /auth 접두사를 뗀 경로로 KRATOS_PUBLIC_URL에 그대로 넘긴다.
+/auth/* 요청을 /auth 접두사를 뗀 경로로 KRATOS_PUBLIC_URL에 그대로 넘긴다. KRATOS_PUBLIC_URL에 경로가 있으면 그 뒤에 붙이고
+그 경로 밖으로는 보내지 않는다 (kratos_url).
 
 - 요청 헤더는 허용 목록만 넘긴다 (Host, X-Origin-Verify 등은 Kratos에 넘기지 않는다)
 - 쿠키는 오가지 않는다. 인증은 세션 토큰과 JWT로만 하므로 요청의 Cookie는 넘기지 않고
@@ -27,10 +28,11 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
   응답은 바꾸지 않는다
-- 제출(GET 밖의 요청과, Kratos로 보낼 경로가 검사하는 제출 경로인 GET: is_get_submission)은 인터셉터
+- 제출(GET 밖의 요청과, 검사 경로가 검사하는 제출 경로인 GET: is_get_submission)은 인터셉터
   (app/middleware/guest_gate.py)가 프록시보다 먼저 본문을 한 번 읽어(read_submission) 요청 한도를 세고
   검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로 Kratos에 보낸다.
-  검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다. 그 밖의 GET은 읽지도 세지도 검사하지도 않고 넘긴다
+  검사 경로는 그 URL의 경로에서 KRATOS_PUBLIC_URL의 경로를 뗀 요청 경로를 소문자·끝 슬래시 없이 본 것이다(_submit_path).
+  그 밖의 GET은 읽지도 세지도 검사하지도 않고 넘긴다
 - Kratos로 보낼 URL을 만들 수 없는 요청(경로·쿼리 문자열의 제어 문자, httpx의 URL 길이 제한)은 메서드·경로와 상관없이
   인터셉터가 세지도 검사하지도 않고 400 invalid_request_url로 답한다
 - 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
@@ -87,7 +89,7 @@ DROP_RESPONSE_HEADERS = {
 # 성공하면 메일을 큐에 넣을 수 있는 제출 (가입, 인증·복구 코드 요청, 설정 변경)
 MAIL_FLOW_SUBMIT = re.compile(r"self-service/(registration|verification|recovery|settings)")
 
-# 설정(비밀번호·이메일·소셜 계정 연결) 제출 경로. Kratos로 나갈 경로를 소문자·끝 슬래시 없이 비교한다
+# 설정(비밀번호·이메일·소셜 계정 연결) 제출 경로. 검사 경로(_submit_path)와 비교한다
 SETTINGS_SUBMIT_PATH = "/self-service/settings"
 # 메일로 받은 복구 코드로 만든 세션의 인증 방법 (whoami의 authentication_methods)
 EMAIL_RECOVERY_METHOD = "code_recovery"
@@ -392,7 +394,7 @@ class Submission:
     """/auth 제출. 인터셉터가 read_submission으로 만들고 inspect_submission으로 채워 프록시에 넘긴다"""
     method: str
     url: httpx.URL  # Kratos로 보낼 URL
-    path: str  # 검사 경로: url의 경로를 소문자·끝 슬래시 없이
+    path: str  # 검사 경로 (_submit_path)
     content_type: str
     body: bytes
     # 같은 식별자 단위로 셀 값 (로그인 identifier, 가입 traits.email, 인증·복구 email). 없으면 None, 읽을 수 없으면 _UNREADABLE
@@ -441,21 +443,25 @@ async def _settings_rejection(
 
 
 def kratos_url(path: str, query: str) -> httpx.URL:
-    """/auth/{path}?{query}를 넘길 Kratos URL. KRATOS_PUBLIC_URL의 경로 뒤에 붙인다 (..·인코딩은 httpx가 정리한다).
+    """/auth/{path}?{query}를 넘길 Kratos URL: KRATOS_PUBLIC_URL의 경로 뒤에 요청 경로를 붙인다.
+
+    요청 경로의 ..·인코딩은 httpx가 / 아래에서 먼저 정리하므로 KRATOS_PUBLIC_URL의 경로 밖으로 나가지 않는다.
     URL을 만들 수 없으면(제어 문자, 길이 제한) httpx.InvalidURL
     """
-    relative = httpx.URL(f"/{path}?{query}" if query else f"/{path}")
     base = httpx.URL(settings.KRATOS_PUBLIC_URL)
-    return base.copy_with(raw_path=base.raw_path.rstrip(b"/") + b"/" + relative.raw_path.lstrip(b"/"))
+    # base의 scheme·host를 붙여야 httpx가 경로의 ..를 정리한다
+    relative = base.copy_with(raw_path=httpx.URL(f"/{path}?{query}" if query else f"/{path}").raw_path)
+    return base.copy_with(raw_path=base.raw_path.rstrip(b"/") + relative.raw_path)
 
 
 def _submit_path(url: httpx.URL) -> str:
-    """검사 경로: Kratos로 보낼 URL의 경로를 소문자·끝 슬래시 없이"""
-    return url.path.rstrip("/").lower()
+    """검사 경로: Kratos로 보낼 URL의 경로에서 KRATOS_PUBLIC_URL의 경로를 뗀 요청 경로를 소문자·끝 슬래시 없이"""
+    base_path = httpx.URL(settings.KRATOS_PUBLIC_URL).path.rstrip("/")
+    return url.path.removeprefix(base_path).rstrip("/").lower()
 
 
 def is_get_submission(path: str, query: str) -> bool:
-    """GET /auth/{path}?{query}가 제출인지 (Kratos로 보낼 경로가 검사하는 제출 경로인지)"""
+    """GET /auth/{path}?{query}가 제출인지 (검사 경로가 검사하는 제출 경로인지)"""
     return _submit_path(kratos_url(path, query)) in INSPECTED_SUBMIT_PATHS
 
 
@@ -520,7 +526,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
     submission: Submission | None = None
     # Kratos URL을 만들 수 없는 요청은 인터셉터가 400으로 답해 여기 오지 않는다
     if request.method == "GET" and not is_get_submission(path, request.url.query):
-        url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
+        url = kratos_url(path, request.url.query)
         body = await request.body()
     else:
         # 인터셉터(app/middleware/guest_gate.py)가 읽고 검사한 제출. 그 URL·본문 그대로 보낸다

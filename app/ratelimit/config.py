@@ -174,8 +174,8 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
 
 
 # ============================================================
-# /auth 프록시 제출 규칙 (app/middleware/guest_gate.py가 Kratos로 나갈 경로로 판단해 센다)
-# GET은 Kratos로 나갈 경로가 설정·로그인·가입·인증·복구 제출 경로인 것만 IP 단위로 센다.
+# /auth 프록시 제출 규칙 (app/middleware/guest_gate.py가 검사 경로(app/api/auth_proxy.py _submit_path)로 판단해 센다)
+# GET은 검사 경로가 설정·로그인·가입·인증·복구 제출 경로인 것만 IP 단위로 센다.
 # 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않는다. 키에 메서드가 들어가 메서드마다 따로 센다
 # ============================================================
 
