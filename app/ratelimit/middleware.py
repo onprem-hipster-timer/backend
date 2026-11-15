@@ -13,8 +13,50 @@ from app.core import config as app_config
 from app.ratelimit.cloudflare import get_real_client_ip
 from app.ratelimit.config import get_rule_for_request
 from app.ratelimit.limiter import get_limiter
+from app.ratelimit.storage.base import RateLimitResult
 
 logger = logging.getLogger(__name__)
+
+
+def rate_limited_response(result: RateLimitResult) -> JSONResponse:
+    """한도를 넘은 요청의 429 응답"""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+            "retry_after": result.reset_after,
+        },
+        headers={
+            "Retry-After": str(result.reset_after),
+            "X-RateLimit-Limit": str(result.max_requests),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(result.reset_after),
+        },
+    )
+
+
+async def client_ip_key(request: Request) -> str:
+    """
+    클라이언트 IP 식별자 ("ip:{주소}")
+
+    프록시 설정:
+    - CF_ENABLED=True: Cloudflare IP 검증 후 CF-Connecting-IP 사용
+    - TRUSTED_PROXY_IPS 설정: 해당 IP에서 오는 X-Forwarded-For 신뢰
+    - 그 외: request.client.host 직접 사용
+    """
+    # ORIGIN_VERIFY_HEADER가 설정되어 있으면 해당 헤더 값 전달
+    origin_verify_header = None
+    if app_config.settings.ORIGIN_VERIFY_HEADER:
+        origin_verify_header = request.headers.get(app_config.settings.ORIGIN_VERIFY_HEADER)
+
+    client_ip = await get_real_client_ip(
+        request_client_host=request.client.host if request.client else None,
+        cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
+        x_forwarded_for=request.headers.get("X-Forwarded-For"),
+        origin_verify_header=origin_verify_header,
+    )
+
+    return f"ip:{client_ip}"
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -64,19 +106,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 f"Rate limit exceeded: user={user_id}, path={path}, "
                 f"count={result.current_count}/{result.max_requests}"
             )
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "detail": "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
-                    "retry_after": result.reset_after,
-                },
-                headers={
-                    "Retry-After": str(result.reset_after),
-                    "X-RateLimit-Limit": str(result.max_requests),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(result.reset_after),
-                },
-            )
+            return rate_limited_response(result)
 
         # 요청 처리
         response = await call_next(request)
@@ -94,28 +124,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         우선순위:
         1. request.state.current_user (AuthMiddleware에서 설정됨 - 중복 검증 방지). per_ip면 건너뛴다
-        2. Client IP 주소 (인증 없는 경우, 프록시 설정 고려)
-        
-        프록시 설정:
-        - CF_ENABLED=True: Cloudflare IP 검증 후 CF-Connecting-IP 사용
-        - TRUSTED_PROXY_IPS 설정: 해당 IP에서 오는 X-Forwarded-For 신뢰
-        - 그 외: request.client.host 직접 사용
+        2. Client IP 주소 (인증 없는 경우, 프록시 설정 고려. client_ip_key)
         """
         # AuthMiddleware에서 이미 검증된 사용자 정보 사용
         if not per_ip and hasattr(request.state, 'current_user') and request.state.current_user:
             return request.state.current_user.sub
 
-        # 실제 클라이언트 IP 추출 (프록시 설정 고려)
-        # ORIGIN_VERIFY_HEADER가 설정되어 있으면 해당 헤더 값 전달
-        origin_verify_header = None
-        if app_config.settings.ORIGIN_VERIFY_HEADER:
-            origin_verify_header = request.headers.get(app_config.settings.ORIGIN_VERIFY_HEADER)
-
-        client_ip = await get_real_client_ip(
-            request_client_host=request.client.host if request.client else None,
-            cf_connecting_ip=request.headers.get("CF-Connecting-IP"),
-            x_forwarded_for=request.headers.get("X-Forwarded-For"),
-            origin_verify_header=origin_verify_header,
-        )
-
-        return f"ip:{client_ip}"
+        return await client_ip_key(request)
