@@ -1017,3 +1017,25 @@ def test_submission_that_did_not_pass_the_interceptor_is_not_forwarded(upstream,
     assert response.status_code == 500
     assert upstream.requests == []
 
+
+@pytest.mark.asyncio
+async def test_chunked_large_submission_is_forwarded_byte_identical(upstream):
+    app = FastAPI()
+    app.add_middleware(GuestGateMiddleware)
+    app.include_router(auth_proxy.router)
+    payload = json.dumps(
+        {"method": "password", "identifier": "member@example.com", "password": "p" * 300_000}
+    ).encode()
+
+    async def chunks():
+        for start in range(0, len(payload), 7000):
+            yield payload[start:start + 7000]
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/auth/self-service/login?flow=f1", content=chunks(), headers={"content-type": "application/json"}
+        )
+
+    assert response.status_code == 200
+    [sent] = upstream.requests
+    assert sent.content == payload

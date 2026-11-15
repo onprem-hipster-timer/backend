@@ -252,6 +252,20 @@ def test_rate_limited_request_is_not_verified(rate_limited, step, turnstile):
     assert len(turnstile.requests) == verified
 
 
+def test_rate_limited_request_does_not_spend_its_token(rate_limited, auth_step, strict_turnstile, monkeypatch):
+    for i in range(70):
+        if auth_step.send(token=f"token-{i}").status_code == 429:
+            break
+    verified = len(strict_turnstile.requests)
+    assert auth_step.send(token="kept").status_code == 429
+
+    monkeypatch.setattr(app_config.settings, "RATE_LIMIT_ENABLED", False)
+    r = auth_step.send(token="kept")
+
+    assert r.status_code == 200, r.text
+    assert len(strict_turnstile.requests) == verified + 1
+
+
 @pytest.mark.parametrize("step_name", ["lookup", "create", "rename"])
 def test_verification_comes_before_resource_and_name_checks(
         guest_client, kratos, tokens, guest, host, resource, turnstile, step_name
@@ -341,7 +355,7 @@ def test_other_settings_path_spellings_need_token(rename_step, turnstile, path):
     _assert_refused(rename_step, rename_step.send(token=None, path=path), "failed")
 
 
-@pytest.mark.parametrize("method", ["PUT", "PATCH"])
+@pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
 def test_other_submit_methods_need_token(auth_step, turnstile, method):
     _assert_refused(auth_step, auth_step.send(token=None, method=method), "failed")
 
@@ -358,6 +372,26 @@ def test_form_encoded_rename_needs_token(rename_step, turnstile):
 def test_guest_session_with_other_authorization_header_needs_token(rename_step, turnstile):
     r = rename_step.send(token=None, headers={"Authorization": "Bearer other-session"})
     _assert_refused(rename_step, r, "failed")
+
+
+@pytest.mark.parametrize(
+    "headers_of",
+    [
+        lambda session: {"Authorization": f"Bearer {session}"},
+        lambda session: {"X-Session-Token": f" {session} "},
+        lambda session: {"Cookie": f"ory_kratos_session={session}"},
+        lambda session: {"x-session-token": session, "X-Session-Token": session},
+    ],
+    ids=["authorization_only", "padded", "cookie", "repeated"],
+)
+def test_rename_with_other_session_header_forms_does_not_reach_kratos_without_token(rename_step, turnstile, headers_of):
+    body = {"method": "profile", "traits": {"handle": rename_step.handle, "name": "철수"}}
+
+    r = rename_step.client.post(f"{SETTINGS}?flow=f1", json=body, headers=headers_of(rename_step.session))
+
+    assert r.status_code == 403
+    assert not rename_step.reached(r)
+    assert rename_step.kratos.name_of(rename_step.guest.identity_id) == "민수"
 
 
 @pytest.mark.parametrize(

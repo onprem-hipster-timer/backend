@@ -2,8 +2,10 @@
 
 로그인 제출의 식별자가 게스트 handle 주소면 X-Turnstile-Token 헤더의 토큰이 통과해야 Kratos에 넘긴다.
 """
+import json
 import uuid
 
+import httpx
 import pytest
 
 from app.domain.guest.host import GuestHostStatus
@@ -38,6 +40,10 @@ def _login(client, body=None, token="token-from-widget", form=None, path="/auth/
 
 def _password(identifier, password="1234", **extra) -> dict:
     return {"method": "password", "identifier": identifier, "password": password, **extra}
+
+
+def _login_submits(kratos) -> list:
+    return [r for r in kratos.public_requests if r.url.path.rstrip("/").lower() == "/self-service/login"]
 
 
 # ============ 토큰 확인 ============
@@ -277,6 +283,106 @@ def test_other_login_path_spellings_need_token(guest_client, kratos, guest, path
     assert r.status_code == 403
     assert r.json()["error"]["id"] == "guest_verification_failed"
     assert kratos.sessions == {}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth//self-service/login",
+        "/auth/self-service//login",
+        "/auth/%2e/self-service/login",
+        "/auth/./self-service/login",
+        "/auth/x/%2e%2e/self-service/login",
+        "/auth/self-service/login%2f",
+        "/auth/self-service%2flogin",
+        "/auth/self-service/login/.",
+        "/auth/self-service/LOGIN/",
+        "/auth/self-service/login;x=1",
+        "/auth/self-service/login/..;/login",
+        "/auth/self-service/login%20",
+        "/auth/self-service\\login",
+        "/auth/self-service/login%3fflow=1",
+        "/auth/self-service/login%23",
+    ],
+)
+def test_unusual_login_path_spellings_do_not_reach_kratos_login_without_token(
+        guest_client, kratos, turnstile, guest, path
+):
+    _login(guest_client, _password(_handle(kratos, guest)), token=None, path=path)
+
+    assert _login_submits(kratos) == []
+    assert kratos.sessions == {}
+    assert turnstile.requests == []
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/json; charset=utf-8",
+        "Application/JSON",
+        "text/plain",
+        None,
+        "application/x-www-form-urlencoded, application/json",
+        "application/json, application/x-www-form-urlencoded",
+        "multipart/form-data; boundary=x",
+        "application/octet-stream",
+    ],
+)
+def test_json_guest_login_under_other_content_types_does_not_reach_kratos(guest_client, kratos, turnstile, guest,
+                                                                         content_type):
+    headers = {} if content_type is None else {"content-type": content_type}
+    content = json.dumps(_password(_handle(kratos, guest))).encode()
+
+    r = guest_client.post(f"/auth/self-service/login?flow={uuid.uuid4()}", content=content, headers=headers)
+
+    assert r.json()["error"]["id"] in ("guest_verification_failed", "invalid_request_body")
+    assert _login_submits(kratos) == []
+    assert kratos.sessions == {}
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/x-www-form-urlencoded; charset=UTF-8",
+        "APPLICATION/X-WWW-FORM-URLENCODED",
+        " application/x-www-form-urlencoded ",
+        "application/x-www-form-urlencoded, text/plain",
+        "text/plain, application/x-www-form-urlencoded",
+        "multipart/form-data; boundary=x",
+    ],
+)
+def test_form_guest_login_under_other_content_types_does_not_reach_kratos(guest_client, kratos, turnstile, guest,
+                                                                         content_type):
+    handle = _handle(kratos, guest).replace("@", "%40")
+    content = f"method=password&identifier={handle}&password=1234".encode()
+
+    r = guest_client.post(
+        f"/auth/self-service/login?flow={uuid.uuid4()}", content=content, headers={"content-type": content_type}
+    )
+
+    assert r.json()["error"]["id"] in ("guest_verification_failed", "invalid_request_body")
+    assert _login_submits(kratos) == []
+    assert kratos.sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_chunked_guest_login_needs_token(guest_client, kratos, turnstile, guest):
+    from app.main import app
+
+    content = json.dumps(_password(_handle(kratos, guest))).encode()
+
+    async def chunks():
+        yield content[:10]
+        yield content[10:]
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            f"/auth/self-service/login?flow={uuid.uuid4()}", content=chunks(), headers={"content-type": "application/json"}
+        )
+
+    assert r.status_code == 403
+    assert r.json()["error"]["id"] == "guest_verification_failed"
+    assert _login_submits(kratos) == []
 
 
 # ============ 꺼진 상태, rate limit, CORS ============
