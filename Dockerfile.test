@@ -3,7 +3,7 @@
 # Python 버전 호환성 테스트용 Dockerfile
 # 사용법: docker build -f Dockerfile.test --build-arg PYTHON_VERSION=3.12 -t test-py312 .
 
-ARG PYTHON_VERSION=3.13
+ARG PYTHON_VERSION=3.14
 FROM python:${PYTHON_VERSION}-slim
 
 # 빌드 시 사용된 Python 버전을 환경변수로 저장

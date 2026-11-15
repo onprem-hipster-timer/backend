@@ -6,7 +6,7 @@
 
 **일정, 타이머, 할일을 통합 관리하는 생산성 백엔드 API**
 
-[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.120-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![GraphQL](https://img.shields.io/badge/GraphQL-Strawberry-E10098?style=flat-square&logo=graphql&logoColor=white)](https://strawberry.rocks)
 [![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
@@ -487,7 +487,7 @@ Docker를 사용하여 여러 Python 버전에서 테스트를 실행할 수 있
 
 ```powershell
 # 특정 버전 테스트
-docker compose -f docker-compose.python-matrix.yaml up --build python313 --abort-on-container-exit
+docker compose -f docker-compose.python-matrix.yaml up --build python314 --abort-on-container-exit
 docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort-on-container-exit
 
 # 전체 버전 테스트 (스크립트)
@@ -497,8 +497,8 @@ docker compose -f docker-compose.python-matrix.yaml up --build python312 --abort
 | Python 버전 | 상태 | 서비스명 |
 |-------------|------|----------|
 | 3.15 | 최신 | `python315` |
-| 3.14 | 지원 | `python314` |
-| 3.13 | 기본 (프로덕션) | `python313` |
+| 3.14 | 기본 (프로덕션) | `python314` |
+| 3.13 | 지원 | `python313` |
 | 3.12 | 지원 | `python312` |
 | 3.11 | 최소 지원 | `python311` |
 
