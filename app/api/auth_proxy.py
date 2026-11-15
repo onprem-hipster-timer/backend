@@ -29,6 +29,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - GET 밖의 제출은 요청 한도로 센다 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출은 IP 단위로,
   로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다.
   설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+- 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
+  (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 이름 변경은 게스트 자리). 자리가 나지 않으면 429
 """
 import hashlib
 import json
@@ -42,7 +44,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from app.core import config as app_config
-from app.core import courier, turnstile
+from app.core import courier, kratos_slots, turnstile
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
@@ -100,6 +102,8 @@ IDENTIFIER_KEYS = ("identifier", "password_identifier")
 # 같은 IP의 같은 식별자 단위로도 세는 제출 경로 (식별자: 로그인은 identifier, 가입은 traits.email, 인증·복구는 email)
 REGISTRATION_SUBMIT_PATH = "/self-service/registration"
 IDENTIFIER_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, *ADDRESS_SUBMIT_PATHS})
+# Kratos가 비밀번호 해시를 계산할 수 있는 제출 경로. 넘기기 전에 Kratos 자리를 잡는다
+HASHING_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, SETTINGS_SUBMIT_PATH})
 # 게스트 handle로 로그인할 때 Turnstile 토큰을 담는 요청 헤더와 토큰 길이 상한
 TURNSTILE_TOKEN_HEADER = "x-turnstile-token"
 TURNSTILE_TOKEN_MAX_LENGTH = 2048
@@ -401,6 +405,15 @@ def _guest_name_taken() -> JSONResponse:
     )
 
 
+def _kratos_busy() -> JSONResponse:
+    retry_after = kratos_slots.RETRY_AFTER_SECONDS
+    return JSONResponse(
+        {"detail": "요청이 몰려 있습니다. 잠시 후 다시 시도해주세요.", "retry_after": retry_after},
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def _unavailable() -> JSONResponse:
     return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
 
@@ -478,6 +491,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
             # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
             submit_path = outgoing.url.path.rstrip("/").lower()
+            guest_submit = False
             if request.method != "GET":
                 refusal = await _submit_rate_limit_refusal(request, submit_path, body)
                 if refusal is not None:
@@ -496,6 +510,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                 if identifier is _UNREADABLE:
                     return _unreadable_body()
                 if _is_guest_handle(identifier):
+                    guest_submit = True
                     refusal = await _guest_login_refusal(request.headers.get(TURNSTILE_TOKEN_HEADER))
                     if refusal is not None:
                         return refusal
@@ -509,6 +524,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                 rejection, identity_id, guest_rename = await _settings_rejection(client, request, body)
                 if rejection is not None:
                     return rejection
+                guest_submit = guest_rename
                 refusal = await _settings_rate_limit_refusal(request, identity_id)
                 if refusal is not None:
                     return refusal
@@ -523,7 +539,16 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                         identity_id, _submitted_name(request.headers.get("content-type", ""), body)
                 ):
                     return _guest_name_taken()
-            upstream = await client.send(outgoing)
+            if request.method != "GET" and submit_path in HASHING_SUBMIT_PATHS:
+                slots = kratos_slots.guest_slots if guest_submit else kratos_slots.member_slots
+                try:
+                    async with slots.hold():
+                        upstream = await client.send(outgoing)
+                except kratos_slots.KratosBusyError:
+                    logger.warning(f"Kratos 자리가 차서 제출을 거절함: guest={guest_submit}")
+                    return _kratos_busy()
+            else:
+                upstream = await client.send(outgoing)
     except httpx.HTTPError:
         logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
         return _unavailable()

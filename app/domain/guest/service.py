@@ -28,7 +28,7 @@ from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 import app.core.config as app_config
-from app.core import kratos_admin, turnstile
+from app.core import kratos_admin, kratos_slots, turnstile
 from app.crud import guest as crud
 from app.db.session import _session_manager
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
@@ -37,6 +37,7 @@ from app.domain.guest.exceptions import (
     GuestEntryRefusedError,
     GuestLimitReachedError,
     GuestNameTakenError,
+    GuestServiceBusyError,
     GuestServiceUnavailableError,
     GuestVerificationFailedError,
 )
@@ -217,7 +218,8 @@ async def create(data: GuestCreate) -> GuestRead:
 
     리소스 확인 → 같은 이름 확인(있으면 GuestNameTakenError) → 게스트 수 확인(MAX_GUESTS_PER_RESOURCE명이면
     GuestLimitReachedError) → Turnstile 확인(통과하지 못하면
-    GuestVerificationFailedError, 확인할 수 없으면 GuestServiceUnavailableError) → Kratos identity 생성 → 게스트 행 커밋.
+    GuestVerificationFailedError, 확인할 수 없으면 GuestServiceUnavailableError) → Kratos identity 생성(게스트 Kratos 자리,
+    나지 않으면 GuestServiceBusyError) → 게스트 행 커밋.
     Turnstile 토큰은 한 번만 확인되므로 받지 않을 요청(리소스·이름·게스트 수)은 확인 전에 거절한다. 행을 넣다가 같은 이름과 겹치면 만든 identity를 지우고 GuestNameTakenError.
     """
     await _require_open(data.resource_type, data.resource_id)
@@ -229,12 +231,16 @@ async def create(data: GuestCreate) -> GuestRead:
 
     guest_id = uuid4()
     handle = guest_handle(guest_id)
-    identity = await kratos_admin.create_identity(
-        app_config.settings.KRATOS_GUEST_SCHEMA_ID,
-        {"handle": handle, "name": data.name},
-        data.password,
-        verified_addresses=(handle,),
-    )
+    try:
+        async with kratos_slots.guest_slots.hold():
+            identity = await kratos_admin.create_identity(
+                app_config.settings.KRATOS_GUEST_SCHEMA_ID,
+                {"handle": handle, "name": data.name},
+                data.password,
+                verified_addresses=(handle,),
+            )
+    except kratos_slots.KratosBusyError:
+        raise GuestServiceBusyError() from None
     if identity is None:
         raise GuestServiceUnavailableError()
     guest = Guest.model_validate(data, update={"id": guest_id, "identity_id": identity["id"]})
