@@ -360,6 +360,19 @@ def test_other_submit_methods_need_token(auth_step, turnstile, method):
     _assert_refused(auth_step, auth_step.send(token=None, method=method), "failed")
 
 
+@pytest.mark.parametrize("suffix", ["%00", "%09"])
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_auth_step_whose_kratos_url_cannot_be_built_is_400_without_verification(auth_step, turnstile, suffix, method):
+    path = {"login": LOGIN, "rename": SETTINGS}[auth_step.name] + suffix
+
+    r = auth_step.send(path=path, method=method)
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_url"
+    assert turnstile.requests == []
+    assert auth_step.kratos.public_requests == []
+
+
 def test_form_encoded_rename_needs_token(rename_step, turnstile):
     r = rename_step.client.post(
         f"{SETTINGS}?flow=f1",

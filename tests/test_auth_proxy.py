@@ -1039,3 +1039,105 @@ async def test_chunked_large_submission_is_forwarded_byte_identical(upstream):
     assert response.status_code == 200
     [sent] = upstream.requests
     assert sent.content == payload
+
+
+# ============ Kratos URL을 만들 수 없는 요청 ============
+
+INVALID_REQUEST_URL = {
+    "error": {"id": "invalid_request_url", "code": 400, "status": "Bad Request", "reason": "요청 주소를 읽을 수 없습니다."}
+}
+
+
+@pytest.mark.parametrize("method", PROXY_METHODS)
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/login%00",
+        "/auth/self-service/login%09?flow=f1",
+        "/auth/self-service/settings%00?flow=f1",
+        "/auth/self-service/verification%09?flow=f1&code=123456",
+        "/auth/self-service/login%3Fflow=%09",
+        "/auth/sessions/whoami%00",
+        "/auth/self-service/login/api%09",
+        "/auth/sessions/whoami%3Ftokenize_as=%00",
+    ],
+)
+def test_request_with_control_character_in_kratos_url_is_400(client, upstream, method, path):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = send(client, method, path)
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_REQUEST_URL
+    assert upstream.requests == []
+
+
+async def _send_raw_query(app, method: str, path: str, query_string: bytes) -> tuple[int, dict]:
+    """query_string을 바이트 그대로 담은 ASGI 요청을 보낸다 (HTTP 클라이언트는 제어 문자가 든 URL을 만들지 않는다)"""
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "root_path": "",
+        "query_string": query_string,
+        "headers": [(b"host", b"testserver"), (b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 50000),
+        "server": ("testserver", 80),
+    }
+    messages = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    async def send_message(message):
+        messages.append(message)
+
+    await app(scope, receive, send_message)
+    start = next(m for m in messages if m["type"] == "http.response.start")
+    body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
+    return start["status"], json.loads(body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", PROXY_METHODS)
+@pytest.mark.parametrize("path", ["/auth/self-service/login", "/auth/sessions/whoami"])
+@pytest.mark.parametrize("query_string", [b"flow=f1\x00", b"flow=\x7ff1"])
+async def test_request_with_control_character_in_query_is_400(client, upstream, method, path, query_string):
+    status, body = await _send_raw_query(client.app, method, path, query_string)
+
+    assert status == 400
+    assert body == INVALID_REQUEST_URL
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("method", PROXY_METHODS)
+@pytest.mark.parametrize("path", ["/auth/self-service/login", "/auth/self-service/settings", "/auth/sessions/whoami"])
+def test_request_whose_kratos_url_is_too_long_is_400(client, upstream, method, path):
+    """httpx는 65536자를 넘는 URL을 만들지 않는다"""
+    kratos_with_session(upstream, RECOVERY_SESSION)
+    body = None if method == "GET" else {"method": "password", "password": "New-Pass-123"}
+
+    response = client.request(
+        method, path, params={"flow": "f" * 65_520}, json=body, headers={"X-Session-Token": "ory_st_x"}
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_REQUEST_URL
+    assert upstream.requests == []
+
+
+def test_full_app_refusal_of_unbuildable_url_carries_cors_headers(app_client, upstream):
+    response = app_client.post(
+        "/auth/self-service/login%00?flow=f1",
+        json={"method": "password", "identifier": "member@example.com", "password": "x"},
+        headers={"Origin": "http://localhost:3000"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == INVALID_REQUEST_URL
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert upstream.requests == []

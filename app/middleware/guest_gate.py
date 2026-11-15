@@ -30,6 +30,9 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 3. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
 4. 게스트 제출이면 Turnstile
 
+프록시 라우트로 가는 요청(GET 포함)의 Kratos URL을 만들 수 없으면(auth_proxy.kratos_url이 httpx.InvalidURL) 위 단계 없이
+400 invalid_request_url로 답한다.
+
 경로와 메서드는 라우터와 같은 기준(라우트 경로 정규식, get_route_path)으로 가린다.
 CORS 안쪽에 둔다. 거절 응답에도 CORS 헤더가 붙고, preflight는 CORS가 답한다.
 
@@ -39,6 +42,7 @@ import hashlib
 import logging
 import unicodedata
 
+import httpx
 from starlette._utils import get_route_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -170,9 +174,12 @@ async def _settings_rate_limit_refusal(request: Request, identity_id: str | None
 
 async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Response | None:
     """/auth 제출을 세고 검사한다. 넘길 제출이면 None"""
-    submission = auth_proxy.read_submission(
-        request.method, path, request.url.query, request.headers.get("content-type", ""), body
-    )
+    try:
+        submission = auth_proxy.read_submission(
+            request.method, path, request.url.query, request.headers.get("content-type", ""), body
+        )
+    except httpx.InvalidURL:
+        return auth_proxy.invalid_request_url()
     if submission is None:
         return None
     request.state.auth_submission = submission
@@ -230,11 +237,16 @@ class GuestGateMiddleware:
         if scope["type"] == "http":
             if _is_v1_step(scope):
                 refusal = await _v1_step_refusal(Request(scope, receive))
-            elif (path := _auth_submit_path(scope)) is not None:
-                request = Request(scope, receive)
-                body = await request.body()
-                receive = _replay(body, receive)
-                refusal = await _auth_submit_refusal(request, path, body)
+            else:
+                try:
+                    path = _auth_submit_path(scope)
+                except httpx.InvalidURL:
+                    path, refusal = None, auth_proxy.invalid_request_url()
+                if path is not None:
+                    request = Request(scope, receive)
+                    body = await request.body()
+                    receive = _replay(body, receive)
+                    refusal = await _auth_submit_refusal(request, path, body)
         if refusal is not None:
             await refusal(scope, receive, send)
             return

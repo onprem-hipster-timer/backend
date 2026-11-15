@@ -31,6 +31,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   (app/middleware/guest_gate.py)가 프록시보다 먼저 본문을 한 번 읽어(read_submission) 요청 한도를 세고
   검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로 Kratos에 보낸다.
   검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다. 그 밖의 GET은 읽지도 세지도 검사하지도 않고 넘긴다
+- Kratos로 보낼 URL을 만들 수 없는 요청(경로·쿼리 문자열의 제어 문자, httpx의 URL 길이 제한)은 메서드·경로와 상관없이
+  인터셉터가 세지도 검사하지도 않고 400 invalid_request_url로 답한다
 - 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
   (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 세션의 설정 제출은 게스트 자리). 자리가 나지 않으면 429
 """
@@ -310,6 +312,14 @@ def _unreadable_body() -> JSONResponse:
     )
 
 
+def invalid_request_url() -> JSONResponse:
+    """Kratos로 보낼 URL을 만들 수 없는 /auth 요청의 응답. 인터셉터(app/middleware/guest_gate.py)가 답한다"""
+    return JSONResponse(
+        {"error": {"id": "invalid_request_url", "code": 400, "status": "Bad Request", "reason": "요청 주소를 읽을 수 없습니다."}},
+        status_code=400,
+    )
+
+
 def _settings_forbidden() -> JSONResponse:
     return JSONResponse(
         {
@@ -431,7 +441,9 @@ async def _settings_rejection(
 
 
 def kratos_url(path: str, query: str) -> httpx.URL:
-    """/auth/{path}?{query}를 넘길 Kratos URL. KRATOS_PUBLIC_URL의 경로 뒤에 붙인다 (..·인코딩은 httpx가 정리한다)"""
+    """/auth/{path}?{query}를 넘길 Kratos URL. KRATOS_PUBLIC_URL의 경로 뒤에 붙인다 (..·인코딩은 httpx가 정리한다).
+    URL을 만들 수 없으면(제어 문자, 길이 제한) httpx.InvalidURL
+    """
     relative = httpx.URL(f"/{path}?{query}" if query else f"/{path}")
     base = httpx.URL(settings.KRATOS_PUBLIC_URL)
     return base.copy_with(raw_path=base.raw_path.rstrip(b"/") + b"/" + relative.raw_path.lstrip(b"/"))
@@ -506,6 +518,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
 
     headers = {name: value for name in FORWARD_REQUEST_HEADERS if (value := request.headers.get(name))}
     submission: Submission | None = None
+    # Kratos URL을 만들 수 없는 요청은 인터셉터가 400으로 답해 여기 오지 않는다
     if request.method == "GET" and not is_get_submission(path, request.url.query):
         url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
         body = await request.body()
