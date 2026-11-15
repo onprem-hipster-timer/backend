@@ -9,7 +9,8 @@ uvloop ; sys_platform != 'win32'
 starlette
 
 # Database
-sqlalchemy
+# asyncio extra가 greenlet을 가져온다 (SQLAlchemy 2.1부터 기본 설치에 없다). app/db/session.py가 sqlalchemy.ext.asyncio를 쓴다
+sqlalchemy[asyncio]
 sqlmodel
 alembic
 asyncpg
