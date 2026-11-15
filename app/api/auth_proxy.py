@@ -170,10 +170,13 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
 
 
 def _is_guest_handle(identifier: object) -> bool:
-    """NFKC·앞뒤 공백 제거·casefold 뒤 게스트 handle 도메인 주소인지"""
+    """NFKC·앞뒤 공백 제거·casefold 뒤 게스트 handle 도메인 주소인지.
+
+    Kratos(Go strings.ToLower)는 식별자의 U+0130을 i로 바꾸므로 casefold 전에 I로 바꾼다.
+    """
     if not isinstance(identifier, str):
         return False
-    normalized = unicodedata.normalize("NFKC", identifier).strip().casefold()
+    normalized = unicodedata.normalize("NFKC", identifier).replace("İ", "I").strip().casefold()
     return normalized.endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
 
 
