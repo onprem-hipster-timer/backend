@@ -109,15 +109,20 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    T["토큰"] --> K{"회원인가 게스트인가<br/>(JWT의 schema_id)"}
-    K -->|"회원"| M["접근권한 레벨로 판정<br/>(위 접근 제어 규칙)"]
-    K -->|"게스트"| R{"경로"}
-    R -->|"회원 경로<br/>(이 문서의 모든 경로)"| D1["403"]
-    R -->|"게스트를 받는 경로"| B{"게스트가 속한 리소스 ==<br/>요청한 리소스"}
-    B -->|"아니오"| D2["403"]
-    B -->|"예"| H{"리소스의 게스트 상태"}
-    H -->|"OPEN"| OK["접근 허용"]
-    H -->|"CLOSED · EXPIRED · MISSING"| D3["403"]
+    classDef allow fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724;
+    classDef deny fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef decision fill:#fff3cd,stroke:#ffc107,stroke-width:2px;
+
+    Start([접근 요청]) --> Kind{회원인가 게스트인가<br/>JWT의 schema_id}:::decision
+    Kind -- 회원 --> Member([접근권한 레벨로 판정<br/>위 접근 제어 규칙])
+    Kind -- 게스트 --> Route{게스트를 받는 경로?}:::decision
+    Route -- 아니오 --> Deny1([접근 불가 403]):::deny
+    Route -- 예 --> Own{게스트가 속한 리소스?}:::decision
+    Own -- 아니오 --> Deny2([접근 불가 403]):::deny
+    Own -- 예 --> Host{리소스의 게스트 상태}:::decision
+    Host -->|OPEN| Allow1([접근 허용]):::allow
+    Host -->|CLOSED · EXPIRED · MISSING| Deny3([접근 불가 403]):::deny
+    linkStyle default interpolate monotoneY
 ```
 
 | | 회원 | 게스트 |

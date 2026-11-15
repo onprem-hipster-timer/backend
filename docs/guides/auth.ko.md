@@ -1,17 +1,9 @@
-# 인증 가이드
+# 인증 가이드 (Ory Kratos)
 
-이 문서는 backend API의 인증 구조를 설명합니다.
+이 서비스의 인증은 [Ory Kratos](https://www.ory.sh/kratos/)(v26.2.0)가 맡습니다. 계정, 비밀번호, 이메일 인증, 세션, JWT 서명이 모두 Kratos의 일이고, backend는 Kratos 앞의 통로(`/auth/*`)가 되어 주고 Kratos가 서명한 JWT를 검증합니다. 이 문서는 그 구조, Kratos의 계정 흐름과 설정, backend의 토큰 검증을 설명합니다.
 
-## 1. 인증 아키텍처 개요
+## 1. Kratos 기반 인증 구조
 
-계정, 비밀번호, 세션은 [Ory Kratos](https://www.ory.sh/kratos/)가 맡고, backend는 Kratos가 서명한 JWT를 검증합니다.
-
-- Kratos는 backend 옆에서만 닿습니다. 클라이언트는 backend의 `/auth/*`([`/auth` 프록시](auth-proxy.ko.md))로 Kratos 공개 API를 씁니다.
-- 클라이언트는 Kratos의 API 플로우로 로그인해 **세션 토큰**을 받고, 세션 토큰으로 **JWT**를 받아 API 요청에 붙입니다. 쿠키는 쓰지 않습니다.
-- backend는 JWT의 서명과 `iss`·`aud`·`exp`를 `OIDC_JWKS`의 공개 키로 검증합니다. 요청마다 Kratos에 묻지 않습니다.
-- 로그인은 이메일 인증을 마친 계정만 됩니다(Kratos `require_verified_address`).
-
-### 구성 요소
 
 ```mermaid
 flowchart TB
@@ -30,7 +22,26 @@ flowchart TB
     class PX,API,JW backend
 ```
 
-### 인증 흐름
+### Kratos가 맡는 것과 backend가 맡는 것
+
+| 일 | Kratos | backend |
+|----|--------|---------|
+| 계정(identity)과 비밀번호 저장 | 한다 | 저장하지 않는다 |
+| 가입, 이메일 인증, 로그인, 비밀번호 복구, Google 로그인 | 플로우를 처리한다 | `/auth/*`로 넘기고, 넘기기 전에 일부 제출을 거른다([`/auth` 프록시](auth-proxy.ko.md)) |
+| 세션 | 만들고 끝낸다 (세션 토큰) | 저장하지 않는다 |
+| JWT | 세션에서 만들어 서명한다 | 서명과 `iss`·`aud`·`exp`를 `OIDC_JWKS`로 검증한다. 요청마다 Kratos에 묻지 않는다 |
+| 메일 발송 | 인증·복구 코드 메일을 만든다 | 메일 잡 실행을 요청한다 |
+| 사용자 데이터 | 없다 | `owner_id`(JWT의 `sub`)로 격리해 저장한다 |
+| 표시 프로필(이름, 아바타) | 원본 (traits) | JWT 클레임으로 받아 `UserProfile`에 맞춘다 |
+| 회원 탈퇴 | 세션과 identity가 지워진다 | admin API로 지우기를 요청하고 데이터를 파기한다 |
+| [게스트 계정](guest.ko.md) | 게스트 schema의 identity와 세션 | 리소스와의 연결, 접근 판정, Kratos 훅 응답 |
+
+- Kratos는 backend 옆에서만 닿습니다. 밖에서 Kratos에 닿는 길은 backend의 `/auth/*` 하나입니다.
+- 쿠키는 쓰지 않습니다. 클라이언트는 Kratos의 API 플로우로 **세션 토큰**을 받고, 세션 토큰으로 **JWT**를 받습니다.
+- 로그인은 이메일 인증을 마친 계정만 됩니다(Kratos `require_verified_address`).
+
+### 로그인에서 API 요청까지
+
 
 ```mermaid
 sequenceDiagram
@@ -58,7 +69,7 @@ sequenceDiagram
 - JWT가 만료되면 클라이언트가 7번을 다시 불러 새 JWT를 받습니다. 리프레시 토큰은 없습니다.
 - 가입, 이메일 인증, 비밀번호 복구, Google 로그인도 같은 방식으로 `/auth/*`의 Kratos 플로우를 씁니다.
 
-### 핵심 개념
+### 용어
 
 | 용어 | 설명 |
 |------|------|
@@ -68,6 +79,102 @@ sequenceDiagram
 | **JWKS** | JWT 서명 검증에 쓰는 공개 키 (`OIDC_JWKS`) |
 | **sub claim** | JWT 내 사용자 고유 식별자(Kratos identity id), 데이터 소유권(owner_id)에 사용 |
 | **schema_id claim** | Kratos identity schema id. 회원과 [게스트 계정](guest.ko.md)을 가린다 |
+
+---
+
+## 2. 계정 흐름 (Kratos 플로우)
+
+모든 흐름은 `/auth/*`로 Kratos의 API 플로우를 부릅니다. 플로우를 만들고(`GET …/api`), 받은 `flow` id로 제출합니다(`POST …?flow=<id>`).
+
+| 흐름 | 호출 | 결과 |
+|------|------|------|
+| 가입 | `GET /auth/self-service/registration/api` → `POST /auth/self-service/registration?flow=…` (`method: password`, `password`, `traits.email`, `traits.name`) | identity가 생기고 인증 코드 메일이 간다. 세션은 생기지 않는다 |
+| 이메일 인증 | `GET /auth/self-service/verification/api` → `POST …/verification?flow=…` (`method: code`, `email`로 코드 요청 → `code`로 제출) | 주소가 인증됨이 된다 |
+| 로그인 | `GET /auth/self-service/login/api` → `POST …/login?flow=…` (`method: password`, `identifier`, `password`) | `session_token`. 이메일 인증 전이면 `400`과 인증 플로우 정보 |
+| JWT 받기·갱신 | `GET /auth/sessions/whoami?tokenize_as=api` + `X-Session-Token` | `tokenized`가 JWT. 세션이 끝났으면 `401` |
+| 로그아웃 | `DELETE /auth/self-service/logout/api` (`session_token`) | 세션이 끝난다. 이미 받은 JWT는 만료까지 유효하다 |
+| 비밀번호 복구 | `GET /auth/self-service/recovery/api` → `POST …/recovery?flow=…` (`method: code`, `email` → `code`) → `POST /auth/self-service/settings?flow=…` (`method: password`) | 복구 코드로 만든 세션에서만 비밀번호를 바꿀 수 있다. 기존 세션은 모두 끝난다 |
+| Google 로그인 | 로그인·가입 플로우에 `method: oidc`, `provider: google` | Google이 인증해 준 이메일만 쓴다. 처음이면 가입으로 이어지고 세션이 생긴다 |
+| 회원 탈퇴 | `POST /v1/users/me/deletion` (backend) | 계정이 휴면이 되고 Kratos 세션이 모두 끝난다. 유예 기간 뒤 데이터와 identity가 지워진다 |
+
+- 설정 플로우(`/auth/self-service/settings`)로 이메일을 바꾸거나 소셜 계정을 연결하는 제출은 프록시가 넘기지 않습니다.
+- 프록시가 제출을 거르는 규칙과 요청 한도는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
+
+---
+
+## 3. Kratos 설정
+
+저장소의 로컬 설정은 `dev/kratos/kratos.yml`이고 `compose.kratos.yaml`이 그 설정으로 Kratos를 띄웁니다. 운영에서도 아래 값이 backend와 맞아야 합니다([프로덕션 배포](../deployment/production.ko.md)).
+
+| Kratos 설정 | 로컬 값 | backend와의 관계 |
+|-------------|---------|------------------|
+| `serve.public.base_url` | `http://localhost:2614/auth/` | backend의 `/auth/` 주소. JWT의 `iss`가 되고 `OIDC_ISSUER_URL`과 같아야 한다 |
+| `serve.public.cors.enabled` | `false` | CORS는 backend가 응답한다 (`CORS_ALLOWED_ORIGINS`) |
+| `serve.admin` | `127.0.0.1:4434` | backend만 닿는다 (`KRATOS_ADMIN_URL`) |
+| `selfservice.methods` | `password`, `code` 켬. `oidc`(Google)는 설정했을 때만 | `code`는 인증·복구 코드에 쓴다 |
+| `selfservice.flows.login.after.password.hooks` | `require_verified_address` | 이메일 인증 전에는 로그인할 수 없다 |
+| `selfservice.flows.registration.after.password.hooks` | `show_verification_ui` | 가입 직후 세션을 주지 않고 인증으로 보낸다 |
+| `selfservice.flows.verification.use`, `recovery.use` | `code` | 링크가 아니라 코드로 확인한다 |
+| `selfservice.flows.settings.after.password.hooks`, `recovery.after.hooks` | `revoke_active_sessions` | 비밀번호를 바꾸거나 복구하면 기존 세션이 끝난다 |
+| `session.lifespan` | `720h` | 세션 토큰의 수명 |
+| `session.whoami.tokenizer.templates.api.ttl` | `10m` | JWT의 수명. 클라이언트가 이 주기로 다시 받는다 |
+| `session.whoami.tokenizer.templates.api.jwks_url` | 서명 키 (비밀) | 그 공개 키가 backend의 `OIDC_JWKS`다 |
+| `session.whoami.tokenizer.templates.api.claims_mapper_url` | `api-jwt.claims.jsonnet` | JWT에 `aud`(= `OIDC_AUDIENCE`), `schema_id`, `email`, `email_verified`, `name`을 넣는다 |
+| `identity.schemas` | `default` (`identity.schema.json`) | traits는 `email`(로그인 식별자, 인증·복구 주소)과 `name` |
+| `courier.smtp` | 로컬 mailpit | 인증·복구 코드 메일 |
+
+- 템플릿 이름 `api`는 클라이언트가 `tokenize_as=api`로 고르는 이름입니다.
+- 게스트 계정을 켜면 게스트 schema와 훅이 더해집니다([게스트 계정 설정 (Kratos)](../deployment/kratos-guest.ko.md)).
+
+---
+
+## 4. backend 설정
+
+### 환경변수 목록
+
+| 환경변수 | 필수 | 기본값 | 설명 |
+|----------|------|--------|------|
+| `OIDC_ENABLED` | O | `true` | 인증 활성화 여부 |
+| `OIDC_ISSUER_URL` | O | - | JWT의 `iss`. Kratos tokenizer가 넣는 값으로, backend의 `/auth/` 주소다 (예: `https://api.example.com/auth/`) |
+| `OIDC_AUDIENCE` | O | - | JWT의 `aud`. Kratos 클레임 매퍼가 넣는 값과 같아야 한다 (예: `https://api.example.com`) |
+| `OIDC_JWKS` | O | - | Kratos가 JWT 서명에 쓰는 키의 공개 JWKS JSON. 비밀 키 성분이 있으면 기동하지 않는다 |
+| `KRATOS_PUBLIC_URL` | O | - | `/auth/*`를 넘길 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 |
+| `KRATOS_ADMIN_URL` | X | - | 회원 탈퇴의 세션 폐기·identity 삭제, 게스트 identity 생성·삭제 |
+| `OIDC_JWKS_CACHE_TTL_SECONDS` | X | `3600` | JWKS 캐시 TTL (초) |
+
+전체 목록과 Kratos 쪽 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [프로덕션 배포](../deployment/production.ko.md)에 있습니다.
+
+### 예시 설정 (.env)
+
+```bash
+OIDC_ENABLED=true
+OIDC_ISSUER_URL=https://api.example.com/auth/
+OIDC_AUDIENCE=https://api.example.com
+OIDC_JWKS='{"keys":[{"kty":"EC","crv":"P-256","kid":"...","x":"...","y":"..."}]}'
+KRATOS_PUBLIC_URL=http://127.0.0.1:4433
+```
+
+로컬에서는 `compose.kratos.yaml`이 같은 구성의 Kratos를 띄웁니다. 서명 키는 `python scripts/gen_dev_jwks.py`로 만들고, 출력된 공개 JWKS를 `OIDC_JWKS`에 넣습니다.
+
+
+---
+
+## 5. Well-Known 엔드포인트
+
+backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이 내줍니다. backend 밖에서 같은 JWT를 검증하는 서비스가 씁니다.
+
+| 경로 | 내용 |
+|------|------|
+| `GET /auth/.well-known/jwks.json` | `OIDC_JWKS`의 공개 키 |
+| `GET /auth/.well-known/openid-configuration` | `issuer`와 `jwks_uri`가 든 discovery 문서 |
+
+- `OIDC_JWKS`가 비어 있으면 두 경로 모두 404입니다.
+- backend 자신은 discovery를 거치지 않고 `OIDC_JWKS`로 바로 검증합니다. 키를 바꾸면 backend를 다시 배포합니다.
+
+
+---
+
+## 6. backend의 토큰 검증
 
 ### 인증 모듈 구성 (객체 의존성과 역할)
 
@@ -162,7 +269,7 @@ api_router.include_router(authed)
 
 !!! note "공개(무인증) 라우터"
     `holidays`, `timers_ws`(WebSocket), `graphql`, `ws_playground`, `guests`는 이 게이트 밖에
-    별도로 등록됩니다. GraphQL은 컨텍스트 단계에서 인증을 처리합니다(5장 참고).
+    별도로 등록됩니다. GraphQL은 컨텍스트 단계에서 인증을 처리합니다(7장 참고).
     `guests`(`/v1/guests/*`)는 게스트 전용 의존성을 쓰고 회원 토큰을 받지 않습니다([게스트 계정](./guest.ko.md)).
 
 ### 데이터 격리
@@ -190,102 +297,10 @@ MIGRATION_DEFAULT_OWNER_ID=admin-user-oidc-sub alembic upgrade head
 | 개발 | `test-user-id` (기본값) | Mock 사용자와 일치 |
 | 프로덕션 | 실제 OIDC sub | 관리자 또는 기존 사용자의 sub claim |
 
----
-
-## 2. 개발 환경: 인증 비활성화
-
-로컬 개발이나 테스트 시 OIDC 인증을 비활성화할 수 있습니다.
-
-### 방법 1: 환경변수 설정
-
-```bash
-# .env 파일
-OIDC_ENABLED=false
-```
-
-### 방법 2: 환경변수 직접 지정
-
-=== "Linux/Mac"
-    ```bash
-    OIDC_ENABLED=false uvicorn app.main:app --reload
-    ```
-
-=== "Windows (PowerShell)"
-    ```powershell
-    $env:OIDC_ENABLED="false"; uvicorn app.main:app --reload
-    ```
-
-### 인증 비활성화 시 동작
-
-인증이 비활성화되면 모든 요청에 아래의 **Mock 사용자**가 자동으로 주입됩니다:
-
-```json
-{
-  "sub": "test-user-id",
-  "email": "test@example.com",
-  "name": "Test User"
-}
-```
-
-!!! warning "주의"
-    프로덕션 환경에서는 반드시 `OIDC_ENABLED=true`로 설정하세요!
-
-### 테스트 환경
-
-pytest 실행 시 자동으로 인증이 비활성화됩니다 (`tests/conftest.py`에서 설정):
-
-```python
-import os
-os.environ["OIDC_ENABLED"] = "false"
-```
 
 ---
 
-## 3. 프로덕션 설정
-
-### 환경변수 목록
-
-| 환경변수 | 필수 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `OIDC_ENABLED` | O | `true` | 인증 활성화 여부 |
-| `OIDC_ISSUER_URL` | O | - | JWT의 `iss`. Kratos tokenizer가 넣는 값으로, backend의 `/auth/` 주소다 (예: `https://api.example.com/auth/`) |
-| `OIDC_AUDIENCE` | O | - | JWT의 `aud`. Kratos 클레임 매퍼가 넣는 값과 같아야 한다 (예: `https://api.example.com`) |
-| `OIDC_JWKS` | O | - | Kratos가 JWT 서명에 쓰는 키의 공개 JWKS JSON. 비밀 키 성분이 있으면 기동하지 않는다 |
-| `KRATOS_PUBLIC_URL` | O | - | `/auth/*`를 넘길 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 |
-| `KRATOS_ADMIN_URL` | X | - | 회원 탈퇴의 세션 폐기·identity 삭제, 게스트 identity 생성·삭제 |
-| `OIDC_JWKS_CACHE_TTL_SECONDS` | X | `3600` | JWKS 캐시 TTL (초) |
-
-전체 목록과 Kratos 쪽 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [프로덕션 배포](../deployment/production.ko.md)에 있습니다.
-
-### 예시 설정 (.env)
-
-```bash
-OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://api.example.com/auth/
-OIDC_AUDIENCE=https://api.example.com
-OIDC_JWKS='{"keys":[{"kty":"EC","crv":"P-256","kid":"...","x":"...","y":"..."}]}'
-KRATOS_PUBLIC_URL=http://127.0.0.1:4433
-```
-
-로컬에서는 `compose.kratos.yaml`이 같은 구성의 Kratos를 띄웁니다. 서명 키는 `python scripts/gen_dev_jwks.py`로 만들고, 출력된 공개 JWKS를 `OIDC_JWKS`에 넣습니다.
-
----
-
-## 4. Well-Known 엔드포인트
-
-backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이 내줍니다. backend 밖에서 같은 JWT를 검증하는 서비스가 씁니다.
-
-| 경로 | 내용 |
-|------|------|
-| `GET /auth/.well-known/jwks.json` | `OIDC_JWKS`의 공개 키 |
-| `GET /auth/.well-known/openid-configuration` | `issuer`와 `jwks_uri`가 든 discovery 문서 |
-
-- `OIDC_JWKS`가 비어 있으면 두 경로 모두 404입니다.
-- backend 자신은 discovery를 거치지 않고 `OIDC_JWKS`로 바로 검증합니다. 키를 바꾸면 backend를 다시 배포합니다.
-
----
-
-## 5. 프론트엔드 통합 가이드
+## 7. 프론트엔드 통합 가이드
 
 ### 인증 헤더 형식
 
@@ -466,9 +481,60 @@ async function fetchJwt() {
 - 로그아웃은 `DELETE /auth/self-service/logout/api`에 세션 토큰을 보냅니다. 세션은 바로 끝나고, 이미 받은 JWT는 만료까지 유효합니다.
 - 이메일 인증 전의 계정으로 로그인하면 Kratos가 `400`과 함께 인증 플로우 정보를 돌려줍니다.
 
+
 ---
 
-## 6. Kratos가 아닌 OIDC Provider
+## 8. 개발 환경: 인증 비활성화
+
+로컬 개발이나 테스트에서는 Kratos 없이 backend만 띄울 수 있습니다. `OIDC_ENABLED=false`면 토큰을 검증하지 않고 고정된 사용자로 처리합니다.
+
+### 방법 1: 환경변수 설정
+
+```bash
+# .env 파일
+OIDC_ENABLED=false
+```
+
+### 방법 2: 환경변수 직접 지정
+
+=== "Linux/Mac"
+    ```bash
+    OIDC_ENABLED=false uvicorn app.main:app --reload
+    ```
+
+=== "Windows (PowerShell)"
+    ```powershell
+    $env:OIDC_ENABLED="false"; uvicorn app.main:app --reload
+    ```
+
+### 인증 비활성화 시 동작
+
+인증이 비활성화되면 모든 요청에 아래의 **Mock 사용자**가 자동으로 주입됩니다:
+
+```json
+{
+  "sub": "test-user-id",
+  "email": "test@example.com",
+  "name": "Test User"
+}
+```
+
+!!! warning "주의"
+    프로덕션 환경에서는 반드시 `OIDC_ENABLED=true`로 설정하세요!
+
+### 테스트 환경
+
+pytest 실행 시 자동으로 인증이 비활성화됩니다 (`tests/conftest.py`에서 설정):
+
+```python
+import os
+os.environ["OIDC_ENABLED"] = "false"
+```
+
+
+---
+
+## 9. Kratos가 아닌 OIDC Provider
 
 backend의 토큰 검증은 표준 OIDC JWT를 받으므로 다른 Provider의 토큰도 검증할 수 있습니다. `OIDC_JWKS`를 비우면 `OIDC_ISSUER_URL`의 discovery(`/.well-known/openid-configuration`, 또는 `OIDC_DISCOVERY_URL`)에서 `jwks_uri`를 읽습니다.
 
@@ -480,6 +546,7 @@ backend의 토큰 검증은 표준 OIDC JWT를 받으므로 다른 Provider의 �
 | 회원 탈퇴의 세션 폐기·identity 삭제 | Kratos admin API를 부른다 |
 | [게스트 계정](guest.ko.md) | Kratos identity schema, 훅, admin API를 쓴다 |
 | JWT의 `schema_id`·`email_verified` | Kratos 클레임 매퍼가 넣는다 |
+
 
 ---
 
