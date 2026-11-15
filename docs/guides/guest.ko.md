@@ -380,7 +380,7 @@ flowchart TD
 | `schema_id` 클레임이 없는 토큰 | 회원으로 받는다 |
 | `/auth`에서 게스트 세션의 `method: profile` 제출 | `403` |
 
-게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시의 판정 순서](#auth-프록시의-판정-순서)).
+게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시](auth-proxy.ko.md#판정-순서)).
 
 | 확인 | 테스트 |
 |------|--------|
@@ -459,7 +459,7 @@ flowchart TD
 
 ### 로그인과 JWT
 
-회원과 같은 경로입니다(`/auth`는 Kratos 공개 API 프록시).
+회원과 같은 경로입니다(`/auth`는 Kratos 공개 API 프록시, [`/auth` 프록시](auth-proxy.ko.md)).
 
 ```http
 GET  /auth/self-service/login/api
@@ -546,7 +546,7 @@ sequenceDiagram
 
 게스트 JWT가 필요합니다. 응답은 `204`이고, 다시 불러도 `204`입니다. 회원 토큰은 `403`, 토큰이 없으면 `401`입니다.
 
-### `/auth` 프록시가 받지 않는 요청
+### `/auth` 프록시가 받지 않는 게스트 관련 요청
 
 | 요청 | 응답 |
 |------|------|
@@ -556,67 +556,7 @@ sequenceDiagram
 | 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
 | 로그인·가입·설정·인증·복구 제출(GET 밖)의 쿼리 문자열에 `flow` 밖의 값이 있다 | `400` `invalid_request_body` |
 
-#### `/auth` 프록시의 판정 순서
-
-GET은 아래 확인 없이 넘깁니다. 경로는 Kratos로 실제 나갈 경로(정리한 뒤, 소문자, 끝의 `/` 제외)로 비교합니다.
-
-**공통 단계.** GET 밖의 모든 `/auth/*` 요청이 지납니다.
-
-```mermaid
-flowchart TD
-    A["GET 밖의<br/>/auth/* 요청"] --> RL{"요청 한도<br/>IP당 분당 10회"}
-    RL -->|"초과"| R429["429"]
-    RL -->|"이내"| Q{"로그인 · 가입 · 설정 ·<br/>인증 · 복구 제출"}
-    Q -->|"아니오"| FWD["Kratos로 넘김"]
-    Q -->|"예"| QS{"쿼리 문자열에<br/>flow만"}
-    QS -->|"아니오"| R400["400<br/>invalid_request_body"]
-    QS -->|"예"| NEXT["경로별 확인"]
-```
-
-**경로별 확인.** 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다.
-
-| 제출 경로 | 확인 | 거절 응답 |
-|-----------|------|-----------|
-| 인증, 복구 | 본문을 읽을 수 있고 `email`이 하나인가 | `400` `invalid_request_body` |
-| | `email`이 `@guest.invalid`로 끝나지 않는가 | `400` `address_not_accepted` |
-| 로그인 | 아래 "로그인 제출" 그림 (`GUEST_ENABLED`일 때) | |
-| 로그인, 가입 | `method: oidc`면 본문을 읽을 수 있는가. 읽으면 `traits.email`을 버리고 넘긴다 | `400` `invalid_request_body` |
-| 설정 | 아래 "설정 제출" 그림 | |
-
-**로그인 제출** (`GUEST_ENABLED=true`일 때만. 꺼져 있으면 `identifier`를 읽지 않는다)
-
-```mermaid
-flowchart TD
-    L["로그인 제출"] --> I{"identifier를<br/>하나로 읽을 수 있는가"}
-    I -->|"둘 이상 ·<br/>본문 못 읽음"| R400["400<br/>invalid_request_body"]
-    I -->|"예"| H{"게스트 handle인가<br/>(@guest.invalid)"}
-    H -->|"아니오"| FWD["다음 확인으로"]
-    H -->|"예"| T{"X-Turnstile-Token"}
-    T -->|"없음 · 거절"| R403["403<br/>guest_verification_failed"]
-    T -->|"확인 불가"| R503["503<br/>guest_verification_unavailable"]
-    T -->|"통과"| FWD
-```
-
-**설정 제출**
-
-```mermaid
-flowchart TD
-    S["설정 제출"] --> M{"method"}
-    M -->|"password"| P{"세션 토큰이 있고<br/>메일 복구 세션인가"}
-    P -->|"예"| FWD["Kratos로 넘김<br/>(검사한 세션 토큰만)"]
-    P -->|"아니오"| R403["403<br/>settings_require_email_recovery"]
-    M -->|"profile<br/>(GUEST_ENABLED)"| G{"세션 토큰이 있고<br/>게스트 세션인가"}
-    G -->|"아니오"| R403
-    G -->|"예"| N{"다른 게스트의<br/>이름인가"}
-    N -->|"예"| R409["409<br/>guest_name_taken"]
-    N -->|"아니오"| FWD
-    M -->|"그 밖"| R403
-```
-
-| 확인 | 코드 | 테스트 |
-|------|------|--------|
-| 순서 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
-| 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_guest_login_turnstile.py` |
+프록시가 요청을 넘기는 방식과 판정 순서 전체는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
 
 ## 리소스가 게스트를 받게 하기
 
@@ -704,6 +644,41 @@ from app.domain.guest.service import discard_resource_guests
 await discard_resource_guests(ResourceType.MEETING, meeting_id)
 ```
 
+## 객체 의존성
+
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 넷입니다.
+
+| 진입점 | 쓰는 것 |
+|--------|---------|
+| `/v1/guests/*` (`api/v1/guests.py`) | 서비스(찾기·생성·폐기), 게스트 의존성(`DELETE /v1/guests/me`) |
+| Kratos 훅 수신 (`api/kratos_hooks.py`) | 서비스(로그인·설정 판정) |
+| `/auth` 프록시 (`api/auth_proxy.py`) | 서비스(이름 중복 조회), `core/turnstile` |
+| 리소스의 게스트 경로 | 게스트 의존성 |
+
+그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.
+
+```mermaid
+graph TD
+    IN["진입점<br/>(위 표)"] --> DEP["게스트 의존성<br/>get_current_guest ·<br/>require_guest_access"]
+    IN --> SVC
+    DEP --> AUTH["authenticate_request<br/>(core/auth)"]
+    DEP --> SVC["service.py<br/>찾기 · 생성 · 접근 정책 ·<br/>폐기 · 훅 판정"]
+    SVC --> HOST["host.py<br/>GuestHost 등록부"]
+    SVC --> EV["events.py<br/>GuestDiscarded ·<br/>GuestRenamed"]
+    SVC --> CRUD["crud/guest.py"] --> TBL[("guest 테이블")]
+    SVC --> EXT["core/kratos_admin<br/>core/turnstile"]
+    RES["리소스 도메인<br/>호스트 구현 ·<br/>이벤트 핸들러"] -.->|등록| HOST
+    RES -.->|등록| EV
+
+    classDef guest stroke-width:3px
+    class DEP,SVC,HOST,EV guest
+```
+
+- 게스트 도메인은 리소스 도메인을 import하지 않습니다. 리소스가 호스트와 이벤트 핸들러를 등록하고(점선), 게스트 도메인은 등록부를 통해서만 리소스의 상태를 묻습니다.
+- 토큰 검증은 회원과 같은 `authenticate_request`를 씁니다. 그 뒤 회원 판정(`ensure_member`) 대신 게스트 판정으로 갑니다([인증 가이드](auth.ko.md)).
+- Kratos에 닿는 곳은 둘입니다. 게스트 도메인은 admin API(`kratos_admin`)로 identity를 만들고 지우고, 공개 API는 `/auth` 프록시만 부릅니다.
+- DB는 `service.py`가 자기 세션으로 `crud/guest.py`를 통해서만 씁니다.
+
 ## 제한
 
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
@@ -723,7 +698,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | `app/models/guest.py` | `guest` 테이블 |
 | `app/api/v1/guests.py` | `/v1/guests/*` |
 | `app/api/kratos_hooks.py` | Kratos 훅 수신 |
-| `app/api/auth_proxy.py` | `/auth` 프록시의 게스트 처리 |
+| `app/api/auth_proxy.py` | `/auth` 프록시의 게스트 처리 ([`/auth` 프록시](auth-proxy.ko.md)) |
 | `app/core/turnstile.py` | Turnstile 토큰 확인 (게스트 생성, 게스트 로그인 제출) |
 | `app/core/auth/dependencies.py` | `ensure_member` (회원 경로의 게스트 거부) |
 | `tests/domain/guest/` | 테스트 |

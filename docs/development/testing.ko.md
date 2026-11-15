@@ -154,6 +154,19 @@ TEST_DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb" pytest
 docker compose -f docker-compose.test.yaml down -v
 ```
 
+### PostgreSQL에서만 도는 테스트
+
+SQLite에서는 건너뛰고 `TEST_DATABASE_URL`이 PostgreSQL일 때만 도는 테스트가 있습니다. 동시 요청의 결과를 DB 제약으로 확인하는 테스트입니다.
+
+| 테스트 | 확인하는 것 |
+|--------|-------------|
+| `tests/domain/guest/test_name_concurrency.py` | 같은 이름의 게스트를 동시에 만들어도 하나만 남는다. 연결 풀이 작아도 동시 생성·이름 변경이 끝나고 다른 요청이 응답한다 |
+| `tests/domain/schedule/test_projection_concurrency.py` | 일정과 할 일의 동시 변경 |
+
+## 게스트 계정을 실제 Kratos로 확인
+
+`tests/domain/guest/`는 가짜 Kratos(`tests/domain/guest/fakes.py`)로 돕니다. Kratos 설정 파일(`dev/kratos/kratos.guest.yml`, 훅 본문, 클레임 매퍼)이 backend와 맞는지는 `tests/domain/guest/test_kratos_config.py`가 파일을 읽어 확인합니다. 실제 Kratos로 생성 → 로그인 → JWT → 이름 변경 → 폐기를 확인하는 방법은 [게스트 계정 설정 (Kratos)](../deployment/kratos-guest.ko.md)의 "설정 후 확인"과 "로컬에서 켜기"에 있습니다.
+
 ---
 
 ## 관련 문서

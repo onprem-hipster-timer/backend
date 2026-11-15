@@ -38,6 +38,8 @@ Sec-WebSocket-Protocol: authorization.bearer.<jwt_token>
 
 서버는 WebSocket 핸드셰이크를 완료하기 위해 응답에 동일한 서브프로토콜을 반환합니다. JWT는 연결할 때만 검증합니다.
 
+회원 토큰만 받습니다. [게스트 계정](../guides/guest.ko.md)의 토큰이면 연결을 `1008`로 닫습니다.
+
 !!! warning "주의"
     **중요**: WebSocket 연결이 작동하려면 `CORS_ALLOWED_ORIGINS`에 WebSocket URL을 추가해야 합니다:
     - 개발: `ws://localhost:2614,ws://127.0.0.1:2614`
