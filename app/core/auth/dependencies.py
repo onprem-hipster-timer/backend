@@ -24,17 +24,27 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer(auto_error=False)
 
 
-def ensure_member(user: CurrentUser) -> CurrentUser:
-    """회원 토큰만 통과시킨다. REST·GraphQL·WebSocket의 회원 인증이 모두 이 함수를 거친다.
+def require_schema_id(user: CurrentUser) -> CurrentUser:
+    """토큰에 schema_id 클레임(비어 있지 않은 문자열)이 없으면 401 (회원과 게스트를 가릴 수 없다).
 
-    - GUEST_ENABLED인데 토큰에 schema_id 클레임이 없으면 401 (게스트와 회원을 가릴 수 없다)
-    - schema_id가 KRATOS_GUEST_SCHEMA_ID면 GUEST_ENABLED와 상관없이 403
+    검증한 토큰의 사용자에만 쓴다 (OIDC_ENABLED=false의 mock 사용자에는 쓰지 않는다).
     """
-    if app_config.settings.GUEST_ENABLED and user.schema_id is None:
+    if user.schema_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing 'schema_id' claim",
         )
+    return user
+
+
+def ensure_member(user: CurrentUser) -> CurrentUser:
+    """회원 토큰만 통과시킨다. REST·GraphQL·WebSocket의 회원 인증이 모두 이 함수를 거친다.
+
+    - 토큰에 schema_id 클레임이 없으면 401 (require_schema_id)
+    - schema_id가 KRATOS_GUEST_SCHEMA_ID면 403. 그 밖의 값은 회원
+    GUEST_ENABLED와 상관없이 같다.
+    """
+    require_schema_id(user)
     if user.is_guest:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -63,10 +63,11 @@ def test_member_token_is_refused(client, tokens, setup):
     assert _get(client, resource, tokens.member()).status_code == 403
 
 
-def test_token_without_schema_id_is_refused(client, tokens, setup):
+@pytest.mark.parametrize("schema_id", [None, "", 0, True, ["guest"], {"id": "guest"}])
+def test_token_without_usable_schema_id_is_401(client, tokens, setup, schema_id):
     resource, guest = setup
-    token = tokens.make(guest.identity_id, None)
-    assert _get(client, resource, {"Authorization": f"Bearer {token}"}).status_code == 403
+    token = tokens.make(guest.identity_id, schema_id)
+    assert _get(client, resource, {"Authorization": f"Bearer {token}"}).status_code == 401
 
 
 def test_no_token_is_401(client, setup):

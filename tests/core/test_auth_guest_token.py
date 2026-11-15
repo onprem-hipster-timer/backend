@@ -2,8 +2,8 @@
 게스트 토큰 판정 (schema_id 클레임)
 
 회원 인증 진입점(REST get_current_user·get_optional_current_user, GraphQL, WebSocket)은 모두
-ensure_member를 거친다. 게스트 schema의 토큰은 403, GUEST_ENABLED인데 schema_id가 없으면 401.
-schema_id가 비어 있지 않은 문자열이 아니면 없는 것과 같다.
+ensure_member를 거친다. GUEST_ENABLED와 상관없이 게스트 schema의 토큰은 403, schema_id가 없으면 401.
+schema_id가 비어 있지 않은 문자열이 아니면 없는 것과 같다. OIDC_ENABLED=false의 mock 사용자는 그대로 통과한다.
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -66,35 +66,51 @@ def test_mock_user_is_not_guest():
     assert CurrentUser.mock().is_guest is False
 
 
-@pytest.mark.parametrize("enabled", [True, False])
+# 클레임이 없는 토큰과 비어 있지 않은 문자열이 아닌 schema_id
+UNUSABLE_CLAIMS = [LEGACY_CLAIMS] + [{**MEMBER_CLAIMS, "schema_id": value} for value in NON_TEXT_SCHEMA_IDS]
+UNUSABLE_IDS = ["missing", "list", "object", "zero", "one", "true", "false", "empty"]
+FLAGS = pytest.mark.parametrize("enabled", [True, False], ids=["guest_on", "guest_off"])
+
+
+@FLAGS
+@pytest.mark.parametrize("claims", UNUSABLE_CLAIMS, ids=UNUSABLE_IDS)
 @pytest.mark.asyncio
-async def test_guest_token_is_forbidden(guest_flag, enabled):
+async def test_rest_refuses_token_without_usable_schema_id(guest_flag, enabled, claims):
+    guest_flag(enabled)
+    with pytest.raises(HTTPException) as exc_info:
+        await _rest_user(claims)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Token missing 'schema_id' claim"
+
+
+@FLAGS
+@pytest.mark.parametrize("claims", UNUSABLE_CLAIMS, ids=UNUSABLE_IDS)
+@pytest.mark.asyncio
+async def test_optional_user_refuses_token_without_usable_schema_id(guest_flag, enabled, claims):
+    guest_flag(enabled)
+    with patch("app.core.auth.dependencies.settings") as mock_settings, \
+            patch.object(oidc_client, "verify_token", new_callable=AsyncMock, return_value=claims):
+        mock_settings.OIDC_ENABLED = True
+        with pytest.raises(HTTPException) as exc_info:
+            await get_optional_current_user(request=_request(), credentials=CREDENTIALS)
+    assert exc_info.value.status_code == 401
+
+
+@FLAGS
+@pytest.mark.parametrize("schema_id", ["default", "member", "Guest", "guest "])
+@pytest.mark.asyncio
+async def test_other_schema_id_is_member(guest_flag, enabled, schema_id):
+    guest_flag(enabled)
+    assert (await _rest_user({**MEMBER_CLAIMS, "schema_id": schema_id})).sub == "member-1"
+
+
+@FLAGS
+@pytest.mark.asyncio
+async def test_guest_token_is_forbidden_on_rest(guest_flag, enabled):
     guest_flag(enabled)
     with pytest.raises(HTTPException) as exc_info:
         await _rest_user(GUEST_CLAIMS)
     assert exc_info.value.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_missing_schema_id_is_unauthorized_when_guest_enabled(guest_flag):
-    guest_flag(True)
-    with pytest.raises(HTTPException) as exc_info:
-        await _rest_user(LEGACY_CLAIMS)
-    assert exc_info.value.status_code == 401
-    assert "schema_id" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_missing_schema_id_is_accepted_when_guest_disabled(guest_flag):
-    guest_flag(False)
-    assert (await _rest_user(LEGACY_CLAIMS)).sub == "member-2"
-
-
-@pytest.mark.parametrize("enabled", [True, False])
-@pytest.mark.asyncio
-async def test_member_token_is_accepted(guest_flag, enabled):
-    guest_flag(enabled)
-    assert (await _rest_user(MEMBER_CLAIMS)).sub == "member-1"
 
 
 @pytest.mark.asyncio
@@ -121,14 +137,16 @@ async def test_optional_user_refuses_guest_instead_of_anonymous(guest_flag, stat
     assert exc_info.value.status_code == 403
 
 
+@FLAGS
 @pytest.mark.asyncio
-async def test_oidc_disabled_mock_user_passes_with_guest_enabled(guest_flag):
+async def test_oidc_disabled_mock_user_passes(guest_flag, enabled):
     """인증을 끈 개발 환경의 mock 사용자는 schema_id가 없어도 막지 않는다"""
-    guest_flag(True)
+    guest_flag(enabled)
     with patch("app.core.auth.dependencies.settings") as mock_settings:
         mock_settings.OIDC_ENABLED = False
         user = await get_current_user(request=_request(), credentials=None)
-    assert user.sub == CurrentUser.mock().sub
+        optional = await get_optional_current_user(request=_request(), credentials=None)
+    assert user.sub == optional.sub == CurrentUser.mock().sub
 
 
 def test_ensure_member_returns_member():
@@ -136,100 +154,86 @@ def test_ensure_member_returns_member():
     assert ensure_member(user) is user
 
 
-@pytest.mark.asyncio
-async def test_graphql_refuses_guest(guest_flag):
-    from app.api.v1.graphql import get_context
+# ============ GraphQL, WebSocket ============
 
-    guest_flag(True)
+async def _graphql_context(claims: dict | None, oidc_enabled: bool = True):
+    from app.api.v1.graphql import get_context
+    from app.domain.user.service import AccountState
+
     request = MagicMock()
     request.headers = {"Authorization": "Bearer token"}
     with patch("app.api.v1.graphql.settings") as mock_settings, \
-            patch("app.api.v1.graphql.oidc_client") as mock_oidc:
-        mock_settings.OIDC_ENABLED = True
-        mock_oidc.verify_token = AsyncMock(return_value=GUEST_CLAIMS)
-        with pytest.raises(HTTPException) as exc_info:
-            await get_context(request, MagicMock())
+            patch("app.api.v1.graphql.oidc_client") as mock_oidc, \
+            patch("app.domain.user.service.account_state", return_value=AccountState.ACTIVE):
+        mock_settings.OIDC_ENABLED = oidc_enabled
+        mock_oidc.verify_token = AsyncMock(return_value=claims)
+        return await get_context(request, MagicMock())
+
+
+async def _websocket_user(claims: dict | None, oidc_enabled: bool = True):
+    from app.websocket.auth import authenticate_websocket
+
+    websocket = MagicMock()
+    websocket.headers = {"sec-websocket-protocol": "authorization.bearer.token"}
+    with patch("app.websocket.auth.settings") as mock_settings, \
+            patch("app.websocket.auth.oidc_client") as mock_oidc:
+        mock_settings.OIDC_ENABLED = oidc_enabled
+        mock_oidc.verify_token = AsyncMock(return_value=claims)
+        return await authenticate_websocket(websocket)
+
+
+@FLAGS
+@pytest.mark.parametrize("claims", UNUSABLE_CLAIMS, ids=UNUSABLE_IDS)
+@pytest.mark.asyncio
+async def test_graphql_refuses_token_without_usable_schema_id(guest_flag, enabled, claims):
+    guest_flag(enabled)
+    with pytest.raises(HTTPException) as exc_info:
+        await _graphql_context(claims)
+    assert exc_info.value.status_code == 401
+
+
+@FLAGS
+@pytest.mark.asyncio
+async def test_graphql_refuses_guest(guest_flag, enabled):
+    guest_flag(enabled)
+    with pytest.raises(HTTPException) as exc_info:
+        await _graphql_context(GUEST_CLAIMS)
     assert exc_info.value.status_code == 403
 
 
+@FLAGS
 @pytest.mark.asyncio
-async def test_graphql_refuses_token_without_schema_id_when_guest_enabled(guest_flag):
-    from app.api.v1.graphql import get_context
-
-    guest_flag(True)
-    request = MagicMock()
-    request.headers = {"Authorization": "Bearer token"}
-    with patch("app.api.v1.graphql.settings") as mock_settings, \
-            patch("app.api.v1.graphql.oidc_client") as mock_oidc:
-        mock_settings.OIDC_ENABLED = True
-        mock_oidc.verify_token = AsyncMock(return_value=LEGACY_CLAIMS)
-        with pytest.raises(HTTPException) as exc_info:
-            await get_context(request, MagicMock())
-    assert exc_info.value.status_code == 401
+async def test_graphql_accepts_member(guest_flag, enabled):
+    guest_flag(enabled)
+    assert (await _graphql_context(MEMBER_CLAIMS))["current_user"].sub == "member-1"
 
 
-@pytest.mark.parametrize("claims", [GUEST_CLAIMS, LEGACY_CLAIMS])
+@FLAGS
 @pytest.mark.asyncio
-async def test_websocket_refuses_guest_and_missing_schema_id(guest_flag, claims):
-    from app.websocket.auth import authenticate_websocket
-
-    guest_flag(True)
-    websocket = MagicMock()
-    websocket.headers = {"sec-websocket-protocol": "authorization.bearer.token"}
-    with patch("app.websocket.auth.settings") as mock_settings, \
-            patch("app.websocket.auth.oidc_client") as mock_oidc:
-        mock_settings.OIDC_ENABLED = True
-        mock_oidc.verify_token = AsyncMock(return_value=claims)
-        with pytest.raises(WebSocketException):
-            await authenticate_websocket(websocket)
+async def test_graphql_oidc_disabled_mock_user_passes(guest_flag, enabled):
+    guest_flag(enabled)
+    assert (await _graphql_context(None, oidc_enabled=False))["current_user"].sub == CurrentUser.mock().sub
 
 
-# ============ 문자열이 아닌 schema_id ============
-
-@pytest.mark.parametrize("schema_id", NON_TEXT_SCHEMA_IDS)
+@FLAGS
+@pytest.mark.parametrize("claims", UNUSABLE_CLAIMS + [GUEST_CLAIMS], ids=UNUSABLE_IDS + ["guest"])
 @pytest.mark.asyncio
-async def test_rest_refuses_non_text_schema_id_when_guest_enabled(guest_flag, schema_id):
-    guest_flag(True)
-    with pytest.raises(HTTPException) as exc_info:
-        await _rest_user({**MEMBER_CLAIMS, "schema_id": schema_id})
-    assert exc_info.value.status_code == 401
+async def test_websocket_refuses_guest_and_token_without_usable_schema_id(guest_flag, enabled, claims):
+    guest_flag(enabled)
+    with pytest.raises(WebSocketException) as exc_info:
+        await _websocket_user(claims)
+    assert exc_info.value.code == 1008
 
 
-@pytest.mark.parametrize("schema_id", NON_TEXT_SCHEMA_IDS)
+@FLAGS
 @pytest.mark.asyncio
-async def test_rest_accepts_non_text_schema_id_like_missing_when_guest_disabled(guest_flag, schema_id):
-    guest_flag(False)
-    assert (await _rest_user({**MEMBER_CLAIMS, "schema_id": schema_id})).sub == "member-1"
+async def test_websocket_accepts_member(guest_flag, enabled):
+    guest_flag(enabled)
+    assert (await _websocket_user(MEMBER_CLAIMS)).sub == "member-1"
 
 
-@pytest.mark.parametrize("schema_id", NON_TEXT_SCHEMA_IDS)
+@FLAGS
 @pytest.mark.asyncio
-async def test_graphql_refuses_non_text_schema_id_when_guest_enabled(guest_flag, schema_id):
-    from app.api.v1.graphql import get_context
-
-    guest_flag(True)
-    request = MagicMock()
-    request.headers = {"Authorization": "Bearer token"}
-    with patch("app.api.v1.graphql.settings") as mock_settings, \
-            patch("app.api.v1.graphql.oidc_client") as mock_oidc:
-        mock_settings.OIDC_ENABLED = True
-        mock_oidc.verify_token = AsyncMock(return_value={**MEMBER_CLAIMS, "schema_id": schema_id})
-        with pytest.raises(HTTPException) as exc_info:
-            await get_context(request, MagicMock())
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.parametrize("schema_id", NON_TEXT_SCHEMA_IDS)
-@pytest.mark.asyncio
-async def test_websocket_refuses_non_text_schema_id_when_guest_enabled(guest_flag, schema_id):
-    from app.websocket.auth import authenticate_websocket
-
-    guest_flag(True)
-    websocket = MagicMock()
-    websocket.headers = {"sec-websocket-protocol": "authorization.bearer.token"}
-    with patch("app.websocket.auth.settings") as mock_settings, \
-            patch("app.websocket.auth.oidc_client") as mock_oidc:
-        mock_settings.OIDC_ENABLED = True
-        mock_oidc.verify_token = AsyncMock(return_value={**MEMBER_CLAIMS, "schema_id": schema_id})
-        with pytest.raises(WebSocketException):
-            await authenticate_websocket(websocket)
+async def test_websocket_oidc_disabled_mock_user_passes(guest_flag, enabled):
+    guest_flag(enabled)
+    assert (await _websocket_user(None, oidc_enabled=False)).sub == CurrentUser.mock().sub

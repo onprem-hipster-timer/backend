@@ -32,7 +32,7 @@ async def get_context(request: Request, session: Session = Depends(get_db)) -> d
     - Authorization 헤더에서 Bearer 토큰 추출
     - OIDC Provider를 통해 JWT 검증
     - CurrentUser 객체를 컨텍스트에 추가
-    - 게스트 토큰은 403, GUEST_ENABLED인데 schema_id 클레임이 없으면 401 (ensure_member)
+    - 게스트 토큰은 403, schema_id 클레임이 없으면 401 (ensure_member)
 
     테스트: tests/test_graphql.py (요청 종료 시 세션 close)
     """
