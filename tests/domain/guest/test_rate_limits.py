@@ -1,14 +1,14 @@
 """게스트 생성·이름 찾기와 /auth 프록시 제출의 rate limit
 
 - 게스트 이름 찾기·생성: 클라이언트 IP 단위 (app/ratelimit/config.py)
-- /auth 제출 (app/api/auth_proxy.py): 설정 밖은 IP 단위, 로그인·가입·인증·복구는 같은 IP의 같은 식별자 단위로도,
+- /auth 제출 (app/middleware/guest_gate.py): 설정 밖은 IP 단위, 로그인·가입·인증·복구는 같은 IP의 같은 식별자 단위로도,
   설정은 세션의 identity 단위
 """
 import uuid
 
 import pytest
 
-from app.api.auth_proxy import _identifier_key
+from app.middleware.guest_gate import _identifier_key
 from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.helpers import make_guest
 

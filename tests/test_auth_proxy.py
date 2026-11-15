@@ -14,6 +14,7 @@ import app.core.config as app_config
 from app.api import auth_proxy
 from app.core import courier
 from app.core.config import Settings
+from app.middleware.guest_gate import GuestGateMiddleware
 
 UPSTREAM = "http://kratos.test"
 
@@ -51,6 +52,7 @@ def upstream(monkeypatch):
 @pytest.fixture
 def client(upstream):
     app = FastAPI()
+    app.add_middleware(GuestGateMiddleware)  # 제출은 인터셉터가 읽어 프록시에 넘긴다
     app.include_router(auth_proxy.router)
     return TestClient(app)
 

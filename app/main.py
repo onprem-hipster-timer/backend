@@ -21,6 +21,7 @@ from app.core.logging import setup_logging
 from app.db.keepalive import DatabaseKeepAliveTask
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
+from app.middleware.guest_gate import GuestGateMiddleware
 from app.middleware.origin_verify import OriginVerifyMiddleware
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.ratelimit.cloudflare import get_cloudflare_manager, get_trusted_proxy_manager
@@ -181,6 +182,10 @@ app = FastAPI(
 
 # Exception Handler 등록
 register_exception_handlers(app)
+
+# Guest Gate - CORS 안쪽(가장 안쪽). /auth 제출을 프록시보다 먼저 세고 검사한다 (app/middleware/guest_gate.py)
+#   CORS 안쪽이라 거절 응답에도 CORS 헤더가 붙고, preflight는 CORS가 먼저 답한다
+app.add_middleware(GuestGateMiddleware)
 
 # CORS 설정 (환경변수로 주입 가능)
 # 주의: allow_origins=["*"]와 allow_credentials=True는 호환되지 않음

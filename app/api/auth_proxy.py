@@ -14,8 +14,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
   정한다 (app/api/kratos_hooks.py). 같은 리소스의 다른 게스트가 쓰는 이름(정규형으로 비교)이면 넘기지 않고
   409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other)
-- 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)의 쿼리 문자열에는 flow 하나만 받는다(키는 대소문자 구분 없이).
-  Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
+- 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
+  구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
 - GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소일 때 X-Turnstile-Token
   헤더의 Turnstile 토큰을 확인한 뒤 넘긴다. 토큰이 없거나 통과하지 못하면 403 guest_verification_failed, 확인할 수
   없으면 503 guest_verification_unavailable. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
@@ -26,38 +26,33 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
   응답은 바꾸지 않는다
-- GET 밖의 제출은 요청 한도로 센다 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출은 IP 단위로,
-  로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다.
-  설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+- GET 밖의 요청(제출)은 인터셉터(app/middleware/guest_gate.py)가 프록시보다 먼저 본문을 한 번 읽어(read_submission)
+  요청 한도를 세고 검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로
+  Kratos에 보낸다. 검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다
 - 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
   (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 이름 변경은 게스트 자리). 자리가 나지 않으면 429
 """
-import hashlib
 import json
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass
 from urllib.parse import parse_qs, parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core import config as app_config
 from app.core import courier, kratos_slots, turnstile
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
-from app.ratelimit.config import (
-    AUTH_SETTINGS_PER_IDENTITY,
-    AUTH_SUBMIT_PER_IDENTIFIER,
-    AUTH_SUBMIT_PER_IP,
-    RateLimitRule,
-)
-from app.ratelimit.limiter import get_limiter
-from app.ratelimit.middleware import client_ip_key, rate_limited_response
+from app.ratelimit.config import AUTH_SUBMIT_METHODS
 
 logger = logging.getLogger(__name__)
+
+# 프록시 라우트 경로. 인터셉터(app/middleware/guest_gate.py)도 이 경로로 제출을 가린다
+PROXY_PATH = "/auth/{path:path}"
 
 FORWARD_REQUEST_HEADERS = (
     "x-session-token",
@@ -259,53 +254,6 @@ def _submitted_rate_limit_identifier(submit_path: str, content_type: str, body: 
     return _submitted_value(content_type, body, ("email",))
 
 
-def _identifier_key(ip_key: str, submit_path: str, identifier: object) -> str | None:
-    """같은 IP·제출 경로·식별자의 한도 키. 식별자가 없으면 None.
-
-    문자열은 NFKC·앞뒤 공백 제거·casefold로 맞춘다. 읽을 수 없거나 문자열이 아닌 값은 IP·경로마다 한 칸으로 센다.
-    키에는 식별자 대신 해시를 둔다.
-    """
-    if identifier is None:
-        return None
-    normalized = unicodedata.normalize("NFKC", identifier).strip().casefold() if isinstance(identifier, str) else ""
-    digest = hashlib.sha256(f"{submit_path}\n{normalized}".encode()).hexdigest()
-    return f"{ip_key}:identifier:{digest}"
-
-
-async def _rate_limit_refusal(key: str, method: str, rule: RateLimitRule) -> Response | None:
-    """key로 한 번 센다. 한도 안이면 None, 넘으면 429 응답"""
-    result = await get_limiter().check_and_record(key, method, rule)
-    if result.allowed:
-        return None
-    logger.warning(
-        f"Rate limit exceeded: path={rule.path_pattern}, count={result.current_count}/{result.max_requests}"
-    )
-    return rate_limited_response(result)
-
-
-async def _submit_rate_limit_refusal(request: Request, submit_path: str, body: bytes) -> Response | None:
-    """설정 밖의 제출을 IP 단위로 세고, 로그인·가입·인증·복구 제출은 같은 IP의 같은 식별자 단위로도 센다"""
-    if not app_config.settings.RATE_LIMIT_ENABLED or submit_path == SETTINGS_SUBMIT_PATH:
-        return None
-    ip_key = await client_ip_key(request)
-    refusal = await _rate_limit_refusal(ip_key, request.method, AUTH_SUBMIT_PER_IP)
-    if refusal is not None or submit_path not in IDENTIFIER_SUBMIT_PATHS:
-        return refusal
-    identifier = _submitted_rate_limit_identifier(submit_path, request.headers.get("content-type", ""), body)
-    key = _identifier_key(ip_key, submit_path, identifier)
-    if key is None:
-        return None
-    return await _rate_limit_refusal(key, request.method, AUTH_SUBMIT_PER_IDENTIFIER)
-
-
-async def _settings_rate_limit_refusal(request: Request, identity_id: str | None) -> Response | None:
-    """검사를 통과한 설정 제출을 세션의 identity 단위로 센다 (identity id가 없으면 IP 단위)"""
-    if not app_config.settings.RATE_LIMIT_ENABLED:
-        return None
-    key = f"identity:{identity_id}" if identity_id else await client_ip_key(request)
-    return await _rate_limit_refusal(key, request.method, AUTH_SETTINGS_PER_IDENTITY)
-
-
 def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
     """소셜 로그인 제출이면 traits.email을 뺀 본문, 아니면 본문 그대로. 읽을 수 없으면 None.
 
@@ -437,8 +385,21 @@ def _is_guest_session(session: object) -> bool:
     return isinstance(schema_id, str) and schema_id == settings.KRATOS_GUEST_SCHEMA_ID
 
 
+@dataclass
+class Submission:
+    """GET 밖의 /auth 요청. 인터셉터가 read_submission으로 만들고 inspect_submission으로 채워 프록시에 넘긴다"""
+    url: httpx.URL  # Kratos로 보낼 URL
+    path: str  # 검사 경로: url의 경로를 소문자·끝 슬래시 없이
+    content_type: str
+    body: bytes
+    # 같은 식별자 단위로 셀 값 (로그인 identifier, 가입 traits.email, 인증·복구 email). 없으면 None, 읽을 수 없으면 _UNREADABLE
+    identifier: object = None
+    identity_id: str | None = None  # 설정 제출: 검사를 통과한 세션의 identity id
+    guest: bool = False  # 게스트 handle 로그인이나 게스트 이름 변경 (게스트 Kratos 자리)
+
+
 async def _settings_rejection(
-        client: httpx.AsyncClient, request: Request, body: bytes
+        client: httpx.AsyncClient, submission: Submission, session_token: str | None
 ) -> tuple[Response | None, str | None, bool]:
     """메일 코드로 본인 확인한 복구 세션의 비밀번호 변경이 아니면 거절 응답을 돌려준다.
     넘길 제출이면 두 번째 값은 그 세션의 identity id, 세 번째 값은 게스트의 이름 변경인지다.
@@ -448,14 +409,13 @@ async def _settings_rejection(
     소셜 계정 연결(oidc)은 앱이 쓰지 않으므로 복구 세션이어도 막는다.
     GUEST_ENABLED면 게스트 세션의 profile 제출은 넘긴다 (로그인 식별자 변경은 Kratos 설정 훅이 거절한다).
     """
-    method = _submitted_method(request.headers.get("content-type", ""), body)
+    method = _submitted_method(submission.content_type, submission.body)
     if method != "password" and not (method == "profile" and settings.GUEST_ENABLED):
         return _settings_forbidden(), None, False
-    token = request.headers.get("x-session-token")
-    if not token:
+    if not session_token:
         return _settings_forbidden(), None, False
     whoami = await client.get(
-        "/sessions/whoami", headers={"x-session-token": token, "accept": "application/json"}
+        "/sessions/whoami", headers={"x-session-token": session_token, "accept": "application/json"}
     )
     last_method = None
     session = None
@@ -477,57 +437,87 @@ async def _settings_rejection(
     return None, _session_identity_id(session), False
 
 
-@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def kratos_url(path: str, query: str) -> httpx.URL:
+    """/auth/{path}?{query}를 넘길 Kratos URL. KRATOS_PUBLIC_URL의 경로 뒤에 붙인다 (..·인코딩은 httpx가 정리한다)"""
+    relative = httpx.URL(f"/{path}?{query}" if query else f"/{path}")
+    base = httpx.URL(settings.KRATOS_PUBLIC_URL)
+    return base.copy_with(raw_path=base.raw_path.rstrip(b"/") + b"/" + relative.raw_path.lstrip(b"/"))
+
+
+def read_submission(path: str, query: str, content_type: str, body: bytes) -> Submission | None:
+    """GET 밖의 /auth 요청(라우트의 path, 쿼리 문자열, 본문)을 읽는다. KRATOS_PUBLIC_URL이 없으면 None (프록시가 404)"""
+    if not settings.KRATOS_PUBLIC_URL:
+        return None
+    url = kratos_url(path, query)
+    submit_path = url.path.rstrip("/").lower()
+    identifier = None
+    if submit_path in IDENTIFIER_SUBMIT_PATHS:
+        identifier = _submitted_rate_limit_identifier(submit_path, content_type, body)
+    return Submission(url=url, path=submit_path, content_type=content_type, body=body, identifier=identifier)
+
+
+async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:
+    """넘기지 않을 제출이면 거절 응답, 넘길 제출이면 None (설정 제출은 identity_id·guest를 채운다)
+
+    - 검사하는 제출의 쿼리 문자열에 flow 밖의 키가 있으면 400 invalid_request_body
+    - 설정 제출은 X-Session-Token 세션을 whoami로 확인한다 (_settings_rejection). Kratos에 닿지 않으면 502
+    """
+    if submission.path in INSPECTED_SUBMIT_PATHS and not _only_flow_query(submission.url.query.decode()):
+        return _unreadable_body()
+    if submission.path == SETTINGS_SUBMIT_PATH:
+        try:
+            async with _make_client() as client:
+                rejection, submission.identity_id, submission.guest = await _settings_rejection(
+                    client, submission, session_token
+                )
+        except httpx.HTTPError:
+            logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
+            return _unavailable()
+        return rejection
+    return None
+
+
+@router.api_route(PROXY_PATH, methods=["GET", *AUTH_SUBMIT_METHODS])
 async def kratos_proxy(path: str, request: Request) -> Response:
     if not settings.KRATOS_PUBLIC_URL:
         raise HTTPException(status_code=404)
 
     headers = {name: value for name in FORWARD_REQUEST_HEADERS if (value := request.headers.get(name))}
-    url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
-
-    body = await request.body()
+    submission: Submission | None = None
+    if request.method == "GET":
+        url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
+        body = await request.body()
+    else:
+        # 인터셉터(app/middleware/guest_gate.py)가 읽고 검사한 제출. 그 URL·본문 그대로 보낸다
+        submission = request.state.auth_submission
+        url, body = submission.url, submission.body
+    submit_path = submission.path if submission is not None else ""
+    content_type = submission.content_type if submission is not None else ""
     try:
         async with _make_client() as client:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
-            # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
-            submit_path = outgoing.url.path.rstrip("/").lower()
-            guest_submit = False
-            if request.method != "GET":
-                refusal = await _submit_rate_limit_refusal(request, submit_path, body)
-                if refusal is not None:
-                    return refusal
-            if request.method != "GET" and submit_path in INSPECTED_SUBMIT_PATHS:
-                if not _only_flow_query(request.url.query):
-                    return _unreadable_body()
-            if request.method != "GET" and submit_path in ADDRESS_SUBMIT_PATHS:
-                guest_address = _is_guest_address(request.headers.get("content-type", ""), body)
+            guest_submit = submission is not None and submission.guest
+            if submit_path in ADDRESS_SUBMIT_PATHS:
+                guest_address = _is_guest_address(content_type, body)
                 if guest_address is None:
                     return _unreadable_body()
                 if guest_address:
                     return _address_not_accepted()
-            if request.method != "GET" and submit_path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
-                identifier = _submitted_identifier(request.headers.get("content-type", ""), body)
-                if identifier is _UNREADABLE:
+            if submit_path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
+                if submission.identifier is _UNREADABLE:
                     return _unreadable_body()
-                if _is_guest_handle(identifier):
+                if _is_guest_handle(submission.identifier):
                     guest_submit = True
                     refusal = await _guest_login_refusal(request.headers.get(TURNSTILE_TOKEN_HEADER))
                     if refusal is not None:
                         return refusal
-            if request.method != "GET" and submit_path in OIDC_SUBMIT_PATHS:
-                cleaned = _without_oidc_email(request.headers.get("content-type", ""), body)
+            if submit_path in OIDC_SUBMIT_PATHS:
+                cleaned = _without_oidc_email(content_type, body)
                 if cleaned is None:
                     return _unreadable_body()
                 if cleaned != body:
                     outgoing = client.build_request(request.method, url, headers=headers, content=cleaned)
-            if request.method != "GET" and submit_path == SETTINGS_SUBMIT_PATH:
-                rejection, identity_id, guest_rename = await _settings_rejection(client, request, body)
-                if rejection is not None:
-                    return rejection
-                guest_submit = guest_rename
-                refusal = await _settings_rate_limit_refusal(request, identity_id)
-                if refusal is not None:
-                    return refusal
+            if submit_path == SETTINGS_SUBMIT_PATH:
                 # 검사한 X-Session-Token 세션으로만 처리되게 다른 세션 헤더는 넘기지 않는다
                 outgoing = client.build_request(
                     request.method,
@@ -535,11 +525,11 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     headers={k: v for k, v in headers.items() if k != "authorization"},
                     content=body,
                 )
-                if guest_rename and await guest_service.name_taken_by_other(
-                        identity_id, _submitted_name(request.headers.get("content-type", ""), body)
+                if submission.guest and await guest_service.name_taken_by_other(
+                        submission.identity_id, _submitted_name(content_type, body)
                 ):
                     return _guest_name_taken()
-            if request.method != "GET" and submit_path in HASHING_SUBMIT_PATHS:
+            if submit_path in HASHING_SUBMIT_PATHS:
                 slots = kratos_slots.guest_slots if guest_submit else kratos_slots.member_slots
                 try:
                     async with slots.hold():
