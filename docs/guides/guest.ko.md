@@ -646,42 +646,29 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 
 ## 객체 의존성
 
-화살표는 "쓴다"입니다. 테두리가 굵은 것이 게스트 도메인(`app/domain/guest/`)입니다.
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 넷입니다.
+
+| 진입점 | 쓰는 것 |
+|--------|---------|
+| `/v1/guests/*` (`api/v1/guests.py`) | 서비스(찾기·생성·폐기), 게스트 의존성(`DELETE /v1/guests/me`) |
+| Kratos 훅 수신 (`api/kratos_hooks.py`) | 서비스(로그인·설정 판정) |
+| `/auth` 프록시 (`api/auth_proxy.py`) | 서비스(이름 중복 조회), `core/turnstile` |
+| 리소스의 게스트 경로 | 게스트 의존성 |
+
+그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.
 
 ```mermaid
 graph TD
-    R1["/v1/guests/*<br/>(api/v1/guests.py)"]
-    R2["Kratos 훅 수신<br/>(api/kratos_hooks.py)"]
-    R3["/auth 프록시<br/>(api/auth_proxy.py)"]
-    R4["리소스의 게스트 경로"]
-
-    DEP["get_current_guest<br/>require_guest_access<br/>(dependencies.py)"]
-    SVC["service.py<br/>찾기 · 생성 · 접근 정책 ·<br/>폐기 · 훅 판정"]
-    HOST["host.py<br/>GuestHost 등록부"]
-    EV["events.py<br/>GuestDiscarded · GuestRenamed"]
-
-    AUTH["authenticate_request<br/>(core/auth)"]
-    CRUD["crud/guest.py"]
-    TBL[("guest 테이블")]
-    KA["kratos_admin<br/>(core)"]
-    TS["turnstile<br/>(core)"]
-    RES["리소스 도메인<br/>(호스트 구현 · 이벤트 핸들러)"]
-
-    R1 --> SVC
-    R1 --> DEP
-    R2 --> SVC
-    R3 --> SVC
-    R3 --> TS
-    R4 --> DEP
-    DEP --> AUTH
-    DEP --> SVC
-    SVC --> HOST
-    SVC --> CRUD --> TBL
-    SVC --> KA
-    SVC --> TS
-    SVC --> EV
-    RES -.->|"register_guest_host"| HOST
-    RES -.->|"핸들러 등록"| EV
+    IN["진입점<br/>(위 표)"] --> DEP["게스트 의존성<br/>get_current_guest ·<br/>require_guest_access"]
+    IN --> SVC
+    DEP --> AUTH["authenticate_request<br/>(core/auth)"]
+    DEP --> SVC["service.py<br/>찾기 · 생성 · 접근 정책 ·<br/>폐기 · 훅 판정"]
+    SVC --> HOST["host.py<br/>GuestHost 등록부"]
+    SVC --> EV["events.py<br/>GuestDiscarded ·<br/>GuestRenamed"]
+    SVC --> CRUD["crud/guest.py"] --> TBL[("guest 테이블")]
+    SVC --> EXT["core/kratos_admin<br/>core/turnstile"]
+    RES["리소스 도메인<br/>호스트 구현 ·<br/>이벤트 핸들러"] -.->|등록| HOST
+    RES -.->|등록| EV
 
     classDef guest stroke-width:3px
     class DEP,SVC,HOST,EV guest
