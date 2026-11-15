@@ -17,25 +17,31 @@ from app.domain.dateutil.exceptions import InvalidTimezoneError
 from app.domain.meeting.schema.dto import MeetingRead, ParticipantRead
 
 
+def _meeting_read(**fields) -> MeetingRead:
+    """테스트 미팅의 MeetingRead (fields로 기본값을 바꾼다)"""
+    return MeetingRead(**{
+        "id": uuid4(),
+        "owner_id": "user123",
+        "title": "테스트 미팅",
+        "start_date": date(2024, 2, 1),
+        "end_date": date(2024, 2, 7),
+        "timezone": "UTC",
+        "available_days": [0, 2, 4],
+        "start_time": time(9, 0),
+        "end_time": time(18, 0),
+        "time_slot_minutes": 30,
+        "created_at": datetime(2024, 1, 1, 10, 0, 0),
+        "updated_at": datetime(2024, 1, 1, 10, 0, 0),
+        **fields,
+    })
+
+
 class TestMeetingReadTimezone:
     """MeetingRead.to_timezone() 메서드 테스트"""
 
     def test_to_timezone_none_returns_self(self):
         """타임존이 None인 경우 원본 반환"""
-        meeting_read = MeetingRead(
-            id=uuid4(),
-            owner_id="user123",
-            title="테스트 미팅",
-            start_date=date(2024, 2, 1),
-            end_date=date(2024, 2, 7),
-            timezone="UTC",
-            available_days=[0, 2, 4],
-            start_time=time(9, 0),
-            end_time=time(18, 0),
-            time_slot_minutes=30,
-            created_at=datetime(2024, 1, 1, 10, 0, 0),
-            updated_at=datetime(2024, 1, 1, 10, 0, 0),
-        )
+        meeting_read = _meeting_read()
 
         result = meeting_read.to_timezone(None)
 
@@ -44,20 +50,7 @@ class TestMeetingReadTimezone:
 
     def test_to_timezone_utc_timezone_object(self):
         """UTC timezone 객체로 변환"""
-        meeting_read = MeetingRead(
-            id=uuid4(),
-            owner_id="user123",
-            title="테스트 미팅",
-            start_date=date(2024, 2, 1),
-            end_date=date(2024, 2, 7),
-            timezone="UTC",
-            available_days=[0, 2, 4],
-            start_time=time(9, 0),
-            end_time=time(18, 0),
-            time_slot_minutes=30,
-            created_at=datetime(2024, 1, 1, 10, 0, 0),
-            updated_at=datetime(2024, 1, 1, 10, 0, 0),
-        )
+        meeting_read = _meeting_read()
 
         result = meeting_read.to_timezone(timezone.utc)
 
@@ -70,17 +63,7 @@ class TestMeetingReadTimezone:
 
     def test_to_timezone_kst_offset_string(self):
         """KST UTC offset 문자열로 변환 (+09:00)"""
-        meeting_read = MeetingRead(
-            id=uuid4(),
-            owner_id="user123",
-            title="테스트 미팅",
-            start_date=date(2024, 2, 1),
-            end_date=date(2024, 2, 7),
-            timezone="UTC",
-            available_days=[0, 2, 4],
-            start_time=time(9, 0),
-            end_time=time(18, 0),
-            time_slot_minutes=30,
+        meeting_read = _meeting_read(
             created_at=datetime(2024, 1, 1, 10, 0, 0),  # UTC 10:00
             updated_at=datetime(2024, 1, 1, 11, 0, 0),  # UTC 11:00
         )
@@ -101,17 +84,7 @@ class TestMeetingReadTimezone:
         """Asia/Seoul 타임존 이름으로 변환"""
         try:
             from zoneinfo import ZoneInfo
-            meeting_read = MeetingRead(
-                id=uuid4(),
-                owner_id="user123",
-                title="테스트 미팅",
-                start_date=date(2024, 2, 1),
-                end_date=date(2024, 2, 7),
-                timezone="UTC",
-                available_days=[0, 2, 4],
-                start_time=time(9, 0),
-                end_time=time(18, 0),
-                time_slot_minutes=30,
+            meeting_read = _meeting_read(
                 created_at=datetime(2024, 1, 1, 10, 0, 0),  # UTC 10:00
                 updated_at=datetime(2024, 1, 1, 11, 0, 0),  # UTC 11:00
             )
@@ -130,19 +103,8 @@ class TestMeetingReadTimezone:
 
     def test_to_timezone_preserves_other_fields(self):
         """타임존 변환 시 다른 필드가 보존되는지 확인"""
-        meeting_read = MeetingRead(
-            id=uuid4(),
-            owner_id="user123",
-            title="테스트 미팅",
+        meeting_read = _meeting_read(
             description="설명",
-            start_date=date(2024, 2, 1),
-            end_date=date(2024, 2, 7),
-            timezone="UTC",
-            available_days=[0, 2, 4],
-            start_time=time(9, 0),
-            end_time=time(18, 0),
-            time_slot_minutes=30,
-            created_at=datetime(2024, 1, 1, 10, 0, 0),
             updated_at=datetime(2024, 1, 1, 11, 0, 0),
             visibility_level=None,
             is_shared=False,
@@ -167,17 +129,7 @@ class TestMeetingReadTimezone:
     def test_to_timezone_with_date_crossing(self):
         """날짜 경계를 넘는 타임존 변환"""
         # UTC 23:00을 KST로 변환하면 다음날 08:00
-        meeting_read = MeetingRead(
-            id=uuid4(),
-            owner_id="user123",
-            title="테스트 미팅",
-            start_date=date(2024, 2, 1),
-            end_date=date(2024, 2, 7),
-            timezone="UTC",
-            available_days=[0, 2, 4],
-            start_time=time(9, 0),
-            end_time=time(18, 0),
-            time_slot_minutes=30,
+        meeting_read = _meeting_read(
             created_at=datetime(2024, 1, 1, 23, 0, 0),  # UTC 23:00
             updated_at=datetime(2024, 1, 1, 23, 0, 0),
         )

@@ -258,84 +258,18 @@ def test_set_availability_e2e(e2e_client):
     assert data[0]["end_time"] == "2024-02-01T12:00:00+0000"
 
 
-@pytest.mark.e2e
-def test_get_availability_e2e(multi_user_e2e):
-    """전체 참여자 가능 시간 조회 E2E 테스트"""
+def _meeting_with_two_participants(multi_user_e2e, title: str):
+    """owner가 만든 공개 일정 조율에 owner(참여자1)와 other(참여자2)가 참여하고 가능 시간을 둔다
+
+    (owner 클라이언트, 일정 조율 id, 참여자1 id)를 돌려준다.
+    """
     e2e_client = multi_user_e2e.as_user("owner")
     other_client = multi_user_e2e.as_user("other")
     # 1. 일정 조율 생성
     create_response = e2e_client.post(
         "/v1/meetings",
         json={
-            "title": "가능 시간 조회 테스트",
-            "start_date": "2024-02-01",
-            "end_date": "2024-02-07",
-            "timezone": "UTC",
-            "available_days": [0, 2, 4],
-            "start_time": "09:00:00",
-            "end_time": "18:00:00",
-            "time_slot_minutes": 30,
-        },
-    )
-    meeting_id = create_response.json()["id"]
-    e2e_client.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
-
-    # 2. 참여자 2명 등록 및 시간 설정
-    participant1_response = e2e_client.post(
-        f"/v1/meetings/{meeting_id}/participate",
-        json={"display_name": "참여자1"},
-    )
-    participant1_id = participant1_response.json()["id"]
-
-    participant2_response = other_client.post(
-        f"/v1/meetings/{meeting_id}/participate",
-        json={"display_name": "참여자2"},
-    )
-    participant2_id = participant2_response.json()["id"]
-
-    # 참여자1 시간 설정 (2월 2일 금요일 - available_days에 포함)
-    e2e_client.put(
-        f"/v1/meetings/{meeting_id}/availability",
-        params={"participant_id": participant1_id},
-        json=[{
-            "start_time": "2024-02-02T09:00:00Z",
-            "end_time": "2024-02-02T12:00:00Z",
-        }],
-    )
-
-    # 참여자2 시간 설정 (2월 2일 금요일 - available_days에 포함)
-    other_client.put(
-        f"/v1/meetings/{meeting_id}/availability",
-        params={"participant_id": participant2_id},
-        json=[{
-            "start_time": "2024-02-02T10:00:00Z",
-            "end_time": "2024-02-02T13:00:00Z",
-        }],
-    )
-
-    # 3. 전체 가능 시간 조회
-    availability_response = e2e_client.get(f"/v1/meetings/{meeting_id}/availability")
-    assert availability_response.status_code == 200
-    data = availability_response.json()
-    assert isinstance(data, list)
-    assert len(data) == 2
-
-    # 각 참여자의 시간 슬롯 확인
-    participant1_data = next(p for p in data if p["participant"]["id"] == participant1_id)
-    assert len(participant1_data["time_slots"]) == 1
-    assert participant1_data["time_slots"][0]["start_time"] == "2024-02-02T09:00:00+0000"
-
-
-@pytest.mark.e2e
-def test_get_meeting_result_e2e(multi_user_e2e):
-    """공통 가능 시간 분석 결과 조회 E2E 테스트"""
-    e2e_client = multi_user_e2e.as_user("owner")
-    other_client = multi_user_e2e.as_user("other")
-    # 1. 일정 조율 생성
-    create_response = e2e_client.post(
-        "/v1/meetings",
-        json={
-            "title": "결과 조회 테스트",
+            "title": title,
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
@@ -380,6 +314,31 @@ def test_get_meeting_result_e2e(multi_user_e2e):
             "end_time": "2024-02-02T13:00:00Z",
         }],
     )
+    return e2e_client, meeting_id, participant1_id
+
+
+@pytest.mark.e2e
+def test_get_availability_e2e(multi_user_e2e):
+    """전체 참여자 가능 시간 조회 E2E 테스트"""
+    e2e_client, meeting_id, participant1_id = _meeting_with_two_participants(multi_user_e2e, "가능 시간 조회 테스트")
+
+    # 3. 전체 가능 시간 조회
+    availability_response = e2e_client.get(f"/v1/meetings/{meeting_id}/availability")
+    assert availability_response.status_code == 200
+    data = availability_response.json()
+    assert isinstance(data, list)
+    assert len(data) == 2
+
+    # 각 참여자의 시간 슬롯 확인
+    participant1_data = next(p for p in data if p["participant"]["id"] == participant1_id)
+    assert len(participant1_data["time_slots"]) == 1
+    assert participant1_data["time_slots"][0]["start_time"] == "2024-02-02T09:00:00+0000"
+
+
+@pytest.mark.e2e
+def test_get_meeting_result_e2e(multi_user_e2e):
+    """공통 가능 시간 분석 결과 조회 E2E 테스트"""
+    e2e_client, meeting_id, _ = _meeting_with_two_participants(multi_user_e2e, "결과 조회 테스트")
 
     # 3. 공통 가능 시간 분석 결과 조회
     result_response = e2e_client.get(f"/v1/meetings/{meeting_id}/result")
