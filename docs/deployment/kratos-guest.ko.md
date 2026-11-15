@@ -60,7 +60,7 @@ backend는 `GUEST_ENABLED`와 상관없이 `schema_id` 클레임이 없는 토�
 - backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
 - uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.
 - `/internal/kratos/hooks/*`는 Kratos만 부릅니다. 앞단에서 밖으로 열지 않는 것을 권합니다.
-- `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다).
+- `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다). 훅 요청이 그 헤더를 갖게 하려면 `web_hook`의 `headers`에 넣습니다(2.4). 앞단 프록시가 모든 요청에 그 헤더를 붙인다면 훅 `url`을 프록시를 지나는 주소로 두어도 됩니다(이때 훅 경로는 프록시 밖에서도 닿고, 훅 키가 그 경로를 지킵니다).
 - Kratos 공개 API와 admin API는 backend만 닿는 주소에 둡니다. 공개 API에 backend를 거치지 않고 닿을 수 있으면 `/auth` 프록시의 확인(요청 한도, 게스트 로그인의 Turnstile 등)이 적용되지 않습니다([`/auth` 프록시](../guides/auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 
 ## 2. Kratos 설정
@@ -192,6 +192,9 @@ selfservice:
                     name: X-Kratos-Hook-Key
                     value: <KRATOS_HOOK_API_KEY와 같은 값>
                     in: header
+                # backend가 ORIGIN_VERIFY_HEADER를 쓰는 배포에서만 넣는다
+                # headers:
+                #   X-Origin-Verify: <ORIGIN_VERIFY_SECRET과 같은 값>
             - hook: require_verified_address
 ```
 
@@ -211,6 +214,7 @@ function(ctx)
 - `url`: Kratos에서 닿는 backend 주소(위 예는 같은 호스트의 backend). backend는 `/internal/kratos/hooks/login`에서 받는다
 - `response.parse: true`: backend의 `403` 응답이 로그인을 멈춘다. 이 값이 없으면 거절이 무시된다
 - `auth`: backend는 `X-Kratos-Hook-Key`가 `KRATOS_HOOK_API_KEY`와 다르면 `401`이고, Kratos는 그 로그인을 거절한다
+- `headers`: backend가 출처 확인(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`)을 쓰는 배포에서 훅 요청에 싣는 헤더다. 이름은 `ORIGIN_VERIFY_HEADER`의 값, 값은 `ORIGIN_VERIFY_SECRET`이다. 없으면 backend가 훅 요청을 `403`으로 거절한다(1.2). 출처 확인을 쓰지 않으면 넣지 않는다
 - `'guest'`: `KRATOS_GUEST_SCHEMA_ID`와 같은 값
 
 ### 2.5 설정 훅
@@ -286,6 +290,7 @@ function(ctx)
 - backend는 게스트의 `profile` 변경 중 `handle`이 그대로이고 이름이 [정규형](../guides/guest.ko.md#이름과-비밀번호-규칙)이며 같은 리소스의 다른 게스트가 쓰지 않는 것만 허용하고, `password`·`oidc` 변경은 거절한다
 - 이름이 바뀌는 변경을 허용할 때 backend는 `guest.name`을 먼저 바꾼다. 이름 중복은 `guest` 테이블의 UNIQUE 제약이 막는다. 훅 판정은 Kratos를 부르지 않는다
 - 기존 `password` 훅(`revoke_active_sessions` 등)은 목록에 다시 적는다
+- 출처 확인을 쓰는 배포에서는 세 훅 모두 2.4처럼 `headers`를 넣는다
 
 ### 2.6 admin API
 
@@ -327,7 +332,7 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 
 ## 4. 설정 후 확인
 
-`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 게스트를 받는 리소스(호스트를 등록한 리소스)가 하나 있어야 4.3부터 확인할 수 있습니다. 이 저장소에는 아직 없으므로 4.1, 4.2, 4.4까지 확인합니다(`RESOURCE_TYPE`, `RESOURCE_ID`). JSON은 `python3`로 읽습니다.
+`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 게스트를 받는 리소스(호스트를 등록한 리소스)가 하나 있어야 4.3부터 확인할 수 있습니다. 이 저장소에는 아직 없으므로 4.1, 4.2, 4.4까지 확인합니다(`RESOURCE_TYPE`, `RESOURCE_ID`). JSON은 `python3`로 읽습니다. backend가 출처 확인을 쓰고 `API`가 앞단 프록시를 거치지 않는 주소면, backend로 보내는 `curl`마다 `-H "<ORIGIN_VERIFY_HEADER의 값>: <ORIGIN_VERIFY_SECRET>"`을 더합니다(없으면 `403`).
 
 ### 4.1 Kratos가 게스트 schema를 안다
 
@@ -402,6 +407,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/auth/sessions/whoami" -H "X-Sessi
 | Kratos가 로그인 훅 URL에 닿지 않는다 | Kratos는 세 번 시도(약 3초)한 뒤 그 게스트의 로그인을 거절한다. 회원은 인증 여부와 상관없이 게스트가 없을 때와 같다(훅을 부르지 않는다) |
 | Kratos가 설정 훅 URL에 닿지 않는다 | 게스트의 설정 변경이 거절된다. 회원 설정은 영향이 없다 |
 | 훅 키가 다르다 | backend가 `401`을 돌려주고 Kratos는 위와 같이 게스트 로그인·설정 변경을 거절한다 |
+| backend가 출처 확인을 쓰는데 훅 요청에 그 헤더가 없다 | backend가 훅 요청을 `403`으로 거절하고(로그에 `Origin verification failed`), Kratos는 위와 같이 게스트 로그인·설정 변경을 거절한다. 회원은 영향이 없다 |
 | backend가 Kratos admin API에 닿지 않는다 | 게스트 생성이 `503`이고 게스트를 만들지 않는다. 게스트 폐기는 게스트 행만 지우고 identity 삭제 실패를 로그에 남긴다. 행이 없는 게스트 identity는 로그인할 수 없다. 이름 찾기는 Kratos를 부르지 않아 그대로 된다 |
 | backend가 Kratos 공개 API에 닿지 않는다 | `/auth` 요청이 `502`다. 회원과 게스트 모두 로그인하거나 JWT를 받을 수 없다 |
 | backend가 Turnstile 확인 주소에 닿지 않는다 | 게스트 생성과 게스트 로그인 제출이 `503`이다. 게스트를 만들지 않고 로그인을 Kratos에 넘기지 않는다. 이름 찾기, 이미 받은 세션으로 JWT 받기, 회원 로그인은 그대로 된다 |
