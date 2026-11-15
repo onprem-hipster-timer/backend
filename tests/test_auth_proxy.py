@@ -839,6 +839,7 @@ def test_inspected_submission_with_only_flow_is_forwarded(client, upstream, path
         "/auth/sessions/whoami?tokenize_as=api",
         "/auth/self-service/login/api?return_to=https%3A%2F%2Fapp.example.com&refresh=true",
         "/auth/self-service/registration/api?return_to=x",
+        "/auth/self-service/settings/api",
         "/auth/self-service/settings/flows?id=f1",
         "/auth/sessions/token-exchange?init_code=c1&return_to_code=c2",
         "/auth/self-service/methods/oidc/callback/google?code=c1&state=s1",
@@ -848,7 +849,7 @@ def test_get_requests_keep_their_query(client, upstream, path):
     response = client.get(path)
     assert response.status_code == 200
     assert upstream.requests[0].url.path == path.split("?", 1)[0].removeprefix("/auth")
-    assert upstream.requests[0].url.query.decode() == path.split("?", 1)[1]
+    assert upstream.requests[0].url.query.decode() == (path.split("?", 1)[1] if "?" in path else "")
 
 
 def test_other_post_paths_keep_their_query(client, upstream):

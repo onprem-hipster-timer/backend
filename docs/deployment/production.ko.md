@@ -154,7 +154,7 @@ Kratos의 클레임 매퍼는 모든 identity의 JWT에 `schema_id`를 넣어야
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
 - 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다. `GUEST_ENABLED=true`면 게스트 세션의 `method: profile` 제출(이름 변경)도 넘기고, 바꿀 수 있는 항목은 Kratos 설정 훅이 정합니다. 같은 리소스의 다른 게스트가 쓰는 이름이면 넘기지 않고 409 `guest_name_taken`입니다.
-- 로그인·가입·설정·인증·복구 제출 경로로 가는 요청의 쿼리 문자열에는 GET을 포함해 메서드와 상관없이 `flow`만 받습니다. 인증 경로의 GET은 인증 메일의 링크처럼 `code`도 받습니다. 다른 키가 있으면 400 `invalid_request_body`로 거절합니다. Kratos가 쿼리 문자열의 제출 값도 읽기 때문에 본문만 검사해서는 넘길 값을 정할 수 없습니다.
+- 로그인·가입·설정·인증·복구 제출 경로로 가는 요청의 쿼리 문자열에는 GET을 포함해 메서드와 상관없이 `flow`만 받습니다(키는 대소문자 구분 없이 비교). 인증 경로의 GET은 인증 메일의 링크처럼 `code`도 받습니다. 다른 키가 있으면 400 `invalid_request_body`로 거절합니다. Kratos가 쿼리 문자열의 제출 값도 읽기 때문에 본문만 검사해서는 넘길 값을 정할 수 없습니다.
 - 인증·복구 제출의 `email`이 `@guest.invalid`로 끝나면 넘기지 않고 400 `address_not_accepted`입니다.
 - Kratos로 보낼 URL을 만들 수 없는 요청(퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL)은 넘기지 않고 400 `invalid_request_url`입니다.
 - `GUEST_ENABLED=true`면 로그인 제출의 `identifier`가 `@guest.invalid`로 끝날 때와 게스트 세션의 설정 제출일 때 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 넘깁니다. 토큰이 없거나, 거절되거나, 이미 쓴 토큰이면 403 `guest_verification_failed`, 확인할 수 없으면 503 `guest_verification_unavailable`입니다. 이 헤더는 Kratos에 넘기지 않습니다.

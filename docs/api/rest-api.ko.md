@@ -35,14 +35,14 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 GET    /v1/todos                 # 투두 목록 조회
 POST   /v1/todos                 # 투두 생성
 GET    /v1/todos/{id}            # 특정 투두 조회
-PATCH  /v1/todos/{id}            # 투두 수정 (할 일 그룹 이동 포함)
+PATCH  /v1/todos/{id}            # 투두 수정 (해야 할 일 목록 이동 포함)
 DELETE /v1/todos/{id}            # 투두 삭제
 GET    /v1/todos/stats           # 통계 조회
-GET    /v1/todos/groups          # 할 일 그룹 목록 조회 (기본 그룹이 없으면 생성)
-POST   /v1/todos/groups          # 할 일 그룹 생성
-GET    /v1/todos/groups/{id}     # 특정 할 일 그룹 조회
-PATCH  /v1/todos/groups/{id}     # 할 일 그룹 수정
-DELETE /v1/todos/groups/{id}     # 할 일 그룹 삭제 (투두는 기본 그룹으로 이동)
+GET    /v1/todos/groups          # 해야 할 일 목록 전체 조회 (기본 목록이 없으면 생성)
+POST   /v1/todos/groups          # 해야 할 일 목록 생성
+GET    /v1/todos/groups/{id}     # 특정 해야 할 일 목록 조회
+PATCH  /v1/todos/groups/{id}     # 해야 할 일 목록 수정
+DELETE /v1/todos/groups/{id}     # 해야 할 일 목록 삭제 (투두는 기본 목록으로 이동)
 ```
 
 ### 태그 (Tags)
