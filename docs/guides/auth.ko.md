@@ -198,16 +198,31 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
     | 성격 | 검증된 JWT에서 만든 요청 범위 인증 주체 | DB에 저장되는 표시 프로필/JIT 캐시 |
     | 생명주기 | 매 요청마다 토큰 검증 결과로 생성 | 로그인한 사용자의 클레임으로 upsert되어 유지 |
     | 정본성 | 인증·인가 판단의 현재 정본 | 친구 목록, 친구코드, 표시명, 아바타, 검증 이메일 인덱스용 보조 데이터 |
-    | 대표 필드 | `sub`, `email`, `email_verified`, `name`, `picture`, `raw_claims` | `sub`, `iss`, `display_name`, `avatar_url`, `friend_code`, `verified_email` |
+    | 대표 필드 | `sub`, `email`, `email_verified`, `name`, `picture`, `schema_id`, `raw_claims` | `sub`, `iss`, `display_name`, `avatar_url`, `friend_code`, `verified_email` |
     | 실패 영향 | 없으면 인증 실패(`401`) | 동기화 실패 시 요청은 진행하고 표시정보만 degrade |
+    | 게스트 계정 | 만들어진다. 유효한 게스트 토큰이면 `schema_id`가 게스트 schema이고 `email`은 없다 | 만들어지지 않는다 |
 
-    기본 흐름은 `JWT -> CurrentUser -> UserProfile JIT 동기화 -> 도메인 서비스`입니다.
+    회원의 기본 흐름은 `JWT -> CurrentUser -> 회원 판정(ensure_member) -> UserProfile JIT 동기화 -> 도메인 서비스`입니다.
     도메인 소유권과 인가 판단은 계속 `CurrentUser.sub`를 기준으로 하고, `UserProfile`은
     다른 사용자에게 보여줄 최소 표시정보와 친구 추가용 인덱스를 제공하는 역할만 맡습니다.
+
+    [게스트 계정](guest.ko.md)의 토큰도 `AuthMiddleware`가 검증해 `CurrentUser`로 만듭니다. 회원 경로에서는 회원 판정이
+    `403`으로 거절하므로 JIT 동기화에 닿지 않고, `UserProfile` 행이 생기지 않습니다. 게스트를 받는 경로는
+    `get_current_guest`가 같은 `CurrentUser`를 받아 `guest` 테이블의 행(Kratos identity id, 속한 리소스, 이름)으로
+    접근을 판정합니다. 게스트에 대해 backend가 저장하는 것은 그 행뿐입니다.
+
+    | | 회원 | 게스트 |
+    |---|---|---|
+    | `CurrentUser` | 만들어진다 | 만들어진다 (`is_guest`가 참) |
+    | 통과하는 의존성 | `get_current_user`, `get_current_user_synced` | `get_current_guest`, `require_guest_access` |
+    | `UserProfile` | JIT 동기화로 upsert | 없음 |
+    | backend에 저장되는 것 | `UserProfile`, `owner_id`로 격리한 데이터 | `guest` 테이블의 행 |
+    | 요청 한도의 키 | `sub` (`per_ip` 규칙은 IP) | `sub` (`per_ip` 규칙은 IP) |
 
     확장 기준:
 
     - 인증·인가 판단에 필요한 클레임은 `CurrentUser` 또는 `raw_claims`에서 읽습니다.
+    - `request.state.current_user`가 있다고 회원인 것은 아닙니다. 회원만 받는 코드는 `get_current_user`(또는 `ensure_member`)를 거칩니다.
     - 화면 표시, 친구 검색, 외부 공유 식별자처럼 요청 밖에서도 재사용할 값은 `UserProfile`에 저장합니다.
     - API 응답 형태가 필요하면 `CurrentUser`나 `UserProfile`을 그대로 노출하지 말고 도메인 DTO를 둡니다.
 
