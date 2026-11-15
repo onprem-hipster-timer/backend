@@ -125,11 +125,13 @@ class VisibilityService:
     @property
     def _verified_email(self) -> str | None:
         """허용 이메일 규칙에 쓸 이메일. IdP가 검증한(email_verified) 이메일만 믿는다.
+        허용 목록과 같은 형태(앞뒤 공백 없음, 소문자)로 바꿔 돌려준다.
 
         Kratos는 가입 직후 이메일 인증 전에도 세션을 준다. 검증 안 된 이메일을 믿으면
         남의 이메일이나 도메인으로 가입만 해서 그 이메일에 공유된 항목을 볼 수 있다.
         """
-        return self.current_user.email if self.current_user.email_verified else None
+        email = self.current_user.email
+        return email.strip().lower() if email and self.current_user.email_verified else None
 
     def _is_blocked_relation(self, other_user_id: str) -> bool:
         """차단 관계 확인 (양방향)"""

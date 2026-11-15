@@ -8,7 +8,7 @@ downgrade는 제약만 없애고 지운 행은 되살리지 않는다.
 회귀 테스트: tests/db/test_meeting_participant_unique_migration.py
 
 Revision ID: 3f1fcd3dae5f
-Revises: e7f3a9c5b1d8
+Revises: aeb221d93ba3
 Create Date: 2026-11-14 09:00:00.000000+09:00
 
 """
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '3f1fcd3dae5f'
-down_revision: Union[str, None] = 'e7f3a9c5b1d8'
+down_revision: Union[str, None] = 'aeb221d93ba3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
