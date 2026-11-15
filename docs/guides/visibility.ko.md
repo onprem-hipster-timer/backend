@@ -141,6 +141,8 @@ flowchart TD
     linkStyle default interpolate monotoneY
 ```
 
+`GUEST_ENABLED`가 꺼져 있거나 게스트 행이 없으면(폐기된 게스트) 게스트를 받는 경로에서도 `403`입니다. 게스트 상태가 `EXPIRED`·`MISSING`이면 거절하면서 그 게스트를 폐기합니다.
+
 | | 회원 | 게스트 |
 |---|---|---|
 | 판정 기준 | 소유자, 차단, 접근권한 레벨, 친구·AllowList·허용 이메일 | 속한 리소스, 그 리소스의 게스트 상태 |

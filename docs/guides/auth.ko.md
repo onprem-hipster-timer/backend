@@ -137,10 +137,12 @@ sequenceDiagram
 | `OIDC_ENABLED` | O | `true` | 인증 활성화 여부 |
 | `OIDC_ISSUER_URL` | O | - | JWT의 `iss`. Kratos tokenizer가 넣는 값으로, backend의 `/auth/` 주소다 (예: `https://api.example.com/auth/`) |
 | `OIDC_AUDIENCE` | O | - | JWT의 `aud`. Kratos 클레임 매퍼가 넣는 값과 같아야 한다 (예: `https://api.example.com`) |
-| `OIDC_JWKS` | O | - | Kratos가 JWT 서명에 쓰는 키의 공개 JWKS JSON. 비밀 키 성분이 있으면 기동하지 않는다 |
-| `KRATOS_PUBLIC_URL` | O | - | `/auth/*`를 넘길 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 |
+| `OIDC_JWKS` | O (Kratos) | - | Kratos가 JWT 서명에 쓰는 키의 공개 JWKS JSON. 비밀 키 성분이 있으면 기동하지 않는다 |
+| `KRATOS_PUBLIC_URL` | O (Kratos) | - | `/auth/*`를 넘길 Kratos 공개 API 주소. 비우면 `/auth/*`는 404 |
 | `KRATOS_ADMIN_URL` | X | - | 회원 탈퇴의 세션 폐기·identity 삭제, 게스트 identity 생성·삭제 |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | X | `3600` | JWKS 캐시 TTL (초) |
+
+`O (Kratos)`는 Kratos를 쓸 때 필수인 값입니다(9장).
 
 전체 목록과 Kratos 쪽 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [프로덕션 배포](../deployment/production.ko.md)에 있습니다.
 
@@ -169,7 +171,7 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
 | `GET /auth/.well-known/openid-configuration` | `issuer`와 `jwks_uri`가 든 discovery 문서 |
 
 - `OIDC_JWKS`가 비어 있으면 두 경로 모두 404입니다.
-- backend 자신은 discovery를 거치지 않고 `OIDC_JWKS`로 바로 검증합니다. 키를 바꾸면 backend를 다시 배포합니다.
+- backend 자신은 discovery를 거치지 않고 `OIDC_JWKS`로 바로 검증합니다. 서명 키를 바꾸는 순서는 [실시간 전달](../development/realtime-adapter.ko.md)에 있습니다. 키를 바꾸면 backend를 다시 배포합니다.
 
 
 ---
@@ -210,7 +212,7 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
     [게스트 계정](guest.ko.md)의 토큰도 `AuthMiddleware`가 검증해 `CurrentUser`로 만듭니다. 회원 경로에서는 회원 판정이
     `403`으로 거절하므로 JIT 동기화에 닿지 않고, `UserProfile` 행이 생기지 않습니다. 게스트를 받는 경로는
     `get_current_guest`가 같은 `CurrentUser`를 받아 `guest` 테이블의 행(Kratos identity id, 속한 리소스, 이름)으로
-    접근을 판정합니다. 게스트에 대해 backend가 저장하는 것은 그 행뿐입니다.
+    접근을 판정합니다. 게스트 도메인이 저장하는 것은 그 행뿐입니다. 게스트를 받는 리소스는 게스트가 남긴 데이터를 따로 저장할 수 있습니다.
 
     | | 회원 | 게스트 |
     |---|---|---|

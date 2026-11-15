@@ -22,8 +22,9 @@
 - 게스트 기능은 `GUEST_ENABLED=true`일 때만 켜집니다(기본 꺼짐). 꺼져 있으면 게스트 엔드포인트는 404이고, 게스트 토큰은 모든 경로에서 거부됩니다.
 - 게스트를 켜려면 Cloudflare Turnstile이 필요합니다. 게스트 생성과 게스트 로그인 제출이 토큰을 요구합니다. `TURNSTILE_SECRET_KEY`가 없으면 서버가 뜨지 않고, Turnstile 없이 게스트를 켜는 설정은 없습니다.
 - 게스트는 자기 이름만 바꿀 수 있습니다. 로그인 식별자·비밀번호 변경과 소셜 로그인 연결은 Kratos 설정 훅이 거절합니다.
-- 회원 경로(`/v1/*`의 인증 경로, GraphQL, WebSocket)는 게스트 토큰을 `403`으로 거부합니다.
-- 게스트를 켜도 회원 로그인은 Kratos 기본 동작 그대로입니다. 로그인에서 backend를 부르는 것은 게스트뿐입니다.
+- 회원 경로는 게스트 토큰을 거부합니다. `/v1/*`의 인증 경로와 GraphQL은 `403`, WebSocket은 연결을 `1008`로 닫습니다.
+- 이 저장소에는 게스트를 받는 리소스가 아직 없습니다. 미팅도 호스트를 등록하지 않았습니다([리소스가 게스트를 받게 하기](#리소스가-게스트를-받게-하기)). 이 문서의 `meeting` 예시는 요청 모양을 보이기 위한 것입니다.
+- 게스트를 켜도 회원 로그인의 Kratos 판정은 그대로입니다. Kratos가 로그인 훅으로 backend에 묻는 것은 게스트 로그인뿐입니다. 로그인 요청 자체는 회원과 게스트 모두 `/auth` 프록시를 지납니다.
 - 게스트 JWT에는 `email` 클레임이 없고 `email_verified`는 `false`입니다. handle은 이메일로 쓰이지 않습니다.
 
 게스트의 정보는 두 곳에 있습니다.
@@ -76,7 +77,7 @@ flowchart TB
 | backend → Turnstile | `TURNSTILE_SECRET_KEY` | 생성·게스트 로그인 `403`/`503` |
 | Kratos → backend 훅 | `X-Kratos-Hook-Key` = `KRATOS_HOOK_API_KEY` | `401`, Kratos는 그 요청을 거절 |
 
-- 게스트의 비밀번호는 backend에 저장되지 않습니다. 생성 요청 한 번에서만 backend를 지나 Kratos admin API로 갑니다.
+- 게스트의 비밀번호는 backend에 저장되지 않습니다. 생성 요청에서는 backend가 받아 Kratos admin API로 넘기고, 로그인 제출에서는 `/auth` 프록시가 본문째 Kratos 공개 API로 넘깁니다.
 - backend는 게스트 대신 로그인하지 않습니다. 세션 토큰과 JWT는 클라이언트가 `/auth/*`로 직접 받습니다.
 
 ## 클라이언트가 따르는 순서
@@ -225,10 +226,10 @@ sequenceDiagram
 게스트는 다음 경우에 폐기됩니다.
 
 - 게스트가 자기를 삭제할 때
-- 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때
+- 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때. 로그인·게스트 경로·이름 변경은 그 게스트를, 이름 찾기·생성은 그 리소스의 게스트 전부를 폐기한다. 호스트를 등록하지 않은 리소스 종류는 `MISSING`이다
 - 리소스가 지워지면서 `discard_resource_guests`를 부를 때
 
-폐기된 게스트의 Kratos 세션은 바로 끊깁니다. 이미 받은 JWT는 만료(Kratos tokenizer `ttl`, 기본 10분)까지 서명은 유효하지만, 게스트 경로는 요청마다 게스트 행을 확인하므로 거부됩니다. Kratos identity 삭제가 실패해도 게스트 행은 지워지고, 행이 없는 게스트 identity는 로그인할 수 없습니다. 폐기된 게스트의 이름은 다시 쓸 수 있습니다.
+폐기된 게스트의 Kratos 세션은 identity가 지워지면서 끊깁니다. 이미 받은 JWT는 만료(Kratos tokenizer `ttl`, 기본 10분)까지 서명은 유효하지만, 게스트 경로는 요청마다 게스트 행을 확인하므로 거부됩니다. Kratos identity 삭제가 실패해도 게스트 행은 지워지고, 행이 없는 게스트 identity는 로그인할 수 없습니다. 이때 identity와 그 세션은 Kratos에 남고(세션으로 받은 JWT는 게스트 경로와 회원 경로에서 거부된다), backend는 실패를 로그에 남길 뿐 다시 시도하지 않습니다. 리소스가 `EXPIRED`·`MISSING`이 된 뒤 게스트 확인이 한 번도 일어나지 않으면 그 게스트는 남아 있습니다. 주기적으로 정리하는 작업은 없습니다. 폐기된 게스트의 이름은 다시 쓸 수 있습니다.
 
 리소스가 `CLOSED`인 동안 게스트는 남지만 로그인, 이름 찾기, 생성, 이름 변경은 거절됩니다. 자기 삭제는 됩니다.
 
@@ -472,7 +473,7 @@ GET  /auth/sessions/whoami?tokenize_as=api
 
 - 로그인 제출의 `identifier`가 게스트 handle이면 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 Kratos에 넘깁니다. 헤더가 없거나 Turnstile이 받지 않으면 `403` `guest_verification_failed`, 확인할 수 없으면 `503` `guest_verification_unavailable`이고 Kratos에 넘기지 않습니다. 토큰은 제출마다 새로 받습니다.
 - `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문을 읽을 수 없으면 `400` `invalid_request_body`입니다.
-- 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다.
+- 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
 - JWT 클레임에는 `sub`(게스트의 Kratos identity id), `schema_id`(게스트 schema id), `name`이 있고 `email`은 없습니다. 이후 요청에는 `Authorization: Bearer <JWT>`를 붙입니다.
 - `/auth`로 가는 GET 밖의 요청은 IP당 분당 10회입니다. 회원의 로그인·가입·코드 제출도 같은 한도를 받습니다.
@@ -574,6 +575,7 @@ sequenceDiagram
 | `MISSING` | 리소스가 없다 | 거부, 게스트를 폐기한다 |
 
 ```python
+# 예시: 미팅이 게스트를 받는다면 (이 저장소에는 없는 파일이고, accepts_guests·guest_period_over도 예시다)
 # app/domain/meeting/guest_host.py
 from uuid import UUID
 
@@ -619,7 +621,7 @@ async def guest_view(guest: Guest = Depends(require_guest_access(ResourceType.ME
     ...
 ```
 
-- 토큰이 게스트 토큰이고, 게스트 행이 있고, 그 행의 리소스가 경로 파라미터의 리소스와 같고, 접근 정책이 허용할 때만 통과합니다. 아니면 `403`(토큰이 없으면 `401`)입니다.
+- 토큰이 게스트 토큰이고, 게스트 행이 있고, 그 행의 리소스가 경로 파라미터의 리소스와 같고, 접근 정책이 허용할 때만 통과합니다. 아니면 `403`(토큰이 없으면 `401`)입니다. `GUEST_ENABLED`가 꺼져 있으면 토큰과 상관없이 `403`입니다.
 - 게스트를 받는 경로는 회원 게이트(`get_current_user_synced`)가 걸린 `/v1` 인증 라우터 밖에 둡니다.
 - 새 경로가 게스트 토큰을 거부하지 않으면 `tests/domain/guest/test_route_guard.py`가 실패합니다. 게스트를 받는 경로는 그 테스트의 허용 목록에 올립니다.
 
@@ -683,9 +685,11 @@ graph TD
 
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
 - 이름 찾기와 생성은 각각 IP당 분당 10회, `/auth` 제출은 IP당 분당 10회입니다(`app/ratelimit/config.py`). 요청에 토큰이 있어도 IP로 셉니다.
+- 한도는 backend 인스턴스의 메모리에서 셉니다. 인스턴스가 여럿이면 인스턴스마다 따로 셉니다. 같은 IP를 쓰는 사용자들(NAT, 사무실)은 한도를 함께 씁니다.
+- 게스트 비밀번호에는 길이 규칙이 없고 handle은 이름 찾기로 받을 수 있으므로, 게스트 로그인 시도는 Turnstile 확인과 `/auth` 제출 한도가 제한합니다. 둘 다 `/auth` 프록시에서 하므로 Kratos 공개 API는 backend 뒤에만 둡니다([`/auth` 프록시](auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 - 게스트는 비밀번호를 바꾸거나 찾을 수 없습니다. 비밀번호를 잊으면 그 이름으로 다시 들어갈 수 없고, 다른 이름으로 새 게스트를 만듭니다.
 - 리소스 하나의 게스트는 100명까지입니다(`MAX_GUESTS_PER_RESOURCE`). 수는 넣기 전에 세므로, 100명 경계에서 동시에 만들면 동시 요청 수만큼 넘을 수 있습니다. 폐기된 게스트의 자리는 다시 쓸 수 있고, 가득 찬 리소스에서도 이름 찾기·로그인·이름 변경은 됩니다.
-- IP당 한도는 backend가 접속 주소를 바르게 알 때만 지켜집니다([배포 조건](../deployment/kratos-guest.ko.md)).
+- IP당 한도는 backend가 접속 주소를 바르게 알 때만 지켜집니다([접속 주소와 요청 한도](../deployment/kratos-guest.ko.md#12-접속-주소와-요청-한도)).
 
 ## 관련 코드
 

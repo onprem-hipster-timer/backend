@@ -119,7 +119,7 @@ DB_POOL_RECYCLE=3600
 
 ```bash
 OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://your-auth-provider.com/realms/your-realm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=your-client-id
 ```
 
@@ -238,7 +238,7 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 
 # 허용할 헤더
-CORS_ALLOW_HEADERS=Authorization,Content-Type
+CORS_ALLOW_HEADERS=Authorization,Content-Type,X-Session-Token,X-Turnstile-Token
 ```
 
 !!! warning "주의"
@@ -293,7 +293,7 @@ docker run -d \
   -e ENVIRONMENT=production \
   -e DATABASE_URL=postgresql://user:password@db-host:5432/hipster_timer \
   -e OIDC_ENABLED=true \
-  -e OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm \
+  -e OIDC_ISSUER_URL=https://api.example.com/auth/ \
   -e OIDC_AUDIENCE=hipster-timer-frontend \
   -e CORS_ALLOWED_ORIGINS=https://app.example.com,wss://api.example.com \
   -e CORS_ALLOW_CREDENTIALS=true \
@@ -347,7 +347,7 @@ volumes:
 
 ```bash
 DB_PASSWORD=your-secure-password-here
-OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=hipster-timer-frontend
 CORS_ALLOWED_ORIGINS=https://app.example.com,wss://api.example.com
 ```
@@ -455,14 +455,14 @@ MAX_OVERFLOW=20
 
 # 인증
 OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=hipster-timer-frontend
 
 # CORS (HTTP/HTTPS + WebSocket wss:// 필수)
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://www.example.com,wss://api.example.com
 CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
-CORS_ALLOW_HEADERS=Authorization,Content-Type
+CORS_ALLOW_HEADERS=Authorization,Content-Type,X-Session-Token,X-Turnstile-Token
 
 # Rate Limiting
 RATE_LIMIT_ENABLED=true

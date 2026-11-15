@@ -10,7 +10,9 @@
 | Kratos | 게스트 identity schema, JWT 클레임 매퍼의 `schema_id`, 로그인 훅, 설정 훅, backend가 닿는 admin API |
 | Cloudflare Turnstile | 위젯(사이트 키는 클라이언트, 비밀 키는 backend). 게스트를 켜면 반드시 쓴다 |
 
-게스트를 켜도 회원 로그인은 Kratos 기본 동작 그대로입니다. 로그인과 설정 변경에서 backend를 부르는 것은 게스트뿐입니다.
+게스트를 켜도 회원 로그인의 Kratos 판정은 그대로입니다. Kratos가 훅으로 backend에 묻는 것은 게스트의 로그인과 설정 변경뿐입니다. 로그인·설정 요청 자체는 회원과 게스트 모두 backend의 `/auth` 프록시를 지납니다.
+
+이 저장소에는 게스트를 받는 리소스가 아직 없습니다. 아래 설정을 마쳐도 리소스가 호스트를 등록하기 전에는 게스트 이름 찾기와 생성이 `403`입니다([리소스가 게스트를 받게 하기](../guides/guest.ko.md#리소스가-게스트를-받게-하기)).
 
 ## 1. backend 환경 변수
 
@@ -58,6 +60,8 @@ TURNSTILE_SECRET_KEY=<Turnstile 비밀 키>
 - backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
 - uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.
 - `/internal/kratos/hooks/*`는 Kratos만 부릅니다. 앞단에서 밖으로 열지 않는 것을 권합니다.
+- `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다).
+- Kratos 공개 API와 admin API는 backend만 닿는 주소에 둡니다. 공개 API에 backend를 거치지 않고 닿을 수 있으면 `/auth` 프록시의 확인(요청 한도, 게스트 로그인의 Turnstile 등)이 적용되지 않습니다([`/auth` 프록시](../guides/auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 
 ## 2. Kratos 설정
 
@@ -177,7 +181,7 @@ selfservice:
           hooks:
             - hook: web_hook
               config:
-                url: https://api.example.com/internal/kratos/hooks/login
+                url: http://127.0.0.1:2614/internal/kratos/hooks/login
                 method: POST
                 body: file:///etc/config/kratos/hook.login.jsonnet
                 response:
@@ -204,7 +208,7 @@ function(ctx)
 - `error 'cancel'`: 게스트가 아닌 identity는 훅을 부르지 않는다. 회원 로그인은 `require_verified_address`가 지금과 같이 판정한다(미인증 회원은 `session_verified_address_required`와 `continue_with`의 인증 플로우)
 - backend는 게스트 행이 있고 리소스가 `OPEN`일 때만 게스트 로그인을 허용한다. 게스트가 아닌 요청이 오면 허용한다
 - `require_verified_address`: 순서대로 실행되므로 게스트 훅 뒤에 둔다. 게스트는 handle이 인증된 주소라 통과한다
-- `url`: Kratos에서 닿는 backend 주소. backend는 `/internal/kratos/hooks/login`에서 받는다
+- `url`: Kratos에서 닿는 backend 주소(위 예는 같은 호스트의 backend). backend는 `/internal/kratos/hooks/login`에서 받는다
 - `response.parse: true`: backend의 `403` 응답이 로그인을 멈춘다. 이 값이 없으면 거절이 무시된다
 - `auth`: backend는 `X-Kratos-Hook-Key`가 `KRATOS_HOOK_API_KEY`와 다르면 `401`이고, Kratos는 그 로그인을 거절한다
 - `'guest'`: `KRATOS_GUEST_SCHEMA_ID`와 같은 값
@@ -222,7 +226,7 @@ selfservice:
           hooks:
             - hook: web_hook
               config:
-                url: https://api.example.com/internal/kratos/hooks/settings/profile
+                url: http://127.0.0.1:2614/internal/kratos/hooks/settings/profile
                 method: POST
                 body: file:///etc/config/kratos/hook.settings.jsonnet
                 response:
@@ -237,7 +241,7 @@ selfservice:
           hooks:
             - hook: web_hook
               config:
-                url: https://api.example.com/internal/kratos/hooks/settings/password
+                url: http://127.0.0.1:2614/internal/kratos/hooks/settings/password
                 method: POST
                 body: file:///etc/config/kratos/hook.settings.jsonnet
                 response:
@@ -253,7 +257,7 @@ selfservice:
           hooks:
             - hook: web_hook
               config:
-                url: https://api.example.com/internal/kratos/hooks/settings/oidc
+                url: http://127.0.0.1:2614/internal/kratos/hooks/settings/oidc
                 method: POST
                 body: file:///etc/config/kratos/hook.settings.jsonnet
                 response:
@@ -314,11 +318,16 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 - `/v1/guests/*`와 `/internal/kratos/hooks/*`는 `404`입니다
 - `schema_id`가 게스트 schema인 토큰은 모든 경로에서 거부됩니다(`403`)
 - `schema_id` 클레임이 없는 토큰도 받습니다
-- Kratos는 2장의 설정 없이 기존 설정으로 둡니다. 게스트 훅 설정을 남긴 채 backend만 끄면 게스트 로그인은 훅이 `404`를 받아 거절되고, 회원 로그인은 영향이 없습니다
+- 게스트 훅 설정을 남긴 채 backend만 끄면 게스트 로그인은 훅이 `404`를 받아 거절되고, 회원 로그인은 영향이 없습니다
+
+게스트를 켰다가 끌 때:
+
+- 게스트 행과 Kratos의 게스트 identity는 자동으로 지워지지 않습니다. `guest` 테이블의 `identity_id`로 Kratos admin API에서 identity를 지우고 행을 지웁니다.
+- `GUEST_ENABLED=false`인 backend는 `schema_id` 클레임이 없는 토큰을 회원 토큰으로 받습니다. Kratos에 게스트 identity가 남아 있는 동안에는 클레임 매퍼의 `schema_id`와 게스트 로그인 훅을 그대로 둡니다. 매퍼에서 `schema_id`를 빼는 것은 게스트 identity를 모두 지운 뒤에 합니다.
 
 ## 4. 설정 후 확인
 
-`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 게스트를 받는 리소스가 하나 있어야 4.3부터 확인할 수 있습니다(`RESOURCE_TYPE`, `RESOURCE_ID`). JSON은 `python3`로 읽습니다.
+`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 게스트를 받는 리소스(호스트를 등록한 리소스)가 하나 있어야 4.3부터 확인할 수 있습니다. 이 저장소에는 아직 없으므로 4.1, 4.2, 4.4까지 확인합니다(`RESOURCE_TYPE`, `RESOURCE_ID`). JSON은 `python3`로 읽습니다.
 
 ### 4.1 Kratos가 게스트 schema를 안다
 

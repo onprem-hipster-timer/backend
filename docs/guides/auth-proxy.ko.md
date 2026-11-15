@@ -89,11 +89,11 @@ flowchart TD
 
 ## 프록시가 직접 답하는 응답
 
-아래 응답은 Kratos에 넘기지 않고 프록시가 답합니다. `502` 밖의 본문은 `{"error": {"id": "<id>", "code": <상태>, "status": "...", "reason": "..."}}` 모양입니다.
+아래 응답은 Kratos에 넘기지 않고 프록시가 답합니다. `429`와 `502` 밖의 본문은 `{"error": {"id": "<id>", "code": <상태>, "status": "...", "reason": "..."}}` 모양입니다.
 
 | 상태 | `id` | 언제 |
 |------|------|------|
-| `429` | | GET 밖의 요청이 IP당 분당 10회를 넘었다 (레이트 리밋 미들웨어) |
+| `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청이 IP당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다 |
 | `400` | `invalid_request_body` | 검사하는 제출의 쿼리 문자열에 `flow` 밖의 키가 있다. 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
 | `403` | `settings_require_email_recovery` | 설정 제출이 메일 복구 세션의 비밀번호 변경도, 게스트 세션의 이름 변경도 아니다 |
@@ -103,6 +103,23 @@ flowchart TD
 | `502` | (본문 `{"detail": "Authentication service unavailable"}`) | Kratos 공개 API에 닿지 않는다 |
 
 게스트 handle 로그인의 Turnstile 확인과 게스트 이름 변경은 `GUEST_ENABLED=true`일 때만 합니다. 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소 거절, 설정 제출 제한, 소셜 제출의 `traits.email` 버리기는 `GUEST_ENABLED`와 상관없이 합니다.
+
+## Kratos 공개 API를 backend 뒤에 두기
+
+이 문서의 확인은 모두 backend에서 합니다. Kratos 공개 API(`KRATOS_PUBLIC_URL`)에 backend를 거치지 않고 닿을 수 있으면 아래 왼쪽 열은 적용되지 않습니다. Kratos 공개 API와 admin API는 backend만 닿는 주소(같은 호스트의 루프백, 내부 망)에 둡니다.
+
+| 프록시에서만 하는 것 | Kratos 설정이 하는 것 (프록시와 무관) |
+|----------------------|----------------------------------------|
+| `/auth` 제출의 요청 한도 | 이메일 인증 전 로그인 거절 (`require_verified_address`) |
+| 제출의 쿼리 문자열에 `flow`만 | 비밀번호 변경·복구 뒤 기존 세션 종료 (`revoke_active_sessions`) |
+| 설정 제출 제한 (메일 복구 세션의 비밀번호 변경, 게스트 세션의 이름 변경만) | 게스트 로그인 판정 (로그인 훅) |
+| 소셜 제출의 `traits.email` 버리기 | 게스트의 handle·비밀번호 변경과 소셜 연결 거절, 이름 중복 거절 (설정 훅) |
+| `@guest.invalid` 주소의 인증·복구 제출 거절 | 게스트 schema로의 셀프 가입 없음 (`default_schema_id`) |
+| 게스트 로그인 제출의 Turnstile 확인 | 게스트의 비밀번호 복구 없음 (schema에 recovery 주소 없음) |
+| 쿠키와 요청 헤더 거르기 | |
+| 접근 기록, 메일 잡 실행 요청 | |
+
+backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 판정은 `/auth`와 상관없이 API 요청마다 합니다.
 
 ## 관련 코드
 
