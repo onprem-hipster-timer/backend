@@ -173,8 +173,12 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
-psycopg2-binary==2.9.13
+psycopg[binary]==3.3.8
     # via -r requirements.txt
+psycopg-binary==3.3.8
+    # via
+    #   -r requirements.txt
+    #   psycopg
 pycparser==3.0
     # via
     #   -r requirements.txt

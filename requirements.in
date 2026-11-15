@@ -15,7 +15,7 @@ sqlmodel
 alembic
 asyncpg
 aiosqlite
-psycopg2-binary
+psycopg[binary]  # SQLAlchemy 2.1부터 postgresql:// URL의 기본 드라이버
 
 # Authentication
 joserfc  # authlib.jose deprecation 대응 (authlib → joserfc 마이그레이션, #34)

@@ -20,7 +20,7 @@ ENV FORCE_COLOR=1
 
 WORKDIR /app
 
-# 시스템 의존성 설치 (psycopg2-binary 빌드에 필요할 수 있음)
+# 시스템 의존성 설치 (psycopg 빌드에 필요할 수 있음)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \

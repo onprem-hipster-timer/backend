@@ -69,8 +69,10 @@ opentelemetry-api==1.45.1
     # via fastapi
 packaging==26.0
     # via strawberry-graphql
-psycopg2-binary==2.9.13
+psycopg[binary]==3.3.8
     # via -r requirements.in
+psycopg-binary==3.3.8
+    # via psycopg
 pycparser==3.0
     # via cffi
 pydantic==2.14.1
