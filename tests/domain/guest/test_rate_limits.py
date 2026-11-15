@@ -232,12 +232,12 @@ def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource)
         assert rate_limited.post(LOOKUP, json=_body(resource)).status_code == 200
     assert rate_limited.post(LOOKUP, json=_body(resource)).status_code == 429
 
-    for i in range(10):
+    for i in range(100):
         assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}")).status_code == 201
-    assert rate_limited.post(CREATE, json=_body(resource, name="g10")).status_code == 429
+    assert rate_limited.post(CREATE, json=_body(resource, name="g100")).status_code == 429
 
 
-@pytest.mark.parametrize("path,limit", [(CREATE, 10), (LOOKUP, 10), (LOGIN, 60)])
+@pytest.mark.parametrize("path,limit", [(CREATE, 100), (LOOKUP, 10), (LOGIN, 60)])
 def test_requests_with_different_tokens_from_one_ip_share_one_counter(rate_limited, tokens, resource, path, limit):
     statuses = []
     for i in range(limit + 1):

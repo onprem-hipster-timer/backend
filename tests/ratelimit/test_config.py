@@ -30,13 +30,12 @@ class TestFriendRequestRule:
 class TestGuestEntryRules:
     """게스트 이름 찾기·생성 전용 rate limit 규칙"""
 
-    @pytest.mark.parametrize("path", ["/v1/guests", "/v1/guests/lookup"])
-    def test_guest_lookup_and_create_have_stricter_limit(self, path):
+    @pytest.mark.parametrize("path,limit", [("/v1/guests", 100), ("/v1/guests/lookup", 10)])
+    def test_guest_lookup_and_create_have_own_limits(self, path, limit):
         rule = get_rule_for_request("POST", path)
         assert rule is not None
         assert rule.path_pattern == path  # 둘은 따로 센다
-        assert rule.max_requests == 10  # 전역 폴백(60)보다 엄격
-        assert rule.window_seconds == 60
+        assert (rule.max_requests, rule.window_seconds) == (limit, 60)
 
     @pytest.mark.parametrize("path", ["/v1/guests", "/v1/guests/lookup"])
     def test_guest_lookup_and_create_are_counted_per_ip(self, path):

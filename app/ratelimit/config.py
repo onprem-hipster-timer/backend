@@ -89,7 +89,8 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         window_seconds=60,
         max_requests=30,
     ),
-    # 게스트 이름 찾기·생성: 인증 없는 경로라 토큰과 상관없이 IP 단위로 세고 더 엄격하게 제한
+    # 게스트 이름 찾기·생성: 인증 없는 경로라 토큰과 상관없이 IP 단위로 센다.
+    # 생성은 Turnstile 확인이 따로 있어, 한 공간의 여러 사람이 같은 IP로 함께 만들 수 있게 넉넉히 둔다
     RateLimitRule(
         methods=["POST"],
         path_pattern="/v1/guests/lookup",
@@ -101,7 +102,7 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         methods=["POST"],
         path_pattern="/v1/guests",
         window_seconds=60,
-        max_requests=10,
+        max_requests=100,
         per_ip=True,
     ),
     # 친구 요청: 이메일 경로 대량 시도(열거/스팸) 억제를 위해 더 엄격하게 제한
