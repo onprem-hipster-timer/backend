@@ -9,6 +9,9 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   응답의 Set-Cookie는 버린다 (Kratos API 플로우는 Cookie가 붙은 요청을 400으로 거부한다)
 - 리다이렉트는 따라가지 않고 클라이언트에 그대로 돌려준다
 - admin API에는 닿지 않는다. 요청은 KRATOS_PUBLIC_URL 한 곳으로만 간다
+- 설정, 가입·로그인 제출 경로로 가는 요청은 메서드와 상관없이(GET 포함) 쿼리 문자열에 flow 하나만 받는다
+  (키는 대소문자 구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면
+  400 invalid_request_body로 거절하고 넘기지 않는다
 - 설정 제출은 메일 코드로 본인 확인한 복구 세션의 비밀번호 변경만 넘긴다. 새어 나간 비밀번호만으로
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
@@ -66,6 +69,8 @@ SETTINGS_SUBMIT_PATH = "/self-service/settings"
 EMAIL_RECOVERY_METHOD = "code_recovery"
 # 소셜 로그인 제출 경로. 처음 쓰는 소셜 계정이면 로그인 제출도 가입으로 이어진다
 OIDC_SUBMIT_PATHS = ("/self-service/registration", "/self-service/login")
+# 본문을 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다
+INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS})
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
 ACCESS_LOG_EVENTS = {"/self-service/login": "login", "/self-service/registration": "registration"}
 
@@ -101,6 +106,12 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
         return None
     method = data.get("method") if isinstance(data, dict) else None
     return method if isinstance(method, str) else None
+
+
+def _only_flow_query(query: str) -> bool:
+    """쿼리 문자열이 비었거나 flow 하나뿐이면 True (키는 대소문자 구분 없이 비교)"""
+    keys = [key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)]
+    return keys in ([], ["flow"])
 
 
 def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
@@ -215,8 +226,10 @@ async def kratos_proxy(path: str, request: Request) -> Response:
     try:
         async with _make_client() as client:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
-            # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
+            # 검사는 실제로 나갈 경로·쿼리로 한다 (httpx가 ..·인코딩을 정리한 뒤의 URL)
             submit_path = outgoing.url.path.rstrip("/").lower()
+            if submit_path in INSPECTED_SUBMIT_PATHS and not _only_flow_query(outgoing.url.query.decode()):
+                return _unreadable_body()
             if request.method != "GET" and submit_path in OIDC_SUBMIT_PATHS:
                 cleaned = _without_oidc_email(request.headers.get("content-type", ""), body)
                 if cleaned is None:

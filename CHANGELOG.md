@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **Query string on `/auth` submissions (breaking)**: on requests of any method, GET included, to the login, registration and settings submit paths, the query string may only contain `flow` (the key is compared without regard to letter case); any other key returns 400 `invalid_request_body` and the request is not forwarded. Other `/auth/*` requests keep their query string.
 
 ---
 
