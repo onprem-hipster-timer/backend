@@ -16,10 +16,9 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other)
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
   구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
-- GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소일 때 X-Turnstile-Token
-  헤더의 Turnstile 토큰을 확인한 뒤 넘긴다. 토큰이 없거나 통과하지 못하면 403 guest_verification_failed, 확인할 수
-  없으면 503 guest_verification_unavailable. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
-  X-Turnstile-Token은 Kratos에 넘기지 않는다
+- GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소인지 본다. 게스트 handle
+  로그인은 인터셉터가 Turnstile을 확인한 뒤 넘긴다. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
+  X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
 - 인증·복구 제출의 email이 게스트 handle 도메인(@guest.invalid)이면 400 address_not_accepted로 거절하고
   넘기지 않는다. 본문을 읽을 수 없으면 400 invalid_request_body
 - 소셜(OIDC) 가입·로그인 제출에서 클라이언트가 보낸 traits.email은 버린다. 이메일은 제공자가
@@ -43,7 +42,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core import courier, kratos_slots, turnstile
+from app.core import courier, kratos_slots
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
@@ -99,9 +98,6 @@ REGISTRATION_SUBMIT_PATH = "/self-service/registration"
 IDENTIFIER_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, *ADDRESS_SUBMIT_PATHS})
 # Kratos가 비밀번호 해시를 계산할 수 있는 제출 경로. 넘기기 전에 Kratos 자리를 잡는다
 HASHING_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, SETTINGS_SUBMIT_PATH})
-# 게스트 handle로 로그인할 때 Turnstile 토큰을 담는 요청 헤더와 토큰 길이 상한
-TURNSTILE_TOKEN_HEADER = "x-turnstile-token"
-TURNSTILE_TOKEN_MAX_LENGTH = 2048
 # 본문을 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다
 INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS, *ADDRESS_SUBMIT_PATHS})
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
@@ -177,18 +173,6 @@ def _is_guest_handle(identifier: object) -> bool:
         return False
     normalized = unicodedata.normalize("NFKC", identifier).strip().casefold()
     return normalized.endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
-
-
-async def _guest_login_refusal(token: str | None) -> Response | None:
-    """게스트 handle 로그인의 Turnstile 토큰을 확인한다. 통과하면 None, 아니면 거절 응답"""
-    if not token or len(token) > TURNSTILE_TOKEN_MAX_LENGTH:
-        return _guest_verification_failed()
-    try:
-        passed = await turnstile.verify(token)
-    except turnstile.TurnstileUnavailableError:
-        logger.warning("게스트 로그인 Turnstile 확인 실패", exc_info=True)
-        return _proxy_error("guest_verification_unavailable", 503, "Service Unavailable", "확인 서비스에 연결할 수 없습니다.")
-    return None if passed else _guest_verification_failed()
 
 
 def _submitted_name(content_type: str, body: bytes) -> object:
@@ -324,14 +308,6 @@ def _settings_forbidden() -> JSONResponse:
     )
 
 
-def _proxy_error(error_id: str, code: int, status: str, reason: str) -> JSONResponse:
-    return JSONResponse({"error": {"id": error_id, "code": code, "status": status, "reason": reason}}, status_code=code)
-
-
-def _guest_verification_failed() -> JSONResponse:
-    return _proxy_error("guest_verification_failed", 403, "Forbidden", "확인을 통과하지 못했습니다. 다시 시도하세요.")
-
-
 def _address_not_accepted() -> JSONResponse:
     return JSONResponse(
         {
@@ -457,13 +433,18 @@ def read_submission(path: str, query: str, content_type: str, body: bytes) -> Su
 
 
 async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:
-    """넘기지 않을 제출이면 거절 응답, 넘길 제출이면 None (설정 제출은 identity_id·guest를 채운다)
+    """넘기지 않을 제출이면 거절 응답, 넘길 제출이면 None (identity_id·guest를 채운다)
 
     - 검사하는 제출의 쿼리 문자열에 flow 밖의 키가 있으면 400 invalid_request_body
+    - GUEST_ENABLED면 로그인 제출의 식별자가 게스트 handle인지 본다. 식별자를 읽을 수 없거나 둘 이상이면 400
     - 설정 제출은 X-Session-Token 세션을 whoami로 확인한다 (_settings_rejection). Kratos에 닿지 않으면 502
     """
     if submission.path in INSPECTED_SUBMIT_PATHS and not _only_flow_query(submission.url.query.decode()):
         return _unreadable_body()
+    if submission.path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
+        if submission.identifier is _UNREADABLE:
+            return _unreadable_body()
+        submission.guest = _is_guest_handle(submission.identifier)
     if submission.path == SETTINGS_SUBMIT_PATH:
         try:
             async with _make_client() as client:
@@ -496,21 +477,12 @@ async def kratos_proxy(path: str, request: Request) -> Response:
     try:
         async with _make_client() as client:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
-            guest_submit = submission is not None and submission.guest
             if submit_path in ADDRESS_SUBMIT_PATHS:
                 guest_address = _is_guest_address(content_type, body)
                 if guest_address is None:
                     return _unreadable_body()
                 if guest_address:
                     return _address_not_accepted()
-            if submit_path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
-                if submission.identifier is _UNREADABLE:
-                    return _unreadable_body()
-                if _is_guest_handle(submission.identifier):
-                    guest_submit = True
-                    refusal = await _guest_login_refusal(request.headers.get(TURNSTILE_TOKEN_HEADER))
-                    if refusal is not None:
-                        return refusal
             if submit_path in OIDC_SUBMIT_PATHS:
                 cleaned = _without_oidc_email(content_type, body)
                 if cleaned is None:
@@ -530,12 +502,12 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                 ):
                     return _guest_name_taken()
             if submit_path in HASHING_SUBMIT_PATHS:
-                slots = kratos_slots.guest_slots if guest_submit else kratos_slots.member_slots
+                slots = kratos_slots.guest_slots if submission.guest else kratos_slots.member_slots
                 try:
                     async with slots.hold():
                         upstream = await client.send(outgoing)
                 except kratos_slots.KratosBusyError:
-                    logger.warning(f"Kratos 자리가 차서 제출을 거절함: guest={guest_submit}")
+                    logger.warning(f"Kratos 자리가 차서 제출을 거절함: guest={submission.guest}")
                     return _kratos_busy()
             else:
                 upstream = await client.send(outgoing)

@@ -9,6 +9,7 @@ from tests.domain.guest.helpers import guest_rows, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
+TOKEN = {"X-Turnstile-Token": "t"}
 
 
 @pytest.fixture
@@ -24,7 +25,6 @@ def _body(resource, name, password="1234") -> dict:
         "resource_id": str(resource),
         "name": name,
         "password": password,
-        "turnstile_token": "t",
     }
 
 
@@ -38,42 +38,42 @@ def test_limit_is_100():
 
 def test_hundredth_guest_is_created_and_next_is_409(guest_client, kratos, turnstile, resource):
     _fill(kratos, resource, 99)
-    assert guest_client.post(CREATE, json=_body(resource, "백번째")).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, "백번째")).status_code == 201
     identities, verifications = len(kratos.identities), len(turnstile.requests)
 
-    r = guest_client.post(CREATE, json=_body(resource, "넘침"))
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, "넘침"))
 
     assert r.status_code == 409
     assert r.json()["error_type"] == "GuestLimitReachedError"
     assert r.json()["message"] == "이 리소스에는 게스트를 더 만들 수 없습니다"
     assert len(guest_rows()) == 100
     assert len(kratos.identities) == identities
-    assert len(turnstile.requests) == verifications
+    assert len(turnstile.requests) == verifications + 1  # Turnstile이 게스트 수 확인보다 먼저다
 
 
 def test_taken_name_on_full_resource_is_name_taken(guest_client, kratos, turnstile, resource):
     _fill(kratos, resource, 100)
-    r = guest_client.post(CREATE, json=_body(resource, "g7"))
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, "g7"))
     assert r.status_code == 409
     assert r.json()["error_type"] == "GuestNameTakenError"
-    assert turnstile.requests == []
+    assert len(turnstile.requests) == 1
 
 
 def test_other_resource_is_not_affected(guest_client, kratos, host, resource):
     _fill(kratos, resource, 100)
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
-    assert guest_client.post(CREATE, json=_body(other, "g0")).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(other, "g0")).status_code == 201
 
 
 @pytest.mark.asyncio
 async def test_discarding_a_guest_frees_a_slot(guest_client, kratos, resource):
     guests = _fill(kratos, resource, 100)
-    assert guest_client.post(CREATE, json=_body(resource, "새 게스트")).status_code == 409
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, "새 게스트")).status_code == 409
 
     await service.discard_guest(guests[0].identity_id)
 
-    assert guest_client.post(CREATE, json=_body(resource, "새 게스트")).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, "새 게스트")).status_code == 201
     assert len(guest_rows()) == 100
 
 

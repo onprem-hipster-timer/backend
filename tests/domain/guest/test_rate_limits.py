@@ -14,6 +14,7 @@ from tests.domain.guest.helpers import make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
+TOKEN = {"X-Turnstile-Token": "t"}
 LOGIN = "/auth/self-service/login"
 SETTINGS_SUBMIT = "/auth/self-service/settings?flow=f1"
 FORM = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -46,7 +47,6 @@ def _body(resource, name="민수", password="1234") -> dict:
         "resource_id": str(resource),
         "name": name,
         "password": password,
-        "turnstile_token": "t",
     }
 
 
@@ -233,8 +233,8 @@ def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource)
     assert rate_limited.post(LOOKUP, json=_body(resource)).status_code == 429
 
     for i in range(100):
-        assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}")).status_code == 201
-    assert rate_limited.post(CREATE, json=_body(resource, name="g100")).status_code == 429
+        assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}"), headers=TOKEN).status_code == 201
+    assert rate_limited.post(CREATE, json=_body(resource, name="g100"), headers=TOKEN).status_code == 429
 
 
 @pytest.mark.parametrize("path,limit", [(CREATE, 100), (LOOKUP, 100), (LOGIN, 60)])
@@ -243,7 +243,7 @@ def test_requests_with_different_tokens_from_one_ip_share_one_counter(rate_limit
     for i in range(limit + 1):
         headers = tokens.member(f"member-{i}")
         if path == CREATE:
-            r = rate_limited.post(CREATE, json=_body(resource, name=f"g{i}"), headers=headers)
+            r = rate_limited.post(CREATE, json=_body(resource, name=f"g{i}"), headers={**headers, **TOKEN})
         elif path == LOOKUP:
             r = rate_limited.post(LOOKUP, json=_body(resource), headers=headers)
         else:

@@ -1,18 +1,34 @@
 """
 게스트 관문 (인터셉터)
 
+게스트 단계의 Cloudflare Turnstile 확인은 여기 한 곳에서 한다 (app/core/turnstile.py). GUEST_ENABLED일 때 아래 요청은
+X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는다. 꺼져 있으면 확인하지 않는다.
+
+| 게스트 단계 | 요청 |
+|---|---|
+| 생성 | POST /v1/guests |
+| 로그인 | /auth 로그인 제출 중 식별자가 게스트 handle인 것 |
+
+- 토큰이 없거나 2048자를 넘거나 통과하지 못하면 403, 확인할 수 없으면 503. /v1은 도메인 에러 JSON
+  (GuestVerificationFailedError, GuestServiceUnavailableError), /auth는 프록시 JSON
+  (guest_verification_failed, guest_verification_unavailable)으로 답한다
+- 순서는 요청 한도 → Turnstile → Kratos를 쓰는 일(Kratos 자리, identity 생성)이다. Turnstile은 리소스 상태·이름 중복·
+  게스트 수 확인보다 먼저다. /v1 경로는 바깥의 RateLimitMiddleware가 먼저 센다
+
 /auth 제출(프록시 라우트가 받는 메서드 중 GET 밖)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고
-다음을 거친다. 읽은 것은 request.state.auth_submission으로 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
+다음을 거친다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
+넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
 1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출은 IP 단위로,
    로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다
-2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 설정 제출의 세션)
+2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션)
 3. 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+4. 게스트 제출이면 Turnstile
 
-경로는 라우터와 같은 기준(라우트 경로 정규식, get_route_path)으로 가린다.
+경로와 메서드는 라우터와 같은 기준(라우트 경로 정규식, get_route_path)으로 가린다.
 CORS 안쪽에 둔다. 거절 응답에도 CORS 헤더가 붙고, preflight는 CORS가 답한다.
 
-테스트: tests/domain/guest/test_rate_limits.py, tests/test_auth_proxy.py
+테스트: tests/domain/guest/test_turnstile.py, test_guest_login_turnstile.py, test_rate_limits.py, tests/test_auth_proxy.py
 """
 import hashlib
 import logging
@@ -20,12 +36,15 @@ import unicodedata
 
 from starlette._utils import get_route_path
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api import auth_proxy
 from app.core import config as app_config
+from app.core import turnstile
+from app.core.error_handlers import DomainException, format_error_response
+from app.domain.guest.exceptions import GuestServiceUnavailableError, GuestVerificationFailedError
 from app.ratelimit.config import (
     AUTH_SETTINGS_PER_IDENTITY,
     AUTH_SUBMIT_METHODS,
@@ -38,7 +57,60 @@ from app.ratelimit.middleware import client_ip_key, rate_limited_response
 
 logger = logging.getLogger(__name__)
 
+TURNSTILE_TOKEN_HEADER = "x-turnstile-token"
+TURNSTILE_TOKEN_MAX_LENGTH = 2048
+
+# /v1 게스트 단계: (메서드, 라우트 경로)
+V1_STEPS = (
+    ("POST", "/v1/guests"),
+)
+# /auth 게스트 단계: 게스트 제출(Submission.guest)의 검사 경로
+AUTH_STEPS = frozenset({auth_proxy.LOGIN_SUBMIT_PATH})
+
+_V1_STEP_ROUTES = [(method, compile_path(path)[0]) for method, path in V1_STEPS]
 _AUTH_PROXY_PATH, _, _ = compile_path(auth_proxy.PROXY_PATH)
+
+
+async def _verification_failure(request: Request) -> DomainException | None:
+    """X-Turnstile-Token 헤더의 토큰을 확인한다. 통과하면 None"""
+    token = request.headers.get(TURNSTILE_TOKEN_HEADER)
+    if not token or len(token) > TURNSTILE_TOKEN_MAX_LENGTH:
+        return GuestVerificationFailedError()
+    try:
+        passed = await turnstile.verify(token)
+    except turnstile.TurnstileUnavailableError:
+        logger.warning(f"Turnstile 확인 실패: {request.method} {request.url.path}", exc_info=True)
+        return GuestServiceUnavailableError()
+    return None if passed else GuestVerificationFailedError()
+
+
+async def _v1_step_refusal(request: Request) -> Response | None:
+    """/v1 게스트 단계의 Turnstile. 거절은 도메인 예외 핸들러와 같은 본문이다 (미들웨어에서는 예외 핸들러가 돌지 않는다).
+    GUEST_ENABLED가 꺼져 있으면 확인하지 않는다 (라우트가 404로 답한다)
+    """
+    if not app_config.settings.GUEST_ENABLED:
+        return None
+    failure = await _verification_failure(request)
+    if failure is None:
+        return None
+    error = format_error_response(failure, path=str(request.url.path), method=request.method)
+    return JSONResponse(status_code=error.status_code, content=error.dict())
+
+
+async def _auth_step_refusal(request: Request) -> Response | None:
+    """/auth 게스트 제출의 Turnstile. 거절은 프록시 JSON이다"""
+    failure = await _verification_failure(request)
+    if failure is None:
+        return None
+    if isinstance(failure, GuestServiceUnavailableError):
+        error_id, code, status, reason = (
+            "guest_verification_unavailable", 503, "Service Unavailable", "확인 서비스에 연결할 수 없습니다."
+        )
+    else:
+        error_id, code, status, reason = (
+            "guest_verification_failed", 403, "Forbidden", "확인을 통과하지 못했습니다. 다시 시도하세요."
+        )
+    return JSONResponse({"error": {"id": error_id, "code": code, "status": status, "reason": reason}}, status_code=code)
 
 
 def _identifier_key(ip_key: str, submit_path: str, identifier: object) -> str | None:
@@ -98,7 +170,15 @@ async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Resp
         refusal = await auth_proxy.inspect_submission(submission, request.headers.get("x-session-token"))
     if refusal is None and submission.path == auth_proxy.SETTINGS_SUBMIT_PATH:
         refusal = await _settings_rate_limit_refusal(request, submission.identity_id)
+    if refusal is None and submission.guest and submission.path in AUTH_STEPS:
+        refusal = await _auth_step_refusal(request)
     return refusal
+
+
+def _is_v1_step(scope: Scope) -> bool:
+    """/v1 게스트 단계인지"""
+    route_path = get_route_path(scope)
+    return any(scope["method"] == method and path_regex.match(route_path) for method, path_regex in _V1_STEP_ROUTES)
 
 
 def _auth_submit_path(scope: Scope) -> str | None:
@@ -131,11 +211,14 @@ class GuestGateMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         refusal = None
-        if scope["type"] == "http" and (path := _auth_submit_path(scope)) is not None:
-            request = Request(scope, receive)
-            body = await request.body()
-            receive = _replay(body, receive)
-            refusal = await _auth_submit_refusal(request, path, body)
+        if scope["type"] == "http":
+            if _is_v1_step(scope):
+                refusal = await _v1_step_refusal(Request(scope, receive))
+            elif (path := _auth_submit_path(scope)) is not None:
+                request = Request(scope, receive)
+                body = await request.body()
+                receive = _replay(body, receive)
+                refusal = await _auth_submit_refusal(request, path, body)
         if refusal is not None:
             await refusal(scope, receive, send)
             return

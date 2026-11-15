@@ -8,6 +8,8 @@ Guests Router
   클라이언트는 handle과 비밀번호로 회원처럼 /auth로 Kratos에 로그인하고 JWT를 받는다
 - DELETE /v1/guests/me: 게스트 토큰. 게스트가 자기를 폐기한다
 
+Turnstile 토큰은 X-Turnstile-Token 헤더로 받고, 라우트에 닿기 전에 인터셉터가 확인한다 (app/middleware/guest_gate.py).
+
 테스트: tests/domain/guest/test_guest_api.py
 """
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -50,7 +52,7 @@ async def create_guest(data: GuestCreate):
 
     이름은 리소스 안에서 겹치지 않는다(이미 있으면 409). 리소스의 게스트가 100명이면 409.
     리소스가 없거나 지금 게스트를 받지 않으면 403.
-    turnstile_token이 확인을 통과하지 못하면 403, 확인할 수 없으면 503.
+    X-Turnstile-Token 헤더의 토큰이 확인을 통과하지 못하면 403, 확인할 수 없으면 503 (다른 확인보다 먼저다).
     """
     return await service.create(data)
 

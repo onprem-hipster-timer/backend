@@ -9,6 +9,7 @@ from tests.domain.guest.helpers import guest_rows, make_guest
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
 ME = "/v1/guests/me"
+TOKEN = {"X-Turnstile-Token": "t"}  # Turnstile 확인은 tests/domain/guest/test_turnstile.py
 
 
 @pytest.fixture
@@ -24,7 +25,6 @@ def _body(resource, name="민수", password="1234", resource_type="meeting") -> 
         "resource_id": str(resource),
         "name": name,
         "password": password,
-        "turnstile_token": "t",
     }
 
 
@@ -33,7 +33,7 @@ def _lookup_body(resource, name="민수", resource_type="meeting") -> dict:
 
 
 def test_create_returns_handle_and_guest(guest_client, kratos, resource):
-    r = guest_client.post(CREATE, json=_body(resource))
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource))
 
     assert r.status_code == 201, r.text
     [row] = guest_rows()
@@ -46,7 +46,7 @@ def test_create_returns_handle_and_guest(guest_client, kratos, resource):
 
 
 def test_lookup_returns_handle_of_named_guest(guest_client, resource):
-    created = guest_client.post(CREATE, json=_body(resource)).json()
+    created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).json()
 
     r = guest_client.post(LOOKUP, json=_lookup_body(resource))
 
@@ -55,7 +55,7 @@ def test_lookup_returns_handle_of_named_guest(guest_client, resource):
 
 
 def test_lookup_without_guest_returns_null_handle(guest_client, resource):
-    guest_client.post(CREATE, json=_body(resource, name="민수"))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수"))
     r = guest_client.post(LOOKUP, json=_lookup_body(resource, name="영희"))
     assert r.status_code == 200
     assert r.json() == {"handle": None}
@@ -67,13 +67,13 @@ def test_lookup_takes_no_password(guest_client, resource):
 
 
 def test_endpoints_need_no_token(guest_client, resource):
-    assert guest_client.post(CREATE, json=_body(resource)).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
     assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 200
 
 
 def test_taken_name_is_409(guest_client, kratos, resource):
-    guest_client.post(CREATE, json=_body(resource, password="1234"))
-    r = guest_client.post(CREATE, json=_body(resource, password="5678"))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password="1234"))
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password="5678"))
 
     assert r.status_code == 409
     assert len(guest_rows()) == 1
@@ -83,8 +83,8 @@ def test_taken_name_is_409(guest_client, kratos, resource):
 def test_same_name_in_two_resources_both_succeed(guest_client, host, resource):
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
-    first = guest_client.post(CREATE, json=_body(resource))
-    second = guest_client.post(CREATE, json=_body(other))
+    first = guest_client.post(CREATE, headers=TOKEN, json=_body(resource))
+    second = guest_client.post(CREATE, headers=TOKEN, json=_body(other))
     assert first.status_code == second.status_code == 201
     assert first.json()["handle"] != second.json()["handle"]
 
@@ -93,7 +93,7 @@ def test_same_name_in_two_resources_both_succeed(guest_client, host, resource):
 def test_closed_resource_is_403(guest_client, host, path):
     resource = uuid.uuid4()
     host.statuses[resource] = GuestHostStatus.CLOSED
-    assert guest_client.post(path, json=_body(resource)).status_code == 403
+    assert guest_client.post(path, headers=TOKEN, json=_body(resource)).status_code == 403
 
 
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
@@ -106,8 +106,8 @@ def test_unusable_resource_gives_same_refusal(guest_client, host, status, path):
     closed = uuid.uuid4()
     host.statuses[closed] = GuestHostStatus.CLOSED
 
-    r = guest_client.post(path, json=_body(resource))
-    closed_r = guest_client.post(path, json=_body(closed))
+    r = guest_client.post(path, headers=TOKEN, json=_body(resource))
+    closed_r = guest_client.post(path, headers=TOKEN, json=_body(closed))
 
     assert r.status_code == closed_r.status_code == 403
     assert r.json()["message"] == closed_r.json()["message"]
@@ -115,13 +115,13 @@ def test_unusable_resource_gives_same_refusal(guest_client, host, status, path):
 
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
 def test_unregistered_resource_type_is_403(guest_client, path):
-    assert guest_client.post(path, json=_body(uuid.uuid4(), resource_type="todo")).status_code == 403
+    assert guest_client.post(path, headers=TOKEN, json=_body(uuid.uuid4(), resource_type="todo")).status_code == 403
 
 
 def test_kratos_down_is_503_on_create_and_lookup_still_answers(guest_client, kratos, resource):
     make_guest(kratos, resource, name="다른 이름")
     kratos.down.add("admin")
-    assert guest_client.post(CREATE, json=_body(resource)).status_code == 503
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 503
     assert guest_client.post(LOOKUP, json=_lookup_body(resource, name="다른 이름")).json()["handle"]
     assert len(guest_rows()) == 1
 
@@ -129,26 +129,26 @@ def test_kratos_down_is_503_on_create_and_lookup_still_answers(guest_client, kra
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
 @pytest.mark.parametrize("name", ["", "   ", "a" * 51, "민\x07수", "\n"])
 def test_invalid_name_is_422(guest_client, kratos, resource, name, path):
-    assert guest_client.post(path, json=_body(resource, name=name)).status_code == 422
+    assert guest_client.post(path, headers=TOKEN, json=_body(resource, name=name)).status_code == 422
     assert kratos.identities == {}
 
 
 @pytest.mark.parametrize("name", ["a", "a" * 50, "  민수  ", "김 민수", "🙂"])
 def test_valid_names(guest_client, resource, name):
-    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=name)).status_code == 201
     assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=name)).json()["handle"] is not None
 
 
 @pytest.mark.parametrize("password", ["", "가" * 25, "a" * 73])
 def test_invalid_password_is_422(guest_client, kratos, resource, password):
     """비어 있거나 UTF-8로 72바이트를 넘는 비밀번호 (가 25자 = 75바이트)"""
-    assert guest_client.post(CREATE, json=_body(resource, password=password)).status_code == 422
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password)).status_code == 422
     assert kratos.identities == {}
 
 
 @pytest.mark.parametrize("password", ["1", " ", "a" * 72, "가" * 24, "1234"])
 def test_any_short_password_is_accepted(guest_client, kratos, resource, password):
-    r = guest_client.post(CREATE, json=_body(resource, password=password))
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
     assert r.status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
 
@@ -157,7 +157,7 @@ def test_any_short_password_is_accepted(guest_client, kratos, resource, password
 def test_create_missing_field_is_422(guest_client, resource, field):
     body = _body(resource)
     del body[field]
-    assert guest_client.post(CREATE, json=body).status_code == 422
+    assert guest_client.post(CREATE, headers=TOKEN, json=body).status_code == 422
 
 
 @pytest.mark.parametrize("field", ["resource_type", "resource_id", "name"])
@@ -169,7 +169,7 @@ def test_lookup_missing_field_is_422(guest_client, resource, field):
 
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
 def test_unknown_resource_type_is_422(guest_client, resource, path):
-    assert guest_client.post(path, json=_body(resource, resource_type="planet")).status_code == 422
+    assert guest_client.post(path, headers=TOKEN, json=_body(resource, resource_type="planet")).status_code == 422
 
 
 # ============ 자기 삭제 ============
@@ -208,8 +208,8 @@ def test_flag_off_endpoints_are_404(guest_client, guest_off, kratos, tokens, res
     guest = make_guest(kratos, resource)
     guest_off()
 
-    assert guest_client.post(CREATE, json=_body(resource)).status_code == 404
-    assert guest_client.post(CREATE, json={}).status_code == 404
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 404
+    assert guest_client.post(CREATE, headers=TOKEN, json={}).status_code == 404
     assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
     assert guest_client.post(LOOKUP, json={}).status_code == 404
     assert guest_client.delete(ME, headers=tokens.guest(guest.identity_id)).status_code == 404
@@ -218,7 +218,7 @@ def test_flag_off_endpoints_are_404(guest_client, guest_off, kratos, tokens, res
 
 def test_flag_off_lookup_and_create_do_not_call_kratos(guest_client, guest_off, kratos, resource):
     guest_off()
-    assert guest_client.post(CREATE, json=_body(resource)).status_code == 404
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 404
     assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
     assert kratos.identities == {}
     assert kratos.list_requests == []
@@ -273,9 +273,9 @@ def _nfd(text: str) -> str:
 
 def test_nfc_and_nfd_name_are_one_name(guest_client, kratos, resource):
     assert _nfd("민수") != "민수"
-    created = guest_client.post(CREATE, json=_body(resource, name="민수")).json()
+    created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수")).json()
 
-    assert guest_client.post(CREATE, json=_body(resource, name=_nfd("민수"))).status_code == 409
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=_nfd("민수"))).status_code == 409
     assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=_nfd("민수"))).json() == {
         "handle": created["handle"]
     }
@@ -283,26 +283,26 @@ def test_nfc_and_nfd_name_are_one_name(guest_client, kratos, resource):
 
 
 def test_nfd_name_is_stored_as_nfc(guest_client, kratos, resource):
-    guest_client.post(CREATE, json=_body(resource, name=_nfd("민수")))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=_nfd("민수")))
     assert kratos.name_of(guest_rows()[0].identity_id) == "민수"
 
 
 def test_nfd_password_is_stored_as_nfc(guest_client, kratos, resource):
-    guest_client.post(CREATE, json=_body(resource, password=_nfd("비밀")))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd("비밀")))
     assert kratos.passwords[guest_rows()[0].identity_id] == "비밀"
 
 
 def test_name_length_is_measured_after_normalisation(guest_client, kratos, resource):
     name = "가" * 50
     assert len(_nfd(name)) > 50
-    assert guest_client.post(CREATE, json=_body(resource, name=_nfd(name))).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=_nfd(name))).status_code == 201
     assert kratos.name_of(guest_rows()[0].identity_id) == name
 
 
 def test_password_bytes_are_measured_after_normalisation(guest_client, kratos, resource):
     password = "가" * 24  # NFC 72바이트
     assert len(_nfd(password).encode()) > 72
-    assert guest_client.post(CREATE, json=_body(resource, password=_nfd(password))).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd(password))).status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
 
 
@@ -317,57 +317,57 @@ def test_password_bytes_are_measured_after_normalisation(guest_client, kratos, r
 )
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
 def test_name_with_refused_character_is_422(guest_client, kratos, resource, variant, path):
-    assert guest_client.post(path, json=_body(resource, name=variant)).status_code == 422
+    assert guest_client.post(path, headers=TOKEN, json=_body(resource, name=variant)).status_code == 422
     assert kratos.identities == {}
 
 
 @pytest.mark.parametrize("variant", ["김  민수", "김 민수", "김\u3000민수", "김\t민수", "김\u00a0민수", " 김 \u2003 민수\n"])
 def test_whitespace_runs_are_one_space(guest_client, kratos, resource, variant):
-    created = guest_client.post(CREATE, json=_body(resource, name="김 민수")).json()
+    created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="김 민수")).json()
 
-    assert guest_client.post(CREATE, json=_body(resource, name=variant)).status_code == 409
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=variant)).status_code == 409
     assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=variant)).json() == {
         "handle": created["handle"]
     }
 
 
 def test_name_is_stored_in_canonical_form(guest_client, kratos, resource):
-    guest_client.post(CREATE, json=_body(resource, name=" 김\u3000\u3000민수 "))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=" 김\u3000\u3000민수 "))
     assert kratos.name_of(guest_rows()[0].identity_id) == "김 민수"
 
 
 def test_line_and_paragraph_separators_count_as_whitespace(guest_client, kratos, resource):
     """Python에서 공백 문자인 U+2028·U+2029는 공백 하나로 바뀐다"""
-    guest_client.post(CREATE, json=_body(resource, name="김\u2028민수\u2029"))
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="김\u2028민수\u2029"))
     assert kratos.name_of(guest_rows()[0].identity_id) == "김 민수"
 
 
 def test_name_length_is_measured_after_collapsing_whitespace(guest_client, resource):
     name = "가 " * 25 + "      "  # 공백을 줄이면 49자
-    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
-    assert guest_client.post(CREATE, json=_body(resource, name="가" * 51)).status_code == 422
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=name)).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="가" * 51)).status_code == 422
 
 
 @pytest.mark.parametrize("name", ["🙂", "👍🏽", "🇰🇷", "민수🙂"])
 def test_emoji_without_joiner_is_accepted(guest_client, resource, name):
-    assert guest_client.post(CREATE, json=_body(resource, name=name)).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=name)).status_code == 201
 
 
 def test_emoji_sequence_with_zero_width_joiner_is_refused(guest_client, kratos, resource):
     family = "👨\u200d👩\u200d👧"
-    assert guest_client.post(CREATE, json=_body(resource, name=family)).status_code == 422
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=family)).status_code == 422
     assert kratos.identities == {}
 
 
 def test_handle_is_derived_from_guest_row(guest_client, kratos, resource):
-    created = guest_client.post(CREATE, json=_body(resource)).json()
+    created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).json()
     assert created["handle"] == f"{created['guest_id']}@guest.invalid"
     [row] = guest_rows()
     assert kratos.identities[row.identity_id]["traits"]["handle"] == created["handle"]
 
 
 def test_lookup_of_closed_resource_returns_no_handle(guest_client, host, resource):
-    assert guest_client.post(CREATE, json=_body(resource)).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
     host.statuses[resource] = GuestHostStatus.CLOSED
     r = guest_client.post(LOOKUP, json=_lookup_body(resource))
     assert r.status_code == 403

@@ -101,19 +101,19 @@ async def test_held_guest_slot_does_not_block_member_submits(guest_client, krato
 async def test_held_guest_slot_refuses_guest_creation(guest_client, kratos, slots, resource):
     guest = make_guest(kratos, resource, name="민수")
     gate = Gate(kratos, held=_handle(kratos, guest))
-    body = {"resource_type": "meeting", "resource_id": str(resource), "name": "영희", "password": "1", "turnstile_token": "t"}
+    body = {"resource_type": "meeting", "resource_id": str(resource), "name": "영희", "password": "1"}
     async with _client() as client:
         first = asyncio.create_task(_login(client, _handle(kratos, guest)))
         await gate.entered.wait()
 
-        r = await client.post("/v1/guests", json=body)
+        r = await client.post("/v1/guests", json=body, headers={"X-Turnstile-Token": "t"})
 
         assert r.status_code == 429
         assert r.json()["error_type"] == "GuestServiceBusyError"
         assert [g.name for g in guest_rows()] == ["민수"]
         gate.release.set()
         await first
-        assert (await client.post("/v1/guests", json=body)).status_code == 201
+        assert (await client.post("/v1/guests", json=body, headers={"X-Turnstile-Token": "t"})).status_code == 201
 
 
 @pytest.mark.asyncio

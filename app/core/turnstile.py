@@ -1,8 +1,8 @@
 """
 Cloudflare Turnstile 서버 확인 (siteverify)
 
-게스트 생성(app/domain/guest)에서 클라이언트가 위젯에서 받은 토큰을 TURNSTILE_SECRET_KEY로 확인한다.
-클라이언트 IP는 보내지 않는다. 토큰은 한 번만 확인할 수 있다.
+게스트 단계 요청에서 클라이언트가 위젯에서 받은 토큰을 TURNSTILE_SECRET_KEY로 확인한다.
+부르는 곳은 인터셉터 한 곳이다 (app/middleware/guest_gate.py). 클라이언트 IP는 보내지 않는다. 토큰은 한 번만 확인할 수 있다.
 """
 import httpx
 
