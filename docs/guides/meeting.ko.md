@@ -43,6 +43,8 @@ flowchart TD
 
 모든 미팅 경로는 회원 로그인이 필요합니다. `public`도 같습니다.
 
+접근할 수 없는 미팅은 없는 미팅과 같은 `404` `MeetingNotFoundError`를 받습니다. 조회, 참여 등록, 가능 시간 조회·설정, 결과 조회가 모두 같고, 수정·삭제는 생성자만 할 수 있어 다른 회원에게는 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 ### 게스트 계정
 
 [게스트 계정](./guest.ko.md)은 회원 가입 없이 리소스 하나에 속한 계정입니다. 미팅은 게스트를 받는 리소스로 등록되어 있지 않습니다.
@@ -270,7 +272,7 @@ interface ParticipantCreate {
 **PUT /v1/meetings/{meeting_id}/availability**
 
 쿼리 파라미터:
-- `participant_id` (required): 참여자 ID
+- `participant_id` (required): 참여자 ID. 본인의 참여자만 설정할 수 있고, 다른 사용자의 참여자 ID는 없는 참여자 ID와 같은 `404` `MeetingParticipantNotFoundError`입니다
 
 ```typescript
 // Request
@@ -705,18 +707,13 @@ function TimeSlotSelector({
 |------|------|------|
 | `400` | 잘못된 요청 | 필수 필드 누락, 잘못된 날짜 형식 등 |
 | `401` | 인증 필요 | 로그인이 필요한 작업 |
-| `403` | 접근 거부 | 권한이 없는 리소스 접근 |
-| `404` | 찾을 수 없음 | 존재하지 않는 일정 조율 |
+| `403` | 게스트 토큰 | 게스트 계정의 토큰으로 미팅 경로 호출 ([게스트 계정](#게스트-계정)) |
+| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자 |
 
 ### 에러 응답 예시
 
 ```json
-// 403 Forbidden - 접근 권한 없음
-{
-  "detail": "You don't have permission to access this meeting"
-}
-
-// 404 Not Found - 존재하지 않음
+// 404 Not Found - 존재하지 않거나 접근할 수 없음
 {
   "detail": "Meeting not found"
 }
@@ -738,8 +735,6 @@ async function handleMeetingError(response: Response): Promise<never> {
       throw new Error(`잘못된 요청: ${error.detail}`);
     case 401:
       throw new Error('로그인이 필요합니다');
-    case 403:
-      throw new Error('이 일정 조율에 접근할 권한이 없습니다');
     case 404:
       throw new Error('일정 조율을 찾을 수 없습니다');
     default:

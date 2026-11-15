@@ -69,6 +69,9 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # Delete visibility (rever
 !!! info "`resource_type`"
     One of `schedule`, `timer`, `todo`, `meeting`.
 
+!!! info "Resources the caller cannot access"
+    Schedule, timer, todo and meeting routes answer a resource the caller cannot access with the same `404` as a resource that does not exist. Visibility routes return `404` when the resource does not exist or the caller is not its owner. See the [Visibility guide](../guides/visibility.ko.md#접근-제어-규칙).
+
 ### Friends
 
 ```http
