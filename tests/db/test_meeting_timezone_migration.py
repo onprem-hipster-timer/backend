@@ -5,52 +5,29 @@ alembic/versions/2026_11_14_1000-f3a39109a3ef_add_timezone_to_meeting.py
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
-from alembic.config import Config
 from sqlmodel import SQLModel
 
 import app.models  # noqa: F401  # register every table in SQLModel.metadata
 import app.models.holiday  # noqa: F401
+from tests.db.conftest import database_url_for, migration_database
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BEFORE_TIMEZONE = "3f1fcd3dae5f"
-_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
-
-
-def _alembic_config(monkeypatch: pytest.MonkeyPatch, database_url: str) -> Config:
-    import app.core.config as app_config
-    monkeypatch.setattr(app_config.settings, "DATABASE_URL", database_url)
-
-    config = Config(str(PROJECT_ROOT / "alembic.ini"))
-    config.set_main_option("script_location", (PROJECT_ROOT / "alembic").resolve().as_posix())
-    return config
 
 
 @pytest.fixture(params=["sqlite", "postgresql"])
 def database_url(request, tmp_path: Path) -> str:
-    if request.param == "sqlite":
-        return f"sqlite:///{(tmp_path / 'meeting_tz.db').resolve().as_posix()}"
-    if not _TEST_DATABASE_URL.startswith("postgresql"):
-        pytest.skip("requires PostgreSQL via TEST_DATABASE_URL")
-    return _TEST_DATABASE_URL
+    return database_url_for(request.param, tmp_path / "meeting_tz.db")
 
 
 @pytest.fixture
 def engine_and_config(database_url: str, monkeypatch: pytest.MonkeyPatch):
-    config = _alembic_config(monkeypatch, database_url)
-    engine = sa.create_engine(database_url)
-    SQLModel.metadata.drop_all(engine)
-    SQLModel.metadata.create_all(engine)
-    yield engine, config
-    SQLModel.metadata.drop_all(engine)
-    with engine.begin() as connection:
-        connection.execute(sa.text("DROP TABLE IF EXISTS alembic_version"))
-    engine.dispose()
+    with migration_database(monkeypatch, database_url) as engine_and_config:
+        yield engine_and_config
 
 
 def _columns(engine: sa.Engine) -> dict[str, dict]:
