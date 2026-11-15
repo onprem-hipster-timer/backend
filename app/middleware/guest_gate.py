@@ -12,11 +12,12 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 | 로그인 | /auth 로그인 제출 중 식별자가 게스트 handle인 것 |
 | 설정(이름 변경) | /auth 설정 제출 중 세션이 게스트인 것 |
 
-- 토큰이 없거나 2048자를 넘거나 통과하지 못하면 403, 확인할 수 없으면 503. /v1은 도메인 에러 JSON
+- 토큰이 없거나 2048자를 넘거나 통과하지 못하거나 이미 받은 토큰이면 403, 확인할 수 없으면 503. /v1은 도메인 에러 JSON
   (GuestVerificationFailedError, GuestServiceUnavailableError), /auth는 프록시 JSON
   (guest_verification_failed, guest_verification_unavailable)으로 답한다
-- 순서는 요청 한도 → Turnstile → Kratos를 쓰는 일(Kratos 자리, identity 생성·삭제)이다. Turnstile은 리소스 상태·이름 중복·
-  게스트 수 확인보다 먼저다. /v1 경로는 바깥의 RateLimitMiddleware가 먼저 센다
+- 순서는 요청 한도 → Turnstile → Kratos를 쓰는 일(Kratos 자리, identity 생성·삭제)이다. Turnstile은 입력 규칙·리소스 상태·
+  이름 중복·게스트 수·게스트 JWT 판정보다 먼저다. /v1 경로는 바깥의 RateLimitMiddleware가 먼저 센다
+- X-Turnstile-Token은 Kratos에 넘기지 않는다 (프록시의 요청 헤더 허용 목록에 없다)
 
 /auth 제출(프록시 라우트가 받는 메서드 중 GET 밖)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고
 다음을 거친다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로

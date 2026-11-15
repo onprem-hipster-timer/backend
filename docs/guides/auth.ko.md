@@ -255,8 +255,9 @@ graph TD
 미들웨어는 `app/main.py`에서 **AuthMiddleware가 RateLimitMiddleware보다 먼저 실행**되도록 등록됩니다.
 
 1. **AuthMiddleware** — 토큰을 best-effort 검증해 `request.state.current_user`를 채웁니다(거부하지 않음).
-2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반. 규칙에 `per_ip`가 있으면(게스트 이름 찾기·생성) 토큰이 있어도 IP로 셉니다. `/auth` 제출은 이 미들웨어가 아니라 `/auth` 프록시가 셉니다.
-3. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다. 토큰이 유효해도 `ensure_member`가 게스트 토큰을 `403`으로 거절합니다.
+2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반. 규칙에 `per_ip`가 있으면(게스트 이름 찾기·생성) 토큰이 있어도 IP로 셉니다. `/auth` 제출은 이 미들웨어가 아니라 게스트 관문이 셉니다.
+3. **게스트 관문** (`app/middleware/guest_gate.py`) — `/auth` 제출의 요청 한도를 세고, 게스트 단계(이름 찾기·생성·자기 삭제, 게스트 로그인·설정 제출)면 Turnstile 토큰을 확인합니다([게스트 계정 가이드](guest.ko.md#turnstile-토큰)).
+4. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다. 토큰이 유효해도 `ensure_member`가 게스트 토큰을 `403`으로 거절합니다.
 
 결과적으로 토큰 검증은 사실상 1회(`AuthMiddleware`)만 수행되고, 미들웨어와 의존성이
 `request.state.current_user`를 공유해 중복 검증을 피합니다. `AuthMiddleware`는 게이트가

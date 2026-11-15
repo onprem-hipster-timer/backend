@@ -47,7 +47,7 @@ Rate Limit은 사용자별로 독립적으로 적용됩니다:
 | 인증됨 | JWT의 `sub` claim (OIDC 사용자 ID) |
 | 미인증 | 클라이언트 IP 주소 (`X-Forwarded-For` 또는 직접 연결 IP) |
 
-규칙에 `per_ip=True`가 있으면 토큰이 있어도 클라이언트 IP로 셉니다(게스트 이름 찾기·생성). `/auth` 제출은 미들웨어가 아니라 `/auth` 프록시가 셉니다(아래 "`/auth` 제출").
+규칙에 `per_ip=True`가 있으면 토큰이 있어도 클라이언트 IP로 셉니다(게스트 이름 찾기·생성). `/auth` 제출은 이 미들웨어가 아니라 게스트 관문(`app/middleware/guest_gate.py`)이 셉니다(아래 "`/auth` 제출"). 게스트 단계의 Turnstile 확인은 두 경우 모두 요청 한도를 센 뒤에 합니다.
 
 ---
 
@@ -234,7 +234,7 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 
 ### `/auth` 제출
 
-`/auth` 프록시(`app/api/auth_proxy.py`)가 Kratos로 나갈 경로로 판단해 셉니다. GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않고, 메서드마다 따로 셉니다. 규칙은 `app/ratelimit/config.py`의 `AUTH_*`입니다.
+게스트 관문(`app/middleware/guest_gate.py`)이 `/auth` 프록시보다 먼저, Kratos로 나갈 경로로 판단해 셉니다. GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않고, 메서드마다 따로 셉니다. 규칙은 `app/ratelimit/config.py`의 `AUTH_*`입니다.
 
 | 대상 | 키 | Window | Max Requests |
 |------|----|--------|--------------|

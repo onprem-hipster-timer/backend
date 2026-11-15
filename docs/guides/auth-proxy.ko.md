@@ -21,7 +21,7 @@ backend의 `/auth/*`는 Kratos 공개 API로 가는 프록시입니다. Kratos�
 
 ## 판정 순서
 
-GET은 아래 확인 없이 넘깁니다. 경로는 Kratos로 실제 나갈 경로(`..`와 인코딩을 정리한 뒤, 소문자, 끝의 `/` 제외)로 비교하므로, 같은 Kratos 경로에 닿는 다른 표기도 같은 확인을 받습니다.
+GET은 아래 확인 없이 넘깁니다. GET 밖의 요청은 게스트 관문(`app/middleware/guest_gate.py`)이 프록시보다 먼저 본문을 한 번 읽어 요청 한도를 세고 검사하고, 게스트 제출이면 Turnstile 토큰을 확인합니다. 프록시는 관문이 읽고 검사한 URL과 본문 그대로 Kratos에 넘깁니다. 경로는 Kratos로 실제 나갈 경로(`..`와 인코딩을 정리한 뒤, 소문자, 끝의 `/` 제외)로 비교하므로, 같은 Kratos 경로에 닿는 다른 표기도 같은 확인을 받습니다.
 
 **공통 단계.** GET 밖의 모든 `/auth/*` 요청이 지납니다.
 
@@ -38,7 +38,7 @@ flowchart TD
     QS -->|"예"| NEXT["경로별 확인"]
 ```
 
-**경로별 확인.** 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다. 로그인·가입·설정 제출은 넘기기 전에 Kratos 자리를 잡습니다. 자리는 회원 2개, 게스트(게스트 handle 로그인, 게스트 이름 변경, 게스트 생성) 1개이고, 2초 안에 잡지 못하면 `429`입니다(`app/core/kratos_slots.py`).
+**경로별 확인.** 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다. 로그인·가입·설정 제출은 넘기기 전에 Kratos 자리를 잡습니다. 자리는 회원 2개, 게스트(게스트 handle 로그인, 게스트 세션의 설정 제출, 게스트 생성) 1개이고, 2초 안에 잡지 못하면 `429`입니다(`app/core/kratos_slots.py`). Turnstile 확인은 자리를 잡기 전입니다.
 
 | 제출 경로 | 확인 | 거절 응답 |
 |-----------|------|-----------|
@@ -57,10 +57,12 @@ flowchart TD
     I -->|"예"| H{"게스트 handle인가<br/>(@guest.invalid)"}
     H -->|"아니오"| FWD["다음 확인으로"]
     H -->|"예"| T{"X-Turnstile-Token"}
-    T -->|"없음 · 거절"| R403["403<br/>guest_verification_failed"]
+    T -->|"없음 · 거절 ·<br/>이미 쓴 토큰"| R403["403<br/>guest_verification_failed"]
     T -->|"확인 불가"| R503["503<br/>guest_verification_unavailable"]
     T -->|"통과"| FWD
 ```
+
+`identifier`와 `password_identifier`는 키를 대소문자 구분 없이(JSON은 유니코드 대소문자 접기로) 찾습니다. 값은 NFKC, 앞뒤 공백 제거, 대소문자 접기(U+0130은 i) 뒤 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
 
 **설정 제출**
 
@@ -68,18 +70,21 @@ flowchart TD
 flowchart TD
     S["설정 제출"] --> M{"method"}
     M -->|"password"| P{"세션 토큰이 있고<br/>메일 복구 세션인가"}
-    P -->|"예"| PL{"identity당<br/>분당 10회"}
-    PL -->|"초과"| R429["429"]
-    PL -->|"이내"| FWD["Kratos로 넘김<br/>(검사한 세션 토큰만)"]
     P -->|"아니오"| R403["403<br/>settings_require_email_recovery"]
+    P -->|"예"| L{"identity당<br/>분당 10회"}
     M -->|"profile<br/>(GUEST_ENABLED)"| G{"세션 토큰이 있고<br/>게스트 세션인가"}
     G -->|"아니오"| R403
-    G -->|"예"| L{"identity당<br/>분당 10회"}
+    G -->|"예"| L
+    M -->|"그 밖"| R403
     L -->|"초과"| R429["429"]
-    L -->|"이내"| N{"다른 게스트의<br/>이름인가"}
+    L -->|"이내"| GS{"게스트 세션인가<br/>(GUEST_ENABLED)"}
+    GS -->|"아니오"| FWD["Kratos로 넘김<br/>(검사한 세션 토큰만)"]
+    GS -->|"예"| T{"X-Turnstile-Token"}
+    T -->|"없음 · 거절 ·<br/>이미 쓴 토큰"| T403["403<br/>guest_verification_failed"]
+    T -->|"확인 불가"| T503["503<br/>guest_verification_unavailable"]
+    T -->|"통과"| N{"다른 게스트의<br/>이름인가"}
     N -->|"예"| R409["409<br/>guest_name_taken"]
     N -->|"아니오"| FWD
-    M -->|"그 밖"| R403
 ```
 
 설정 제출이 넘어갈 때는 검사한 `X-Session-Token`의 세션으로만 처리되도록 `Authorization` 헤더를 빼고 넘깁니다.
@@ -103,12 +108,12 @@ flowchart TD
 | `400` | `invalid_request_body` | 검사하는 제출의 쿼리 문자열에 `flow` 밖의 키가 있다. 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
 | `403` | `settings_require_email_recovery` | 설정 제출이 메일 복구 세션의 비밀번호 변경도, 게스트 세션의 이름 변경도 아니다 |
-| `403` | `guest_verification_failed` | 게스트 handle의 로그인 제출에 `X-Turnstile-Token`이 없거나 Turnstile이 받지 않았다 |
-| `503` | `guest_verification_unavailable` | 게스트 handle의 로그인 제출인데 Turnstile을 확인할 수 없다 |
+| `403` | `guest_verification_failed` | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출에 `X-Turnstile-Token`이 없거나, Turnstile이 받지 않았거나, 이미 쓴 토큰이다 |
+| `503` | `guest_verification_unavailable` | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출인데 Turnstile을 확인할 수 없다 |
 | `409` | `guest_name_taken` | 게스트의 이름 변경이 같은 리소스의 다른 게스트 이름이다 |
 | `502` | (본문 `{"detail": "Authentication service unavailable"}`) | Kratos 공개 API에 닿지 않는다 |
 
-게스트 handle 로그인의 Turnstile 확인과 게스트 이름 변경은 `GUEST_ENABLED=true`일 때만 합니다. 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소 거절, 설정 제출 제한, 소셜 제출의 `traits.email` 버리기는 `GUEST_ENABLED`와 상관없이 합니다.
+게스트 제출(게스트 handle 로그인, 게스트 세션의 설정 제출)의 Turnstile 확인과 게스트 이름 변경은 `GUEST_ENABLED=true`일 때만 합니다. 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소 거절, 설정 제출 제한, 소셜 제출의 `traits.email` 버리기는 `GUEST_ENABLED`와 상관없이 합니다.
 
 ## Kratos 공개 API를 backend 뒤에 두기
 
@@ -121,7 +126,7 @@ flowchart TD
 | 설정 제출 제한 (메일 복구 세션의 비밀번호 변경, 게스트 세션의 이름 변경만) | 게스트 로그인 판정 (로그인 훅) |
 | 소셜 제출의 `traits.email` 버리기 | 게스트의 handle·비밀번호 변경과 소셜 연결 거절, 이름 중복 거절 (설정 훅) |
 | `@guest.invalid` 주소의 인증·복구 제출 거절 | 게스트 schema로의 셀프 가입 없음 (`default_schema_id`) |
-| 게스트 로그인 제출의 Turnstile 확인 | 게스트의 비밀번호 복구 없음 (schema에 recovery 주소 없음) |
+| 게스트 로그인·설정 제출의 Turnstile 확인 | 게스트의 비밀번호 복구 없음 (schema에 recovery 주소 없음) |
 | 쿠키와 요청 헤더 거르기 | |
 | 접근 기록, 메일 잡 실행 요청 | |
 
@@ -132,10 +137,11 @@ backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 �
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 프록시 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
-| 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_guest_login_turnstile.py` |
-| 요청 한도 | `app/api/auth_proxy.py` (`_submit_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
+| 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_turnstile.py` |
+| 본문 한 번 읽기, 검사한 URL·본문 넘기기 | `app/middleware/guest_gate.py`, `app/api/auth_proxy.py` (`read_submission`, `inspect_submission`) | `tests/test_auth_proxy.py` |
+| 요청 한도 | `app/middleware/guest_gate.py` (`_submit_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
 | Kratos 자리 | `app/core/kratos_slots.py`, `app/api/auth_proxy.py` (`HASHING_SUBMIT_PATHS`) | `tests/domain/guest/test_kratos_slots.py` |
-| 게스트 로그인의 Turnstile | `app/core/turnstile.py` | `tests/domain/guest/test_guest_login_turnstile.py` |
+| 게스트 제출의 Turnstile | `app/middleware/guest_gate.py`, `app/core/turnstile.py`, 게스트 handle 판정은 `app/api/auth_proxy.py` | `tests/domain/guest/test_turnstile.py`, `test_guest_login_turnstile.py` |
 | 게스트 이름 변경 | `app/domain/guest/service.py` (`name_taken_by_other`) | `tests/domain/guest/test_rename_proxy.py` |
 | 메일 잡 | `app/core/courier.py` | `tests/core/test_courier.py` |
 | 접근 기록 | `app/core/audit.py` | `tests/test_auth_proxy.py` |

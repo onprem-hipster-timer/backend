@@ -183,7 +183,8 @@ app = FastAPI(
 # Exception Handler 등록
 register_exception_handlers(app)
 
-# Guest Gate - CORS 안쪽(가장 안쪽). /auth 제출을 프록시보다 먼저 세고 검사한다 (app/middleware/guest_gate.py)
+# Guest Gate - CORS 안쪽(가장 안쪽). 게스트 단계의 Turnstile 확인을 하고, /auth 제출을 프록시보다 먼저 세고 검사한다
+#   (app/middleware/guest_gate.py). /v1 게스트 단계는 바깥의 RateLimitMiddleware가 먼저 센다
 #   CORS 안쪽이라 거절 응답에도 CORS 헤더가 붙고, preflight는 CORS가 먼저 답한다
 app.add_middleware(GuestGateMiddleware)
 
