@@ -185,7 +185,7 @@ sequenceDiagram
     K-->>C: flow id
 
     C->>P: POST /auth/self-service/<br/>login?flow=…<br/>(handle, 비밀번호)<br/>+ X-Turnstile-Token
-    P->>P: 요청 한도 (IP당 분당 60회,<br/>같은 IP · handle 분당 5회)<br/>쿼리 문자열에 flow만
+    P->>P: 요청 한도 (IP당 분당 60회,<br/>같은 IP · handle 분당 5회)<br/>identifier는 ASCII 문자만<br/>쿼리 문자열에 flow만
     opt identifier가 게스트 handle일 때만
         P->>T: 비밀 키 + 토큰
         T-->>P: success<br/>(false · 토큰 없음 · 이미 쓴 토큰이면 403,<br/>닿지 않으면 503)
@@ -396,7 +396,7 @@ flowchart TD
 | `/auth`에서 게스트 세션의 `method: profile` 제출 | `403` |
 | `X-Turnstile-Token` | 확인하지 않는다 |
 
-게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시](auth-proxy.ko.md#판정-순서)).
+게스트와 상관없이 적용되는 것은 `/auth` 제출의 요청 한도, 쿼리 문자열 규칙, 식별자의 ASCII 규칙, `@guest.invalid` 주소의 인증·복구 제출 거절입니다([`/auth` 프록시](auth-proxy.ko.md#판정-순서)).
 
 | 확인 | 테스트 |
 |------|--------|
@@ -511,7 +511,8 @@ GET  /auth/sessions/whoami?tokenize_as=api
 ```
 
 - 로그인 제출의 `identifier`가 게스트 handle이면 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 Kratos에 넘깁니다. 헤더가 없거나 Turnstile이 받지 않았거나 이미 쓴 토큰이면 `403` `guest_verification_failed`, 확인할 수 없으면 `503` `guest_verification_unavailable`이고 Kratos에 넘기지 않습니다. 토큰은 제출마다 새로 받습니다.
-- `identifier`(`password_identifier` 포함, JSON 키는 대소문자 구분 없이)는 Kratos가 식별자를 찾을 때처럼 앞뒤 공백을 떼고 소문자로 바꾼 뒤(U+0130은 `i`) NFKC와 대소문자 접기를 더한 값이 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
+- `identifier`(`password_identifier` 포함, JSON 키는 대소문자 구분 없이)는 Kratos가 식별자를 찾을 때처럼 앞뒤의 ASCII 공백을 떼고 소문자로 바꾼 값이 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
+- `identifier`에 ASCII 밖의 문자가 있으면 토큰을 확인하지 않고 `400` `invalid_identifier`입니다.
 - `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문을 읽을 수 없으면 `400` `invalid_request_body`입니다.
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
@@ -605,6 +606,7 @@ sequenceDiagram
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출인데 Turnstile을 확인할 수 없다 (`GUEST_ENABLED`) | `503` `guest_verification_unavailable` |
 | 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
 | 로그인·가입·설정·인증·복구 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 값이 있다 (인증 GET은 `flow`·`code` 밖) | `400` `invalid_request_body` |
+| 로그인·가입·인증·복구 제출의 식별자(`identifier`, `traits.email`, `email`)에 ASCII 밖의 문자가 있다 | `400` `invalid_identifier` |
 | Kratos로 보낼 URL을 만들 수 없다 (퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL) | `400` `invalid_request_url` |
 
 프록시가 요청을 넘기는 방식과 판정 순서 전체는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
