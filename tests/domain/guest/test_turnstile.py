@@ -3,12 +3,16 @@
 게스트 단계(이름 찾기, 생성, 자기 삭제, 게스트 handle 로그인, 게스트 세션의 설정 제출)는 X-Turnstile-Token 헤더의
 토큰이 확인을 통과해야 라우트와 Kratos에 닿는다. 로그인 제출의 게스트 handle 판정은 test_guest_login_turnstile.py.
 """
+import asyncio
 import uuid
 from urllib.parse import parse_qs
 
+import httpx
 import pytest
 
+import app.core.config as app_config
 from app.core import kratos_slots
+from app.core import turnstile as turnstile_client
 from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.fakes import TURNSTILE_SECRET, TURNSTILE_VERIFY
 from tests.domain.guest.helpers import guest_rows, make_guest
@@ -86,6 +90,11 @@ class Step:
         submit_path = "/self-service/login" if self.name == "login" else "/self-service/settings"
         return any(r.method != "GET" and r.url.path == submit_path for r in self.kratos.public_requests)
 
+    def effects(self) -> tuple:
+        """Kratos와 게스트 행에 남은 것 (identity 수, 지운 identity, 게스트 행 수, Kratos가 받은 제출 수)"""
+        submits = sum(r.method != "GET" for r in self.kratos.public_requests)
+        return len(self.kratos.identities), list(self.kratos.deleted), len(guest_rows()), submits
+
 
 def _step_fixture(names):
     @pytest.fixture(params=names)
@@ -101,7 +110,7 @@ auth_step = _step_fixture(AUTH_STEPS)
 rename_step = _step_fixture(["rename"])
 
 
-def _assert_refused(step, response, kind):
+def _assert_refusal_body(step, response, kind):
     """kind: failed(403) 또는 unavailable(503). /v1은 도메인 에러 JSON, /auth는 프록시 JSON"""
     assert response.status_code == {"failed": 403, "unavailable": 503}[kind], response.text
     if step.name in V1_STEPS:
@@ -109,7 +118,21 @@ def _assert_refused(step, response, kind):
         assert response.json()["error_type"] == error_type
     else:
         assert response.json()["error"]["id"] == f"guest_verification_{kind}"
+
+
+def _assert_refused(step, response, kind):
+    _assert_refusal_body(step, response, kind)
     assert not step.reached(response)
+
+
+def _is_verification_refusal(response) -> bool:
+    if not response.content:
+        return False
+    body = response.json()
+    if body.get("error_type") in ("GuestVerificationFailedError", "GuestServiceUnavailableError"):
+        return True
+    error = body.get("error")
+    return isinstance(error, dict) and str(error.get("id", "")).startswith("guest_verification_")
 
 
 # ============ 확인 결과 ============
@@ -398,3 +421,118 @@ def test_preflight_is_answered_without_verification(step, turnstile):
     allowed = r.headers["access-control-allow-headers"].lower()
     assert "x-turnstile-token" in allowed or allowed == "*"
     assert turnstile.requests == []
+
+
+# ============ 토큰은 한 번만 ============
+
+def test_reused_token_is_refused_without_siteverify(step, strict_turnstile):
+    assert step.send(token="once").status_code in (200, 201, 204)
+    effects = step.effects()
+
+    r = step.send(token="once")
+
+    _assert_refusal_body(step, r, "failed")
+    assert step.effects() == effects
+    assert len(strict_turnstile.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [("lookup", "create"), ("create", "login"), ("login", "rename"), ("rename", "delete"), ("delete", "lookup")],
+)
+def test_token_used_for_one_step_is_refused_for_another(
+        guest_client, kratos, tokens, guest, resource, strict_turnstile, first, second
+):
+    first_step = Step(first, guest_client, kratos, tokens, guest, resource)
+    second_step = Step(second, guest_client, kratos, tokens, guest, resource)
+    assert first_step.send(token="once").status_code in (200, 201, 204)
+    effects = second_step.effects()
+
+    r = second_step.send(token="once")
+
+    _assert_refusal_body(second_step, r, "failed")
+    assert second_step.effects() == effects
+    assert len(strict_turnstile.requests) == 1
+
+
+def test_token_that_failed_verification_stays_spent(step, strict_turnstile):
+    strict_turnstile.success = False
+    _assert_refused(step, step.send(token="once"), "failed")
+    strict_turnstile.success = True
+
+    _assert_refused(step, step.send(token="once"), "failed")
+    assert len(strict_turnstile.requests) == 1
+
+
+def test_token_sent_while_siteverify_is_unreachable_stays_spent(step, strict_turnstile):
+    strict_turnstile.down = True
+    _assert_refused(step, step.send(token="once"), "unavailable")
+    strict_turnstile.down = False
+
+    _assert_refused(step, step.send(token="once"), "failed")
+    assert strict_turnstile.requests == []
+
+
+def test_different_tokens_are_each_verified(step, strict_turnstile):
+    step.send(token="first")
+    step.send(token="second")
+    assert len(strict_turnstile.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_uses_of_one_token_reach_siteverify_once(strict_turnstile):
+    results = await asyncio.gather(*[turnstile_client.verify("same") for _ in range(5)])
+
+    assert sorted(results) == [False, False, False, False, True]
+    assert len(strict_turnstile.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_with_one_token_pass_once(guest_client, kratos, guest, resource, strict_turnstile):
+    from app.main import app
+
+    body = {"resource_type": "meeting", "resource_id": str(resource), "name": "민수"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        responses = await asyncio.gather(
+            *[client.post(LOOKUP, json=body, headers={TOKEN_HEADER: "once"}) for _ in range(5)]
+        )
+
+    assert sorted(r.status_code for r in responses) == [200, 403, 403, 403, 403]
+    assert len(strict_turnstile.requests) == 1
+
+
+@pytest.mark.parametrize("secret", sorted(turnstile_client.TESTING_SECRET_KEYS))
+def test_testing_secret_key_skips_the_single_use_record(step, turnstile, monkeypatch, secret):
+    """Cloudflare 테스트 키의 위젯은 늘 같은 더미 토큰을 준다"""
+    monkeypatch.setattr(app_config.settings, "TURNSTILE_SECRET_KEY", secret)
+    dummy = "XXXX.DUMMY.TOKEN.XXXX"
+
+    assert step.send(token=dummy).status_code in (200, 201, 204)
+    r = step.send(token=dummy)
+
+    assert not _is_verification_refusal(r)
+    assert len(turnstile.requests) == 2
+
+
+def test_spent_token_is_kept_through_the_token_lifetime_then_forgotten(monkeypatch):
+    """Turnstile 토큰은 300초 동안 유효하다"""
+    now = [1000.0]
+    monkeypatch.setattr(turnstile_client.time, "monotonic", lambda: now[0])
+    spent = turnstile_client._SpentTokens()
+    assert spent.claim("a")
+    now[0] = 1000.0 + 300
+    assert not spent.claim("a")
+    now[0] = 1000.0 + turnstile_client.SPENT_TOKEN_TTL_SECONDS - 1
+    assert not spent.claim("a")
+    now[0] = 1000.0 + turnstile_client.SPENT_TOKEN_TTL_SECONDS + 1
+    assert spent.claim("a")
+
+
+def test_full_record_forgets_the_oldest_token(monkeypatch):
+    monkeypatch.setattr(turnstile_client, "SPENT_TOKEN_MAX", 2)
+    spent = turnstile_client._SpentTokens()
+    assert spent.claim("a") and spent.claim("b") and spent.claim("c")
+
+    assert not spent.claim("b")
+    assert not spent.claim("c")
+    assert spent.claim("a")

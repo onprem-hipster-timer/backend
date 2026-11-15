@@ -9,7 +9,8 @@ from app.domain.guest.host import GuestHostStatus
 KRATOS_ADMIN = "http://kratos-admin.test"
 KRATOS_PUBLIC = "http://kratos-public.test"
 TURNSTILE_VERIFY = "http://turnstile.test/siteverify"
-TURNSTILE_SECRET = "turnstile-test-secret"
+TURNSTILE_SECRET = "1x0000000000000000000000000000000AA"  # Cloudflare 테스트 키: 토큰을 한 번만 받는 기록을 쓰지 않는다
+TURNSTILE_PRODUCTION_SECRET = "turnstile-production-secret"
 
 
 class FakeKratos:
