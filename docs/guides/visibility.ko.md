@@ -84,7 +84,9 @@ flowchart TD
 
     Start([접근 요청]) --> Owner{소유자?}:::decision
     Owner -- 예 --> Allow1([접근 허용]):::allow
-    Owner -- 아니오 --> Blocked{차단 여부}:::decision
+    Owner -- 아니오 --> Dormant{소유자가 휴면 계정?}:::decision
+    Dormant -- 예 --> Deny0([404 Not Found]):::deny
+    Dormant -- 아니오 --> Blocked{차단 여부}:::decision
     Blocked -- 예 --> Deny1([404 Not Found]):::deny
     Blocked -- 아니오 --> Level{접근권한 레벨}:::decision
 
@@ -102,6 +104,8 @@ flowchart TD
     F & L & E -->|아니오| Deny3([404 Not Found]):::deny
     linkStyle default interpolate monotoneY
 ```
+
+판정 순서는 소유자, 소유자의 휴면 여부(탈퇴를 신청한 계정), 차단 관계(어느 쪽이 차단했든), 접근권한 레벨입니다. 접근권한 설정이 없는 리소스는 `PRIVATE`으로 봅니다.
 
 회원이 접근할 수 없는 리소스는 없는 리소스와 같은 응답을 받습니다. 상태 코드 `404`, `error_type`, `message`, 헤더가 같고 `error_id`·`timestamp`·`path`만 요청마다 다릅니다.
 

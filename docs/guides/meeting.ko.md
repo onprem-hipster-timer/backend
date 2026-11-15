@@ -705,22 +705,38 @@ function TimeSlotSelector({
 
 | 코드 | 상황 | 설명 |
 |------|------|------|
-| `400` | 잘못된 요청 | 필수 필드 누락, 잘못된 날짜 형식 등 |
-| `401` | 인증 필요 | 로그인이 필요한 작업 |
+| `401` | 인증 필요 | 토큰이 없거나 유효하지 않다 |
 | `403` | 게스트 토큰 | 게스트 계정의 토큰으로 미팅 경로 호출 ([게스트 계정](#게스트-계정)) |
 | `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자 |
+| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·요일, 입력 제한을 넘는 값 |
+| `429` | 요청 한도 초과 | [레이트 리밋](../development/rate-limit.ko.md) |
 
 ### 에러 응답 예시
 
-```json
-// 404 Not Found - 존재하지 않거나 접근할 수 없음
-{
-  "detail": "Meeting not found"
-}
+`404`는 아래 모양입니다. 존재하지 않는 일정 조율과 접근할 수 없는 일정 조율은 `error_id`·`timestamp`·`path` 밖의 값이 같습니다.
 
-// 400 Bad Request - 잘못된 요일
+```json
 {
-  "detail": "available_days must contain integers 0-6"
+  "error_id": "0f2c6f0e-...",
+  "status_code": 404,
+  "error_type": "MeetingNotFoundError",
+  "message": "Meeting not found",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "path": "/v1/meetings/6f1c2a9e-..."
+}
+```
+
+`422`는 어느 필드가 왜 거절됐는지를 `detail` 목록으로 줍니다.
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "title"],
+      "msg": "Field required"
+    }
+  ]
 }
 ```
 
@@ -729,16 +745,16 @@ function TimeSlotSelector({
 ```typescript
 async function handleMeetingError(response: Response): Promise<never> {
   const error = await response.json();
-  
+
   switch (response.status) {
-    case 400:
-      throw new Error(`잘못된 요청: ${error.detail}`);
     case 401:
       throw new Error('로그인이 필요합니다');
     case 404:
       throw new Error('일정 조율을 찾을 수 없습니다');
+    case 422:
+      throw new Error(`입력을 확인해 주세요: ${error.detail?.[0]?.msg ?? ''}`);
     default:
-      throw new Error(error.detail || '알 수 없는 오류가 발생했습니다');
+      throw new Error(error.message || '알 수 없는 오류가 발생했습니다');
   }
 }
 ```
