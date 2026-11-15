@@ -185,6 +185,7 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
 |------|------|------|
 | `model.py` | `CurrentUser` | 검증된 JWT 클레임에서 추출한 인증 주체. **DB에 영속되지 않는 휘발성 값 객체**(영속 표시 프로필 `UserProfile`과 별개 개념). `from_claims()`(클레임→객체 단일 매핑)·`mock()`(OIDC 비활성화 시 주입) 제공. |
 | `client.py` | `OIDCClient` / `oidc_client` (싱글톤) | JWT 검증 전담. `OIDC_JWKS`의 공개 키(없으면 discovery의 `jwks_uri`)를 TTL 캐싱하고, `verify_token()`으로 서명·표준 클레임(exp/nbf/iat)·issuer·audience를 검증. |
+| `dependencies.py` | `authenticate_request` | 토큰 검증만 한다(회원·게스트 구분 없음). `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. `get_current_user`와 게스트 의존성이 쓴다. |
 | `dependencies.py` | `ensure_member` | **회원 판정**. 토큰의 `schema_id`가 게스트 schema면 `403`, `GUEST_ENABLED=true`인데 `schema_id`가 비어 있지 않은 문자열이 아니면 `401`. REST·GraphQL·WebSocket의 회원 인증이 모두 거친다([게스트 계정](./guest.ko.md#회원-경로)). |
 | `dependencies.py` | `get_current_user` | **인증 게이트**(실패 시 `401`). 검증한 토큰을 `ensure_member`로 넘겨 회원만 통과시킨다. `AuthMiddleware`가 채운 `request.state.current_user`가 있으면 재사용하고, 없으면 `oidc_client`로 직접 검증. |
 | `dependencies.py` | `get_optional_current_user` | 선택적 인증(미인증 허용 엔드포인트용). 토큰이 없으면 `None` 반환. |
@@ -233,19 +234,19 @@ backend가 `OIDC_JWKS`의 공개 키와 최소 discovery 문서를 인증 없이
 
 ```mermaid
 graph TD
-    MW["AuthMiddleware<br/>(middleware.py)"] -->|verify_token| OC["oidc_client<br/>(client.py)"]
-    DEP["get_current_user<br/>(dependencies.py)"] -.->|state 있으면 재사용| MW
-    DEP -->|state 없으면 직접 검증| OC
-    SYNC["get_current_user_synced"] --> DEP
-    DEP -->|회원 판정| EM["ensure_member<br/>(dependencies.py)"]
+    SYNC["get_current_user_synced"] --> DEP["get_current_user<br/>(dependencies.py)"]
     SYNC -->|JIT upsert| UPS["UserProfileService<br/>(domain/user)"]
-    OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
+    DEP -->|회원 판정| EM["ensure_member<br/>(dependencies.py)"]
+    DEP --> AR["authenticate_request<br/>(dependencies.py)"]
+    GG["get_current_guest<br/>(domain/guest)"] --> AR
+    AR -.->|state 있으면 재사용| MW["AuthMiddleware<br/>(middleware.py)"]
+    AR -->|state 없으면 직접 검증| OC["oidc_client<br/>(client.py)"]
     RL["RateLimitMiddleware"] -.->|user 키로 재사용| MW
-    GG["get_current_guest<br/>(domain/guest)"] -.->|state 있으면 재사용| MW
-    GG -->|state 없으면 직접 검증| OC
+    MW -->|verify_token| OC
+    OC -->|from_claims| CU["CurrentUser<br/>(model.py)"]
 ```
 
-게스트를 받는 경로는 `ensure_member`를 거치지 않고 `get_current_guest`로 같은 `CurrentUser`를 받습니다. 그 뒤의 의존성은 [게스트 계정 가이드의 객체 의존성](guest.ko.md#객체-의존성)에 있습니다.
+토큰 검증은 `authenticate_request` 한 곳에서 합니다. 회원 경로(`get_current_user`)는 그 결과를 `ensure_member`로 넘기고, 게스트를 받는 경로(`get_current_guest`)는 `ensure_member`를 거치지 않고 같은 `CurrentUser`를 받습니다. 그 뒤의 의존성은 [게스트 계정 가이드의 객체 의존성](guest.ko.md#객체-의존성)에 있습니다.
 
 #### 요청 수명주기에서의 협력
 
