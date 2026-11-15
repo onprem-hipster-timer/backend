@@ -10,7 +10,7 @@ backend의 `/auth/*`는 Kratos 공개 API로 가는 프록시입니다. Kratos�
 
 | 항목 | 동작 |
 |------|------|
-| 경로 | `/auth` 접두사를 떼고 `KRATOS_PUBLIC_URL`로 넘긴다. 예: `/auth/sessions/whoami` → `/sessions/whoami`. 쿼리 문자열은 그대로 |
+| 경로 | `/auth` 접두사를 떼고 `KRATOS_PUBLIC_URL`로 넘긴다. 예: `/auth/sessions/whoami` → `/sessions/whoami`. 쿼리 문자열은 그대로. `KRATOS_PUBLIC_URL`에 경로가 있으면 그 뒤에 붙이고(`http://kratos:4433/kratos`면 `/kratos/sessions/whoami`), 요청 경로의 `..`로 그 경로 밖으로 나가지 않는다 |
 | 메서드 | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` |
 | 넘기는 요청 헤더 | `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`. 그 밖의 헤더는 넘기지 않는다 |
 | 쿠키 | 요청의 `Cookie`는 넘기지 않고, 응답의 `Set-Cookie`는 버린다. 인증은 세션 토큰과 JWT로만 한다 |
@@ -21,7 +21,9 @@ backend의 `/auth/*`는 Kratos 공개 API로 가는 프록시입니다. Kratos�
 
 ## 판정 순서
 
-GET 밖의 요청과 로그인·가입·설정·인증·복구 제출 경로로 가는 GET은 게스트 관문(`app/middleware/guest_gate.py`)이 프록시보다 먼저 본문을 한 번 읽어 요청 한도를 세고 검사하고, 게스트 제출이면 Turnstile 토큰을 확인합니다. Kratos는 제출 경로의 GET도 받아 쿼리 문자열에서 제출 값을 읽으므로 이 GET도 제출로 봅니다. 그 밖의 GET은 아래 확인 없이 넘깁니다. 프록시는 관문이 읽고 검사한 URL과 본문 그대로 Kratos에 넘깁니다. 경로는 Kratos로 실제 나갈 경로(`..`와 인코딩을 정리한 뒤, 소문자, 끝의 `/` 제외)로 비교하므로, 같은 Kratos 경로에 닿는 다른 표기도 같은 확인을 받습니다.
+GET 밖의 요청과 로그인·가입·설정·인증·복구 제출 경로로 가는 GET은 게스트 관문(`app/middleware/guest_gate.py`)이 프록시보다 먼저 본문을 한 번 읽어 요청 한도를 세고 검사하고, 게스트 제출이면 Turnstile 토큰을 확인합니다. Kratos는 제출 경로의 GET도 받아 쿼리 문자열에서 제출 값을 읽으므로 이 GET도 제출로 봅니다. 그 밖의 GET은 아래 확인 없이 넘깁니다. 프록시는 관문이 읽고 검사한 URL과 본문 그대로 Kratos에 넘깁니다. 경로는 Kratos로 실제 나갈 경로에서 `KRATOS_PUBLIC_URL`의 경로를 뗀 것(`..`와 인코딩을 정리한 뒤, 소문자, 끝의 `/` 제외)으로 비교하므로, 같은 Kratos 경로에 닿는 다른 표기도 같은 확인을 받고 `KRATOS_PUBLIC_URL`에 경로가 있어도 확인은 같습니다.
+
+Kratos로 보낼 URL을 만들 수 없는 요청(퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL)은 메서드와 경로에 상관없이 아래 단계 없이 `400` `invalid_request_url`로 답합니다. 요청 한도에도 세지 않습니다.
 
 **공통 단계.** GET 밖의 모든 `/auth/*` 요청과 제출 경로로 가는 GET이 지납니다.
 
@@ -107,6 +109,7 @@ flowchart TD
 |------|------|------|
 | `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청과 제출 경로로 가는 GET이 IP당 분당 60회, 로그인·가입·인증·복구 제출이 같은 IP·식별자로 분당 5회, 설정 제출이 identity당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다. 또는 로그인·가입·설정 제출이 Kratos 자리를 2초 안에 잡지 못했다(본문 `detail`, `retry_after`, 헤더 `Retry-After: 1`) |
 | `400` | `invalid_request_body` | 검사하는 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 키가 있다(인증 GET은 `flow`·`code` 밖). 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
+| `400` | `invalid_request_url` | Kratos로 보낼 URL을 만들 수 없다. 퍼센트 인코딩을 푼 경로나 쿼리 문자열에 제어 문자가 있거나 URL이 65536자를 넘는다. 메서드와 경로에 상관없이 답하고, 요청 한도에 세지 않는다 |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
 | `403` | `settings_require_email_recovery` | 설정 제출이 메일 복구 세션의 비밀번호 변경도, 게스트 세션의 이름 변경도 아니다 |
 | `403` | `guest_verification_failed` | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출에 `X-Turnstile-Token`이 없거나, Turnstile이 받지 않았거나, 이미 쓴 토큰이다 |
@@ -140,6 +143,7 @@ backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 �
 | 프록시 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
 | 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_turnstile.py` |
 | 본문 한 번 읽기, 검사한 URL·본문 넘기기 | `app/middleware/guest_gate.py`, `app/api/auth_proxy.py` (`is_get_submission`, `read_submission`, `inspect_submission`) | `tests/test_auth_proxy.py` |
+| Kratos URL과 검사 경로, 만들 수 없는 URL | `app/api/auth_proxy.py` (`kratos_url`, `_submit_path`, `invalid_request_url`), `app/middleware/guest_gate.py` | `tests/test_auth_proxy.py`, `tests/domain/guest/test_turnstile.py` |
 | 요청 한도 | `app/middleware/guest_gate.py` (`_submit_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
 | Kratos 자리 | `app/core/kratos_slots.py`, `app/api/auth_proxy.py` (`HASHING_SUBMIT_PATHS`) | `tests/domain/guest/test_kratos_slots.py` |
 | 게스트 제출의 Turnstile | `app/middleware/guest_gate.py`, `app/core/turnstile.py`, 게스트 handle 판정은 `app/api/auth_proxy.py` | `tests/domain/guest/test_turnstile.py`, `test_guest_login_turnstile.py` |

@@ -605,6 +605,7 @@ sequenceDiagram
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출인데 Turnstile을 확인할 수 없다 (`GUEST_ENABLED`) | `503` `guest_verification_unavailable` |
 | 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
 | 로그인·가입·설정·인증·복구 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 값이 있다 (인증 GET은 `flow`·`code` 밖) | `400` `invalid_request_body` |
+| Kratos로 보낼 URL을 만들 수 없다 (퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL) | `400` `invalid_request_url` |
 
 프록시가 요청을 넘기는 방식과 판정 순서 전체는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
 

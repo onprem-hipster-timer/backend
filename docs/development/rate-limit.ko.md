@@ -234,7 +234,7 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 
 ### `/auth` 제출
 
-게스트 관문(`app/middleware/guest_gate.py`)이 `/auth` 프록시보다 먼저, Kratos로 나갈 경로로 판단해 셉니다. GET은 Kratos로 나갈 경로가 로그인·가입·설정·인증·복구 제출 경로인 것만 세고, 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않습니다. 메서드마다 따로 셉니다. 규칙은 `app/ratelimit/config.py`의 `AUTH_*`입니다.
+게스트 관문(`app/middleware/guest_gate.py`)이 `/auth` 프록시보다 먼저, Kratos로 나갈 경로에서 `KRATOS_PUBLIC_URL`의 경로를 뗀 경로로 판단해 셉니다. GET은 그 경로가 로그인·가입·설정·인증·복구 제출 경로인 것만 세고, 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않습니다. 메서드마다 따로 셉니다. 규칙은 `app/ratelimit/config.py`의 `AUTH_*`입니다.
 
 | 대상 | 키 | Window | Max Requests |
 |------|----|--------|--------------|
