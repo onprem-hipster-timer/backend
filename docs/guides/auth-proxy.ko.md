@@ -27,9 +27,11 @@ GET은 아래 확인 없이 넘깁니다. 경로는 Kratos로 실제 나갈 경�
 
 ```mermaid
 flowchart TD
-    A["GET 밖의<br/>/auth/* 요청"] --> RL{"요청 한도<br/>IP당 분당 10회"}
+    A["GET 밖의<br/>/auth/* 요청"] --> RL{"요청 한도<br/>IP당 분당 60회<br/>(설정 제출은 세지 않음)"}
     RL -->|"초과"| R429["429"]
-    RL -->|"이내"| Q{"로그인 · 가입 · 설정 ·<br/>인증 · 복구 제출"}
+    RL -->|"이내"| RI{"로그인 · 가입 · 인증 · 복구 제출의<br/>같은 IP · 식별자<br/>분당 5회"}
+    RI -->|"초과"| R429
+    RI -->|"이내 · 해당 없음"| Q{"로그인 · 가입 · 설정 ·<br/>인증 · 복구 제출"}
     Q -->|"아니오"| FWD["Kratos로 넘김"]
     Q -->|"예"| QS{"쿼리 문자열에<br/>flow만"}
     QS -->|"아니오"| R400["400<br/>invalid_request_body"]
@@ -66,11 +68,15 @@ flowchart TD
 flowchart TD
     S["설정 제출"] --> M{"method"}
     M -->|"password"| P{"세션 토큰이 있고<br/>메일 복구 세션인가"}
-    P -->|"예"| FWD["Kratos로 넘김<br/>(검사한 세션 토큰만)"]
+    P -->|"예"| PL{"identity당<br/>분당 10회"}
+    PL -->|"초과"| R429["429"]
+    PL -->|"이내"| FWD["Kratos로 넘김<br/>(검사한 세션 토큰만)"]
     P -->|"아니오"| R403["403<br/>settings_require_email_recovery"]
     M -->|"profile<br/>(GUEST_ENABLED)"| G{"세션 토큰이 있고<br/>게스트 세션인가"}
     G -->|"아니오"| R403
-    G -->|"예"| N{"다른 게스트의<br/>이름인가"}
+    G -->|"예"| L{"identity당<br/>분당 10회"}
+    L -->|"초과"| R429["429"]
+    L -->|"이내"| N{"다른 게스트의<br/>이름인가"}
     N -->|"예"| R409["409<br/>guest_name_taken"]
     N -->|"아니오"| FWD
     M -->|"그 밖"| R403
@@ -93,7 +99,7 @@ flowchart TD
 
 | 상태 | `id` | 언제 |
 |------|------|------|
-| `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청이 IP당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다 |
+| `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청이 IP당 분당 60회, 로그인·가입·인증·복구 제출이 같은 IP·식별자로 분당 5회, 설정 제출이 identity당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다 |
 | `400` | `invalid_request_body` | 검사하는 제출의 쿼리 문자열에 `flow` 밖의 키가 있다. 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
 | `403` | `settings_require_email_recovery` | 설정 제출이 메일 복구 세션의 비밀번호 변경도, 게스트 세션의 이름 변경도 아니다 |
@@ -127,7 +133,7 @@ backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 �
 |------|------|--------|
 | 프록시 전체 | `app/api/auth_proxy.py` (`kratos_proxy`) | `tests/test_auth_proxy.py` |
 | 넘기는 요청 헤더 | `FORWARD_REQUEST_HEADERS` (쿠키와 `X-Turnstile-Token`은 넘기지 않는다) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_guest_login_turnstile.py` |
-| 요청 한도 | `app/ratelimit/config.py` (`/auth/*` 규칙, `per_ip`) | `tests/ratelimit/`, `tests/domain/guest/test_rate_limits.py` |
+| 요청 한도 | `app/api/auth_proxy.py` (`_submit_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
 | 게스트 로그인의 Turnstile | `app/core/turnstile.py` | `tests/domain/guest/test_guest_login_turnstile.py` |
 | 게스트 이름 변경 | `app/domain/guest/service.py` (`name_taken_by_other`) | `tests/domain/guest/test_rename_proxy.py` |
 | 메일 잡 | `app/core/courier.py` | `tests/core/test_courier.py` |

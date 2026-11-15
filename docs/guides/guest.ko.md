@@ -178,7 +178,7 @@ sequenceDiagram
     K-->>C: flow id
 
     C->>P: POST /auth/self-service/<br/>login?flow=…<br/>(handle, 비밀번호)<br/>+ X-Turnstile-Token
-    P->>P: 요청 한도 (IP당 분당 10회)<br/>쿼리 문자열에 flow만
+    P->>P: 요청 한도 (IP당 분당 60회,<br/>같은 IP · handle 분당 5회)<br/>쿼리 문자열에 flow만
     opt identifier가 게스트 handle일 때만
         P->>T: 비밀 키 + 토큰
         T-->>P: success<br/>(false · 토큰 없음이면 403,<br/>닿지 않으면 503)
@@ -307,7 +307,7 @@ flowchart TD
     A["요청"] --> B{"출처 확인 헤더<br/>(설정했을 때)"}
     B -->|"틀림"| B403["403"]
     B -->|"맞음 · 미설정"| C["토큰 검증<br/>유효하면 사용자 정보를 둔다<br/>거부하지 않는다"]
-    C --> D{"경로가 /v1 또는 /auth/"}
+    C --> D{"경로가 /v1"}
     D -->|"아님"| R["라우트"]
     D -->|"맞음"| E{"요청 한도<br/>규칙이 per_ip면 IP로,<br/>아니면 토큰의 sub 또는 IP로 센다"}
     E -->|"초과"| E429["429"]
@@ -315,14 +315,14 @@ flowchart TD
     R --> F{"라우트의 의존성"}
     F -->|"회원 경로"| M["회원 경로의 토큰 판정"]
     F -->|"게스트 경로"| GG["게스트 경로의 토큰 판정"]
-    F -->|"인증 없는 경로"| N["lookup · 생성 · /auth/*"]
+    F -->|"인증 없는 경로"| N["lookup · 생성 · /auth/*<br/>(/auth 제출 한도는 프록시가 센다)"]
 ```
 
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 출처 확인 | `app/middleware/origin_verify.py` | `tests/core/test_origin_verify.py` |
 | 토큰 검증 | `app/core/auth/middleware.py`, `app/core/auth/client.py` | `tests/core/` |
-| 요청 한도와 `per_ip` | `app/ratelimit/middleware.py`, `app/ratelimit/config.py` | `tests/ratelimit/`, `tests/domain/guest/test_rate_limits.py` |
+| 요청 한도와 `per_ip` | `app/ratelimit/middleware.py`, `app/ratelimit/config.py`, `/auth` 제출은 `app/api/auth_proxy.py` | `tests/ratelimit/`, `tests/domain/guest/test_rate_limits.py` |
 
 ### 토큰 판정
 
@@ -458,7 +458,7 @@ flowchart TD
 | `403` | `GuestVerificationFailedError` | Turnstile이 토큰을 받지 않았다. 위젯에서 새 토큰을 받아 다시 보낸다 |
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
 | `422` | | 입력 규칙 위반 (`turnstile_token` 누락 포함) |
-| `429` | | IP당 분당 10회를 넘었다 (이름 찾기와 따로 센다) |
+| `429` | | IP당 분당 100회를 넘었다 (이름 찾기와 따로 센다) |
 
 ### 로그인과 JWT
 
@@ -478,7 +478,7 @@ GET  /auth/sessions/whoami?tokenize_as=api
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
 - JWT 클레임에는 `sub`(게스트의 Kratos identity id), `schema_id`(게스트 schema id), `name`이 있고 `email`은 없습니다. 이후 요청에는 `Authorization: Bearer <JWT>`를 붙입니다.
-- `/auth`로 가는 GET 밖의 요청은 IP당 분당 10회입니다. 회원의 로그인·가입·코드 제출도 같은 한도를 받습니다.
+- 로그인 제출은 같은 IP에서 같은 handle로 분당 5회, `/auth`로 가는 GET 밖의 요청은 IP당 분당 60회입니다. 회원의 로그인·가입·코드 제출도 같은 한도를 받습니다.
 
 ### 이름 변경
 
@@ -686,8 +686,8 @@ graph TD
 ## 제한
 
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
-- 이름 찾기와 생성은 각각 IP당 분당 10회, `/auth` 제출은 IP당 분당 10회입니다(`app/ratelimit/config.py`). 요청에 토큰이 있어도 IP로 셉니다.
-- 한도는 backend 인스턴스의 메모리에서 셉니다. 인스턴스가 여럿이면 인스턴스마다 따로 셉니다. 같은 IP를 쓰는 사용자들(NAT, 사무실)은 한도를 함께 씁니다.
+- 이름 찾기는 IP당 분당 10회, 생성은 IP당 분당 100회, `/auth` 제출은 IP당 분당 60회이고 로그인 제출은 같은 IP·handle로 분당 5회입니다(`app/ratelimit/config.py`). 요청에 토큰이 있어도 IP로 셉니다. 이름 변경(설정 제출)은 IP로 세지 않고 게스트 identity당 분당 10회입니다.
+- 한도는 backend 인스턴스의 메모리에서 셉니다. 인스턴스가 여럿이면 인스턴스마다 따로 셉니다. 같은 IP를 쓰는 사용자들(NAT, 사무실)은 IP 한도를 함께 씁니다.
 - 게스트 비밀번호에는 길이 규칙이 없고 handle은 이름 찾기로 받을 수 있으므로, 게스트 로그인 시도는 Turnstile 확인과 `/auth` 제출 한도가 제한합니다. 둘 다 `/auth` 프록시에서 하므로 Kratos 공개 API는 backend 뒤에만 둡니다([`/auth` 프록시](auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 - 게스트는 비밀번호를 바꾸거나 찾을 수 없습니다. 비밀번호를 잊으면 그 이름으로 다시 들어갈 수 없고, 다른 이름으로 새 게스트를 만듭니다.
 - 리소스 하나의 게스트는 100명까지입니다(`MAX_GUESTS_PER_RESOURCE`). 수는 넣기 전에 세므로, 100명 경계에서 동시에 만들면 동시 요청 수만큼 넘을 수 있습니다. 폐기된 게스트의 자리는 다시 쓸 수 있고, 가득 찬 리소스에서도 이름 찾기·로그인·이름 변경은 됩니다.
