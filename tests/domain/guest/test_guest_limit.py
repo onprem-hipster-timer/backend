@@ -81,14 +81,16 @@ def test_lookup_login_and_rename_work_on_full_resource(guest_client, kratos, res
     guests = _fill(kratos, resource, 100)
     handle = kratos.identities[guests[3].identity_id]["traits"]["handle"]
 
-    found = guest_client.post(LOOKUP, json={"resource_type": "meeting", "resource_id": str(resource), "name": "g3"})
+    found = guest_client.post(
+        LOOKUP, headers=TOKEN, json={"resource_type": "meeting", "resource_id": str(resource), "name": "g3"}
+    )
     assert found.json() == {"handle": handle}
 
     flow = guest_client.get("/auth/self-service/login/api").json()["id"]
     login = guest_client.post(
         f"/auth/self-service/login?flow={flow}",
         json={"method": "password", "identifier": handle, "password": "1234"},
-        headers={"X-Turnstile-Token": "t"},
+        headers=TOKEN,
     )
     assert login.status_code == 200
     token = login.json()["session_token"]
@@ -96,10 +98,10 @@ def test_lookup_login_and_rename_work_on_full_resource(guest_client, kratos, res
     rename = guest_client.post(
         "/auth/self-service/settings?flow=f1",
         json={"method": "profile", "traits": {"handle": handle, "name": "바뀐 이름"}},
-        headers={"X-Session-Token": token},
+        headers={"X-Session-Token": token, **TOKEN},
     )
     assert rename.status_code == 200
     renamed = guest_client.post(
-        LOOKUP, json={"resource_type": "meeting", "resource_id": str(resource), "name": "바뀐 이름"}
+        LOOKUP, headers=TOKEN, json={"resource_type": "meeting", "resource_id": str(resource), "name": "바뀐 이름"}
     )
     assert renamed.json() == {"handle": handle}

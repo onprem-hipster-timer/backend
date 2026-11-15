@@ -146,7 +146,7 @@ async def _rename(api, kratos, guest, name):
     return await api.post(
         f"/auth/self-service/settings?flow={uuid.uuid4()}",
         json={"method": "profile", "traits": {"handle": handle, "name": name}},
-        headers={"X-Session-Token": token},
+        headers={"X-Session-Token": token, "X-Turnstile-Token": "t"},
     )
 
 
@@ -174,7 +174,9 @@ async def test_creates_and_renames_on_one_resource_with_small_pool(small_pool, s
             asyncio.gather(*creates, *renames),
             _elapsed(lambda: api.get("/health")),
             _elapsed(lambda: api.post(
-                "/v1/guests/lookup", json={"resource_type": "meeting", "resource_id": str(other), "name": "x"}
+                "/v1/guests/lookup",
+                json={"resource_type": "meeting", "resource_id": str(other), "name": "x"},
+                headers=token,
             )),
         )
 

@@ -48,7 +48,7 @@ def test_create_returns_handle_and_guest(guest_client, kratos, resource):
 def test_lookup_returns_handle_of_named_guest(guest_client, resource):
     created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).json()
 
-    r = guest_client.post(LOOKUP, json=_lookup_body(resource))
+    r = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource))
 
     assert r.status_code == 200, r.text
     assert r.json() == {"handle": created["handle"]}
@@ -56,19 +56,19 @@ def test_lookup_returns_handle_of_named_guest(guest_client, resource):
 
 def test_lookup_without_guest_returns_null_handle(guest_client, resource):
     guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수"))
-    r = guest_client.post(LOOKUP, json=_lookup_body(resource, name="영희"))
+    r = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name="영희"))
     assert r.status_code == 200
     assert r.json() == {"handle": None}
 
 
 def test_lookup_takes_no_password(guest_client, resource):
-    r = guest_client.post(LOOKUP, json=_body(resource))
+    r = guest_client.post(LOOKUP, headers=TOKEN, json=_body(resource))
     assert r.status_code == 200
 
 
 def test_endpoints_need_no_token(guest_client, resource):
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 200
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource)).status_code == 200
 
 
 def test_taken_name_is_409(guest_client, kratos, resource):
@@ -122,7 +122,7 @@ def test_kratos_down_is_503_on_create_and_lookup_still_answers(guest_client, kra
     make_guest(kratos, resource, name="다른 이름")
     kratos.down.add("admin")
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 503
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name="다른 이름")).json()["handle"]
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name="다른 이름")).json()["handle"]
     assert len(guest_rows()) == 1
 
 
@@ -136,7 +136,7 @@ def test_invalid_name_is_422(guest_client, kratos, resource, name, path):
 @pytest.mark.parametrize("name", ["a", "a" * 50, "  민수  ", "김 민수", "🙂"])
 def test_valid_names(guest_client, resource, name):
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=name)).status_code == 201
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=name)).json()["handle"] is not None
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=name)).json()["handle"] is not None
 
 
 @pytest.mark.parametrize("password", ["", "가" * 25, "a" * 73])
@@ -164,7 +164,7 @@ def test_create_missing_field_is_422(guest_client, resource, field):
 def test_lookup_missing_field_is_422(guest_client, resource, field):
     body = _lookup_body(resource)
     del body[field]
-    assert guest_client.post(LOOKUP, json=body).status_code == 422
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=body).status_code == 422
 
 
 @pytest.mark.parametrize("path", [CREATE, LOOKUP])
@@ -177,20 +177,20 @@ def test_unknown_resource_type_is_422(guest_client, resource, path):
 def test_guest_deletes_itself(guest_client, kratos, tokens, resource, guest_events):
     guest = make_guest(kratos, resource)
 
-    r = guest_client.delete(ME, headers=tokens.guest(guest.identity_id))
+    r = guest_client.delete(ME, headers={**tokens.guest(guest.identity_id), **TOKEN})
 
     assert r.status_code == 204
     assert guest_rows() == []
     assert kratos.deleted == [guest.identity_id]
     assert len(guest_events) == 1
     # 같은 JWT로 다시 불러도 행이 없으므로 아무것도 남지 않는다
-    assert guest_client.delete(ME, headers=tokens.guest(guest.identity_id)).status_code == 204
+    assert guest_client.delete(ME, headers={**tokens.guest(guest.identity_id), **TOKEN}).status_code == 204
 
 
 def test_self_delete_needs_guest_token(guest_client, kratos, tokens, resource):
     guest = make_guest(kratos, resource)
-    assert guest_client.delete(ME).status_code == 401
-    assert guest_client.delete(ME, headers=tokens.member()).status_code == 403
+    assert guest_client.delete(ME, headers=TOKEN).status_code == 401
+    assert guest_client.delete(ME, headers={**tokens.member(), **TOKEN}).status_code == 403
     assert len(guest_rows()) == 1
 
 
@@ -198,7 +198,7 @@ def test_self_delete_of_closed_resource_guest_is_allowed(guest_client, kratos, h
     resource = uuid.uuid4()
     host.statuses[resource] = GuestHostStatus.CLOSED
     guest = make_guest(kratos, resource)
-    assert guest_client.delete(ME, headers=tokens.guest(guest.identity_id)).status_code == 204
+    assert guest_client.delete(ME, headers={**tokens.guest(guest.identity_id), **TOKEN}).status_code == 204
     assert guest_rows() == []
 
 
@@ -210,16 +210,16 @@ def test_flag_off_endpoints_are_404(guest_client, guest_off, kratos, tokens, res
 
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 404
     assert guest_client.post(CREATE, headers=TOKEN, json={}).status_code == 404
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
-    assert guest_client.post(LOOKUP, json={}).status_code == 404
-    assert guest_client.delete(ME, headers=tokens.guest(guest.identity_id)).status_code == 404
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource)).status_code == 404
+    assert guest_client.post(LOOKUP, headers=TOKEN, json={}).status_code == 404
+    assert guest_client.delete(ME, headers={**tokens.guest(guest.identity_id), **TOKEN}).status_code == 404
     assert len(guest_rows()) == 1
 
 
 def test_flag_off_lookup_and_create_do_not_call_kratos(guest_client, guest_off, kratos, resource):
     guest_off()
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 404
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource)).status_code == 404
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource)).status_code == 404
     assert kratos.identities == {}
     assert kratos.list_requests == []
 
@@ -253,7 +253,7 @@ def test_token_with_non_text_schema_id_is_401(guest_client, guest_off, tokens, s
 def test_schema_id_is_compared_exactly(guest_client, kratos, tokens, resource, schema_id):
     guest = make_guest(kratos, resource)
     token = tokens.make(guest.identity_id, schema_id)
-    r = guest_client.delete(ME, headers={"Authorization": f"Bearer {token}"})
+    r = guest_client.delete(ME, headers={"Authorization": f"Bearer {token}", **TOKEN})
     assert r.status_code == 403
     assert len(guest_rows()) == 1
 
@@ -276,7 +276,7 @@ def test_nfc_and_nfd_name_are_one_name(guest_client, kratos, resource):
     created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수")).json()
 
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=_nfd("민수"))).status_code == 409
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=_nfd("민수"))).json() == {
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=_nfd("민수"))).json() == {
         "handle": created["handle"]
     }
     assert len(guest_rows()) == 1
@@ -326,7 +326,7 @@ def test_whitespace_runs_are_one_space(guest_client, kratos, resource, variant):
     created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="김 민수")).json()
 
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=variant)).status_code == 409
-    assert guest_client.post(LOOKUP, json=_lookup_body(resource, name=variant)).json() == {
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=variant)).json() == {
         "handle": created["handle"]
     }
 
@@ -369,6 +369,6 @@ def test_handle_is_derived_from_guest_row(guest_client, kratos, resource):
 def test_lookup_of_closed_resource_returns_no_handle(guest_client, host, resource):
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
     host.statuses[resource] = GuestHostStatus.CLOSED
-    r = guest_client.post(LOOKUP, json=_lookup_body(resource))
+    r = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource))
     assert r.status_code == 403
     assert "handle" not in r.text

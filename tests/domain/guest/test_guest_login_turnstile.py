@@ -226,9 +226,22 @@ def test_guest_handle_in_query_is_refused(guest_client, kratos, turnstile, guest
     assert turnstile.requests == []
 
 
-def test_other_login_path_spellings_need_token(guest_client, kratos, guest):
-    for path in ["/auth/self-service/login/", "/auth/Self-Service/Login", "/auth/self-service/log%69n"]:
-        assert _login(guest_client, _password(_handle(kratos, guest)), token=None, path=path).status_code == 403
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/login/",
+        "/auth/self-service/login//",
+        "/auth/Self-Service/Login",
+        "/auth/self-service/log%69n",
+        "/auth/self-service/./login",
+        "/auth/self-service/x/../login",
+    ],
+)
+def test_other_login_path_spellings_need_token(guest_client, kratos, guest, path):
+    r = _login(guest_client, _password(_handle(kratos, guest)), token=None, path=path)
+    assert r.status_code == 403
+    assert r.json()["error"]["id"] == "guest_verification_failed"
+    assert kratos.sessions == {}
 
 
 # ============ 꺼진 상태, rate limit, CORS ============

@@ -13,7 +13,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 한다.
   GUEST_ENABLED면 게스트 세션의 profile 제출(이름 변경)도 넘긴다. 무엇을 바꿀 수 있는지는 Kratos 설정 훅이
   정한다 (app/api/kratos_hooks.py). 같은 리소스의 다른 게스트가 쓰는 이름(정규형으로 비교)이면 넘기지 않고
-  409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other)
+  409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other).
+  게스트 세션의 설정 제출은 인터셉터가 Turnstile을 확인한 뒤 넘긴다
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
   구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
 - GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소인지 본다. 게스트 handle
@@ -29,7 +30,7 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   요청 한도를 세고 검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로
   Kratos에 보낸다. 검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다
 - 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
-  (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 이름 변경은 게스트 자리). 자리가 나지 않으면 429
+  (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 세션의 설정 제출은 게스트 자리). 자리가 나지 않으면 429
 """
 import json
 import logging
@@ -371,14 +372,14 @@ class Submission:
     # 같은 식별자 단위로 셀 값 (로그인 identifier, 가입 traits.email, 인증·복구 email). 없으면 None, 읽을 수 없으면 _UNREADABLE
     identifier: object = None
     identity_id: str | None = None  # 설정 제출: 검사를 통과한 세션의 identity id
-    guest: bool = False  # 게스트 handle 로그인이나 게스트 이름 변경 (게스트 Kratos 자리)
+    guest: bool = False  # 게스트 handle 로그인이나 게스트 세션의 설정 제출 (Turnstile, 게스트 Kratos 자리)
 
 
 async def _settings_rejection(
         client: httpx.AsyncClient, submission: Submission, session_token: str | None
 ) -> tuple[Response | None, str | None, bool]:
     """메일 코드로 본인 확인한 복구 세션의 비밀번호 변경이 아니면 거절 응답을 돌려준다.
-    넘길 제출이면 두 번째 값은 그 세션의 identity id, 세 번째 값은 게스트의 이름 변경인지다.
+    넘길 제출이면 두 번째 값은 그 세션의 identity id, 세 번째 값은 GUEST_ENABLED이고 게스트 세션인지다.
 
     비밀번호 로그인·재인증 세션은 비밀번호만 알면 만들 수 있으므로 받지 않는다. 복구 세션이라도
     비밀번호로 다시 인증하면 마지막 인증 방법이 password가 되어 받지 않는다. 이메일 변경(profile)과
@@ -410,7 +411,7 @@ async def _settings_rejection(
     if last_method != EMAIL_RECOVERY_METHOD:
         logger.warning("메일 복구 세션이 아닌 설정 제출을 거절함")
         return _settings_forbidden(), None, False
-    return None, _session_identity_id(session), False
+    return None, _session_identity_id(session), settings.GUEST_ENABLED and _is_guest_session(session)
 
 
 def kratos_url(path: str, query: str) -> httpx.URL:

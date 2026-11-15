@@ -70,7 +70,7 @@ def _rename(client, kratos, guest, name):
     kratos.sessions[token] = guest.identity_id
     handle = kratos.identities[guest.identity_id]["traits"]["handle"]
     body = {"method": "profile", "traits": {"handle": handle, "name": name}}
-    return client.post(SETTINGS_SUBMIT, json=body, headers={"X-Session-Token": token})
+    return client.post(SETTINGS_SUBMIT, json=body, headers={"X-Session-Token": token, **TOKEN})
 
 
 def _assert_limited_after(statuses, allowed):
@@ -229,8 +229,8 @@ def test_get_requests_under_auth_are_not_limited(rate_limited):
 
 def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource):
     for _ in range(100):
-        assert rate_limited.post(LOOKUP, json=_body(resource)).status_code == 200
-    assert rate_limited.post(LOOKUP, json=_body(resource)).status_code == 429
+        assert rate_limited.post(LOOKUP, json=_body(resource), headers=TOKEN).status_code == 200
+    assert rate_limited.post(LOOKUP, json=_body(resource), headers=TOKEN).status_code == 429
 
     for i in range(100):
         assert rate_limited.post(CREATE, json=_body(resource, name=f"g{i}"), headers=TOKEN).status_code == 201
@@ -245,7 +245,7 @@ def test_requests_with_different_tokens_from_one_ip_share_one_counter(rate_limit
         if path == CREATE:
             r = rate_limited.post(CREATE, json=_body(resource, name=f"g{i}"), headers={**headers, **TOKEN})
         elif path == LOOKUP:
-            r = rate_limited.post(LOOKUP, json=_body(resource), headers=headers)
+            r = rate_limited.post(LOOKUP, json=_body(resource), headers={**headers, **TOKEN})
         else:
             r = _login(rate_limited, path, f"member{i}@example.com", headers=headers)
         statuses.append(r.status_code)
