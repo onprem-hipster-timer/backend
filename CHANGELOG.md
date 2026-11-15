@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.15-ea415eb] - 2026-11-15
+
 ### Changed
 
 - **Query string on `/auth` submissions (breaking)**: on requests of any method, GET included, to the login, registration and settings submit paths, the query string may only contain `flow` (the key is compared without regard to letter case); any other key returns 400 `invalid_request_body` and the request is not forwarded. Other `/auth/*` requests keep their query string.
@@ -444,7 +450,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...HEAD
+[v2026.11.15-ea415eb]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...v2026.11.15-ea415eb
 [v2026.11.14-27a3ef9]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-541f2db...v2026.11.14-27a3ef9
 [v2026.11.13-541f2db]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-dc73273...v2026.11.13-541f2db
 [v2026.11.13-dc73273]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.11-e2c26af...v2026.11.13-dc73273
