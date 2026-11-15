@@ -60,7 +60,7 @@ backend는 `GUEST_ENABLED`와 상관없이 `schema_id` 클레임이 없는 토�
 - backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
 - uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.
 - `/internal/kratos/hooks/*`는 Kratos만 부릅니다. 앞단에서 밖으로 열지 않는 것을 권합니다.
-- `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다). 훅 요청이 그 헤더를 갖게 하려면 `web_hook`의 `headers`에 넣습니다(2.4). 앞단 프록시가 모든 요청에 그 헤더를 붙인다면 훅 `url`을 프록시를 지나는 주소로 두어도 됩니다(이때 훅 경로는 프록시 밖에서도 닿고, 훅 키가 그 경로를 지킵니다).
+- `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다). 훅 요청이 그 헤더를 갖게 하려면 `web_hook`의 `headers`에 넣습니다(2.4).
 - Kratos 공개 API와 admin API는 backend만 닿는 주소에 둡니다. 공개 API에 backend를 거치지 않고 닿을 수 있으면 `/auth` 프록시의 확인(요청 한도, 게스트 로그인·설정 제출의 Turnstile 등)이 적용되지 않습니다([`/auth` 프록시](../guides/auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 
 ## 2. Kratos 설정
