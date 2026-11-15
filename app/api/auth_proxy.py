@@ -26,7 +26,11 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
   응답은 바꾸지 않는다
+- GET 밖의 제출은 요청 한도로 센다 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출은 IP 단위로,
+  로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다.
+  설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
 """
+import hashlib
 import json
 import logging
 import re
@@ -37,10 +41,19 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from app.core import config as app_config
 from app.core import courier, turnstile
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
+from app.ratelimit.config import (
+    AUTH_SETTINGS_PER_IDENTITY,
+    AUTH_SUBMIT_PER_IDENTIFIER,
+    AUTH_SUBMIT_PER_IP,
+    RateLimitRule,
+)
+from app.ratelimit.limiter import get_limiter
+from app.ratelimit.middleware import client_ip_key, rate_limited_response
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +97,9 @@ ADDRESS_SUBMIT_PATHS = ("/self-service/verification", "/self-service/recovery")
 # 로그인 제출 경로와 로그인 식별자 키 (password_identifier는 이전 이름)
 LOGIN_SUBMIT_PATH = "/self-service/login"
 IDENTIFIER_KEYS = ("identifier", "password_identifier")
+# 같은 IP의 같은 식별자 단위로도 세는 제출 경로 (식별자: 로그인은 identifier, 가입은 traits.email, 인증·복구는 email)
+REGISTRATION_SUBMIT_PATH = "/self-service/registration"
+IDENTIFIER_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, *ADDRESS_SUBMIT_PATHS})
 # 게스트 handle로 로그인할 때 Turnstile 토큰을 담는 요청 헤더와 토큰 길이 상한
 TURNSTILE_TOKEN_HEADER = "x-turnstile-token"
 TURNSTILE_TOKEN_MAX_LENGTH = 2048
@@ -195,27 +211,95 @@ def _get_ignoring_case(data: object, key: str) -> object:
     return next((value for k, value in data.items() if k.lower() == key), None)
 
 
-def _is_guest_address(content_type: str, body: bytes) -> bool | None:
-    """제출한 email이 게스트 handle 도메인 주소면 True. 본문을 읽을 수 없거나 email이 겹치면 None.
+def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> object:
+    """제출 본문에서 path(예: ("traits", "email"))의 값. 없으면 None, 본문을 읽을 수 없거나 값이 겹치면 _UNREADABLE.
 
-    키는 Kratos처럼 대소문자 구분 없이 찾고, 값은 앞뒤 공백을 떼고 대소문자 구분 없이 비교한다.
+    키는 Kratos처럼 대소문자 구분 없이 찾는다. 폼 본문의 키는 path를 점으로 이은 것이다.
     """
     if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
         try:
             pairs = parse_qsl(body.decode(), keep_blank_values=True)
         except UnicodeDecodeError:
-            return None
-        values = [value for key, value in pairs if key.lower() == "email"]
+            return _UNREADABLE
+        form_key = ".".join(path)
+        values = [value for key, value in pairs if key.lower() == form_key]
         if len(values) > 1:
-            return None
-        email = values[0] if values else None
-    else:
-        try:
-            data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
-        except (ValueError, UnicodeDecodeError):
-            return None
-        email = _get_ignoring_case(data, "email")
+            return _UNREADABLE
+        return values[0] if values else None
+    try:
+        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except (ValueError, UnicodeDecodeError):
+        return _UNREADABLE
+    for key in path:
+        data = _get_ignoring_case(data, key)
+    return data
+
+
+def _is_guest_address(content_type: str, body: bytes) -> bool | None:
+    """제출한 email이 게스트 handle 도메인 주소면 True. 본문을 읽을 수 없거나 email이 겹치면 None.
+
+    값은 앞뒤 공백을 떼고 대소문자 구분 없이 비교한다.
+    """
+    email = _submitted_value(content_type, body, ("email",))
+    if email is _UNREADABLE:
+        return None
     return isinstance(email, str) and email.strip().lower().endswith(f"@{guest_service.GUEST_HANDLE_DOMAIN}")
+
+
+def _submitted_rate_limit_identifier(submit_path: str, content_type: str, body: bytes) -> object:
+    """같은 식별자 단위로 셀 제출의 식별자 (로그인은 identifier, 가입은 traits.email, 인증·복구는 email)"""
+    if submit_path == LOGIN_SUBMIT_PATH:
+        return _submitted_identifier(content_type, body)
+    if submit_path == REGISTRATION_SUBMIT_PATH:
+        return _submitted_value(content_type, body, ("traits", "email"))
+    return _submitted_value(content_type, body, ("email",))
+
+
+def _identifier_key(ip_key: str, submit_path: str, identifier: object) -> str | None:
+    """같은 IP·제출 경로·식별자의 한도 키. 식별자가 없으면 None.
+
+    문자열은 NFKC·앞뒤 공백 제거·casefold로 맞춘다. 읽을 수 없거나 문자열이 아닌 값은 IP·경로마다 한 칸으로 센다.
+    키에는 식별자 대신 해시를 둔다.
+    """
+    if identifier is None:
+        return None
+    normalized = unicodedata.normalize("NFKC", identifier).strip().casefold() if isinstance(identifier, str) else ""
+    digest = hashlib.sha256(f"{submit_path}\n{normalized}".encode()).hexdigest()
+    return f"{ip_key}:identifier:{digest}"
+
+
+async def _rate_limit_refusal(key: str, method: str, rule: RateLimitRule) -> Response | None:
+    """key로 한 번 센다. 한도 안이면 None, 넘으면 429 응답"""
+    result = await get_limiter().check_and_record(key, method, rule)
+    if result.allowed:
+        return None
+    logger.warning(
+        f"Rate limit exceeded: path={rule.path_pattern}, count={result.current_count}/{result.max_requests}"
+    )
+    return rate_limited_response(result)
+
+
+async def _submit_rate_limit_refusal(request: Request, submit_path: str, body: bytes) -> Response | None:
+    """설정 밖의 제출을 IP 단위로 세고, 로그인·가입·인증·복구 제출은 같은 IP의 같은 식별자 단위로도 센다"""
+    if not app_config.settings.RATE_LIMIT_ENABLED or submit_path == SETTINGS_SUBMIT_PATH:
+        return None
+    ip_key = await client_ip_key(request)
+    refusal = await _rate_limit_refusal(ip_key, request.method, AUTH_SUBMIT_PER_IP)
+    if refusal is not None or submit_path not in IDENTIFIER_SUBMIT_PATHS:
+        return refusal
+    identifier = _submitted_rate_limit_identifier(submit_path, request.headers.get("content-type", ""), body)
+    key = _identifier_key(ip_key, submit_path, identifier)
+    if key is None:
+        return None
+    return await _rate_limit_refusal(key, request.method, AUTH_SUBMIT_PER_IDENTIFIER)
+
+
+async def _settings_rate_limit_refusal(request: Request, identity_id: str | None) -> Response | None:
+    """검사를 통과한 설정 제출을 세션의 identity 단위로 센다 (identity id가 없으면 IP 단위)"""
+    if not app_config.settings.RATE_LIMIT_ENABLED:
+        return None
+    key = f"identity:{identity_id}" if identity_id else await client_ip_key(request)
+    return await _rate_limit_refusal(key, request.method, AUTH_SETTINGS_PER_IDENTITY)
 
 
 def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
@@ -321,12 +405,16 @@ def _unavailable() -> JSONResponse:
     return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
 
 
+def _session_identity_id(session: object) -> str | None:
+    """whoami 세션의 identity id"""
+    identity = session.get("identity") if isinstance(session, dict) else None
+    identity_id = identity.get("id") if isinstance(identity, dict) else None
+    return identity_id if isinstance(identity_id, str) and identity_id else None
+
+
 def _guest_identity_id(session: object) -> str | None:
     """whoami 세션이 게스트 schema identity면 그 id"""
-    if not _is_guest_session(session):
-        return None
-    identity_id = session["identity"].get("id")
-    return identity_id if isinstance(identity_id, str) and identity_id else None
+    return _session_identity_id(session) if _is_guest_session(session) else None
 
 
 def _is_guest_session(session: object) -> bool:
@@ -338,9 +426,9 @@ def _is_guest_session(session: object) -> bool:
 
 async def _settings_rejection(
         client: httpx.AsyncClient, request: Request, body: bytes
-) -> tuple[Response | None, str | None]:
+) -> tuple[Response | None, str | None, bool]:
     """메일 코드로 본인 확인한 복구 세션의 비밀번호 변경이 아니면 거절 응답을 돌려준다.
-    두 번째 값은 넘길 제출이 게스트의 이름 변경이면 그 게스트의 identity id다.
+    넘길 제출이면 두 번째 값은 그 세션의 identity id, 세 번째 값은 게스트의 이름 변경인지다.
 
     비밀번호 로그인·재인증 세션은 비밀번호만 알면 만들 수 있으므로 받지 않는다. 복구 세션이라도
     비밀번호로 다시 인증하면 마지막 인증 방법이 password가 되어 받지 않는다. 이메일 변경(profile)과
@@ -349,10 +437,10 @@ async def _settings_rejection(
     """
     method = _submitted_method(request.headers.get("content-type", ""), body)
     if method != "password" and not (method == "profile" and settings.GUEST_ENABLED):
-        return _settings_forbidden(), None
+        return _settings_forbidden(), None, False
     token = request.headers.get("x-session-token")
     if not token:
-        return _settings_forbidden(), None
+        return _settings_forbidden(), None, False
     whoami = await client.get(
         "/sessions/whoami", headers={"x-session-token": token, "accept": "application/json"}
     )
@@ -365,15 +453,15 @@ async def _settings_rejection(
             session = None
     if method == "profile":
         guest_identity_id = _guest_identity_id(session)
-        return (None, guest_identity_id) if guest_identity_id else (_settings_forbidden(), None)
+        return (None, guest_identity_id, True) if guest_identity_id else (_settings_forbidden(), None, False)
     if session is not None:
         methods = session.get("authentication_methods") if isinstance(session, dict) else None
         if isinstance(methods, list) and methods and isinstance(methods[-1], dict):
             last_method = methods[-1].get("method")
     if last_method != EMAIL_RECOVERY_METHOD:
         logger.warning("메일 복구 세션이 아닌 설정 제출을 거절함")
-        return _settings_forbidden(), None
-    return None, None
+        return _settings_forbidden(), None, False
+    return None, _session_identity_id(session), False
 
 
 @router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -390,6 +478,10 @@ async def kratos_proxy(path: str, request: Request) -> Response:
             outgoing = client.build_request(request.method, url, headers=headers, content=body)
             # 검사는 실제로 나갈 경로로 한다 (httpx가 ..·인코딩을 정리한 뒤의 경로)
             submit_path = outgoing.url.path.rstrip("/").lower()
+            if request.method != "GET":
+                refusal = await _submit_rate_limit_refusal(request, submit_path, body)
+                if refusal is not None:
+                    return refusal
             if request.method != "GET" and submit_path in INSPECTED_SUBMIT_PATHS:
                 if not _only_flow_query(request.url.query):
                     return _unreadable_body()
@@ -414,9 +506,12 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                 if cleaned != body:
                     outgoing = client.build_request(request.method, url, headers=headers, content=cleaned)
             if request.method != "GET" and submit_path == SETTINGS_SUBMIT_PATH:
-                rejection, guest_identity_id = await _settings_rejection(client, request, body)
+                rejection, identity_id, guest_rename = await _settings_rejection(client, request, body)
                 if rejection is not None:
                     return rejection
+                refusal = await _settings_rate_limit_refusal(request, identity_id)
+                if refusal is not None:
+                    return refusal
                 # 검사한 X-Session-Token 세션으로만 처리되게 다른 세션 헤더는 넘기지 않는다
                 outgoing = client.build_request(
                     request.method,
@@ -424,8 +519,8 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                     headers={k: v for k, v in headers.items() if k != "authorization"},
                     content=body,
                 )
-                if guest_identity_id is not None and await guest_service.name_taken_by_other(
-                        guest_identity_id, _submitted_name(request.headers.get("content-type", ""), body)
+                if guest_rename and await guest_service.name_taken_by_other(
+                        identity_id, _submitted_name(request.headers.get("content-type", ""), body)
                 ):
                     return _guest_name_taken()
             upstream = await client.send(outgoing)

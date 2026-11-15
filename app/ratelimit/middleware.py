@@ -1,7 +1,7 @@
 """
 Rate Limit Middleware
 
-FastAPI 미들웨어로 /v1/*와 /auth/* 요청에 레이트 리밋 적용
+FastAPI 미들웨어로 /v1/* 요청에 레이트 리밋 적용. /auth 제출은 app/api/auth_proxy.py가 센다
 """
 import logging
 
@@ -64,7 +64,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     레이트 리밋 미들웨어
     
     처리 흐름:
-    1. 요청 경로가 /v1/* 또는 /auth/*인지 확인
+    1. 요청 경로가 /v1/*인지 확인
     2. 경로에 맞는 규칙 찾기
     3. 사용자 식별 (Authorization 헤더 -> sub 또는 Client IP, 규칙이 per_ip면 항상 Client IP)
     4. 레이트 리밋 체크
@@ -83,8 +83,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
-        # /v1/*와 /auth/*(Kratos 프록시) 경로만 레이트 리밋 적용
-        if not (path.startswith("/v1") or path.startswith("/auth/")):
+        # /v1/* 경로만 레이트 리밋 적용
+        if not path.startswith("/v1"):
             return await call_next(request)
 
         # 규칙 찾기

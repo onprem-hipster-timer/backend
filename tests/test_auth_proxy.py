@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import app.core.config as app_config
 from app.api import auth_proxy
 from app.core import courier
 from app.core.config import Settings
@@ -37,6 +38,8 @@ class Upstream:
 def upstream(monkeypatch):
     upstream = Upstream()
     monkeypatch.setattr(auth_proxy, "settings", Settings(KRATOS_PUBLIC_URL=UPSTREAM))
+    # 요청 한도는 tests/domain/guest/test_rate_limits.py가 본다
+    monkeypatch.setattr(app_config.settings, "RATE_LIMIT_ENABLED", False)
     monkeypatch.setattr(
         auth_proxy,
         "_make_client",

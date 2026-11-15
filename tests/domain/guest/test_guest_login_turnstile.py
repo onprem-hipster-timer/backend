@@ -263,14 +263,14 @@ def test_rate_limit_applies_before_verification(guest_client, kratos, turnstile,
     reset_storage()
     reset_limiter()
     try:
-        statuses = [_login(guest_client, _password(_handle(kratos, guest), password=str(i))).status_code for i in range(11)]
+        statuses = [_login(guest_client, _password(_handle(kratos, guest), password=str(i))).status_code for i in range(6)]
     finally:
         reset_storage()
         reset_limiter()
 
-    assert 429 not in statuses[:10]
-    assert statuses[10] == 429
-    assert len(turnstile.requests) == 10
+    assert 429 not in statuses[:5]
+    assert statuses[5] == 429
+    assert len(turnstile.requests) == 5
 
 
 def test_browser_preflight_allows_turnstile_header(guest_client):

@@ -112,16 +112,6 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         max_requests=20,
     ),
 
-    # Kratos 공개 API 프록시의 제출(로그인·가입·인증·복구·설정·로그아웃): 토큰과 상관없이 IP 단위.
-    # GET(플로우 생성, whoami·JWT 발급, JWKS)은 제한하지 않는다
-    RateLimitRule(
-        methods=["POST", "PUT", "PATCH", "DELETE"],
-        path_pattern="/auth/*",
-        window_seconds=60,
-        max_requests=10,
-        per_ip=True,
-    ),
-
     # --------------------------------------------------------
     # 도메인별 기본 규칙 (읽기 포함 모든 메서드)
     # --------------------------------------------------------
@@ -180,6 +170,40 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         max_requests=60,
     ),
 ]
+
+
+# ============================================================
+# /auth 프록시 제출 규칙 (app/api/auth_proxy.py가 Kratos로 나갈 경로로 판단해 센다)
+# GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않는다. 키에 메서드가 들어가 메서드마다 따로 센다
+# ============================================================
+
+AUTH_SUBMIT_METHODS = ["POST", "PUT", "PATCH", "DELETE"]
+
+# 설정 밖의 제출: 토큰과 상관없이 IP 단위. 한 IP를 여러 사람이 나눠 쓰는 망을 고려해 넉넉히 둔다
+AUTH_SUBMIT_PER_IP = RateLimitRule(
+    methods=AUTH_SUBMIT_METHODS,
+    path_pattern="/auth/*",
+    window_seconds=60,
+    max_requests=60,
+    per_ip=True,
+)
+
+# 로그인·가입·인증·복구 제출: 같은 IP에서 같은 식별자(로그인 식별자, 이메일)로 보낸 제출. 제출 경로마다 따로 센다
+AUTH_SUBMIT_PER_IDENTIFIER = RateLimitRule(
+    methods=AUTH_SUBMIT_METHODS,
+    path_pattern="/auth/*",
+    window_seconds=60,
+    max_requests=5,
+    per_ip=True,
+)
+
+# 설정 제출: 검사를 통과한 세션의 identity 단위 (IP로 세지 않는다)
+AUTH_SETTINGS_PER_IDENTITY = RateLimitRule(
+    methods=AUTH_SUBMIT_METHODS,
+    path_pattern="/auth/self-service/settings",
+    window_seconds=60,
+    max_requests=10,
+)
 
 
 def get_rule_for_request(method: str, path: str) -> Optional[RateLimitRule]:
