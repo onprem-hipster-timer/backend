@@ -175,14 +175,15 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
 
 # ============================================================
 # /auth 프록시 제출 규칙 (app/middleware/guest_gate.py가 Kratos로 나갈 경로로 판단해 센다)
-# GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않는다. 키에 메서드가 들어가 메서드마다 따로 센다
+# GET은 Kratos로 나갈 경로가 설정·로그인·가입·인증·복구 제출 경로인 것만 IP 단위로 센다.
+# 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않는다. 키에 메서드가 들어가 메서드마다 따로 센다
 # ============================================================
 
 AUTH_SUBMIT_METHODS = ["POST", "PUT", "PATCH", "DELETE"]
 
-# 설정 밖의 제출: 토큰과 상관없이 IP 단위. 한 IP를 여러 사람이 나눠 쓰는 망을 고려해 넉넉히 둔다
+# 설정 밖의 제출과 GET 제출: 토큰과 상관없이 IP 단위. 한 IP를 여러 사람이 나눠 쓰는 망을 고려해 넉넉히 둔다
 AUTH_SUBMIT_PER_IP = RateLimitRule(
-    methods=AUTH_SUBMIT_METHODS,
+    methods=["GET", *AUTH_SUBMIT_METHODS],
     path_pattern="/auth/*",
     window_seconds=60,
     max_requests=60,

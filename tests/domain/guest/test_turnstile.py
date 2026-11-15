@@ -360,6 +360,38 @@ def test_guest_session_with_other_authorization_header_needs_token(rename_step, 
     _assert_refused(rename_step, r, "failed")
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["method=profile&traits.name=%EC%B2%A0%EC%88%98", "method=password&password=New-Pass-123", "link=google"],
+)
+def test_guest_session_settings_get_with_values_is_refused_before_kratos(rename_step, turnstile, query):
+    r = rename_step.client.get(
+        f"{SETTINGS}?flow=f1&{query}",
+        headers={"X-Session-Token": rename_step.session, TOKEN_HEADER: WIDGET_TOKEN},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert rename_step.kratos.public_requests == []
+    assert turnstile.requests == []
+    assert rename_step.kratos.name_of(rename_step.guest.identity_id) == "민수"
+
+
+def test_member_settings_get_with_values_is_refused_before_kratos(guest_client, kratos, turnstile):
+    member = kratos.add_identity("default", {"email": "member@example.com"}, "member-pass")
+    kratos.sessions["member-session"] = member["id"]
+    kratos.authentication_methods = [{"method": "code_recovery"}]
+
+    r = guest_client.get(
+        f"{SETTINGS}?flow=f1&method=password&password=New-Pass-123", headers={"X-Session-Token": "member-session"}
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert kratos.public_requests == []
+    assert turnstile.requests == []
+
+
 def test_guest_session_settings_submit_of_other_method_needs_token(rename_step, turnstile):
     """게스트 세션의 설정 제출은 method와 상관없이 게스트 단계다"""
     rename_step.kratos.authentication_methods = [{"method": "code_recovery"}]

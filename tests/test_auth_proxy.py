@@ -838,13 +838,15 @@ def test_inspected_submission_with_only_flow_is_forwarded(client, upstream, path
         "/auth/sessions/whoami?tokenize_as=api",
         "/auth/self-service/login/api?return_to=https%3A%2F%2Fapp.example.com&refresh=true",
         "/auth/self-service/registration/api?return_to=x",
-        "/auth/self-service/login?flow=f1&extra=1",
-        "/auth/self-service/settings?flow=f1&method=password",
+        "/auth/self-service/settings/flows?id=f1",
+        "/auth/sessions/token-exchange?init_code=c1&return_to_code=c2",
+        "/auth/self-service/methods/oidc/callback/google?code=c1&state=s1",
     ],
 )
 def test_get_requests_keep_their_query(client, upstream, path):
     response = client.get(path)
     assert response.status_code == 200
+    assert upstream.requests[0].url.path == path.split("?", 1)[0].removeprefix("/auth")
     assert upstream.requests[0].url.query.decode() == path.split("?", 1)[1]
 
 
@@ -852,3 +854,166 @@ def test_other_post_paths_keep_their_query(client, upstream):
     response = client.post("/auth/self-service/logout/api?x=1", json={"session_token": "ory_st_abc"})
     assert response.status_code == 200
     assert upstream.requests[0].url.query == b"x=1"
+
+
+# ============ 검사하는 제출 경로의 GET ============
+
+PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+SUBMIT_PATHS = [
+    "/auth/self-service/settings",
+    "/auth/self-service/login",
+    "/auth/self-service/registration",
+    "/auth/self-service/verification",
+    "/auth/self-service/recovery",
+]
+
+
+def send(client, method, path):
+    """GET은 본문 없이, 나머지는 JSON 본문을 붙여 세션 토큰과 함께 보낸다"""
+    body = None if method == "GET" else {"method": "password", "password": "New-Pass-123"}
+    return client.request(method, path, json=body, headers={"X-Session-Token": "ory_st_x"})
+
+
+@pytest.mark.parametrize("method", PROXY_METHODS)
+@pytest.mark.parametrize("path", SUBMIT_PATHS)
+@pytest.mark.parametrize(
+    "query", ["flow=f1&method=password", "method=password", "flow=f1&x=1", "flow=f1&flow=f2", "flow=f1&=x"]
+)
+def test_submit_path_with_other_query_keys_is_refused_for_every_method(
+        client, upstream, monkeypatch, method, path, query
+):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = send(client, method, f"{path}?{query}")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("method", PROXY_METHODS)
+@pytest.mark.parametrize("path", SUBMIT_PATHS)
+@pytest.mark.parametrize("query", ["flow=f1", "Flow=f1", "FLOW=f1", ""])
+def test_submit_path_with_only_flow_or_no_query_is_forwarded_for_every_method(client, upstream, method, path, query):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = send(client, method, f"{path}?{query}" if query else path)
+
+    assert response.status_code == 200
+    forwarded = [r for r in upstream.requests if r.url.path != "/sessions/whoami"]
+    assert len(forwarded) == 1
+    assert forwarded[0].method == method
+    assert forwarded[0].url.path == path.removeprefix("/auth")
+    assert forwarded[0].url.query.decode() == query
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/Settings?flow=f1&method=password",
+        "/auth/self-service/settings/?flow=f1&method=password",
+        "/auth/self-service/%73ettings?flow=f1&method=password",
+        "/auth/self-service/x/../settings?flow=f1&method=password",
+        "/auth/self-service/settings%2F?flow=f1&method=password",
+        "/auth/self-service/settings%3Fmethod=password",
+        "/auth/self-service/LOGIN/?flow=f1&identifier=user%40example.com",
+        "/auth/x/../self-service/login?flow=f1&identifier=user%40example.com",
+        "/auth/self-service/Registration?flow=f1&traits.email=user%40example.com",
+        "/auth/self-service/Verification/?flow=f1&email=user%40example.com",
+        "/auth/self-service/recover%79?flow=f1&email=user%40example.com",
+    ],
+)
+def test_submit_path_spellings_are_checked_as_sent(client, upstream, method, path):
+    """경로를 바꿔 써도 Kratos로 나갈 경로·쿼리 기준으로 검사한다"""
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = send(client, method, path)
+
+    assert response.status_code == 400
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "flow=f1&method=password",
+        "flow=f1&password=New-Pass-123",
+        "flow=f1&traits.email=user%40example.com",
+        "flow=f1&link=google",
+        "flow=f1&Method=profile",
+    ],
+)
+def test_settings_get_with_submit_values_is_refused(client, upstream, query):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = client.get(f"/auth/self-service/settings?{query}", headers={"X-Session-Token": "ory_st_x"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("query", ["flow=f1&code=123456", "code=123456&flow=f1", "FLOW=f1&Code=123456", "flow=f1"])
+def test_verification_link_is_forwarded_with_its_query(client, upstream, query):
+    response = client.get(f"/auth/self-service/verification?{query}")
+
+    assert response.status_code == 200
+    [sent] = upstream.requests
+    assert sent.method == "GET"
+    assert sent.url.path == "/self-service/verification"
+    assert sent.url.query.decode() == query
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "flow=f1&code=123456&email=user%40example.com",
+        "flow=f1&code=123456&method=code",
+        "flow=f1&email=user%40example.com",
+        "flow=f1&method=code",
+        "flow=f1&code=1&code=2",
+        "flow=f1&code=1&Code=2",
+    ],
+)
+def test_verification_get_with_other_query_keys_is_refused(client, upstream, query):
+    response = client.get(f"/auth/self-service/verification?{query}")
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("POST", "/auth/self-service/verification"),
+        ("GET", "/auth/self-service/recovery"),
+        ("GET", "/auth/self-service/login"),
+        ("GET", "/auth/self-service/registration"),
+        ("GET", "/auth/self-service/settings"),
+    ],
+)
+def test_code_in_query_is_accepted_only_on_verification_get(client, upstream, method, path):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = send(client, method, f"{path}?flow=f1&code=123456")
+
+    assert response.status_code == 400
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_submission_that_did_not_pass_the_interceptor_is_not_forwarded(upstream, method):
+    app = FastAPI()
+    app.include_router(auth_proxy.router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = send(client, method, "/auth/self-service/settings?flow=f1")
+
+    assert response.status_code == 500
+    assert upstream.requests == []
+

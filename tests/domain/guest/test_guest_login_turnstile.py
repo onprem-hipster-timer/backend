@@ -249,6 +249,18 @@ def test_guest_handle_in_query_is_refused(guest_client, kratos, turnstile, guest
     assert turnstile.requests == []
 
 
+def test_login_get_with_values_in_query_is_refused(guest_client, kratos, turnstile, guest):
+    r = guest_client.get(
+        f"/auth/self-service/login?flow=f1&method=password&identifier={_handle(kratos, guest)}&password=1234",
+        headers={TOKEN_HEADER: "token-from-widget"},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert kratos.public_requests == []
+    assert turnstile.requests == []
+    assert kratos.sessions == {}
+
+
 @pytest.mark.parametrize(
     "path",
     [

@@ -16,7 +16,8 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   409 guest_name_taken으로 답한다 (app/domain/guest/service.py name_taken_by_other).
   게스트 세션의 설정 제출은 인터셉터가 Turnstile을 확인한 뒤 넘긴다
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
-  구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다
+  구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다.
+  이 경로로 가는 GET도 제출로 보고 같은 규칙을 적용한다. 인증 GET은 인증 메일의 링크처럼 code도 하나 받는다
 - GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소인지 본다. 게스트 handle
   로그인은 인터셉터가 Turnstile을 확인한 뒤 넘긴다. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
   X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
@@ -26,9 +27,10 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   검증해 준 값만 쓴다 (infra README "backend가 지켜야 할 것" 2번)
 - 로그인·가입 제출이 200이면 identity id와 클라이언트 IP를 접근 기록으로 남긴다 (app/core/audit.py).
   응답은 바꾸지 않는다
-- GET 밖의 요청(제출)은 인터셉터(app/middleware/guest_gate.py)가 프록시보다 먼저 본문을 한 번 읽어(read_submission)
-  요청 한도를 세고 검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로
-  Kratos에 보낸다. 검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다
+- 제출(GET 밖의 요청과, Kratos로 보낼 경로가 검사하는 제출 경로인 GET: is_get_submission)은 인터셉터
+  (app/middleware/guest_gate.py)가 프록시보다 먼저 본문을 한 번 읽어(read_submission) 요청 한도를 세고
+  검사한다(inspect_submission). 프록시는 인터셉터가 request.state.auth_submission에 둔 URL·본문으로 Kratos에 보낸다.
+  검사 경로는 그 URL의 경로를 소문자·끝 슬래시 없이 본 것이다. 그 밖의 GET은 읽지도 세지도 검사하지도 않고 넘긴다
 - 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
   (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 세션의 설정 제출은 게스트 자리). 자리가 나지 않으면 429
 """
@@ -99,8 +101,11 @@ REGISTRATION_SUBMIT_PATH = "/self-service/registration"
 IDENTIFIER_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, *ADDRESS_SUBMIT_PATHS})
 # Kratos가 비밀번호 해시를 계산할 수 있는 제출 경로. 넘기기 전에 Kratos 자리를 잡는다
 HASHING_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, SETTINGS_SUBMIT_PATH})
-# 본문을 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다
+# 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다. Kratos는 이 경로의 GET도 받아 쿼리 문자열에서 제출 값을 읽으므로
+# GET도 제출로 본다
 INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS, *ADDRESS_SUBMIT_PATHS})
+# 인증 제출 경로. 인증 메일의 링크(GET ?flow=…&code=…)도 이 경로로 온다
+VERIFICATION_SUBMIT_PATH = "/self-service/verification"
 # 성공하면 접근 기록을 남기는 제출 경로와 그 이벤트
 ACCESS_LOG_EVENTS = {"/self-service/login": "login", "/self-service/registration": "registration"}
 
@@ -142,6 +147,12 @@ def _only_flow_query(query: str) -> bool:
     """쿼리 문자열이 비었거나 flow 하나뿐이면 True (키는 대소문자 구분 없이 비교)"""
     keys = [key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)]
     return keys in ([], ["flow"])
+
+
+def _verification_link_query(query: str) -> bool:
+    """쿼리 문자열의 키가 flow, code뿐이고 각각 많아야 하나면 True (키는 대소문자 구분 없이 비교). 인증 메일 링크의 모양이다"""
+    keys = [key.lower() for key, _ in parse_qsl(query, keep_blank_values=True)]
+    return len(keys) == len(set(keys)) and set(keys) <= {"flow", "code"}
 
 
 _UNREADABLE = object()
@@ -368,7 +379,8 @@ def _is_guest_session(session: object) -> bool:
 
 @dataclass
 class Submission:
-    """GET 밖의 /auth 요청. 인터셉터가 read_submission으로 만들고 inspect_submission으로 채워 프록시에 넘긴다"""
+    """/auth 제출. 인터셉터가 read_submission으로 만들고 inspect_submission으로 채워 프록시에 넘긴다"""
+    method: str
     url: httpx.URL  # Kratos로 보낼 URL
     path: str  # 검사 경로: url의 경로를 소문자·끝 슬래시 없이
     content_type: str
@@ -425,26 +437,50 @@ def kratos_url(path: str, query: str) -> httpx.URL:
     return base.copy_with(raw_path=base.raw_path.rstrip(b"/") + b"/" + relative.raw_path.lstrip(b"/"))
 
 
-def read_submission(path: str, query: str, content_type: str, body: bytes) -> Submission | None:
-    """GET 밖의 /auth 요청(라우트의 path, 쿼리 문자열, 본문)을 읽는다. KRATOS_PUBLIC_URL이 없으면 None (프록시가 404)"""
+def _submit_path(url: httpx.URL) -> str:
+    """검사 경로: Kratos로 보낼 URL의 경로를 소문자·끝 슬래시 없이"""
+    return url.path.rstrip("/").lower()
+
+
+def is_get_submission(path: str, query: str) -> bool:
+    """GET /auth/{path}?{query}가 제출인지 (Kratos로 보낼 경로가 검사하는 제출 경로인지)"""
+    return _submit_path(kratos_url(path, query)) in INSPECTED_SUBMIT_PATHS
+
+
+def read_submission(method: str, path: str, query: str, content_type: str, body: bytes) -> Submission | None:
+    """/auth 제출(메서드, 라우트의 path, 쿼리 문자열, 본문)을 읽는다. KRATOS_PUBLIC_URL이 없으면 None (프록시가 404)
+
+    GET 제출은 식별자를 읽지 않는다. Kratos는 GET 제출의 값을 쿼리 문자열에서만 읽는다.
+    """
     if not settings.KRATOS_PUBLIC_URL:
         return None
     url = kratos_url(path, query)
-    submit_path = url.path.rstrip("/").lower()
+    submit_path = _submit_path(url)
     identifier = None
-    if submit_path in IDENTIFIER_SUBMIT_PATHS:
+    if method != "GET" and submit_path in IDENTIFIER_SUBMIT_PATHS:
         identifier = _submitted_rate_limit_identifier(submit_path, content_type, body)
-    return Submission(url=url, path=submit_path, content_type=content_type, body=body, identifier=identifier)
+    return Submission(
+        method=method, url=url, path=submit_path, content_type=content_type, body=body, identifier=identifier
+    )
 
 
 async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:
     """넘기지 않을 제출이면 거절 응답, 넘길 제출이면 None (identity_id·guest를 채운다)
 
-    - 검사하는 제출의 쿼리 문자열에 flow 밖의 키가 있으면 400 invalid_request_body
+    - 검사하는 제출의 쿼리 문자열에 flow 밖의 키가 있으면 400 invalid_request_body.
+      인증 GET은 flow와 code를 하나씩까지 받는다 (인증 메일의 링크)
+    - GET 제출은 쿼리 문자열만 본다. Kratos는 GET 제출의 값을 쿼리 문자열에서만 읽는다
     - GUEST_ENABLED면 로그인 제출의 식별자가 게스트 handle인지 본다. 식별자를 읽을 수 없거나 둘 이상이면 400
     - 설정 제출은 X-Session-Token 세션을 whoami로 확인한다 (_settings_rejection). Kratos에 닿지 않으면 502
     """
-    if submission.path in INSPECTED_SUBMIT_PATHS and not _only_flow_query(submission.url.query.decode()):
+    query = submission.url.query.decode()
+    if submission.method == "GET":
+        if submission.path == VERIFICATION_SUBMIT_PATH:
+            allowed = _verification_link_query(query)
+        else:
+            allowed = _only_flow_query(query)
+        return None if allowed else _unreadable_body()
+    if submission.path in INSPECTED_SUBMIT_PATHS and not _only_flow_query(query):
         return _unreadable_body()
     if submission.path == LOGIN_SUBMIT_PATH and settings.GUEST_ENABLED:
         if submission.identifier is _UNREADABLE:
@@ -470,14 +506,15 @@ async def kratos_proxy(path: str, request: Request) -> Response:
 
     headers = {name: value for name in FORWARD_REQUEST_HEADERS if (value := request.headers.get(name))}
     submission: Submission | None = None
-    if request.method == "GET":
+    if request.method == "GET" and not is_get_submission(path, request.url.query):
         url = f"/{path}?{request.url.query}" if request.url.query else f"/{path}"
         body = await request.body()
     else:
         # 인터셉터(app/middleware/guest_gate.py)가 읽고 검사한 제출. 그 URL·본문 그대로 보낸다
         submission = request.state.auth_submission
         url, body = submission.url, submission.body
-    submit_path = submission.path if submission is not None else ""
+    # 본문을 보는 검사는 GET 밖의 제출만 한다 (GET 제출의 값은 인터셉터가 검사한 쿼리 문자열에만 있다)
+    submit_path = submission.path if submission is not None and request.method != "GET" else ""
     content_type = submission.content_type if submission is not None else ""
     try:
         async with _make_client() as client:

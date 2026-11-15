@@ -19,14 +19,15 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
   이름 중복·게스트 수·게스트 JWT 판정보다 먼저다. /v1 경로는 바깥의 RateLimitMiddleware가 먼저 센다
 - X-Turnstile-Token은 Kratos에 넘기지 않는다 (프록시의 요청 헤더 허용 목록에 없다)
 
-/auth 제출(프록시 라우트가 받는 메서드 중 GET 밖)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고
-다음을 거친다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
+/auth 제출(프록시 라우트가 받는 메서드 중 GET 밖의 요청과, Kratos로 보낼 경로가 설정·로그인·가입·인증·복구 제출
+경로인 GET)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고 다음을 거친다. 그 밖의 GET은 거치지
+않는다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
-1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출은 IP 단위로,
+1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출과 GET 제출은 IP 단위로,
    로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일) 단위로도 센다
-2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션)
-3. 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+2. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
+3. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
 4. 게스트 제출이면 Turnstile
 
 경로와 메서드는 라우터와 같은 기준(라우트 경로 정규식, get_route_path)으로 가린다.
@@ -144,8 +145,10 @@ async def _rate_limit_refusal(key: str, method: str, rule: RateLimitRule) -> Res
 
 
 async def _submit_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
-    """설정 밖의 제출을 IP 단위로 세고, 로그인·가입·인증·복구 제출은 같은 IP의 같은 식별자 단위로도 센다"""
-    if not app_config.settings.RATE_LIMIT_ENABLED or submission.path == auth_proxy.SETTINGS_SUBMIT_PATH:
+    """설정 밖의 제출과 GET 제출을 IP 단위로 세고, 로그인·가입·인증·복구 제출은 같은 IP의 같은 식별자 단위로도 센다"""
+    if not app_config.settings.RATE_LIMIT_ENABLED:
+        return None
+    if submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
         return None
     ip_key = await client_ip_key(request)
     refusal = await _rate_limit_refusal(ip_key, request.method, AUTH_SUBMIT_PER_IP)
@@ -167,14 +170,16 @@ async def _settings_rate_limit_refusal(request: Request, identity_id: str | None
 
 async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Response | None:
     """/auth 제출을 세고 검사한다. 넘길 제출이면 None"""
-    submission = auth_proxy.read_submission(path, request.url.query, request.headers.get("content-type", ""), body)
+    submission = auth_proxy.read_submission(
+        request.method, path, request.url.query, request.headers.get("content-type", ""), body
+    )
     if submission is None:
         return None
     request.state.auth_submission = submission
     refusal = await _submit_rate_limit_refusal(request, submission)
     if refusal is None:
         refusal = await auth_proxy.inspect_submission(submission, request.headers.get("x-session-token"))
-    if refusal is None and submission.path == auth_proxy.SETTINGS_SUBMIT_PATH:
+    if refusal is None and submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
         refusal = await _settings_rate_limit_refusal(request, submission.identity_id)
     if refusal is None and submission.guest and submission.path in AUTH_STEPS:
         refusal = await _auth_step_refusal(request)
@@ -188,11 +193,16 @@ def _is_v1_step(scope: Scope) -> bool:
 
 
 def _auth_submit_path(scope: Scope) -> str | None:
-    """프록시 라우트로 갈 제출이면 라우트의 path 값"""
-    if scope["method"] not in AUTH_SUBMIT_METHODS:
+    """프록시 라우트로 갈 제출이면 라우트의 path 값. GET은 Kratos로 보낼 경로가 검사하는 제출 경로일 때만 제출이다"""
+    method = scope["method"]
+    if method != "GET" and method not in AUTH_SUBMIT_METHODS:
         return None
     match = _AUTH_PROXY_PATH.match(get_route_path(scope))
-    return match["path"] if match else None
+    if match is None:
+        return None
+    if method == "GET" and not auth_proxy.is_get_submission(match["path"], Request(scope).url.query):
+        return None
+    return match["path"]
 
 
 def _replay(body: bytes, receive: Receive) -> Receive:

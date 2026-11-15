@@ -2,7 +2,7 @@
 
 - 게스트 이름 찾기·생성: 클라이언트 IP 단위 (app/ratelimit/config.py)
 - /auth 제출 (app/middleware/guest_gate.py): 설정 밖은 IP 단위, 로그인·가입·인증·복구는 같은 IP의 같은 식별자 단위로도,
-  설정은 세션의 identity 단위
+  설정은 세션의 identity 단위. 설정·로그인·가입·인증·복구 경로의 GET은 IP 단위
 """
 import uuid
 
@@ -225,6 +225,48 @@ def test_get_requests_under_auth_are_not_limited(rate_limited):
     statuses = [rate_limited.get("/auth/self-service/login/api").status_code for _ in range(70)]
     statuses += [rate_limited.get("/auth/sessions/whoami").status_code for _ in range(70)]
     assert 429 not in statuses
+
+
+GET_SUBMITS = [
+    "/auth/self-service/settings?flow=f1",
+    "/auth/self-service/login?flow=f1",
+    "/auth/self-service/registration?flow=f1",
+    "/auth/self-service/verification?flow=f1&code=123456",
+    "/auth/self-service/Recovery/",
+]
+
+
+def test_get_submissions_share_one_ip_counter(rate_limited, kratos):
+    statuses = [rate_limited.get(GET_SUBMITS[i % len(GET_SUBMITS)]).status_code for i in range(60)]
+    forwarded = len(kratos.public_requests)
+
+    limited = rate_limited.get("/auth/self-service/verification?flow=f1&code=123456")
+
+    assert 429 not in statuses
+    assert forwarded == 60
+    assert limited.status_code == 429
+    assert len(kratos.public_requests) == forwarded
+
+
+def test_refused_get_submissions_are_counted(rate_limited, kratos):
+    statuses = [rate_limited.get("/auth/self-service/settings?flow=f1&method=password").status_code for _ in range(61)]
+    _assert_limited_after(statuses, 60)
+    assert kratos.public_requests == []
+
+
+def test_other_gets_are_not_counted_with_get_submissions(rate_limited, kratos):
+    for _ in range(60):
+        rate_limited.get("/auth/self-service/login?flow=f1")
+    assert rate_limited.get("/auth/self-service/login?flow=f1").status_code == 429
+
+    others = [
+        "/auth/self-service/login/api",
+        "/auth/self-service/settings/api",
+        "/auth/self-service/settings/flows?id=f1",
+        "/auth/sessions/whoami?tokenize_as=api",
+        "/auth/self-service/methods/oidc/callback/google?code=c1&state=s1",
+    ]
+    assert all(rate_limited.get(path).status_code != 429 for path in others)
 
 
 def test_lookup_and_create_are_limited_per_ip_separately(rate_limited, resource):
