@@ -163,7 +163,7 @@ Kratos의 클레임 매퍼는 모든 identity의 JWT에 `schema_id`를 넣어야
 
 #### 게스트 계정
 
-게스트 계정은 `GUEST_ENABLED=true`, Kratos 설정(게스트 schema, 클레임 매퍼의 `schema_id`, 로그인·설정 훅), Cloudflare Turnstile을 함께 갖춰야 켜집니다. 설정 전체와 확인 절차는 [게스트 계정 설정 (Kratos)](kratos-guest.ko.md)에 있습니다.
+게스트 계정은 `GUEST_ENABLED=true`, Kratos 설정(게스트 schema, 클레임 매퍼의 `schema_id`, 로그인·설정 훅, 출처 확인을 쓰는 배포에서는 훅의 `headers`), Cloudflare Turnstile을 함께 갖춰야 켜집니다. 설정 전체와 확인 절차는 [게스트 계정 설정 (Kratos)](kratos-guest.ko.md)에 있습니다.
 
 ```bash
 GUEST_ENABLED=true

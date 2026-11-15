@@ -75,7 +75,7 @@ flowchart TB
 | 앞단 프록시 → backend | `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET` (설정했을 때) | `403` |
 | backend → Kratos admin API | 망 분리(밖에 열지 않는다) | — |
 | backend → Turnstile | `TURNSTILE_SECRET_KEY` | 생성·게스트 로그인 `403`/`503` |
-| Kratos → backend 훅 | `X-Kratos-Hook-Key` = `KRATOS_HOOK_API_KEY` | `401`, Kratos는 그 요청을 거절 |
+| Kratos → backend 훅 | `X-Kratos-Hook-Key` = `KRATOS_HOOK_API_KEY`. 출처 확인을 설정했으면 `web_hook`의 `headers`로 그 헤더도 | 훅 키 `401`, 출처 헤더 `403`. Kratos는 그 요청을 거절 |
 
 - 게스트의 비밀번호는 backend에 저장되지 않습니다. 생성 요청에서는 backend가 받아 Kratos admin API로 넘기고, 로그인 제출에서는 `/auth` 프록시가 본문째 Kratos 공개 API로 넘깁니다.
 - backend는 게스트 대신 로그인하지 않습니다. 세션 토큰과 JWT는 클라이언트가 `/auth/*`로 직접 받습니다.
