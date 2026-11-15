@@ -516,7 +516,7 @@ GET  /auth/sessions/whoami?tokenize_as=api
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
 - JWT 클레임에는 `sub`(게스트의 Kratos identity id), `schema_id`(게스트 schema id), `name`이 있고 `email`은 없습니다. 이후 요청에는 `Authorization: Bearer <JWT>`를 붙입니다.
-- 로그인 제출은 같은 IP에서 같은 handle로 분당 5회, `/auth`로 가는 GET 밖의 요청은 IP당 분당 60회입니다. 회원의 로그인·가입·코드 제출도 같은 한도를 받습니다.
+- 로그인 제출은 같은 IP에서 같은 handle로 분당 5회, `/auth`로 가는 GET 밖의 요청과 제출 경로로 가는 GET은 IP당 분당 60회입니다. 회원의 로그인·가입·코드 제출도 같은 한도를 받습니다.
 
 ### 이름 변경
 
@@ -604,7 +604,7 @@ sequenceDiagram
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출에 `X-Turnstile-Token`이 없거나, Turnstile이 받지 않거나, 이미 쓴 토큰이다 (`GUEST_ENABLED`) | `403` `guest_verification_failed` |
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출인데 Turnstile을 확인할 수 없다 (`GUEST_ENABLED`) | `503` `guest_verification_unavailable` |
 | 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
-| 로그인·가입·설정·인증·복구 제출(GET 밖)의 쿼리 문자열에 `flow` 밖의 값이 있다 | `400` `invalid_request_body` |
+| 로그인·가입·설정·인증·복구 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 값이 있다 (인증 GET은 `flow`·`code` 밖) | `400` `invalid_request_body` |
 
 프록시가 요청을 넘기는 방식과 판정 순서 전체는 [`/auth` 프록시](auth-proxy.ko.md)에 있습니다.
 
