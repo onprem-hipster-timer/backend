@@ -245,10 +245,11 @@ sequenceDiagram
 - 게스트가 자기를 삭제할 때
 - 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때. 로그인·게스트 경로·이름 변경은 그 게스트를, 이름 찾기·생성은 그 리소스의 게스트 전부를 폐기한다. 호스트를 등록하지 않은 리소스 종류는 `MISSING`이다
 - 리소스가 지워지면서 `discard_resource_guests`를 부를 때
+- 하루 한 번 실행(`POST /internal/accounts/purge`, [운영 배포](../deployment/production.ko.md#회원-탈퇴-파기))에서 리소스가 `EXPIRED`나 `MISSING`일 때. 게스트가 있는 리소스마다 호스트 상태를 읽어 그 리소스의 게스트 전부를 폐기하고, 폐기한 수를 응답의 `guests_discarded`로 돌려준다. `GUEST_ENABLED`가 꺼져 있어도 폐기한다
 
-폐기된 게스트의 Kratos 세션은 identity가 지워지면서 끊깁니다. 이미 받은 JWT는 만료(Kratos tokenizer `ttl`, 기본 10분)까지 서명은 유효하지만, 게스트 경로는 요청마다 게스트 행을 확인하므로 거부됩니다. Kratos identity 삭제가 실패해도 게스트 행은 지워지고, 행이 없는 게스트 identity는 로그인할 수 없습니다. 이때 identity와 그 세션은 Kratos에 남고(세션으로 받은 JWT는 게스트 경로와 회원 경로에서 거부된다), backend는 실패를 로그에 남길 뿐 다시 시도하지 않습니다. 리소스가 `EXPIRED`·`MISSING`이 된 뒤 게스트 확인이 한 번도 일어나지 않으면 그 게스트는 남아 있습니다. 주기적으로 정리하는 작업은 없습니다. 폐기된 게스트의 이름은 다시 쓸 수 있습니다.
+폐기된 게스트의 Kratos 세션은 identity가 지워지면서 끊깁니다. 이미 받은 JWT는 만료(Kratos tokenizer `ttl`, 기본 10분)까지 서명은 유효하지만, 게스트 경로는 요청마다 게스트 행을 확인하므로 거부됩니다. Kratos identity 삭제가 실패해도 게스트 행은 지워지고, 행이 없는 게스트 identity는 로그인할 수 없습니다. 이때 identity와 그 세션은 Kratos에 남고(세션으로 받은 JWT는 게스트 경로와 회원 경로에서 거부된다), backend는 실패를 로그에 남길 뿐 다시 시도하지 않습니다. 하루 한 번 실행도 그 identity를 다시 지우지 않습니다. 리소스가 `EXPIRED`·`MISSING`이 된 뒤 게스트 확인이 일어나지 않아도 그 게스트는 다음 하루 한 번 실행에서 폐기됩니다. 이 실행에서 한 리소스의 호스트 상태 읽기나 폐기가 실패하면 로그에 남기고 다음 리소스로 넘어가며, 그 리소스의 게스트는 남아 다음 실행에서 다시 확인합니다. 폐기된 게스트의 이름은 다시 쓸 수 있습니다.
 
-리소스가 `CLOSED`인 동안 게스트는 남지만 로그인, 이름 찾기, 생성, 이름 변경은 거절됩니다. 자기 삭제는 됩니다.
+리소스가 `CLOSED`인 동안 게스트는 남지만 로그인, 이름 찾기, 생성, 이름 변경은 거절됩니다. 자기 삭제는 됩니다. 하루 한 번 실행도 `CLOSED` 리소스의 게스트를 지우지 않습니다.
 
 ### 상태와 폐기 순서
 
@@ -265,11 +266,12 @@ stateDiagram-v2
     [*] --> Present: POST /v1/guests
     Present --> Discarded: DELETE /v1/guests/me
     Present --> Discarded: 게스트 확인에서 EXPIRED 또는 MISSING
+    Present --> Discarded: 하루 한 번 실행에서 EXPIRED 또는 MISSING
     Present --> Discarded: discard_resource_guests
     Discarded --> [*]
 ```
 
-게스트 확인은 로그인 훅, 설정 훅, 게스트 경로 요청, 같은 리소스의 이름 찾기·생성입니다. 호스트 상태는 저장하지 않고 확인할 때마다 리소스에 묻습니다.
+게스트 확인은 로그인 훅, 설정 훅, 게스트 경로 요청, 같은 리소스의 이름 찾기·생성입니다. 호스트 상태는 저장하지 않고 게스트 확인과 하루 한 번 실행 때마다 리소스에 묻습니다.
 
 폐기는 다음 순서입니다.
 
@@ -298,6 +300,7 @@ sequenceDiagram
 |------|------|--------|
 | 접근 정책과 폐기 | `app/domain/guest/service.py` (`check_access`, `discard_guest`, `discard_resource_guests`) | `tests/domain/guest/test_policy.py` |
 | 폐기할 때 약관 동의 삭제 | `app/domain/guest/service.py` (`_delete_guest_row`, `_delete_resource_guest_rows`) | `tests/domain/guest/test_consent.py` |
+| 하루 한 번 실행의 폐기 | `app/domain/guest/service.py` (`discard_stale_guests`), `app/api/internal.py` | `tests/domain/guest/test_stale_guests.py`, `tests/test_account_purge_e2e.py` (`TestGuestDiscard`) |
 | 호스트 계약 | `app/domain/guest/host.py` | `tests/domain/guest/test_policy.py` |
 
 ## 이름과 비밀번호 규칙
@@ -701,6 +704,7 @@ def register() -> None:
 ```
 
 - `guest_status`는 읽기만 하고 세션을 커밋하지 않습니다.
+- 하루 한 번 실행은 게스트가 있는 리소스마다 `guest_status`를 부릅니다. 지워진 리소스는 `MISSING`을 돌려줍니다.
 - 등록은 앱 시작 때 한 번 합니다(이벤트 핸들러 등록과 같은 자리). 테스트는 `register_guest_host`·`unregister_guest_host`로 가짜 호스트를 둡니다(`tests/domain/guest/conftest.py`).
 
 ### 2. 게스트 경로
@@ -737,7 +741,7 @@ async def guest_view(guest: Guest = Depends(require_guest_access(ResourceType.ME
 
 ### 4. 리소스를 지울 때
 
-리소스 삭제를 커밋한 뒤 게스트를 모두 폐기합니다. 부르지 않아도 다음 게스트 확인에서 `MISSING`으로 폐기되지만, 그때까지 게스트 행과 Kratos identity가 남습니다.
+리소스 삭제를 커밋한 뒤 게스트를 모두 폐기합니다. 부르지 않아도 다음 게스트 확인이나 하루 한 번 실행에서 `MISSING`으로 폐기되지만, 그때까지 게스트 행과 Kratos identity가 남습니다.
 
 ```python
 from app.domain.guest.service import discard_resource_guests
@@ -747,7 +751,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 
 ## 객체 의존성
 
-게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 다섯입니다.
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 여섯입니다.
 
 | 진입점 | 쓰는 것 |
 |--------|---------|
@@ -755,6 +759,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | `/v1/guests/*` (`api/v1/guests.py`) | 서비스(찾기·생성·폐기·약관 동의 기록), 게스트 의존성(`DELETE /v1/guests/me`, `PUT /v1/guests/me/consent`) |
 | Kratos 훅 수신 (`api/kratos_hooks.py`) | 서비스(로그인·설정 판정) |
 | `/auth` 프록시 (`api/auth_proxy.py`) | 서비스(이름 중복 조회) |
+| 하루 한 번 실행 (`api/internal.py`) | 서비스(EXPIRED·MISSING 리소스의 게스트 폐기) |
 | 리소스의 게스트 경로 | 게스트 의존성 |
 
 그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.

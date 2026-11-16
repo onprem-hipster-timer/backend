@@ -44,6 +44,12 @@ def list_resource_guests(session: Session, resource_type: ResourceType, resource
     return list(session.exec(statement).all())
 
 
+def list_guest_resources(session: Session) -> list[tuple[ResourceType, UUID]]:
+    """게스트가 한 명 이상 있는 (resource_type, resource_id)"""
+    statement = select(Guest.resource_type, Guest.resource_id).distinct()
+    return list(session.exec(statement).all())
+
+
 def count_resource_guests(session: Session, resource_type: ResourceType, resource_id: UUID) -> int:
     statement = (
         select(func.count())

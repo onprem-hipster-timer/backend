@@ -188,13 +188,14 @@ KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 
 #### 회원 탈퇴 파기
 
-탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다. 같은 실행이 가입 뒤 `UNVERIFIED_SIGNUP_RETENTION_HOURS`(기본 24시간)가 지나도 이메일을 인증하지 않은 가입 정보도 Kratos에서 지웁니다.
+탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다. 같은 실행이 가입 뒤 `UNVERIFIED_SIGNUP_RETENTION_HOURS`(기본 24시간)가 지나도 이메일을 인증하지 않은 가입 정보도 Kratos에서 지웁니다. 게스트 기간이 끝났거나(`EXPIRED`) 없는(`MISSING`) 리소스의 게스트도 `GUEST_ENABLED`와 상관없이 폐기합니다([게스트 가이드](../guides/guest.ko.md#수명-주기)).
 
 ```bash
 ACCOUNT_PURGE_TOKEN=<무작위 값>   # 호출할 때 X-Purge-Token 헤더로 보낸다. 비우면 404
 ```
 
-- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수}`입니다. 남은 identity는 다음 호출이 다시 지웁니다.
+- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수, "unverified_removed": 지운 미인증 가입 수, "guests_discarded": 폐기한 게스트 수}`입니다. 삭제가 남은 회원 identity는 다음 호출이 다시 지웁니다.
+- `guests_discarded`는 게스트 행을 지운 수입니다. 게스트의 Kratos identity 삭제가 실패해도 세고, 그 identity는 다시 지우지 않습니다(로그에 남는다).
 - `ORIGIN_VERIFY_HEADER`를 쓰면 스케줄러 요청에도 그 헤더를 붙입니다.
 - 로그인·가입·탈퇴 신청·취소·파기는 stdout에 `{"audit": "account_access", "event", "identity_id", "ip", "at"}` JSON 한 줄로 남습니다. 보존 기간은 로그 설정에서 정합니다.
 

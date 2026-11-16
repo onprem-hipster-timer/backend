@@ -6,6 +6,9 @@
 - 폐기(discard_guest, discard_resource_guests): 게스트 행·약관 동의 삭제와 GuestDiscarded 이벤트를 한 트랜잭션으로 커밋한 뒤
   Kratos identity를 지운다. identity 삭제가 실패해도 행이 없으므로 접근은 닫힌다
   (로그인 훅은 행이 없는 게스트 identity를 거부한다). 실패는 로그로 남긴다
+- 정리(discard_stale_guests): 게스트가 있는 리소스마다 호스트 상태를 읽어 EXPIRED·MISSING이면 discard_resource_guests로
+  폐기한다. 하루 한 번 실행(POST /internal/accounts/purge, app/api/internal.py)이 부른다.
+  GUEST_ENABLED와 상관없이 폐기한다. 한 리소스의 실패는 로그로 남기고 다음 리소스로 넘어간다
 - 이름 찾기(lookup)와 생성(create). 게스트 이름(정규형)은 guest.name에 두고, 리소스 안에서 겹치지 않는 것은
   UNIQUE (resource_type, resource_id, name)이 보장한다. 로그인 식별자(handle)는 "<게스트 행 id>@guest.invalid"
 - 약관 동의는 회원과 같은 consent 테이블에 게스트의 identity id로 둔다 (app/domain/consent). 생성은 동의를 게스트 행과
@@ -170,6 +173,25 @@ async def discard_resource_guests(resource_type: ResourceType, resource_id: UUID
     for identity_id in identity_ids:
         await _delete_identity(identity_id)
     return len(identity_ids)
+
+
+def _read_guest_resources() -> list[tuple[ResourceType, UUID]]:
+    with _session_manager.get_session() as session:
+        return crud.list_guest_resources(session)
+
+
+async def discard_stale_guests() -> int:
+    """게스트가 있는 리소스 중 EXPIRED·MISSING인 리소스의 게스트를 모두 폐기하고 그 수를 돌려준다.
+    한 리소스의 실패는 로그로 남기고 다음 리소스로 넘어간다"""
+    discarded = 0
+    for resource_type, resource_id in await run_in_threadpool(_read_guest_resources):
+        try:
+            status = await run_in_threadpool(_read_status, resource_type, resource_id)
+            if status in (GuestHostStatus.EXPIRED, GuestHostStatus.MISSING):
+                discarded += await discard_resource_guests(resource_type, resource_id)
+        except Exception:
+            logger.exception("게스트 정리 실패: resource_type=%s resource_id=%s", resource_type.value, resource_id)
+    return discarded
 
 
 async def authorize(identity_id: str, resource_type: ResourceType, resource_id: UUID) -> Guest:
