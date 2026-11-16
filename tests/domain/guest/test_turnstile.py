@@ -11,7 +11,6 @@ import httpx
 import pytest
 
 import app.core.config as app_config
-from app.core import kratos_slots
 from app.core import turnstile as turnstile_client
 from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.fakes import TURNSTILE_SECRET, TURNSTILE_VERIFY
@@ -285,21 +284,6 @@ def test_verification_comes_before_resource_and_name_checks(
         assert r.json()["error"]["id"] == "guest_verification_failed"
     else:
         assert r.json()["error_type"] == "GuestVerificationFailedError"
-
-
-@pytest.mark.parametrize("step_name", ["create", "login", "rename"])
-def test_verification_comes_before_guest_kratos_slot(
-        guest_client, kratos, tokens, guest, resource, turnstile, monkeypatch, step_name
-):
-    monkeypatch.setattr(kratos_slots, "guest_slots", kratos_slots.Slots(0))
-    monkeypatch.setattr(kratos_slots, "WAIT_SECONDS", 0.01)
-    step = Step(step_name, guest_client, kratos, tokens, guest, resource)
-
-    turnstile.success = False
-    assert step.send().status_code == 403
-    turnstile.success = True
-    assert step.send().status_code == 429
-    assert len(turnstile.requests) == 2
 
 
 def test_checks_after_verification_still_apply(guest_client, kratos, host, turnstile, resource):

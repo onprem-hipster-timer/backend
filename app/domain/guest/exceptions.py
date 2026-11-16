@@ -36,12 +36,6 @@ class GuestServiceUnavailableError(DomainException):
     detail = "인증 서비스에 연결할 수 없습니다"
 
 
-class GuestServiceBusyError(DomainException):
-    """Kratos 자리가 나지 않아 게스트를 만들지 않음 (app/core/kratos_slots.py)"""
-    status_code = status.HTTP_429_TOO_MANY_REQUESTS
-    detail = "요청이 몰려 있습니다. 잠시 후 다시 시도하세요"
-
-
 class GuestVerificationFailedError(DomainException):
     """게스트 단계 요청의 Turnstile 토큰이 확인을 통과하지 못함 (app/middleware/guest_gate.py)"""
     status_code = status.HTTP_403_FORBIDDEN

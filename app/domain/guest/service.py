@@ -28,7 +28,7 @@ from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 import app.core.config as app_config
-from app.core import kratos_admin, kratos_slots
+from app.core import kratos_admin
 from app.crud import guest as crud
 from app.db.session import _session_manager
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
@@ -37,7 +37,6 @@ from app.domain.guest.exceptions import (
     GuestEntryRefusedError,
     GuestLimitReachedError,
     GuestNameTakenError,
-    GuestServiceBusyError,
     GuestServiceUnavailableError,
 )
 from app.domain.guest.host import GuestHostStatus, host_status
@@ -206,7 +205,7 @@ async def create(data: GuestCreate) -> GuestRead:
     """새 게스트를 만들고 로그인 식별자(handle)를 돌려준다.
 
     리소스 확인 → 같은 이름 확인(있으면 GuestNameTakenError) → 게스트 수 확인(MAX_GUESTS_PER_RESOURCE명이면
-    GuestLimitReachedError) → Kratos identity 생성(게스트 Kratos 자리, 나지 않으면 GuestServiceBusyError) → 게스트 행 커밋.
+    GuestLimitReachedError) → Kratos identity 생성 → 게스트 행 커밋.
     Turnstile은 인터셉터가 먼저 확인한다 (app/middleware/guest_gate.py).
     행을 넣다가 같은 이름과 겹치면 만든 identity를 지우고 GuestNameTakenError.
     """
@@ -218,16 +217,12 @@ async def create(data: GuestCreate) -> GuestRead:
 
     guest_id = uuid4()
     handle = guest_handle(guest_id)
-    try:
-        async with kratos_slots.guest_slots.hold():
-            identity = await kratos_admin.create_identity(
-                app_config.settings.KRATOS_GUEST_SCHEMA_ID,
-                {"handle": handle, "name": data.name},
-                data.password,
-                verified_addresses=(handle,),
-            )
-    except kratos_slots.KratosBusyError:
-        raise GuestServiceBusyError() from None
+    identity = await kratos_admin.create_identity(
+        app_config.settings.KRATOS_GUEST_SCHEMA_ID,
+        {"handle": handle, "name": data.name},
+        data.password,
+        verified_addresses=(handle,),
+    )
     if identity is None:
         raise GuestServiceUnavailableError()
     guest = Guest.model_validate(data, update={"id": guest_id, "identity_id": identity["id"]})

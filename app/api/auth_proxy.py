@@ -39,8 +39,6 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
   그 밖의 GET은 읽지도 세지도 검사하지도 않고 넘긴다
 - Kratos로 보낼 URL을 만들 수 없는 요청(경로·쿼리 문자열의 제어 문자, httpx의 URL 길이 제한)은 메서드·경로와 상관없이
   인터셉터가 세지도 검사하지도 않고 400 invalid_request_url로 답한다
-- 로그인·가입·설정 제출은 Kratos가 비밀번호 해시를 계산할 수 있어, 넘기기 전에 Kratos 자리를 잡는다
-  (app/core/kratos_slots.py, 게스트 handle 로그인과 게스트 세션의 설정 제출은 게스트 자리). 자리가 나지 않으면 429
 """
 import json
 import logging
@@ -52,7 +50,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.core import courier, kratos_slots
+from app.core import courier
 from app.core.audit import log_account_access
 from app.core.config import settings
 from app.domain.guest import service as guest_service
@@ -106,8 +104,6 @@ IDENTIFIER_KEYS = ("identifier", "password_identifier")
 # 같은 IP의 같은 식별자 단위로도 세는 제출 경로 (식별자: 로그인은 identifier, 가입은 traits.email, 인증·복구는 email)
 REGISTRATION_SUBMIT_PATH = "/self-service/registration"
 IDENTIFIER_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, *ADDRESS_SUBMIT_PATHS})
-# Kratos가 비밀번호 해시를 계산할 수 있는 제출 경로. 넘기기 전에 Kratos 자리를 잡는다
-HASHING_SUBMIT_PATHS = frozenset({LOGIN_SUBMIT_PATH, REGISTRATION_SUBMIT_PATH, SETTINGS_SUBMIT_PATH})
 # 검사하는 제출 경로. 쿼리 문자열에는 flow만 받는다. Kratos는 이 경로의 GET도 받아 쿼리 문자열에서 제출 값을 읽으므로
 # GET도 제출로 본다
 INSPECTED_SUBMIT_PATHS = frozenset({SETTINGS_SUBMIT_PATH, *OIDC_SUBMIT_PATHS, *ADDRESS_SUBMIT_PATHS})
@@ -380,15 +376,6 @@ def _guest_name_taken() -> JSONResponse:
     )
 
 
-def _kratos_busy() -> JSONResponse:
-    retry_after = kratos_slots.RETRY_AFTER_SECONDS
-    return JSONResponse(
-        {"detail": "요청이 몰려 있습니다. 잠시 후 다시 시도해주세요.", "retry_after": retry_after},
-        status_code=429,
-        headers={"Retry-After": str(retry_after)},
-    )
-
-
 def _unavailable() -> JSONResponse:
     return JSONResponse({"detail": "Authentication service unavailable"}, status_code=502)
 
@@ -424,7 +411,7 @@ class Submission:
     # 없으면 None, 읽을 수 없으면 _UNREADABLE
     identifier: object = None
     identity_id: str | None = None  # 설정 제출: 검사를 통과한 세션의 identity id
-    guest: bool = False  # 게스트 handle 로그인이나 게스트 세션의 설정 제출 (Turnstile, 게스트 Kratos 자리)
+    guest: bool = False  # 게스트 handle 로그인이나 게스트 세션의 설정 제출 (Turnstile)
 
 
 async def _settings_rejection(
@@ -598,16 +585,7 @@ async def kratos_proxy(path: str, request: Request) -> Response:
                         submission.identity_id, _submitted_name(content_type, body)
                 ):
                     return _guest_name_taken()
-            if submit_path in HASHING_SUBMIT_PATHS:
-                slots = kratos_slots.guest_slots if submission.guest else kratos_slots.member_slots
-                try:
-                    async with slots.hold():
-                        upstream = await client.send(outgoing)
-                except kratos_slots.KratosBusyError:
-                    logger.warning(f"Kratos 자리가 차서 제출을 거절함: guest={submission.guest}")
-                    return _kratos_busy()
-            else:
-                upstream = await client.send(outgoing)
+            upstream = await client.send(outgoing)
     except httpx.HTTPError:
         logger.warning("Kratos 공개 API에 닿지 않음", exc_info=True)
         return _unavailable()
