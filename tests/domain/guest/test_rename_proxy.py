@@ -3,8 +3,10 @@
 프록시는 같은 리소스의 다른 게스트가 쓰는 이름(정규형으로 비교)이면 Kratos에 넘기지 않고 409 guest_name_taken으로 답한다.
 가짜 Kratos는 설정 제출 때 backend 설정 훅 판정(service.settings_change_allowed)을 거친다.
 """
+import json
 import unicodedata
 import uuid
+from urllib.parse import urlencode
 
 import pytest
 
@@ -87,6 +89,53 @@ def test_form_encoded_rename_to_taken_name_is_409(guest_client, kratos, resource
         headers={**_session(kratos, guest), **TOKEN},
     )
     assert r.status_code == 409
+
+
+def _multipart_rename(handle: str) -> str:
+    fields = {"method": "profile", "traits.handle": handle, "traits.name": "철수"}
+    parts = [f'--b0\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n' for k, v in fields.items()]
+    return "".join(parts) + "--b0--\r\n"
+
+
+# 표현마다 handle을 받아 (본문, Content-Type)을 만든다. 모두 이름을 철수로 바꾸는 제출이다
+RENAMES_IN_OTHER_REPRESENTATIONS = {
+    "json_dotted_key": lambda handle: (
+        json.dumps({"method": "profile", "traits.handle": handle, "traits.name": "철수"}), "application/json"
+    ),
+    "json_traits_string": lambda handle: (
+        json.dumps({"method": "profile", "traits": json.dumps({"handle": handle, "name": "철수"})}), "application/json"
+    ),
+    "form_traits": lambda handle: (
+        urlencode({"method": "profile", "traits": json.dumps({"handle": handle, "name": "철수"})}),
+        "application/x-www-form-urlencoded",
+    ),
+    "multipart": lambda handle: (_multipart_rename(handle), "multipart/form-data; boundary=b0"),
+    "text_plain": lambda handle: (
+        json.dumps({"method": "profile", "traits": {"handle": handle, "name": "철수"}}), "text/plain"
+    ),
+}
+
+
+@pytest.mark.parametrize("representation", list(RENAMES_IN_OTHER_REPRESENTATIONS))
+def test_rename_in_other_body_representation_is_400_and_not_forwarded(guest_client, kratos, turnstile, resource,
+                                                                      guest_events, representation):
+    guest = make_guest(kratos, resource, name="민수")
+    make_guest(kratos, resource, name="철수")
+    handle = kratos.identities[guest.identity_id]["traits"]["handle"]
+    content, content_type = RENAMES_IN_OTHER_REPRESENTATIONS[representation](handle)
+
+    r = guest_client.post(
+        SETTINGS_SUBMIT,
+        content=content.encode(),
+        headers={"Content-Type": content_type, **_session(kratos, guest), **TOKEN},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert kratos.public_requests == []
+    assert turnstile.requests == []
+    assert kratos.name_of(guest.identity_id) == "민수"
+    assert guest_events == []
 
 
 def test_rename_to_own_current_name_is_allowed(guest_client, kratos, resource, guest_events):
