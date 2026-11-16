@@ -27,6 +27,43 @@ class TestFriendRequestRule:
         assert rule.max_requests == 60
 
 
+class TestGuestEntryRules:
+    """게스트 이름 찾기·생성 전용 rate limit 규칙"""
+
+    @pytest.mark.parametrize("path,limit", [("/v1/guests", 100), ("/v1/guests/lookup", 100)])
+    def test_guest_lookup_and_create_have_own_limits(self, path, limit):
+        rule = get_rule_for_request("POST", path)
+        assert rule is not None
+        assert rule.path_pattern == path  # 둘은 따로 센다
+        assert (rule.max_requests, rule.window_seconds) == (limit, 60)
+
+    @pytest.mark.parametrize("path", ["/v1/guests", "/v1/guests/lookup"])
+    def test_guest_lookup_and_create_are_counted_per_ip(self, path):
+        assert get_rule_for_request("POST", path).per_ip is True
+
+    def test_guest_self_delete_falls_back_to_global(self):
+        rule = get_rule_for_request("DELETE", "/v1/guests/me")
+        assert rule is not None
+        assert rule.max_requests == 60
+
+
+class TestAuthProxySubmitRule:
+    """/auth 제출은 미들웨어 규칙이 아니라 프록시가 센다 (tests/domain/guest/test_rate_limits.py)"""
+
+    @pytest.mark.parametrize("method", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+    @pytest.mark.parametrize(
+        "path",
+        ["/auth/self-service/login", "/auth/self-service/registration", "/auth/self-service/settings",
+         "/auth/self-service/logout/api", "/auth/sessions/whoami"],
+    )
+    def test_requests_under_auth_have_no_middleware_rule(self, method, path):
+        assert get_rule_for_request(method, path) is None
+
+    @pytest.mark.parametrize("method,path", [("POST", "/v1/todos"), ("GET", "/v1/tags"), ("POST", "/v1/friends/requests")])
+    def test_other_rules_count_per_user(self, method, path):
+        assert get_rule_for_request(method, path).per_ip is False
+
+
 class TestRateLimitRule:
     """RateLimitRule 테스트"""
 

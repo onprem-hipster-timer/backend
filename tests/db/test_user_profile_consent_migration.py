@@ -20,6 +20,7 @@ import app.models.holiday  # noqa: F401
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PREVIOUS_REVISION = "314620d41758"
+CONSENT_REVISION = "a7c3e9f1b2d4"
 CONSENT_COLUMNS = {"consent_version", "consented_at"}
 
 
@@ -51,7 +52,7 @@ def test_existing_profiles_need_consent_after_upgrade(tmp_path: Path, monkeypatc
             " VALUES ('existing', 'code', '2026-11-01 00:00:00', '2026-11-01 00:00:00')"
         ))
 
-    command.upgrade(config, "head")
+    command.upgrade(config, CONSENT_REVISION)
 
     columns = _columns(engine)
     assert CONSENT_COLUMNS <= set(columns)

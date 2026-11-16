@@ -7,11 +7,13 @@
   다른 사용자의 데이터는 남긴다
 - DB 커밋 뒤 Kratos identity를 지운다. 404는 성공, 실패하면 다음 실행이 다시 시도한다
 - 파기한 sub의 토큰은 401이고 프로필을 다시 만들지 않는다
+- 같은 실행이 EXPIRED·MISSING 리소스의 게스트를 GUEST_ENABLED와 상관없이 폐기하고 그 수를 guests_discarded로
+  돌려준다. 리소스마다의 판정은 tests/domain/guest/test_stale_guests.py
 """
 import json
 import logging
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func
@@ -20,9 +22,11 @@ from sqlmodel import Session, select
 import app.core.config as app_config
 from app.core.audit import AUDIT_LOGGER_NAME
 from app.db.session import _session_manager
+from app.domain.guest.host import GuestHostStatus, register_guest_host, unregister_guest_host
 from app.domain.user import purge
 from app.models import (
     AccountDeletion,
+    Consent,
     Friendship,
     Meeting,
     MeetingParticipant,
@@ -43,7 +47,10 @@ from app.models import (
 )
 from app.models.base import utc_now_naive
 from app.models.tag import TimerTag
+from app.models.visibility import ResourceType
 from tests.conftest import TimerCommands
+from tests.domain.guest.fakes import FakeHost, FakeKratos
+from tests.domain.guest.helpers import guest_rows, make_guest
 from tests.test_account_deletion_e2e import AuditRecords, FakeKratosAdmin, KRATOS_ADMIN
 from tests.test_account_deletion_hidden_e2e import _befriend, _code, _make_meeting, _participate
 
@@ -126,7 +133,7 @@ class TestEndpointAuth:
             assert session.get(UserProfile, "user-a") is not None
 
     def test_correct_token_returns_counts_only(self, multi_user_e2e, kratos):
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
 
     def test_get_not_allowed(self, multi_user_e2e, kratos):
         assert multi_user_e2e._client.get(PURGE, headers={"X-Purge-Token": TOKEN}).status_code == 405
@@ -142,7 +149,7 @@ class TestGraceBoundary:
         a = multi_user_e2e.as_user("user-a")
         _request_and_age(a, "user-a", _grace() - timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         assert a.get("/v1/users/me").status_code == 200
         assert ("DELETE", "/admin/identities/user-a") not in kratos.calls()
 
@@ -150,7 +157,7 @@ class TestGraceBoundary:
         a = multi_user_e2e.as_user("user-a")
         _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
 
     @pytest.mark.parametrize("days", [1, 7])
     def test_boundary_follows_setting(self, multi_user_e2e, kratos, monkeypatch, days):
@@ -160,7 +167,7 @@ class TestGraceBoundary:
         _request_and_age(a, "user-a", timedelta(days=days) + timedelta(minutes=1))
         _request_and_age(b, "user-b", timedelta(days=days) - timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is None
             assert session.get(UserProfile, "user-b") is not None
@@ -184,7 +191,9 @@ def _populate(multi_user_e2e):
     c = multi_user_e2e.as_user("user-c", email="c@example.com")
     d = multi_user_e2e.as_user("user-d", email="d@example.com")
     for client in (a, b, c, d):
-        client.get("/v1/users/me")
+        version = client.get("/v1/users/me").json()["consent_version"]
+        consent = {"version": version, "age_over_14": True, "terms": True, "privacy": True}
+        assert client.put("/v1/users/me/consent", json=consent).status_code == 200
     _befriend(a, b)
     _befriend(b, d)
     a.post("/v1/friends/requests", json={"friend_code": _code(c)})
@@ -252,6 +261,7 @@ def _rows_with_sub(session: Session, sub: str) -> dict[str, int]:
     a_meetings = select(Meeting.id).where(Meeting.owner_id == sub)
     return {
         "user_profile": count(select(UserProfile).where(UserProfile.sub == sub)),
+        "consent": count(select(Consent).where(Consent.sub == sub)),
         "timersession": count(a_timers),
         "timer_tag": count(select(TimerTag).where(TimerTag.timer_id.in_(a_timers) | TimerTag.tag_id.in_(a_tags))),
         "schedule": count(a_schedules),
@@ -283,7 +293,7 @@ class TestPurgeDeletesEverything:
         assert all(before.values()), before
 
         _request_and_age(data["a"], "user-a", _grace() + timedelta(minutes=1))
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
 
         with _db() as session:
             assert _rows_with_sub(session, "user-a") == dict.fromkeys(before, 0)
@@ -297,6 +307,7 @@ class TestPurgeDeletesEverything:
         _run(multi_user_e2e)
 
         assert b.get(f"/v1/schedules/{data['b_schedule']}").status_code == 200
+        assert b.get("/v1/users/me").json()["consent_required"] is False
         assert b.get(f"/v1/visibility/schedule/{data['b_schedule']}").json()["allowed_user_ids"] == ["user-d"]
         assert b.get("/v1/friends/ids").json() == ["user-d"]
         visibility = c.get(f"/v1/visibility/meeting/{data['c_meeting']}").json()
@@ -342,8 +353,8 @@ class TestPurgeDeletesEverything:
         data = _populate(multi_user_e2e)
         _request_and_age(data["a"], "user-a", _grace() + timedelta(minutes=1))
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         assert kratos.calls() == [
             ("DELETE", "/admin/identities/user-a/sessions"),
             ("DELETE", "/admin/identities/user-a"),
@@ -387,7 +398,7 @@ class TestPurgeDeletesEverything:
 
         monkeypatch.setattr(purge, "delete_user_data", failing)
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is not None
             assert session.get(UserProfile, "user-b") is None
@@ -399,7 +410,7 @@ class TestKratosIdentity:
         _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
         kratos.status = 404
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         with _db() as session:
             assert session.get(AccountDeletion, "user-a").kratos_deleted_at is not None
 
@@ -415,7 +426,7 @@ class TestKratosIdentity:
         else:
             monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", "")
 
-        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 1, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 1, "unverified_removed": 0, "guests_discarded": 0}
         with _db() as session:
             assert session.get(UserProfile, "user-a") is None
             assert session.get(AccountDeletion, "user-a").kratos_deleted_at is None
@@ -426,9 +437,9 @@ class TestKratosIdentity:
         monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", KRATOS_ADMIN)
         kratos.requests.clear()
 
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         assert kratos.calls() == [("DELETE", "/admin/identities/user-a")]
-        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0}
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
         assert kratos.calls() == [("DELETE", "/admin/identities/user-a")]
 
     def test_record_kept_one_day_after_identity_deleted(self, multi_user_e2e, kratos):
@@ -492,3 +503,90 @@ class TestAllowedEmailMatching:
 
         remaining = b.get(f"/v1/visibility/schedule/{schedule_id}").json()["allowed_emails"]
         assert [e.lower() for e in remaining] == ["carol@example.com"]
+
+
+@pytest.fixture
+def guest_host():
+    """MEETING 리소스 종류의 가짜 게스트 호스트. 다른 리소스 종류에는 호스트가 없다(MISSING)"""
+    host = FakeHost()
+    register_guest_host(ResourceType.MEETING, host)
+    yield host
+    unregister_guest_host(ResourceType.MEETING)
+
+
+class TestGuestDiscard:
+    """make_guest에 넘기는 FakeKratos는 게스트 identity id만 만든다. 실행이 부르는 Kratos는 kratos fixture다"""
+
+    def test_run_discards_guests_of_expired_and_missing_resources(self, multi_user_e2e, kratos, guest_host):
+        a = multi_user_e2e.as_user("user-a")
+        _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
+        expired, missing, open_resource, closed_resource = uuid4(), uuid4(), uuid4(), uuid4()
+        guest_host.statuses.update({
+            expired: GuestHostStatus.EXPIRED,
+            missing: GuestHostStatus.MISSING,
+            open_resource: GuestHostStatus.OPEN,
+            closed_resource: GuestHostStatus.CLOSED,
+        })
+        identities = FakeKratos()
+        discarded = [
+            make_guest(identities, expired, name="가"),
+            make_guest(identities, expired, name="나"),
+            make_guest(identities, missing),
+            make_guest(identities, uuid4(), resource_type=ResourceType.TODO),
+        ]
+        kept = [make_guest(identities, open_resource), make_guest(identities, closed_resource)]
+
+        assert _run(multi_user_e2e) == {"purged": 1, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 4}
+        assert sorted(g.id for g in guest_rows()) == sorted(g.id for g in kept)
+        assert sorted(kratos.calls()) == sorted([
+            ("DELETE", "/admin/identities/user-a/sessions"),
+            ("DELETE", "/admin/identities/user-a"),
+            *(("DELETE", f"/admin/identities/{g.identity_id}") for g in discarded),
+        ])
+        with _db() as session:
+            assert session.get(UserProfile, "user-a") is None
+            assert session.get(AccountDeletion, "user-a").kratos_deleted_at is not None
+
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 0}
+        assert sorted(g.id for g in guest_rows()) == sorted(g.id for g in kept)
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_discards_whether_guests_are_on_or_off(self, multi_user_e2e, kratos, guest_host, monkeypatch, enabled):
+        monkeypatch.setattr(app_config.settings, "GUEST_ENABLED", enabled)
+        resource = uuid4()
+        guest_host.statuses[resource] = GuestHostStatus.EXPIRED
+        guest = make_guest(FakeKratos(), resource)
+
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 1}
+        assert guest_rows() == []
+        assert kratos.calls() == [("DELETE", f"/admin/identities/{guest.identity_id}")]
+
+    @pytest.mark.parametrize("failure", ["status", "unreachable"])
+    def test_identity_delete_failure_does_not_fail_the_run(self, multi_user_e2e, kratos, guest_host, failure):
+        resource = uuid4()
+        guest_host.statuses[resource] = GuestHostStatus.EXPIRED
+        make_guest(FakeKratos(), resource)
+        if failure == "status":
+            kratos.status = 500
+        else:
+            kratos.fail = True
+
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 1}
+        assert guest_rows() == []
+
+    def test_failing_resource_does_not_fail_the_run(self, multi_user_e2e, kratos, guest_host, monkeypatch):
+        failing, expired = uuid4(), uuid4()
+        guest_host.statuses[expired] = GuestHostStatus.EXPIRED
+        status_of = guest_host.guest_status
+
+        def guest_status(session, resource_id):
+            if resource_id == failing:
+                raise RuntimeError("host failure")
+            return status_of(session, resource_id)
+
+        monkeypatch.setattr(guest_host, "guest_status", guest_status)
+        kept = make_guest(FakeKratos(), failing)
+        make_guest(FakeKratos(), expired)
+
+        assert _run(multi_user_e2e) == {"purged": 0, "kratos_pending": 0, "unverified_removed": 0, "guests_discarded": 1}
+        assert [g.id for g in guest_rows()] == [kept.id]

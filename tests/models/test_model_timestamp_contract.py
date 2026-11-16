@@ -17,6 +17,7 @@ from app.models.base import TimestampMixin, utc_now_naive
 
 TIMESTAMP_TABLE_NAMES = {
     "friendship",
+    "guest",
     "holiday_hashes",
     "holidays",
     "meeting",
@@ -34,6 +35,7 @@ TIMESTAMP_TABLE_NAMES = {
 
 TIMESTAMPLESS_TABLE_NAMES = {
     "account_deletion",
+    "consent",
     "meeting_time_slot",
     "schedule_exception_tag",
     "schedule_tag",

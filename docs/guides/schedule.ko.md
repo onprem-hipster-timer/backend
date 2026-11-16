@@ -192,6 +192,8 @@ const schedules: Schedule[] = await response.json();
 `scope=shared`/`scope=all`로 조회하면 공유된 타인의 반복 일정도 같은 방식으로 범위 안의 회차로 확장됩니다
 (예외 반영, `parent_id` 설정, `is_shared: true`, `owner_id`는 소유자). 자세한 내용은 [Visibility 가이드](visibility.ko.md)의 공유 리소스 조회를 참고하세요.
 
+`GET /v1/schedules/{id}`(`instance_start` 포함)와 `/v1/schedules/{id}/timers`, `/v1/schedules/{id}/timers/active`는 일정이 없거나 접근할 수 없으면 같은 `404` `ScheduleNotFoundError`입니다. 수정·삭제는 소유자만 할 수 있고, 다른 사용자의 일정이면 공유 여부와 상관없이 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
+
 #### 반복 일정의 특정 인스턴스 조회
 ```typescript
 // GET /v1/schedules/{parent_id}?instance_start={instance_start_time}
@@ -213,8 +215,7 @@ const instance: Schedule = await response.json();
 | 규칙에 해당 시간의 회차가 없음 (다른 요일·시각, 첫 회차 이전, `recurrence_end` 이후) | 404 |
 | 삭제된 회차 | 404 |
 | 반복 일정이 아닌 일정에 `instance_start` 지정 | 400 (`RecurringScheduleError`, 수정/삭제와 같음) |
-| 일정이 없음 | 404 |
-| 접근 권한 없음 | 403 (`instance_start` 없이 조회할 때와 같음) |
+| 일정이 없거나 접근할 수 없음 (반복 일정인지와 상관없이) | 404 (`instance_start` 없이 조회할 때와 같음) |
 
 `instance_start` 없이 호출하면 원본 반복 일정을 반환합니다.
 

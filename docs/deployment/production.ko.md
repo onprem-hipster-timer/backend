@@ -119,7 +119,7 @@ DB_POOL_RECYCLE=3600
 
 ```bash
 OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://your-auth-provider.com/realms/your-realm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=your-client-id
 ```
 
@@ -146,13 +146,33 @@ KRATOS_PUBLIC_URL=http://127.0.0.1:4433
 KRATOS_ADMIN_URL=http://127.0.0.1:4434
 ```
 
+프록시의 판정 순서와 응답 전체는 [`/auth` 프록시](../guides/auth-proxy.ko.md)에 있습니다.
+
+Kratos의 클레임 매퍼는 모든 identity의 JWT에 `schema_id`를 넣어야 합니다. backend는 `schema_id`가 없는 토큰을 `401`로 거부합니다. 매퍼가 `schema_id`를 넣지 않던 배포에서는 매퍼를 먼저 바꾸고 tokenizer `ttl`(기본 10분)이 지난 뒤 backend를 배포합니다([인증 가이드](../guides/auth.ko.md)).
+
 - `/auth` 접두사를 떼고 넘깁니다. 예: `/auth/sessions/whoami` → `http://127.0.0.1:4433/sessions/whoami`
 - 넘기는 요청 헤더는 `X-Session-Token`, `Authorization`, `Accept`, `Content-Type`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `Cf-Connecting-IP`뿐입니다.
 - 쿠키는 쓰지 않습니다. 인증은 세션 토큰과 JWT로만 하므로 요청의 `Cookie`는 넘기지 않고, Kratos 응답의 `Set-Cookie`는 버립니다.
-- 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다.
-- 로그인·가입·설정 제출 경로(`/auth/self-service/login`, `/auth/self-service/registration`, `/auth/self-service/settings`)로 가는 요청은 GET을 포함해 메서드와 상관없이 쿼리 문자열에 `flow`만 받습니다(키는 대소문자 구분 없이 비교). 다른 키가 있으면 400 `invalid_request_body`로 거절하고 넘기지 않습니다. Kratos가 쿼리 문자열의 제출 값도 읽기 때문에 본문만 검사해서는 넘길 값을 정할 수 없습니다.
+- 설정 제출(`POST /auth/self-service/settings`)은 메일로 받은 복구 코드로 만든 세션(`authentication_methods`의 마지막이 `code_recovery`)의 비밀번호 변경만 넘기고, 나머지는 403 `settings_require_email_recovery`로 거절합니다. 비밀번호가 새어도 메일 확인 없이 비밀번호·이메일을 바꾸거나 다른 소셜 계정을 연결해 계정을 차지하지 못하게 하기 위해서입니다. 확인을 위해 Kratos `whoami`를 한 번 더 부릅니다. `GUEST_ENABLED=true`면 게스트 세션의 `method: profile` 제출(이름 변경)도 넘기고, 바꿀 수 있는 항목은 Kratos 설정 훅이 정합니다. 같은 리소스의 다른 게스트가 쓰는 이름이면 넘기지 않고 409 `guest_name_taken`입니다.
+- 로그인·가입·설정·인증·복구 제출 경로로 가는 요청의 쿼리 문자열에는 GET을 포함해 메서드와 상관없이 `flow`만 받습니다(키는 대소문자 구분 없이 비교). 인증 경로의 GET은 인증 메일의 링크처럼 `code`도 받습니다. 다른 키가 있으면 400 `invalid_request_body`로 거절합니다. Kratos가 쿼리 문자열의 제출 값도 읽기 때문에 본문만 검사해서는 넘길 값을 정할 수 없습니다.
+- 로그인·가입·설정·인증·복구 제출(GET 밖)의 본문은 `Content-Type`이 `application/json`(키가 겹치지 않는 객체, 최상위 키에 `.` 없음, `traits`는 객체)이나 `application/x-www-form-urlencoded`(UTF-8, 키가 겹치지 않음, `traits` 필드 없음)인 것만 넘깁니다. 아니면 400 `invalid_request_body`입니다. Kratos는 이 밖의 표현에서도 제출 값을 읽습니다.
+- 인증·복구 제출의 `email`이 `@guest.invalid`로 끝나면 넘기지 않고 400 `address_not_accepted`입니다.
+- 로그인·가입·인증·복구 제출의 식별자(로그인 `identifier`, 가입 `traits.email`, 인증·복구 `email`)에 ASCII 밖의 문자가 있으면 넘기지 않고 400 `invalid_identifier`입니다.
+- Kratos로 보낼 URL을 만들 수 없는 요청(퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL)은 넘기지 않고 400 `invalid_request_url`입니다.
+- `GUEST_ENABLED=true`면 로그인 제출의 `identifier`가 `@guest.invalid`로 끝날 때와 게스트 세션의 설정 제출일 때 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 넘깁니다. 토큰이 없거나, 거절되거나, 이미 쓴 토큰이면 403 `guest_verification_failed`, 확인할 수 없으면 503 `guest_verification_unavailable`입니다. 이 헤더는 Kratos에 넘기지 않습니다.
+- `/auth`로 가는 GET 밖의 요청과 제출 경로로 가는 GET은 IP당 분당 60회이고, 토큰이 있어도 IP로 셉니다. 로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자(로그인 식별자, 이메일)로 분당 5회까지입니다. GET 밖의 설정 제출은 IP로 세지 않고, 세션 확인을 통과한 뒤 identity당 분당 10회입니다(`app/ratelimit/config.py`의 `AUTH_*` 규칙).
 - 소셜 로그인·가입 제출(`method: oidc`)에서는 클라이언트가 보낸 `traits.email`을 버립니다. 이메일은 제공자가 검증해 준 값만 씁니다. 키가 겹쳐 `method`를 하나로 읽을 수 없는 본문은 400으로 거절합니다.
 - CORS는 backend가 응답합니다(Kratos CORS는 끕니다). 브라우저 앱의 origin을 `CORS_ALLOWED_ORIGINS`에 넣습니다.
+
+#### 게스트 계정
+
+게스트 계정은 `GUEST_ENABLED=true`, Kratos 설정(게스트 schema, 클레임 매퍼의 `schema_id`, 로그인·설정 훅, 출처 확인을 쓰는 배포에서는 훅의 `headers`), Cloudflare Turnstile을 함께 갖춰야 켜집니다. 설정 전체와 확인 절차는 [게스트 계정 설정 (Kratos)](kratos-guest.ko.md)에 있습니다.
+
+```bash
+GUEST_ENABLED=true
+KRATOS_HOOK_API_KEY=<무작위 값>   # Kratos web_hook의 X-Kratos-Hook-Key와 같은 값
+TURNSTILE_SECRET_KEY=<Turnstile 비밀 키>   # 없으면 기동하지 않는다
+```
 
 #### 메일 발송 (courier 잡)
 
@@ -168,13 +188,14 @@ KRATOS_COURIER_JOB=projects/<project>/locations/<region>/jobs/kratos-courier
 
 #### 회원 탈퇴 파기
 
-탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다. 같은 실행이 가입 뒤 `UNVERIFIED_SIGNUP_RETENTION_HOURS`(기본 24시간)가 지나도 이메일을 인증하지 않은 가입 정보도 Kratos에서 지웁니다.
+탈퇴 신청 뒤 `ACCOUNT_DELETION_GRACE_DAYS`(기본 3일)가 지난 계정은 `POST /internal/accounts/purge`가 지웁니다. 스케줄러가 하루 한 번 호출합니다. 같은 실행이 가입 뒤 `UNVERIFIED_SIGNUP_RETENTION_HOURS`(기본 24시간)가 지나도 이메일을 인증하지 않은 가입 정보도 Kratos에서 지웁니다. 게스트 기간이 끝났거나(`EXPIRED`) 없는(`MISSING`) 리소스의 게스트도 `GUEST_ENABLED`와 상관없이 폐기합니다([게스트 가이드](../guides/guest.ko.md#수명-주기)).
 
 ```bash
 ACCOUNT_PURGE_TOKEN=<무작위 값>   # 호출할 때 X-Purge-Token 헤더로 보낸다. 비우면 404
 ```
 
-- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수}`입니다. 남은 identity는 다음 호출이 다시 지웁니다.
+- 응답은 `{"purged": 지운 계정 수, "kratos_pending": Kratos identity 삭제가 남은 계정 수, "unverified_removed": 지운 미인증 가입 수, "guests_discarded": 폐기한 게스트 수}`입니다. 삭제가 남은 회원 identity는 다음 호출이 다시 지웁니다.
+- `guests_discarded`는 게스트 행을 지운 수입니다. 게스트의 Kratos identity 삭제가 실패해도 세고, 그 identity는 다시 지우지 않습니다(로그에 남는다).
 - `ORIGIN_VERIFY_HEADER`를 쓰면 스케줄러 요청에도 그 헤더를 붙입니다.
 - 로그인·가입·탈퇴 신청·취소·파기는 stdout에 `{"audit": "account_access", "event", "identity_id", "ip", "at"}` JSON 한 줄로 남습니다. 보존 기간은 로그 설정에서 정합니다.
 
@@ -223,7 +244,7 @@ CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
 
 # 허용할 헤더
-CORS_ALLOW_HEADERS=Authorization,Content-Type
+CORS_ALLOW_HEADERS=Authorization,Content-Type,X-Session-Token,X-Turnstile-Token
 ```
 
 !!! warning "주의"
@@ -278,7 +299,7 @@ docker run -d \
   -e ENVIRONMENT=production \
   -e DATABASE_URL=postgresql://user:password@db-host:5432/hipster_timer \
   -e OIDC_ENABLED=true \
-  -e OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm \
+  -e OIDC_ISSUER_URL=https://api.example.com/auth/ \
   -e OIDC_AUDIENCE=hipster-timer-frontend \
   -e CORS_ALLOWED_ORIGINS=https://app.example.com,wss://api.example.com \
   -e CORS_ALLOW_CREDENTIALS=true \
@@ -332,7 +353,7 @@ volumes:
 
 ```bash
 DB_PASSWORD=your-secure-password-here
-OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=hipster-timer-frontend
 CORS_ALLOWED_ORIGINS=https://app.example.com,wss://api.example.com
 ```
@@ -440,14 +461,14 @@ MAX_OVERFLOW=20
 
 # 인증
 OIDC_ENABLED=true
-OIDC_ISSUER_URL=https://auth.example.com/realms/myrealm
+OIDC_ISSUER_URL=https://api.example.com/auth/
 OIDC_AUDIENCE=hipster-timer-frontend
 
 # CORS (HTTP/HTTPS + WebSocket wss:// 필수)
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://www.example.com,wss://api.example.com
 CORS_ALLOW_CREDENTIALS=true
 CORS_ALLOW_METHODS=GET,POST,PUT,PATCH,DELETE,OPTIONS
-CORS_ALLOW_HEADERS=Authorization,Content-Type
+CORS_ALLOW_HEADERS=Authorization,Content-Type,X-Session-Token,X-Turnstile-Token
 
 # Rate Limiting
 RATE_LIMIT_ENABLED=true

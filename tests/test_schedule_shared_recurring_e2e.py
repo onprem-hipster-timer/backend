@@ -177,7 +177,7 @@ def test_shared_instances_disappear_when_visibility_removed(shared_weekly):
     assert _list(viewer, *range_, "shared") == []
     assert _list(viewer, *range_, "all") == []
     read = viewer.get(f"/v1/schedules/{parent_id}", params={"instance_start": "2024-01-08T10:00:00Z"})
-    assert read.status_code == 403
+    assert read.status_code == 404
 
 
 @pytest.mark.e2e

@@ -9,7 +9,6 @@ from typing import Iterable
 from sqlmodel import Session, select
 
 from app.models.account_deletion import AccountDeletion
-from app.models.base import utc_now_naive
 from app.models.user_profile import UserProfile
 
 
@@ -29,9 +28,22 @@ class UserProfileSyncData:
     verified_email: str | None
 
 
-def get_by_sub(session: Session, sub: str) -> UserProfile | None:
-    """sub(PK)로 프로필 조회"""
-    return session.get(UserProfile, sub)
+def get_by_sub(session: Session, sub: str, for_update: bool = False) -> UserProfile | None:
+    """
+    sub(PK)로 프로필 조회
+
+    for_update=True면 트랜잭션 끝까지 행을 잠그고(FOR NO KEY UPDATE, SQLite에서는 무시),
+    세션에 이미 올라온 객체도 잠근 뒤의 DB 값으로 덮어쓴다.
+    """
+    if not for_update:
+        return session.get(UserProfile, sub)
+    statement = (
+        select(UserProfile)
+        .where(UserProfile.sub == sub)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
+    )
+    return session.exec(statement).first()
 
 
 def get_by_friend_code(session: Session, friend_code: str) -> UserProfile | None:
@@ -64,16 +76,6 @@ def create_profile(session: Session, data: UserProfileSyncData) -> UserProfile:
         friend_code=data.friend_code,
         verified_email=data.verified_email,
     )
-    session.add(profile)
-    session.flush()
-    session.refresh(profile)
-    return profile
-
-
-def record_consent(session: Session, profile: UserProfile, version: str) -> UserProfile:
-    """동의한 약관 버전과 시각을 기록"""
-    profile.consent_version = version
-    profile.consented_at = utc_now_naive()
     session.add(profile)
     session.flush()
     session.refresh(profile)

@@ -122,7 +122,7 @@ class TestSharedResources:
 
         _go_dormant(a)
         assert resource_id not in shared_ids()
-        assert b.get(f"{list_path}/{resource_id}").status_code == 403
+        assert b.get(f"{list_path}/{resource_id}").status_code == 404
 
         _come_back(a)
         assert resource_id in shared_ids()
@@ -147,7 +147,7 @@ class TestSharedResources:
 
         _go_dormant(a)
 
-        assert b.get(f"/v1/schedules/{schedule_id}").status_code == 403
+        assert b.get(f"/v1/schedules/{schedule_id}").status_code == 404
 
 
 class TestFriends:
@@ -230,8 +230,8 @@ class TestMeetings:
         _go_dormant(a)
 
         for path in ("", "/availability", "/result"):
-            assert b.get(f"/v1/meetings/{meeting_id}{path}").status_code == 403
-        assert b.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "b"}).status_code == 403
+            assert b.get(f"/v1/meetings/{meeting_id}{path}").status_code == 404
+        assert b.post(f"/v1/meetings/{meeting_id}/participate", json={"display_name": "b"}).status_code == 404
 
     def test_dormant_participant_excluded(self, multi_user_e2e):
         owner = multi_user_e2e.as_user("owner")

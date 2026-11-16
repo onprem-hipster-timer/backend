@@ -133,6 +133,16 @@
 | **AllowList** | Allowed friends when level is SELECTED_FRIENDS |
 | **AllowEmail** | Allowed emails/domains when level is ALLOWED_EMAILS |
 
+### 👤 Guest
+
+| Feature | Description |
+|---------|-------------|
+| **Resource-bound accounts** | Kratos accounts that enter one resource with a name and a password, without signing up (`GUEST_ENABLED`, off by default) |
+| **Name** | Unique within the resource, changeable by the guest |
+| **Access** | Guest routes of their own resource only. Member routes return 403 |
+| **Lifetime** | Deleted when the resource is gone or its guest period ends |
+| **Requires** | Kratos settings (guest schema, hooks) and Cloudflare Turnstile |
+
 ---
 
 <a id="quick-start"></a>
@@ -203,6 +213,8 @@ Detailed guides for each domain:
 - [Friend Guide](docs/guides/friend.ko.md)
 - [Visibility Guide](docs/guides/visibility.ko.md)
 - [Meeting Guide](docs/guides/meeting.ko.md)
+- [Guest Guide](docs/guides/guest.ko.md) · [Guest Accounts (Kratos)](docs/deployment/kratos-guest.ko.md)
+- [Authentication Guide](docs/guides/auth.ko.md) · [`/auth` proxy](docs/guides/auth-proxy.ko.md)
 
 ### GraphQL API
 

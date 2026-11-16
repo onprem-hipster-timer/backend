@@ -23,6 +23,8 @@ Authorization: Bearer <access_token>
 
 > 📖 **상세 가이드**: [인증 가이드](../guides/auth.ko.md)
 
+로그인·가입·JWT 발급은 `/auth/*`([`/auth` 프록시](../guides/auth-proxy.ko.md))를 지납니다. `GUEST_ENABLED=true`이면 리소스 하나에 속한 [게스트 계정](../guides/guest.ko.md)도 토큰을 받지만, 게스트 토큰은 게스트 경로 밖의 인증 경로에서 `403`입니다.
+
 ## API 유형
 
 ### REST API

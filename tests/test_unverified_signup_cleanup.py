@@ -107,6 +107,16 @@ def test_identity_without_addresses_is_kept(multi_user_e2e, kratos):
     assert kratos.deleted == []
 
 
+def test_guest_identity_is_kept(multi_user_e2e, kratos):
+    """게스트 identity의 handle은 인증된 주소라 미인증 가입 정리 대상이 아니다"""
+    identity = _identity("guest", timedelta(days=30), verified=True)
+    identity["verifiable_addresses"][0]["value"] = "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b@guest.invalid"
+    kratos.pages = [[identity]]
+
+    assert _run(multi_user_e2e)["unverified_removed"] == 0
+    assert kratos.deleted == []
+
+
 def test_identity_that_has_used_the_service_is_kept(multi_user_e2e, kratos):
     """인증되지 않은 것으로 보여도 서비스 프로필이 있는 계정은 지우지 아니한다"""
     multi_user_e2e.as_user("used").get("/v1/users/me")

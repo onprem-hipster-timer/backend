@@ -656,6 +656,7 @@ class TestGetCurrentUser:
                 "name": "Valid User",
                 "iss": "https://issuer.example.com",
                 "aud": "test-client-id",
+                "schema_id": "default",
             }
 
             with patch.object(oidc_client, "verify_token", new_callable=AsyncMock) as mock_verify:
@@ -752,6 +753,7 @@ class TestGetOptionalCurrentUser:
                 "name": "Optional User",
                 "iss": "https://issuer.example.com",
                 "aud": "test-client-id",
+                "schema_id": "default",
             }
 
             with patch.object(oidc_client, "verify_token", new_callable=AsyncMock) as mock_verify:

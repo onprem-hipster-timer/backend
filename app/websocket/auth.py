@@ -13,7 +13,7 @@ from typing import Optional
 
 from fastapi import Depends, WebSocket, WebSocketException, status
 
-from app.core.auth import CurrentUser, oidc_client
+from app.core.auth import CurrentUser, ensure_member, oidc_client
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,8 @@ async def authenticate_websocket(websocket: WebSocket) -> CurrentUser:
                 reason="Token missing 'sub' claim"
             )
 
-        return CurrentUser.from_claims(claims)
+        # 게스트 토큰은 거부한다 (REST와 같은 판정)
+        return ensure_member(CurrentUser.from_claims(claims))
     except Exception as e:
         logger.error(f"WebSocket token verification failed: {e}")
         raise WebSocketException(

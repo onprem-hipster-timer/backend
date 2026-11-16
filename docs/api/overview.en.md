@@ -23,6 +23,8 @@ Authorization: Bearer <access_token>
 
 > 📖 **Detailed Guide**: [Authentication Guide](../guides/auth.ko.md)
 
+Sign-in, sign-up and JWT issuance go through `/auth/*` ([`/auth` proxy](../guides/auth-proxy.ko.md)). With `GUEST_ENABLED=true`, [guest accounts](../guides/guest.ko.md) bound to one resource also get tokens, but guest tokens get `403` on authenticated routes other than guest routes.
+
 ## API Types
 
 ### REST API

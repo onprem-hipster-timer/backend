@@ -61,9 +61,18 @@ Visibility(접근권한) 시스템은 리소스(Schedule, Timer, Todo, Meeting)�
 | `SELECTED` | 선택한 친구만 접근 가능 (AllowList 기반) |
 | `FRIENDS` | 모든 친구 접근 가능 |
 | `ALLOWED_EMAILS` | 허용된 이메일/도메인만 접근 가능 (비친구 포함) |
-| `PUBLIC` | 모든 사용자 접근 가능 |
+| `PUBLIC` | 모든 회원 접근 가능 |
 
 > **참고**: `ALLOWED_EMAILS`는 친구 관계와 무관하게 이메일 또는 도메인 기반으로 접근을 허용합니다.
+
+`PUBLIC`이 보이는 범위는 리소스마다 다릅니다.
+
+| 리소스 | `PUBLIC`일 때 |
+|--------|---------------|
+| Schedule, Todo, Timer | id로 조회할 수 있고, 다른 모든 회원의 `scope=shared`·`scope=all` 목록에 나온다(차단 관계와 휴면 계정 제외) |
+| Meeting | id(링크)를 아는 회원이 조회할 수 있다. 미팅 목록은 자기 미팅만 돌려주므로 다른 회원의 목록에는 나오지 않는다 |
+
+접근권한 레벨은 회원에게 적용됩니다. 게스트 계정은 레벨로 판정하지 않습니다([게스트 계정의 접근 확인](#게스트-계정의-접근-확인)).
 
 ### 접근 제어 규칙
 
@@ -75,12 +84,14 @@ flowchart TD
 
     Start([접근 요청]) --> Owner{소유자?}:::decision
     Owner -- 예 --> Allow1([접근 허용]):::allow
-    Owner -- 아니오 --> Blocked{차단 여부}:::decision
-    Blocked -- 예 --> Deny1([접근 불가]):::deny
+    Owner -- 아니오 --> Dormant{소유자가 휴면 계정?}:::decision
+    Dormant -- 예 --> Deny0([404 Not Found]):::deny
+    Dormant -- 아니오 --> Blocked{차단 여부}:::decision
+    Blocked -- 예 --> Deny1([404 Not Found]):::deny
     Blocked -- 아니오 --> Level{접근권한 레벨}:::decision
 
     Level -->|PUBLIC| Allow2([접근 허용]):::allow
-    Level -->|PRIVATE| Deny2([접근 불가]):::deny
+    Level -->|PRIVATE| Deny2([404 Not Found]):::deny
 
     subgraph 상세조건 [조건 확인]
         direction TB
@@ -90,9 +101,60 @@ flowchart TD
     end
 
     F & L & E -->|예| Allow3([접근 허용]):::allow
-    F & L & E -->|아니오| Deny3([접근 불가]):::deny
+    F & L & E -->|아니오| Deny3([404 Not Found]):::deny
     linkStyle default interpolate monotoneY
 ```
+
+판정 순서는 소유자, 소유자의 휴면 여부(탈퇴를 신청한 계정), 차단 관계(어느 쪽이 차단했든), 접근권한 레벨입니다. 접근권한 설정이 없는 리소스는 `PRIVATE`으로 봅니다.
+
+회원이 접근할 수 없는 리소스는 없는 리소스와 같은 응답을 받습니다. 상태 코드 `404`, `error_type`, `message`, 헤더가 같고 `error_id`·`timestamp`·`path`만 요청마다 다릅니다.
+
+| 리소스 | 응답 (`404`) | 경로 |
+|--------|--------------|------|
+| Schedule | `ScheduleNotFoundError` | `GET /v1/schedules/{id}`(`instance_start` 포함), `GET /v1/schedules/{id}/timers`, `GET /v1/schedules/{id}/timers/active` |
+| Todo | `TodoNotFoundError` | `GET /v1/todos/{id}`, `GET /v1/todos/{id}/timers`, `GET /v1/todos/{id}/timers/active` |
+| Timer | `TimerNotFoundError` | `GET /v1/timers/{id}` |
+| Meeting | `MeetingNotFoundError` | `GET /v1/meetings/{id}`, `POST /v1/meetings/{id}/participate`, `GET`·`PUT /v1/meetings/{id}/availability`, `GET /v1/meetings/{id}/result` |
+
+- 수정·삭제와 타이머 제어는 소유자만 할 수 있고, 다른 회원의 리소스면 접근권한 레벨과 상관없이 같은 `404`입니다.
+- Visibility API(`/v1/visibility/*`)는 다른 회원의 리소스에 `404` `VisibilityNotFoundError`입니다.
+
+### 게스트 계정의 접근 확인
+
+[게스트 계정](./guest.ko.md)은 회원 가입 없이 리소스 하나에 속한 계정입니다. 게스트는 접근권한 레벨, 친구 관계, AllowList, 허용 이메일로 판정하지 않고, 자기가 속한 리소스인지와 그 리소스가 지금 게스트를 받는지로 판정합니다.
+
+```mermaid
+flowchart TD
+    classDef allow fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724;
+    classDef deny fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef decision fill:#fff3cd,stroke:#ffc107,stroke-width:2px;
+
+    Start([접근 요청]) --> Kind{회원인가 게스트인가<br/>JWT의 schema_id}:::decision
+    Kind -- 회원 --> Member([접근권한 레벨로 판정<br/>위 접근 제어 규칙])
+    Kind -- 게스트 --> Route{게스트를 받는 경로?}:::decision
+    Route -- 아니오 --> Deny1([접근 불가 403]):::deny
+    Route -- 예 --> Own{게스트가 속한 리소스?}:::decision
+    Own -- 아니오 --> Deny2([접근 불가 403]):::deny
+    Own -- 예 --> Host{리소스의 게스트 상태}:::decision
+    Host -->|OPEN| Allow1([접근 허용]):::allow
+    Host -->|CLOSED · EXPIRED · MISSING| Deny3([접근 불가 403]):::deny
+    linkStyle default interpolate monotoneY
+```
+
+`GUEST_ENABLED`가 꺼져 있거나 게스트 행이 없으면(폐기된 게스트) 게스트를 받는 경로에서도 `403`입니다. 게스트 상태가 `EXPIRED`·`MISSING`이면 거절하면서 그 게스트를 폐기합니다.
+
+| | 회원 | 게스트 |
+|---|---|---|
+| 판정 기준 | 소유자, 차단, 접근권한 레벨, 친구·AllowList·허용 이메일 | 속한 리소스, 그 리소스의 게스트 상태 |
+| 닿는 리소스 | 접근권한이 허용하는 모든 리소스 | 자기가 속한 리소스 하나 |
+| 쓰는 경로 | `/v1/*`의 회원 경로, GraphQL, WebSocket | 그 리소스가 게스트용으로 둔 경로 |
+| `scope=shared` 목록 | 접근할 수 있는 타인의 리소스 | 쓸 수 없다 (`403`) |
+| `PUBLIC` 리소스 | 접근할 수 있다 | 레벨과 상관없이 회원 경로에서 `403` |
+| 접근권한 설정 (`/v1/visibility/*`) | 자기 리소스에 설정한다 | 쓸 수 없다 (`403`) |
+
+- 리소스의 게스트 상태(`OPEN`·`CLOSED`·`EXPIRED`·`MISSING`)는 리소스가 정합니다. 접근권한 레벨과는 따로 있는 값이고, 둘을 어떻게 맞출지는 게스트를 받는 리소스가 정합니다.
+- 게스트를 받는 리소스는 호스트를 등록한 리소스뿐입니다. 호스트를 등록하지 않은 리소스 종류에는 게스트가 접근할 수 없습니다.
+- 판정 순서와 코드 위치는 [게스트 계정 가이드의 토큰 판정](./guest.ko.md#게스트-경로)에 있습니다.
 
 ---
 
@@ -108,7 +170,7 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # 접근권한 삭제 (PRI
 
 !!! info "소유권 검증"
     모든 Visibility API는 **리소스 소유자만** 호출할 수 있습니다.
-    소유자가 아닌 사용자가 호출하면 `403 Forbidden`이 반환됩니다.
+    리소스가 없거나 소유자가 아니면 `404` `VisibilityNotFoundError`가 반환됩니다. 두 경우의 응답은 같습니다.
 
 ### PUT — 접근권한 설정/변경
 
@@ -391,6 +453,8 @@ DELETE /v1/visibility/schedule/{schedule_id}
 | `mine` | 내 리소스만 (기본값) |
 | `shared` | 공유된 타인의 리소스만 |
 | `all` | 내 리소스 + 공유된 리소스 |
+
+`shared`에 나오는 것은 내가 접근할 수 있는 타인의 리소스 전부입니다: 친구의 `FRIENDS` 리소스, 내가 AllowList에 든 `SELECTED` 리소스, 내 인증된 이메일이 허용된 `ALLOWED_EMAILS` 리소스, 그리고 모든 회원의 `PUBLIC` 리소스. 차단 관계인 사용자와 휴면 계정의 리소스는 빠집니다.
 
 공유된 반복 일정은 내 반복 일정과 같이 조회 범위 안의 회차(가상 인스턴스)로 확장됩니다.
 각 회차는 `parent_id`가 원본 ID, `instance_start`가 회차의 원래 시작 시간이고 `is_shared: true`, `owner_id`는 소유자이며, 소유자가 수정·삭제한 회차가 반영됩니다.
@@ -778,7 +842,7 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 1. **기본값 명시**: "비공개(기본)"으로 표시
 2. **친구 선택 UI**: `selected` 레벨 선택 시 친구 멀티 선택 UI 표시
-3. **경고 표시**: `public` 선택 시 "모든 사용자가 볼 수 있습니다" 경고
+3. **경고 표시**: `public` 선택 시 "모든 회원이 볼 수 있고, 다른 회원의 공유 목록에 나옵니다" 경고 (Schedule·Todo·Timer). Meeting은 "링크를 아는 모든 회원이 볼 수 있습니다"
 4. **친구 제한**: AllowList에 친구만 추가 가능함을 안내
 
 ### 공유된 리소스 표시 권장사항
@@ -854,8 +918,11 @@ const allSchedules = await fetchSchedules(start, end, "all");
 
 ### 7. 연관 리소스의 접근권한
 
-- Todo의 Schedule이 공유되면, 해당 Schedule에서 Todo 정보를 볼 수 있습니다.
-- Timer가 공유되면, 연관된 Schedule/Todo 정보도 함께 조회됩니다.
+접근권한은 리소스마다 따로 판정합니다. 공유된 리소스에 연결된 다른 리소스는 그 리소스 자신의 접근권한으로 다시 확인합니다.
+
+- Timer를 `include_schedule`·`include_todo`와 함께 조회하면, 보는 사람이 그 Schedule·Todo에 접근할 수 있을 때만 응답에 담깁니다. 접근할 수 없으면 `null`입니다.
+- Timer 응답의 Todo에 담기는 연관 Schedule도 하나씩 확인해, 접근할 수 있는 것만 담습니다.
+- Schedule 응답의 `source_todo_id`는 id만 알려 줍니다. 그 Todo의 내용은 Todo의 접근권한이 있어야 조회할 수 있습니다.
 
 ---
 
@@ -866,8 +933,8 @@ const allSchedules = await fetchSchedules(start, end, "all");
 | 코드 | 상황 | 설명 |
 |------|------|------|
 | `400` | 잘못된 요청 | 친구가 아닌 사용자를 AllowList에 추가 시도 |
-| `403` | 접근 거부 | 소유자가 아닌 사용자가 접근권한 설정 시도 / 접근권한 권한이 없는 리소스 접근 |
-| `404` | 찾을 수 없음 | 존재하지 않는 리소스 또는 접근권한 미설정 리소스 조회 |
+| `403` | 게스트 토큰 | 게스트 계정의 토큰으로 회원 경로 호출 ([게스트 계정의 접근 확인](#게스트-계정의-접근-확인)) |
+| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 리소스, 소유자가 아닌 사용자의 Visibility API 호출, 접근권한 미설정 리소스의 접근권한 조회 |
 
 ### 에러 처리 예시 코드
 
@@ -881,9 +948,6 @@ async function handleVisibilityError(response: Response): Promise<never> {
         throw new Error("선택한 사용자 중 친구가 아닌 사람이 있습니다.");
       }
       throw new Error("잘못된 요청입니다.");
-
-    case 403:
-      throw new Error("이 리소스에 접근할 권한이 없습니다.");
 
     case 404:
       throw new Error("리소스를 찾을 수 없습니다.");

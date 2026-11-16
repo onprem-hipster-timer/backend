@@ -225,7 +225,7 @@ def test_instance_read_of_private_schedule_same_status_as_parent_read(multi_user
     instance_read = _get_instance(client_b, parent_id, "2024-01-08T10:00:00Z")
     off_rule_read = _get_instance(client_b, parent_id, "2024-01-09T10:00:00Z")
 
-    assert parent_read.status_code == 403
+    assert parent_read.status_code == 404
     assert instance_read.status_code == parent_read.status_code
     assert off_rule_read.status_code == parent_read.status_code
     assert "주간 회의" not in instance_read.text

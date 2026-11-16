@@ -12,6 +12,7 @@ CLAIMS = {
     "email": "kratos@example.com",
     "email_verified": True,
     "name": "Kratos User",
+    "schema_id": "default",
 }
 
 

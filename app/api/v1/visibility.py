@@ -16,7 +16,7 @@ from app.crud import timer as timer_crud
 from app.crud import todo as todo_crud
 from app.db.session import get_db_transactional
 from app.domain.visibility.enums import ResourceType
-from app.domain.visibility.exceptions import AccessDeniedError, VisibilityNotFoundError
+from app.domain.visibility.exceptions import VisibilityNotFoundError
 from app.domain.visibility.schema.dto import VisibilityUpdate, VisibilityRead
 from app.domain.visibility.service import VisibilityService
 
@@ -36,13 +36,11 @@ def _require_resource_owner(
         resource_id: UUID,
         current_user: CurrentUser,
 ) -> None:
-    """리소스 소유권 검증. 소유자가 아니면 AccessDeniedError 발생."""
+    """리소스 소유권 검증. 리소스가 없거나 소유자가 아니면 VisibilityNotFoundError 발생."""
     loader = _RESOURCE_LOADERS[resource_type]
     resource = loader(session, resource_id)
-    if not resource:
+    if not resource or resource.owner_id != current_user.sub:
         raise VisibilityNotFoundError()
-    if resource.owner_id != current_user.sub:
-        raise AccessDeniedError()
 
 
 @router.put(

@@ -11,6 +11,7 @@ import pytest
 from app.domain.meeting.exceptions import (
     InvalidMeetingError,
     MeetingNotFoundError,
+    MeetingParticipantNotFoundError,
     TooManyTimeSlotsError,
 )
 from app.domain.meeting.schema.dto import (
@@ -21,7 +22,6 @@ from app.domain.meeting.schema.dto import (
 )
 from app.domain.meeting.service import MeetingService
 from app.domain.visibility.enums import VisibilityLevel, ResourceType
-from app.domain.visibility.exceptions import AccessDeniedError
 
 
 @pytest.fixture
@@ -182,7 +182,7 @@ class TestGetMeeting:
         # 다른 사용자 접근 시도
         other_service = MeetingService(test_session, other_user)
 
-        with pytest.raises(AccessDeniedError):
+        with pytest.raises(MeetingNotFoundError):
             other_service.get_meeting_with_access_check(sample_meeting.id)
 
 
@@ -411,7 +411,7 @@ class TestTimeSlots:
         # other_user로 시간 슬롯 설정 시도
         other_service = MeetingService(test_session, other_user)
 
-        with pytest.raises(AccessDeniedError):
+        with pytest.raises(MeetingParticipantNotFoundError):
             other_service.set_time_slots(
                 sample_meeting.id,
                 participant.id,

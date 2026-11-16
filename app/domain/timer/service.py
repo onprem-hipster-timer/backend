@@ -199,8 +199,7 @@ class TimerService:
 
         :param timer_id: 타이머 ID
         :return: (타이머, is_shared) 튜플
-        :raises TimerNotFoundError: 타이머를 찾을 수 없는 경우
-        :raises AccessDeniedError: 접근 권한이 없는 경우
+        :raises TimerNotFoundError: 타이머가 없거나 접근할 수 없는 경우
         """
 
         # 먼저 ID로만 조회 (소유자 무관)
@@ -214,11 +213,12 @@ class TimerService:
 
         # 타인 소유인 경우 접근 권한 확인
         visibility_service = VisibilityService(self.session, self.current_user)
-        visibility_service.require_access(
+        if not visibility_service.can_access(
             resource_type=ResourceType.TIMER,
             resource_id=timer_id,
             owner_id=timer.owner_id,
-        )
+        ):
+            raise TimerNotFoundError()
 
         return timer, True
 

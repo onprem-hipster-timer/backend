@@ -133,6 +133,16 @@
 | **AllowList** | SELECTED_FRIENDS 시 접근 허용 친구 목록 |
 | **AllowEmail** | ALLOWED_EMAILS 시 이메일/도메인 기반 허용 |
 
+### 👤 Guest (게스트 계정)
+
+| 기능 | 설명 |
+|------|------|
+| **리소스에 속한 계정** | 회원 가입 없이 리소스 하나에 이름과 비밀번호로 들어가는 Kratos 계정 (`GUEST_ENABLED`, 기본 꺼짐) |
+| **이름** | 리소스 안에서 겹치지 않음, 게스트가 변경 가능 |
+| **접근 범위** | 자기 리소스의 게스트 경로만. 회원 경로는 403 |
+| **수명** | 리소스가 없어지거나 게스트 기간이 끝나면 폐기 |
+| **필요한 것** | Kratos 설정(게스트 schema, 훅), Cloudflare Turnstile |
+
 ---
 
 <a id="quick-start"></a>
@@ -203,6 +213,8 @@ docker compose up
 - [Friend 가이드](docs/guides/friend.ko.md)
 - [Visibility 가이드](docs/guides/visibility.ko.md)
 - [Meeting 가이드](docs/guides/meeting.ko.md)
+- [Guest 가이드](docs/guides/guest.ko.md) · [게스트 계정 설정 (Kratos)](docs/deployment/kratos-guest.ko.md)
+- [인증 가이드](docs/guides/auth.ko.md) · [`/auth` 프록시](docs/guides/auth-proxy.ko.md)
 
 ### GraphQL API
 
@@ -1082,6 +1094,7 @@ pip-compile은 `.in`의 명시적 마커를 생성된 `.txt`에 유지하고, De
 - **친구 관계**: `app/domain/friend/` — 요청/수락 워크플로우, 양방향 유일 제약
 - **일정 조율**: `app/domain/meeting/` — 기간·요일·슬롯·참여자, 공통 가능 시간대 조회
 - **리소스 공개 범위**: `app/domain/visibility/` — AllowList/AllowEmail, 리소스별 레벨 제어
+- **게스트 계정**: `app/domain/guest/` — 리소스가 등록하는 호스트 계약, Kratos 훅 판정, 폐기
 
 ---
 

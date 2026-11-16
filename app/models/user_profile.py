@@ -43,9 +43,5 @@ class UserProfile(TimestampMixin, table=True):
     # 이메일 기반 친추용. 검증된 이메일이 있을 때만 normalize(email)로 채운다.
     # 사용자 검색/목록/응답에는 노출하지 않는다.
     verified_email: str | None = Field(default=None, nullable=True, index=True)
-    # 마지막으로 동의한 약관 시행일(settings.CONSENT_VERSION)과 그 시각(UTC).
-    # 동의 항목: 만 14세 이상, 이용약관, 개인정보처리방침.
-    consent_version: str | None = Field(default=None, nullable=True)
-    consented_at: NaiveDatetime | None = Field(default=None, nullable=True)
     # 탈퇴를 신청한 시각(UTC). 값이 있으면 휴면 계정이며, 유예 기간이 지나면 파기한다.
     deletion_requested_at: NaiveDatetime | None = Field(default=None, nullable=True, index=True)

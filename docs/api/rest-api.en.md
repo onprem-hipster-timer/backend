@@ -69,6 +69,9 @@ DELETE /v1/visibility/{resource_type}/{resource_id}   # Delete visibility (rever
 !!! info "`resource_type`"
     One of `schedule`, `timer`, `todo`, `meeting`.
 
+!!! info "Resources the caller cannot access"
+    Schedule, timer, todo and meeting routes answer a resource the caller cannot access with the same `404` as a resource that does not exist. Visibility routes return `404` when the resource does not exist or the caller is not its owner. See the [Visibility guide](../guides/visibility.ko.md#접근-제어-규칙).
+
 ### Friends
 
 ```http
@@ -99,6 +102,19 @@ DELETE /v1/users/me/deletion              # Cancel account deletion
 
 !!! info "Account deletion"
     A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
+
+### Guests
+
+Only answered when `GUEST_ENABLED=true` (404 otherwise).
+
+```http
+POST   /v1/guests/lookup                  # Find the login identifier (handle) of the guest with that name in a resource (no authentication). Also returns the current consent version
+POST   /v1/guests                         # Create a guest (no authentication, consent required). Returns the handle
+DELETE /v1/guests/me                      # The guest deletes itself (guest JWT)
+PUT    /v1/guests/me/consent              # Record the guest's consent (guest JWT)
+```
+
+Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. Lookup, creation, self-deletion, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Recording consent takes no token. With `CONSENT_ENFORCED`, a guest that has not consented to the current version gets `428` (`message: "consent_required"`) on guest routes other than recording consent and self-deletion. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
 
 ### Holidays
 

@@ -6,12 +6,6 @@ Visibility Domain Exceptions
 from app.core.error_handlers import DomainException
 
 
-class AccessDeniedError(DomainException):
-    """접근 권한 없음"""
-    status_code = 403
-    detail = "You don't have permission to access this resource"
-
-
 class VisibilityNotFoundError(DomainException):
     """접근권한 설정을 찾을 수 없음"""
     status_code = 404

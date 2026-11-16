@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth_proxy, internal, oidc_discovery
+from app.api import auth_proxy, internal, kratos_hooks, oidc_discovery
 from app.api.v1 import api_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
@@ -21,6 +21,7 @@ from app.core.logging import setup_logging
 from app.db.keepalive import DatabaseKeepAliveTask
 from app.db.session import init_db as init_db_sync, init_db_async  # 동기 및 비동기 방식
 from app.domain.holiday.tasks import HolidayBackgroundTask
+from app.middleware.guest_gate import GuestGateMiddleware
 from app.middleware.origin_verify import OriginVerifyMiddleware
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.ratelimit.cloudflare import get_cloudflare_manager, get_trusted_proxy_manager
@@ -182,6 +183,11 @@ app = FastAPI(
 # Exception Handler 등록
 register_exception_handlers(app)
 
+# Guest Gate - CORS 안쪽(가장 안쪽). 게스트 단계의 Turnstile 확인을 하고, /auth 제출을 프록시보다 먼저 세고 검사한다
+#   (app/middleware/guest_gate.py). /v1 게스트 단계는 바깥의 RateLimitMiddleware가 먼저 센다
+#   CORS 안쪽이라 거절 응답에도 CORS 헤더가 붙고, preflight는 CORS가 먼저 답한다
+app.add_middleware(GuestGateMiddleware)
+
 # CORS 설정 (환경변수로 주입 가능)
 # 주의: allow_origins=["*"]와 allow_credentials=True는 호환되지 않음
 # origin을 특정 도메인으로 설정해야 credentials를 True로 사용 가능
@@ -222,6 +228,8 @@ app.include_router(auth_proxy.router)
 
 # 내부 작업 (/internal/*). 스케줄러가 공유 토큰으로 호출한다
 app.include_router(internal.router)
+# Kratos 훅 수신 (/internal/kratos/hooks/*). 게스트를 켠 Kratos가 공유 키로 호출한다. GUEST_ENABLED가 꺼져 있으면 404
+app.include_router(kratos_hooks.router)
 
 
 # Health Check 엔드포인트 (인증 불필요, 로드밸런서/컨테이너 오케스트레이션용)

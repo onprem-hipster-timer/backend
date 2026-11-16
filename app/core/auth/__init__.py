@@ -6,16 +6,21 @@ CurrentUser 컨텍스트를 제공한다. 책임별로 분리:
 
 - model:        CurrentUser (인증 주체 모델)
 - client:       OIDCClient / oidc_client (discovery·JWKS·토큰 검증)
-- dependencies: get_current_user / get_optional_current_user / get_current_user_synced
+- dependencies: get_current_user / get_optional_current_user / get_current_user_synced,
+                ensure_member (게스트 토큰 거부) / require_schema_id (schema_id 클레임 필수) /
+                authenticate_request (토큰 검증만)
 - middleware:   AuthMiddleware (request.state 사전 설정)
 
 하위호환: 기존 `from app.core.auth import X`가 그대로 동작하도록 공개 심볼을 재export한다.
 """
 from app.core.auth.client import OIDCClient, oidc_client
 from app.core.auth.dependencies import (
+    authenticate_request,
+    ensure_member,
     get_current_user,
     get_current_user_synced,
     get_optional_current_user,
+    require_schema_id,
     security,
 )
 from app.core.auth.middleware import AuthMiddleware
@@ -26,6 +31,9 @@ __all__ = [
     "OIDCClient",
     "oidc_client",
     "security",
+    "authenticate_request",
+    "ensure_member",
+    "require_schema_id",
     "get_current_user",
     "get_optional_current_user",
     "get_current_user_synced",

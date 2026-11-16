@@ -24,6 +24,7 @@ class RateLimitRule(BaseModel):
     path_pattern: str  # fnmatch 패턴: "/v1/todos/*", "/v1/todos"
     window_seconds: int  # 윈도우 크기 (초)
     max_requests: int  # 윈도우 내 최대 요청 수
+    per_ip: bool = False  # True면 토큰이 있어도 클라이언트 IP로 센다
 
     def matches(self, method: str, path: str) -> bool:
         """
@@ -87,6 +88,22 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         path_pattern="/v1/todos/groups",
         window_seconds=60,
         max_requests=30,
+    ),
+    # 게스트 이름 찾기·생성: 인증 없는 경로라 토큰과 상관없이 IP 단위로 센다.
+    # 한 공간의 여러 사람이 같은 IP로 함께 들어올 수 있게 넉넉히 둔다
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/guests/lookup",
+        window_seconds=60,
+        max_requests=100,
+        per_ip=True,
+    ),
+    RateLimitRule(
+        methods=["POST"],
+        path_pattern="/v1/guests",
+        window_seconds=60,
+        max_requests=100,
+        per_ip=True,
     ),
     # 친구 요청: 이메일 경로 대량 시도(열거/스팸) 억제를 위해 더 엄격하게 제한
     RateLimitRule(
@@ -154,6 +171,41 @@ RATE_LIMIT_RULES: List[RateLimitRule] = [
         max_requests=60,
     ),
 ]
+
+
+# ============================================================
+# /auth 프록시 제출 규칙 (app/middleware/guest_gate.py가 검사 경로(app/api/auth_proxy.py _submit_path)로 판단해 센다)
+# GET은 검사 경로가 설정·로그인·가입·인증·복구 제출 경로인 것만 IP 단위로 센다.
+# 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않는다. 키에 메서드가 들어가 메서드마다 따로 센다
+# ============================================================
+
+AUTH_SUBMIT_METHODS = ["POST", "PUT", "PATCH", "DELETE"]
+
+# 설정 밖의 제출과 GET 제출: 토큰과 상관없이 IP 단위. 한 IP를 여러 사람이 나눠 쓰는 망을 고려해 넉넉히 둔다
+AUTH_SUBMIT_PER_IP = RateLimitRule(
+    methods=["GET", *AUTH_SUBMIT_METHODS],
+    path_pattern="/auth/*",
+    window_seconds=60,
+    max_requests=60,
+    per_ip=True,
+)
+
+# 로그인·가입·인증·복구 제출: 같은 IP에서 같은 식별자(로그인 식별자, 이메일)로 보낸 제출. 제출 경로마다 따로 센다
+AUTH_SUBMIT_PER_IDENTIFIER = RateLimitRule(
+    methods=AUTH_SUBMIT_METHODS,
+    path_pattern="/auth/*",
+    window_seconds=60,
+    max_requests=5,
+    per_ip=True,
+)
+
+# 설정 제출: 검사를 통과한 세션의 identity 단위 (IP로 세지 않는다)
+AUTH_SETTINGS_PER_IDENTITY = RateLimitRule(
+    methods=AUTH_SUBMIT_METHODS,
+    path_pattern="/auth/self-service/settings",
+    window_seconds=60,
+    max_requests=10,
+)
 
 
 def get_rule_for_request(method: str, path: str) -> Optional[RateLimitRule]:

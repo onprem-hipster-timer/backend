@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     # 이용약관·개인정보처리방침 시행일. 바꾸면 모든 사용자에게 다시 동의를 받는다.
     CONSENT_VERSION: str = "2026-11-13"
     # True면 현재 버전에 동의하지 않은 사용자는 프로필 조회·동의 기록 외의 인증 요청이 428
+    # (게스트는 동의 기록·자기 삭제 외의 게스트 경로가 428)
     CONSENT_ENFORCED: bool = True
 
     # 회원 탈퇴. 신청하면 휴면이 되고, 이 기간이 지난 뒤 다음 파기 실행(하루 한 번)이 데이터를 지운다
@@ -67,6 +68,7 @@ class Settings(BaseSettings):
     HOLIDAY_API_SERVICE_KEY: str = ""  # 공공데이터포털에서 발급받은 ServiceKey
 
     # OIDC 인증 설정
+    # 토큰에는 schema_id 클레임(Kratos identity schema id)이 있어야 한다. 없거나 빈 문자열·문자열이 아니면 401
     OIDC_ENABLED: bool = True  # False로 설정하면 인증 비활성화 (개발/테스트용)
     OIDC_ISSUER_URL: str = ""  # 예: https://accounts.google.com, https://your-keycloak/realms/your-realm
     OIDC_AUDIENCE: str = ""  # Client ID (Access Token의 aud 클레임과 매칭)
@@ -80,6 +82,18 @@ class Settings(BaseSettings):
     KRATOS_ADMIN_URL: str = ""  # 예: http://127.0.0.1:4434
     # Kratos courier Cloud Run 잡 (전체 리소스 이름). 비어 있으면 실행하지 않음
     KRATOS_COURIER_JOB: str = ""  # 예: projects/<project>/locations/<region>/jobs/kratos-courier
+
+    # 게스트 계정 (docs/guides/guest.ko.md, docs/deployment/kratos-guest.ko.md). 끄면 게스트 엔드포인트와
+    # Kratos 훅 엔드포인트는 404이고, 게스트 schema의 토큰은 모든 경로에서 거부된다 (켜고 끄는 것과 상관없이
+    # 토큰에는 schema_id 클레임이 있어야 한다)
+    GUEST_ENABLED: bool = False
+    KRATOS_GUEST_SCHEMA_ID: str = "guest"  # Kratos의 게스트 identity schema id (JWT schema_id 클레임과 비교)
+    # Kratos web_hook이 X-Kratos-Hook-Key 헤더로 보내는 값. /internal/kratos/hooks/*는 이 값이 맞아야 응답한다
+    KRATOS_HOOK_API_KEY: str = ""
+    # Cloudflare Turnstile. 게스트 단계의 X-Turnstile-Token 토큰을 이 비밀 키로 확인한다 (app/middleware/guest_gate.py).
+    # 게스트를 켜면 필요하다
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_VERIFY_URL: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
     # 실시간 전달 (docs/development/realtime-adapter.ko.md)
     REALTIME_BACKEND: Literal["inprocess", "cloudflare"] = "inprocess"  # inprocess: /v1/ws/timers 연결로 전달, cloudflare: realtime Worker로 push
@@ -179,6 +193,26 @@ class Settings(BaseSettings):
                 and not (self.REALTIME_PUSH_URL and self.REALTIME_PUSH_SECRET)
         ):
             raise ValueError("REALTIME_BACKEND=cloudflare에는 REALTIME_PUSH_URL과 REALTIME_PUSH_SECRET이 필요합니다")
+        return self
+
+    @model_validator(mode="after")
+    def validate_guest(self) -> Self:
+        """GUEST_ENABLED인데 Kratos 주소·훅 키·Turnstile 비밀 키가 없으면 기동 실패 (게스트 생성·로그인·훅이 요청마다 실패하기 전에)"""
+        if not self.GUEST_ENABLED:
+            return self
+        missing = [
+            name
+            for name in (
+                "KRATOS_PUBLIC_URL",
+                "KRATOS_ADMIN_URL",
+                "KRATOS_HOOK_API_KEY",
+                "KRATOS_GUEST_SCHEMA_ID",
+                "TURNSTILE_SECRET_KEY",
+            )
+            if not getattr(self, name)
+        ]
+        if missing:
+            raise ValueError(f"GUEST_ENABLED=true에는 {', '.join(missing)} 값이 필요합니다")
         return self
 
     @property

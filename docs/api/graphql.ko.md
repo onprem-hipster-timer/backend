@@ -18,7 +18,7 @@ http://localhost:2614/v1/graphql
 
 ## 인증
 
-모든 GraphQL 쿼리는 인증이 필요합니다:
+모든 GraphQL 쿼리는 회원 인증이 필요합니다. [게스트 계정](../guides/guest.ko.md)의 토큰은 `403`입니다.
 
 ```javascript
 const response = await fetch('http://localhost:2614/v1/graphql', {
