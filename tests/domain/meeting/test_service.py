@@ -3,12 +3,17 @@ MeetingService 테스트
 
 일정 조율 서비스 CRUD + 참여자 관리 테스트
 """
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from uuid import UUID
 
 import pytest
 
-from app.domain.meeting.exceptions import MeetingNotFoundError, MeetingParticipantNotFoundError
+from app.domain.meeting.exceptions import (
+    InvalidMeetingError,
+    MeetingNotFoundError,
+    MeetingParticipantNotFoundError,
+    TooManyTimeSlotsError,
+)
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
     MeetingUpdate,
@@ -27,6 +32,7 @@ def meeting_data() -> MeetingCreate:
         description="다음 주 회의 일정을 조율합니다",
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
+        timezone="UTC",
         available_days=[0, 2, 4],  # 월, 수, 금
         start_time=time(9, 0),
         end_time=time(18, 0),
@@ -208,6 +214,28 @@ class TestUpdateMeeting:
             service.update_meeting(UUID("00000000-0000-0000-0000-000000000000"), update_data)
 
 
+    @pytest.mark.parametrize(
+        "update_data",
+        [
+            MeetingUpdate(start_time=time(18, 0)),
+            MeetingUpdate(end_date=date(2024, 1, 31)),
+            MeetingUpdate(end_date=date(2024, 5, 2)),
+            MeetingUpdate(time_slot_minutes=541),
+        ],
+    )
+    def test_update_meeting_rejects_invalid_merged_meeting(
+            self, test_session, test_user, sample_meeting, update_data
+    ):
+        """저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기면 거절하고 미팅을 바꾸지 않는다"""
+        service = MeetingService(test_session, test_user)
+        before = sample_meeting.model_dump()
+
+        with pytest.raises(InvalidMeetingError):
+            service.update_meeting(sample_meeting.id, update_data)
+
+        assert sample_meeting.model_dump() == before
+
+
 class TestDeleteMeeting:
     """일정 조율 삭제 테스트"""
 
@@ -240,24 +268,46 @@ class TestParticipant:
         service = MeetingService(test_session, test_user)
 
         participant_data = ParticipantCreate(display_name="참여자1")
-        participant = service.create_participant(sample_meeting.id, participant_data)
+        participant, created = service.create_participant(sample_meeting.id, participant_data)
 
+        assert created is True
         assert participant.meeting_id == sample_meeting.id
         assert participant.user_id == test_user.sub
         assert participant.display_name == "참여자1"
         assert isinstance(participant.id, UUID)
 
-    def test_get_participants_success(
+    def test_create_participant_again_renames_existing(
             self, test_session, test_user, sample_meeting
     ):
-        """참여자 목록 조회 성공"""
+        """같은 사용자가 다시 등록하면 새로 만들지 않고 기존 참여자의 표시 이름을 바꾼다"""
         service = MeetingService(test_session, test_user)
+        first, _ = service.create_participant(sample_meeting.id, ParticipantCreate(display_name="처음"))
+
+        again, created = service.create_participant(sample_meeting.id, ParticipantCreate(display_name="다음"))
+
+        assert created is False
+        assert again.id == first.id
+        assert again.display_name == "다음"
+        assert [p.id for p in service.get_participants(sample_meeting.id)] == [first.id]
+
+    def test_get_participants_success(
+            self, test_session, test_user, other_user, sample_meeting
+    ):
+        """참여자 목록 조회 성공"""
+        from app.domain.visibility.service import VisibilityService
+
+        service = MeetingService(test_session, test_user)
+        VisibilityService(test_session, test_user).set_visibility(
+            resource_type=ResourceType.MEETING,
+            resource_id=sample_meeting.id,
+            level=VisibilityLevel.PUBLIC,
+        )
 
         # 참여자 2명 등록
-        participant1 = service.create_participant(
+        participant1, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
-        participant2 = service.create_participant(
+        participant2, _ = MeetingService(test_session, other_user).create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자2")
         )
 
@@ -279,21 +329,19 @@ class TestTimeSlots:
         service = MeetingService(test_session, test_user)
 
         # 참여자 등록
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 
         # 시간 슬롯 설정
         time_slots = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),  # 월요일
-                start_time=time(9, 0),
-                end_time=time(12, 0),
+                start_time=datetime(2024, 2, 1, 9, 0),  # 월요일
+                end_time=datetime(2024, 2, 1, 12, 0),
             ),
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(14, 0),
-                end_time=time(17, 0),
+                start_time=datetime(2024, 2, 1, 14, 0),
+                end_time=datetime(2024, 2, 1, 17, 0),
             ),
         ]
 
@@ -302,9 +350,8 @@ class TestTimeSlots:
         )
 
         assert len(created_slots) == 2
-        assert created_slots[0].slot_date == date(2024, 2, 1)
-        assert created_slots[0].start_time == time(9, 0)
-        assert created_slots[0].end_time == time(12, 0)
+        assert created_slots[0].start_time == datetime(2024, 2, 1, 9, 0)
+        assert created_slots[0].end_time == datetime(2024, 2, 1, 12, 0)
 
     def test_set_time_slots_replaces_existing(
             self, test_session, test_user, sample_meeting
@@ -313,16 +360,15 @@ class TestTimeSlots:
         service = MeetingService(test_session, test_user)
 
         # 참여자 등록
-        participant = service.create_participant(
+        participant, _ = service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 
         # 첫 번째 시간 슬롯 설정
         time_slots1 = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(9, 0),
-                end_time=time(12, 0),
+                start_time=datetime(2024, 2, 1, 9, 0),
+                end_time=datetime(2024, 2, 1, 12, 0),
             ),
         ]
         service.set_time_slots(sample_meeting.id, participant.id, time_slots1)
@@ -330,9 +376,8 @@ class TestTimeSlots:
         # 두 번째 시간 슬롯 설정 (기존 슬롯 교체)
         time_slots2 = [
             TimeSlotCreate(
-                slot_date=date(2024, 2, 1),
-                start_time=time(14, 0),
-                end_time=time(17, 0),
+                start_time=datetime(2024, 2, 1, 14, 0),
+                end_time=datetime(2024, 2, 1, 17, 0),
             ),
         ]
         created_slots = service.set_time_slots(
@@ -341,7 +386,7 @@ class TestTimeSlots:
 
         # 기존 슬롯이 교체되어 1개만 남아야 함
         assert len(created_slots) == 1
-        assert created_slots[0].start_time == time(14, 0)
+        assert created_slots[0].start_time == datetime(2024, 2, 1, 14, 0)
 
     def test_set_time_slots_denies_other_participant(
             self, test_session, test_user, other_user, sample_meeting
@@ -359,7 +404,7 @@ class TestTimeSlots:
 
         # test_user로 참여자 등록
         owner_service = MeetingService(test_session, test_user)
-        participant = owner_service.create_participant(
+        participant, _ = owner_service.create_participant(
             sample_meeting.id, ParticipantCreate(display_name="참여자1")
         )
 
@@ -371,8 +416,45 @@ class TestTimeSlots:
                 sample_meeting.id,
                 participant.id,
                 [TimeSlotCreate(
-                    slot_date=date(2024, 2, 1),
-                    start_time=time(9, 0),
-                    end_time=time(12, 0),
+                    start_time=datetime(2024, 2, 1, 9, 0),
+                    end_time=datetime(2024, 2, 1, 12, 0),
                 )],
             )
+
+
+def _distinct_slots(count: int) -> list[TimeSlotCreate]:
+    """2024-02-02(금) 09:00부터 1분씩 어긋난 30분 슬롯"""
+    first = datetime(2024, 2, 2, 9, 0)
+    return [
+        TimeSlotCreate(
+            start_time=first + timedelta(minutes=i),
+            end_time=first + timedelta(minutes=i + 30),
+        )
+        for i in range(count)
+    ]
+
+
+class TestTimeSlotsLimit:
+    """한 요청의 가능 시간 슬롯 수는 미팅의 칸 수까지
+
+    sample_meeting: 2024-02-01~07 중 월·수·금 3일 x 540분 / 30분 = 54칸
+    """
+
+    def test_slots_up_to_cell_count_accepted(self, test_session, test_user, sample_meeting):
+        service = MeetingService(test_session, test_user)
+        participant, _ = service.create_participant(
+            sample_meeting.id, ParticipantCreate(display_name="참여자1")
+        )
+
+        created = service.set_time_slots(sample_meeting.id, participant.id, _distinct_slots(54))
+
+        assert len(created) == 54
+
+    def test_slots_over_cell_count_rejected(self, test_session, test_user, sample_meeting):
+        service = MeetingService(test_session, test_user)
+        participant, _ = service.create_participant(
+            sample_meeting.id, ParticipantCreate(display_name="참여자1")
+        )
+
+        with pytest.raises(TooManyTimeSlotsError):
+            service.set_time_slots(sample_meeting.id, participant.id, _distinct_slots(55))

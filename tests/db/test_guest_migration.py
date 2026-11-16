@@ -19,7 +19,7 @@ import app.models  # noqa: F401  # register every table in SQLModel.metadata
 import app.models.holiday  # noqa: F401
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BEFORE_GUEST = "e7f3a9c5b1d8"
+BEFORE_GUEST = "911321f82154"
 INSERT = sa.text(
     "INSERT INTO guest (id, identity_id, resource_type, resource_id, name, created_at, updated_at)"
     " VALUES (:id, :identity, :resource_type, :resource, :name, '2026-11-14 00:00:00', '2026-11-14 00:00:00')"

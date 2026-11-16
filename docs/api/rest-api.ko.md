@@ -35,14 +35,14 @@ DELETE /v1/timers/{id}           # 타이머 삭제
 GET    /v1/todos                 # 투두 목록 조회
 POST   /v1/todos                 # 투두 생성
 GET    /v1/todos/{id}            # 특정 투두 조회
-PATCH  /v1/todos/{id}            # 투두 수정 (할 일 그룹 이동 포함)
+PATCH  /v1/todos/{id}            # 투두 수정 (해야 할 일 목록 이동 포함)
 DELETE /v1/todos/{id}            # 투두 삭제
 GET    /v1/todos/stats           # 통계 조회
-GET    /v1/todos/groups          # 할 일 그룹 목록 조회 (기본 그룹이 없으면 생성)
-POST   /v1/todos/groups          # 할 일 그룹 생성
-GET    /v1/todos/groups/{id}     # 특정 할 일 그룹 조회
-PATCH  /v1/todos/groups/{id}     # 할 일 그룹 수정
-DELETE /v1/todos/groups/{id}     # 할 일 그룹 삭제 (투두는 기본 그룹으로 이동)
+GET    /v1/todos/groups          # 해야 할 일 목록 전체 조회 (기본 목록이 없으면 생성)
+POST   /v1/todos/groups          # 해야 할 일 목록 생성
+GET    /v1/todos/groups/{id}     # 특정 해야 할 일 목록 조회
+PATCH  /v1/todos/groups/{id}     # 해야 할 일 목록 수정
+DELETE /v1/todos/groups/{id}     # 해야 할 일 목록 삭제 (투두는 기본 목록으로 이동)
 ```
 
 ### 태그 (Tags)
@@ -109,11 +109,11 @@ DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 
 ```http
 POST   /v1/guests/lookup                  # 리소스에서 그 이름의 게스트 로그인 식별자(handle) 찾기 (인증 없음)
-POST   /v1/guests                         # 게스트 생성 (인증 없음, Turnstile 토큰 필요). handle 반환
+POST   /v1/guests                         # 게스트 생성 (인증 없음). handle 반환
 DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게스트 JWT)
 ```
 
-게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 게스트의 로그인 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요합니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 위 세 경로와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
 
 ### 공휴일 (Holidays)
 

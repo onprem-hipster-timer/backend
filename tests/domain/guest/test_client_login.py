@@ -29,8 +29,8 @@ def _login(client, identifier: str, password: str):
 
 def _create_and_find(client, resource, name="민수", password="1234") -> str:
     body = {"resource_type": "meeting", "resource_id": str(resource), "name": name}
-    assert client.post("/v1/guests", json={**body, "password": password, "turnstile_token": "t"}).status_code == 201
-    return client.post("/v1/guests/lookup", json=body).json()["handle"]
+    assert client.post("/v1/guests", json={**body, "password": password}, headers={"X-Turnstile-Token": "t"}).status_code == 201
+    return client.post("/v1/guests/lookup", json=body, headers={"X-Turnstile-Token": "t"}).json()["handle"]
 
 
 def test_guest_logs_in_with_handle_through_auth_proxy(guest_client, resource):

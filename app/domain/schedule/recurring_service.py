@@ -9,7 +9,11 @@ from uuid import UUID, uuid4
 from sqlmodel import Session
 
 from app.crud import schedule as crud
-from app.domain.dateutil.service import ensure_utc_naive, is_datetime_within_tolerance
+from app.domain.dateutil.service import (
+    ensure_utc_naive,
+    get_datetime_range,
+    is_datetime_within_tolerance,
+)
 from app.domain.schedule.exceptions import (
     ScheduleNotFoundError,
     RecurringScheduleError,
@@ -48,40 +52,47 @@ class RecurringScheduleService:
         - UUID를 사용하여 각 인스턴스에 고유 ID 할당
 
         :param schedule: 원본 일정
-        :param instance_start: 인스턴스 시작 시간
+        :param instance_start: 인스턴스 시작 시간 (회차의 원래 시작 시간)
         :param instance_end: 인스턴스 종료 시간
         :param exception: 예외 인스턴스 (있는 경우)
-        :return: 가상 인스턴스
+        :return: 가상 인스턴스 (instance_start 속성에 회차의 원래 시작 시간)
         """
         # 각 가상 인스턴스에 고유 ID 생성
         virtual_id = uuid4()
 
         # 예외가 있고 삭제되지 않았으면 예외 데이터 사용
         if exception and not exception.is_deleted:
-            return Schedule(
+            instance = Schedule(
                 id=virtual_id,  # 고유 ID 생성
                 title=exception.title or schedule.title,
                 description=exception.description or schedule.description,
                 start_time=exception.start_time or instance_start,
                 end_time=exception.end_time or instance_end,
                 created_at=schedule.created_at,
+                owner_id=schedule.owner_id,
                 recurrence_rule=None,  # 가상 인스턴스는 반복 규칙 없음
                 recurrence_end=None,
                 parent_id=schedule.id,
             )
+        else:
+            # 예외가 없으면 원본 데이터 사용
+            instance = Schedule(
+                id=virtual_id,  # 고유 ID 생성
+                title=schedule.title,
+                description=schedule.description,
+                start_time=instance_start,
+                end_time=instance_end,
+                created_at=schedule.created_at,
+                owner_id=schedule.owner_id,
+                recurrence_rule=None,
+                recurrence_end=None,
+                parent_id=schedule.id,
+            )
 
-        # 예외가 없으면 원본 데이터 사용
-        return Schedule(
-            id=virtual_id,  # 고유 ID 생성
-            title=schedule.title,
-            description=schedule.description,
-            start_time=instance_start,
-            end_time=instance_end,
-            created_at=schedule.created_at,
-            recurrence_rule=None,
-            recurrence_end=None,
-            parent_id=schedule.id,
-        )
+        # 회차를 다시 가리킬 원래 시작 시간 (ScheduleRead.instance_start).
+        # 테이블 컬럼이 아니므로 모델 필드 검사를 거치지 않고 붙인다
+        object.__setattr__(instance, "instance_start", instance_start)
+        return instance
 
     def find_exception(
             self,
@@ -108,6 +119,56 @@ class RecurringScheduleService:
                 if is_datetime_within_tolerance(exc.exception_date, instance_start):
                     return exc
         return None
+
+    def get_recurring_instance(
+            self,
+            parent_schedule: Schedule,
+            instance_start: datetime,
+    ) -> Schedule:
+        """
+        반복 일정의 특정 인스턴스 조회 (접근 확인은 호출자 책임)
+
+        instance_start는 수정/삭제와 같이 회차의 원래 시작 시간이며 1분 허용 오차로 매칭한다.
+
+        :param parent_schedule: 원본 일정
+        :param instance_start: 인스턴스 시작 시간
+        :return: 가상 인스턴스 (예외 반영)
+        :raises RecurringScheduleError: 반복 일정이 아닌 경우
+        :raises ScheduleNotFoundError: 규칙에 해당 회차가 없거나 삭제된 회차인 경우
+        """
+        if not parent_schedule.recurrence_rule:
+            raise RecurringScheduleError()
+
+        instance_start_utc = ensure_utc_naive(instance_start)
+        range_start, range_end = get_datetime_range(instance_start_utc)
+        occurrence = next(
+            (
+                (start, end)
+                for start, end in RecurrenceCalculator.expand_recurrence(
+                    parent_schedule.start_time,
+                    parent_schedule.end_time,
+                    parent_schedule.recurrence_rule,
+                    parent_schedule.recurrence_end,
+                    range_start,
+                    range_end,
+                )
+                if is_datetime_within_tolerance(start, instance_start_utc)
+            ),
+            None,
+        )
+        if occurrence is None:
+            raise ScheduleNotFoundError()
+
+        occurrence_start, occurrence_end = occurrence
+        exception = crud.get_schedule_exception_by_date(
+            self.session, parent_schedule.id, occurrence_start, parent_schedule.owner_id
+        )
+        if exception and exception.is_deleted:
+            raise ScheduleNotFoundError()
+
+        return self.create_virtual_instance(
+            parent_schedule, occurrence_start, occurrence_end, exception
+        )
 
     def update_recurring_instance(
             self,

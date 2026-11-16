@@ -65,6 +65,7 @@ def _make_meeting(client) -> str:
             "title": "회의",
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
+            "timezone": "UTC",
             "available_days": [0, 2, 4],
             "start_time": "09:00:00",
             "end_time": "18:00:00",
@@ -142,7 +143,7 @@ READS = [
         "/v1/meetings/{id}/availability",
         {
             "params": {"participant_id": "00000000-0000-4000-8000-000000000000"},
-            "json": [{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}],
+            "json": [{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}],
         },
     ),
 ]
@@ -169,6 +170,17 @@ def test_denied_recurring_instance_read_matches_missing(multi_user_e2e, denial):
     _deny(multi_user_e2e, owner, viewer, "schedule", parent_id, denial)
 
     _assert_same_as_missing(viewer.get, "/v1/schedules/{id}", parent_id, params={"instance_start": INSTANCE_START})
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(("recurring", "instance_start"), [(True, "2024-01-02T11:00:00Z"), (False, INSTANCE_START)])
+def test_denied_instance_read_without_occurrence_matches_missing(multi_user_e2e, recurring, instance_start):
+    """회차가 없는 instance_start나 반복이 아닌 일정도 접근할 수 없으면 없는 일정과 같은 응답"""
+    owner = multi_user_e2e.as_user("owner")
+    viewer = multi_user_e2e.as_user("viewer")
+    schedule_id = _make_schedule(owner, recurring=recurring)
+
+    _assert_same_as_missing(viewer.get, "/v1/schedules/{id}", schedule_id, params={"instance_start": instance_start})
 
 
 # 다른 사용자의 리소스에 대한 쓰기. 읽기가 허용된 공개 리소스도 같은 응답이다
@@ -246,7 +258,7 @@ def test_availability_for_others_participant_matches_missing_participant(multi_u
     owner_participant_id = owner.post(
         f"/v1/meetings/{meeting_id}/participate", json={"display_name": "주최자"}
     ).json()["id"]
-    slots = [{"slot_date": "2024-02-05", "start_time": "09:00:00", "end_time": "12:00:00"}]
+    slots = [{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T12:00:00Z"}]
 
     existing = viewer.put(
         f"/v1/meetings/{meeting_id}/availability", params={"participant_id": owner_participant_id}, json=slots

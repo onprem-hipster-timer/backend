@@ -1,7 +1,7 @@
 """
 Rate Limit Middleware
 
-FastAPI 미들웨어로 /v1/* 요청에 레이트 리밋 적용. /auth 제출은 app/api/auth_proxy.py가 센다
+FastAPI 미들웨어로 /v1/* 요청에 레이트 리밋 적용. /auth 제출은 app/middleware/guest_gate.py가 센다
 """
 import logging
 

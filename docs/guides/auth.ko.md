@@ -255,8 +255,9 @@ graph TD
 미들웨어는 `app/main.py`에서 **AuthMiddleware가 RateLimitMiddleware보다 먼저 실행**되도록 등록됩니다.
 
 1. **AuthMiddleware** — 토큰을 best-effort 검증해 `request.state.current_user`를 채웁니다(거부하지 않음).
-2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반. 규칙에 `per_ip`가 있으면(게스트 이름 찾기·생성) 토큰이 있어도 IP로 셉니다. `/auth` 제출은 이 미들웨어가 아니라 `/auth` 프록시가 셉니다.
-3. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다. 토큰이 유효해도 `ensure_member`가 게스트 토큰을 `403`으로 거절합니다.
+2. **RateLimitMiddleware** — `request.state.current_user`를 **그대로 재사용**해 사용자 단위로 레이트 리밋을 키잉합니다(중복 토큰 검증 없음). 미인증이면 IP 기반. 규칙에 `per_ip`가 있으면(게스트 이름 찾기·생성) 토큰이 있어도 IP로 셉니다. `/auth` 제출은 이 미들웨어가 아니라 게스트 관문이 셉니다.
+3. **게스트 관문** (`app/middleware/guest_gate.py`) — `/auth` 제출의 요청 한도를 세고, 게스트 단계(이름 찾기·생성·자기 삭제, 게스트 로그인·설정 제출)면 Turnstile 토큰을 확인합니다([게스트 계정 가이드](guest.ko.md#turnstile-토큰)).
+4. **`get_current_user` / `get_current_user_synced`** — 엔드포인트(또는 부모 라우터) 의존성으로서 실제 `401` 게이트를 담당하며, 역시 `request.state`를 재사용합니다. 토큰이 유효해도 `ensure_member`가 게스트 토큰을 `403`으로 거절합니다.
 
 결과적으로 토큰 검증은 사실상 1회(`AuthMiddleware`)만 수행되고, 미들웨어와 의존성이
 `request.state.current_user`를 공유해 중복 검증을 피합니다. `AuthMiddleware`는 게이트가
@@ -498,8 +499,9 @@ async function fetchJwt() {
 }
 ```
 
-- 제출 요청의 쿼리 문자열에는 `flow`만 넣습니다. 다른 값이 있으면 프록시가 `400`으로 거절합니다.
-- `/auth`로 가는 GET 밖의 요청은 IP당 분당 60회이고, 로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자로 분당 5회까지입니다. 설정 제출은 identity당 분당 10회입니다. JWT 갱신(`GET`)은 이 한도에 들지 않습니다.
+- 제출 요청의 쿼리 문자열에는 `flow`만 넣습니다. 다른 값이 있으면 프록시가 `400`으로 거절합니다. 제출 경로로 가는 GET도 같고, 인증 메일의 링크(`GET /auth/self-service/verification?flow=…&code=…`)만 `code`를 더 담습니다.
+- 로그인 `identifier`, 가입 `traits.email`, 인증·복구 `email`에는 ASCII 문자만 씁니다. ASCII 밖의 문자가 있으면 프록시가 Kratos에 넘기지 않고 `400` `invalid_identifier`로 답합니다.
+- `/auth`로 가는 GET 밖의 요청과 제출 경로로 가는 GET은 IP당 분당 60회이고, 로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자로 분당 5회까지입니다. 설정 제출은 identity당 분당 10회입니다. JWT 갱신(`GET`)은 이 한도에 들지 않습니다.
 - 로그아웃은 `DELETE /auth/self-service/logout/api`에 세션 토큰을 보냅니다. 세션은 바로 끝나고, 이미 받은 JWT는 만료까지 유효합니다.
 - 이메일 인증 전의 계정으로 로그인하면 Kratos가 `400`과 함께 인증 플로우 정보를 돌려줍니다.
 
