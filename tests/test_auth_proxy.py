@@ -422,8 +422,9 @@ def test_settings_with_unreadable_body_is_rejected(client, upstream):
         headers={"X-Session-Token": "ory_st_recovery", "Content-Type": "application/json"},
     )
 
-    assert response.status_code == 403
-    assert settings_forwarded(upstream) == []
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
 
 
 def test_settings_flow_creation_is_not_blocked(client, upstream):
@@ -481,8 +482,9 @@ def test_settings_body_with_duplicate_keys_is_rejected(client, upstream):
         headers={"X-Session-Token": "ory_st_recovery", "Content-Type": "application/json"},
     )
 
-    assert response.status_code == 403
-    assert settings_forwarded(upstream) == []
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
 
 
 def test_allowed_settings_submit_drops_other_session_header(client, upstream):
@@ -510,8 +512,9 @@ def test_settings_body_with_keys_differing_only_in_case_is_rejected(client, upst
         headers={"X-Session-Token": "ory_st_recovery", "Content-Type": "application/json"},
     )
 
-    assert response.status_code == 403
-    assert settings_forwarded(upstream) == []
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
 
 
 # --- 소셜 로그인 제출의 traits.email 제거 ---
@@ -539,15 +542,6 @@ def test_oidc_submit_drops_email_under_differently_cased_keys(client, upstream):
     )
 
     assert forwarded_json(upstream) == {"Method": "oidc", "provider": "google", "Traits": {}}
-
-
-def test_oidc_submit_drops_traits_that_are_not_an_object(client, upstream):
-    client.post(
-        "/auth/self-service/registration?flow=f1",
-        json={"method": "oidc", "provider": "google", "traits": '{"email": "other@example.com"}'},
-    )
-
-    assert forwarded_json(upstream) == {"method": "oidc", "provider": "google"}
 
 
 def test_oidc_form_submit_drops_client_email(client, upstream):
@@ -1223,6 +1217,225 @@ async def test_chunked_large_submission_is_forwarded_byte_identical(upstream):
     assert response.status_code == 200
     [sent] = upstream.requests
     assert sent.content == payload
+
+
+# ============ 검사하는 제출의 본문 형식 ============
+
+FORM_TYPE = "application/x-www-form-urlencoded"
+MULTIPART_TYPE = "multipart/form-data; boundary=b0"
+# (검사하는 제출 경로, 그 경로에서 Kratos로 넘어가는 method)
+BODY_SUBMITS = [
+    ("/auth/self-service/login?flow=f1", "password"),
+    ("/auth/self-service/registration?flow=f1", "password"),
+    ("/auth/self-service/settings?flow=f1", "password"),
+    ("/auth/self-service/verification?flow=f1", "code"),
+    ("/auth/self-service/recovery?flow=f1", "code"),
+]
+BODY_SUBMIT_IDS = ["login", "registration", "settings", "verification", "recovery"]
+
+
+def _multipart(fields: dict[str, str]) -> bytes:
+    parts = [f'--b0\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n' for k, v in fields.items()]
+    return ("".join(parts) + "--b0--\r\n").encode()
+
+
+# (본문, Content-Type) METHOD 자리에 경로의 method를 넣는다. Content-Type이 None이면 헤더를 붙이지 않는다
+REFUSED_BODIES = {
+    "json_dotted_key": (b'{"method": "METHOD", "traits.email": "a@example.com"}', "application/json"),
+    "json_other_dotted_key": (b'{"method": "METHOD", "transient_payload.x": "1"}', "application/json"),
+    "json_traits_string": (b'{"method": "METHOD", "traits": "{\\"email\\": \\"a@example.com\\"}"}', "application/json"),
+    "json_traits_key_case_string": (b'{"method": "METHOD", "Traits": "{}"}', "application/json"),
+    "json_traits_list": (b'{"method": "METHOD", "traits": ["a@example.com"]}', "application/json"),
+    "json_traits_null": (b'{"method": "METHOD", "traits": null}', "application/json"),
+    "json_duplicate_key": (b'{"method": "METHOD", "method": "METHOD"}', "application/json"),
+    "json_case_duplicate_key": (b'{"method": "METHOD", "Method": "METHOD"}', "application/json"),
+    "json_nested_duplicate_key": (b'{"method": "METHOD", "traits": {"email": "a@b.c", "Email": "d@e.f"}}',
+                                  "application/json"),
+    "json_array": (b'[{"method": "METHOD"}]', "application/json"),
+    "json_string": (b'"METHOD"', "application/json"),
+    "json_broken": (b'{"method": "METHOD"', "application/json"),
+    "json_empty": (b"", "application/json"),
+    "json_not_utf8": (b'{"method": "METHOD", "x": "\xff"}', "application/json"),
+    "form_traits": (b"method=METHOD&traits=%7B%22email%22%3A%22a%40example.com%22%7D", FORM_TYPE),
+    "form_traits_key_case": (b"method=METHOD&TRAITS=%7B%7D", FORM_TYPE),
+    "form_traits_key_encoded": (b"method=METHOD&%74raits=%7B%7D", FORM_TYPE),
+    "form_traits_without_value": (b"method=METHOD&traits", FORM_TYPE),
+    "form_repeated_key": (b"method=METHOD&method=METHOD", FORM_TYPE),
+    "form_case_repeated_key": (b"method=METHOD&Method=METHOD", FORM_TYPE),
+    "form_not_utf8": (b"method=METHOD&x=\xff", FORM_TYPE),
+    "multipart": (_multipart({"method": "METHOD", "traits.email": "a@example.com"}), MULTIPART_TYPE),
+    "text_plain": (b'{"method": "METHOD"}', "text/plain"),
+    "octet_stream": (b'{"method": "METHOD"}', "application/octet-stream"),
+    "no_content_type": (b'{"method": "METHOD"}', None),
+    "json_suffix_type": (b'{"method": "METHOD"}', "application/merge-patch+json"),
+    "two_media_types": (b'{"method": "METHOD"}', "application/json, application/x-www-form-urlencoded"),
+}
+ACCEPTED_BODIES = {
+    "json": (b'{"method": "METHOD", "traits": {"email": "a@example.com", "name": "A"}}', "application/json"),
+    "json_without_traits": (b'{"method": "METHOD", "email": "a@example.com"}', "application/json"),
+    "json_charset": (b'{"method": "METHOD"}', "application/json; charset=utf-8"),
+    "json_media_type_case": (b'{"method": "METHOD"}', " Application/JSON "),
+    "form": (b"method=METHOD&traits.email=a%40example.com&traits.name=A", FORM_TYPE),
+    "form_charset": (b"method=METHOD&email=a%40example.com", "application/x-www-form-urlencoded; charset=UTF-8"),
+    "form_media_type_case": (b"method=METHOD", "Application/X-WWW-Form-Urlencoded"),
+}
+
+
+def _post_body(client, path, method, content, content_type, http_method="POST"):
+    headers = {"X-Session-Token": "ory_st_recovery"}
+    if content_type is not None:
+        headers["Content-Type"] = content_type
+    return client.request(http_method, path, content=content.replace(b"METHOD", method.encode()), headers=headers)
+
+
+@pytest.mark.parametrize("path,method", BODY_SUBMITS, ids=BODY_SUBMIT_IDS)
+@pytest.mark.parametrize("content,content_type", list(REFUSED_BODIES.values()), ids=list(REFUSED_BODIES))
+def test_submission_body_in_other_representation_is_400_and_not_forwarded(
+        client, upstream, monkeypatch, path, method, content, content_type
+):
+    calls = []
+    monkeypatch.setattr(courier, "start", lambda: _record(calls))
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = _post_body(client, path, method, content, content_type)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("path,method", BODY_SUBMITS, ids=BODY_SUBMIT_IDS)
+@pytest.mark.parametrize("content,content_type", list(ACCEPTED_BODIES.values()), ids=list(ACCEPTED_BODIES))
+def test_submission_body_in_read_representation_is_forwarded_unchanged(
+        client, upstream, path, method, content, content_type
+):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+
+    response = _post_body(client, path, method, content, content_type)
+
+    assert response.status_code == 200
+    [sent] = [r for r in upstream.requests if r.url.path != "/sessions/whoami"]
+    assert sent.url.path == path.split("?")[0].removeprefix("/auth")
+    assert sent.content == content.replace(b"METHOD", method.encode())
+
+
+@pytest.mark.parametrize("http_method", ["PUT", "PATCH", "DELETE"])
+@pytest.mark.parametrize("path,method", BODY_SUBMITS, ids=BODY_SUBMIT_IDS)
+def test_submission_body_rule_applies_to_every_method_other_than_get(client, upstream, http_method, path, method):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+    content, content_type = REFUSED_BODIES["json_dotted_key"]
+
+    response = _post_body(client, path, method, content, content_type, http_method=http_method)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/Registration/?flow=f1",
+        "/auth/self-service/recover%79?flow=f1",
+        "/auth/self-service/x/../settings?flow=f1",
+        "/auth/self-service/LOGIN",
+    ],
+)
+def test_submission_body_rule_applies_to_submit_path_spellings(client, upstream, path):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+    content, content_type = REFUSED_BODIES["json_dotted_key"]
+
+    response = _post_body(client, path, "password", content, content_type)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("path,method", BODY_SUBMITS, ids=BODY_SUBMIT_IDS)
+@pytest.mark.parametrize("name", ["json_dotted_key", "form_traits", "multipart", "text_plain"])
+def test_submission_body_rule_does_not_depend_on_guest_flag(client, upstream, guest_enabled, siteverify, path, method,
+                                                            name):
+    kratos_with_session(upstream, RECOVERY_SESSION)
+    content, content_type = REFUSED_BODIES[name]
+
+    response = _post_body(client, path, method, content, content_type)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+    assert siteverify == []
+
+
+@pytest.mark.parametrize("flow", ["registration", "login"])
+@pytest.mark.parametrize(
+    "content,content_type",
+    [
+        (b'{"method": "oidc", "provider": "google", "traits": "{\\"email\\": \\"other@example.com\\"}"}',
+         "application/json"),
+        (b'{"method": "oidc", "provider": "google", "traits.email": "other@example.com"}', "application/json"),
+        (b"method=oidc&provider=google&traits=%7B%22email%22%3A%22other%40example.com%22%7D", FORM_TYPE),
+        (_multipart({"method": "oidc", "provider": "google", "traits.email": "other@example.com"}), MULTIPART_TYPE),
+        (b'{"method": "oidc", "provider": "google", "traits": {"email": "other@example.com"}}', "text/plain"),
+    ],
+    ids=["json_traits_string", "json_dotted_key", "form_traits", "multipart", "text_plain"],
+)
+def test_oidc_submit_in_other_representation_is_400_and_not_forwarded(client, upstream, flow, content, content_type):
+    response = client.post(
+        f"/auth/self-service/{flow}?flow=f1", content=content, headers={"Content-Type": content_type}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+def test_submission_body_rule_comes_before_identifier_rule(client, upstream):
+    response = client.post(
+        "/auth/self-service/login?flow=f1",
+        json={"method": "password", "identifier": "mémber@example.com", "traits.email": "member@example.com"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["id"] == "invalid_request_body"
+    assert upstream.requests == []
+
+
+@pytest.mark.parametrize("path,method", BODY_SUBMITS, ids=BODY_SUBMIT_IDS)
+@pytest.mark.parametrize("name", ["json_dotted_key", "form_traits", "multipart", "text_plain", "json_broken"])
+def test_get_submission_body_is_not_checked(client, upstream, path, method, name):
+    content, content_type = REFUSED_BODIES[name]
+
+    response = _post_body(client, path, method, content, content_type, http_method="GET")
+
+    assert response.status_code == 200
+    [sent] = upstream.requests
+    assert sent.method == "GET"
+    assert sent.url.path == path.split("?")[0].removeprefix("/auth")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/auth/self-service/logout/api",
+        "/auth/self-service/login/api",
+        "/auth/self-service/methods/oidc/callback/google",
+        "/auth/unknown",
+    ],
+)
+@pytest.mark.parametrize("name", ["json_dotted_key", "form_traits", "form_repeated_key", "multipart", "text_plain"])
+def test_other_paths_forward_any_body_unchanged(client, upstream, path, name):
+    content, content_type = REFUSED_BODIES[name]
+    content = content.replace(b"METHOD", b"password")
+
+    response = client.post(path, content=content, headers={"Content-Type": content_type})
+
+    assert response.status_code == 200
+    [sent] = upstream.requests
+    assert sent.url.path == path.removeprefix("/auth")
+    assert sent.content == content
+    assert sent.headers["content-type"] == content_type
 
 
 # ============ Kratos URL을 만들 수 없는 요청 ============

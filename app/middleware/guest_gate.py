@@ -25,13 +25,15 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
 1. 제출 요청 한도 (app/ratelimit/config.py의 AUTH_* 규칙, 넘으면 429). 설정 밖의 제출과 GET 제출은 IP 단위로 센다
-2. 식별자의 ASCII 규칙 (auth_proxy.identifier_refusal: GET 밖의 로그인·가입·인증·복구 제출의 식별자가 ASCII 밖의 문자를
+2. 본문의 표현 (auth_proxy.body_refusal: GET 밖의 설정·로그인·가입·인증·복구 제출의 본문이 프록시가 값을 읽는 표현이
+   아니면 400 invalid_request_body)
+3. 식별자의 ASCII 규칙 (auth_proxy.identifier_refusal: GET 밖의 로그인·가입·인증·복구 제출의 식별자가 ASCII 밖의 문자를
    담으면 400 invalid_identifier)
-3. 로그인·가입·인증·복구 제출을 같은 IP에서 같은 식별자(로그인 식별자, 이메일, auth_proxy.normalize_identifier로 맞춘 값)
+4. 로그인·가입·인증·복구 제출을 같은 IP에서 같은 식별자(로그인 식별자, 이메일, auth_proxy.normalize_identifier로 맞춘 값)
    단위로도 센다
-4. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
-5. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
-6. 게스트 제출이면 Turnstile
+5. 프록시의 제출 검사 (inspect_submission: 쿼리 문자열, 로그인 식별자, 설정 제출의 세션. GET 제출은 쿼리 문자열만)
+6. GET 밖의 설정 제출은 IP로 세지 않고, 검사를 통과한 세션의 identity 단위로 센다
+7. 게스트 제출이면 Turnstile
 
 프록시 라우트로 가는 요청(GET 포함)의 Kratos URL을 만들 수 없으면(auth_proxy.kratos_url이 httpx.InvalidURL) 위 단계 없이
 400 invalid_request_url로 답한다.
@@ -131,8 +133,8 @@ async def _auth_step_refusal(request: Request, submission: auth_proxy.Submission
 def _identifier_key(ip_key: str, submit_path: str, identifier: object) -> str | None:
     """같은 IP·제출 경로·식별자의 한도 키. 식별자가 없으면 None.
 
-    문자열은 auth_proxy.normalize_identifier로 맞춘다(Kratos가 같은 식별자로 찾는 표기는 같은 키). 읽을 수 없거나
-    문자열이 아닌 값은 IP·경로마다 한 칸으로 센다. 키에는 식별자 대신 해시를 둔다.
+    문자열은 auth_proxy.normalize_identifier로 맞춘다(Kratos가 같은 식별자로 찾는 표기는 같은 키). 둘 이상인 로그인
+    식별자(auth_proxy._UNREADABLE)와 문자열이 아닌 값은 IP·경로마다 한 칸으로 센다. 키에는 식별자 대신 해시를 둔다.
     """
     if identifier is None:
         return None
@@ -162,6 +164,11 @@ async def _submit_rate_limit_refusal(request: Request, submission: auth_proxy.Su
     if not app_config.settings.RATE_LIMIT_ENABLED or _counted_by_identity(submission):
         return None
     return await _rate_limit_refusal(await client_ip_key(request), request.method, AUTH_SUBMIT_PER_IP)
+
+
+async def _body_rule_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """제출 본문의 표현 (auth_proxy.body_refusal)"""
+    return auth_proxy.body_refusal(submission)
 
 
 async def _identifier_rule_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
@@ -195,6 +202,7 @@ async def _settings_rate_limit_refusal(request: Request, submission: auth_proxy.
 # _settings_rate_limit_refusal과 _auth_step_refusal은 _inspection_refusal이 채운 identity_id·guest를 읽는다
 _AUTH_CHECKS = (
     _submit_rate_limit_refusal,
+    _body_rule_refusal,
     _identifier_rule_refusal,
     _identifier_rate_limit_refusal,
     _inspection_refusal,

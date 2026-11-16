@@ -19,6 +19,10 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
   구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다.
   이 경로로 가는 GET도 제출로 보고 같은 규칙을 적용한다. 인증 GET은 인증 메일의 링크처럼 code도 하나 받는다
+- 내용을 검사하는 제출의 GET 밖의 본문은 이 프록시가 값을 읽는 표현만 받는다(body_refusal, GUEST_ENABLED와 상관없이).
+  미디어 타입은 application/json이나 application/x-www-form-urlencoded이고, JSON은 키가 겹치지 않는 객체로 최상위 키에 점이 없고
+  traits가 있으면 객체이며, 폼은 UTF-8로 키가 겹치지 않고 traits 필드가 없다. Kratos는 이 밖의 표현에서도 제출 값을 읽으므로
+  아니면 400 invalid_request_body로 거절하고 넘기지 않는다
 - GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소인지 본다. 게스트 handle
   로그인은 인터셉터가 Turnstile을 확인한 뒤 넘긴다. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
   X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
@@ -503,6 +507,43 @@ def identifier_refusal(submission: Submission) -> Response | None:
     if isinstance(identifier, str) and not identifier.isascii():
         return _invalid_identifier()
     return None
+
+
+def _readable_body(content_type: str, body: bytes) -> bool:
+    """본문이 이 프록시가 값을 읽는 표현인지.
+
+    - 미디어 타입(; 앞, 앞뒤 공백 없이, 대소문자 구분 없이)은 application/json이나 application/x-www-form-urlencoded
+    - JSON: 키가 겹치지 않는(_no_duplicate_keys) 객체이고, 최상위 키에 점이 없으며, traits(키는 대소문자 구분 없이)가 있으면 객체다
+    - 폼: UTF-8이고, 키가 겹치지 않으며(대소문자 구분 없이), traits 필드(대소문자 구분 없이)가 없다
+    """
+    media_type = content_type.split(";")[0].strip().lower()
+    if media_type == "application/x-www-form-urlencoded":
+        try:
+            keys = [key.lower() for key, _ in parse_qsl(body.decode(), keep_blank_values=True)]
+        except UnicodeDecodeError:
+            return False
+        return len(keys) == len(set(keys)) and "traits" not in keys
+    if media_type != "application/json":
+        return False
+    try:
+        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(data, dict) or any("." in key for key in data):
+        return False
+    return all(isinstance(value, dict) for key, value in data.items() if key.lower() == "traits")
+
+
+def body_refusal(submission: Submission) -> Response | None:
+    """검사하는 제출 경로로 가는 GET 밖의 제출 본문이 이 프록시가 값을 읽는 표현(_readable_body)이 아니면
+    400 invalid_request_body, 아니면 None. GUEST_ENABLED와 상관없다.
+
+    Kratos는 JSON 최상위의 점이 든 키, 문자열 traits, 폼의 traits 필드, multipart 본문에서도 값을 읽는다.
+    인터셉터(app/middleware/guest_gate.py)가 IP 단위로 센 뒤, 식별자의 ASCII 규칙보다 먼저 부른다.
+    """
+    if submission.method == "GET" or submission.path not in INSPECTED_SUBMIT_PATHS:
+        return None
+    return None if _readable_body(submission.content_type, submission.body) else _unreadable_body()
 
 
 async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:

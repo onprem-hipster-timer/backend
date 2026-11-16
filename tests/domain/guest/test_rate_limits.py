@@ -120,16 +120,18 @@ def test_identifier_spellings_share_one_counter(rate_limited):
     _assert_limited_after([r.status_code for r in responses], 5)
 
 
-def test_unreadable_identifiers_share_one_counter(rate_limited):
+def test_identifiers_given_twice_or_not_strings_share_one_counter(rate_limited):
     responses = [
-        _submit(rate_limited, LOGIN, content='{"method":"password","identifier":"a@example.com",'
-                                             '"Identifier":"b@example.com","password":"1"}',
-                headers={"Content-Type": "application/json"}),
-        _submit(rate_limited, LOGIN, content="identifier=a%40example.com&identifier=b%40example.com", headers=FORM),
-        _submit(rate_limited, LOGIN, content='{"identifier":', headers={"Content-Type": "application/json"}),
+        _submit(rate_limited, LOGIN, {"method": "password", "identifier": "a@example.com",
+                                      "password_identifier": "b@example.com", "password": "1"}),
+        _submit(rate_limited, LOGIN, content="identifier=a%40example.com&password_identifier=b%40example.com",
+                headers=FORM),
+        _submit(rate_limited, LOGIN, {"method": "password", "identifier": "a@example.com",
+                                      "paſſword_identifier": "b@example.com", "password": "1"}),
         _submit(rate_limited, LOGIN, {"method": "password", "identifier": 123, "password": "1"}),
         _submit(rate_limited, LOGIN, {"method": "password", "identifier": ["a@example.com"], "password": "1"}),
-        _submit(rate_limited, LOGIN, content=b"identifier=\xff", headers=FORM),
+        _submit(rate_limited, LOGIN, {"method": "password", "identifier": {"address": "a@example.com"},
+                                      "password": "1"}),
     ]
     _assert_limited_after([r.status_code for r in responses], 5)
 
@@ -224,6 +226,52 @@ def test_non_ascii_identifier_submissions_do_not_use_the_identifier_counter(rate
     assert len([r for r in kratos.public_requests if r.url.path == path.removeprefix("/auth")]) == 5
 
 
+# ============ 프록시가 값을 읽지 않는 본문 표현: IP로 세고 식별자로는 세지 않는다 ============
+
+JSON = {"Content-Type": "application/json"}
+# (제출 경로, 본문, 헤더) 프록시가 읽는 자리에 식별자 info@mail.test가 있지만 그 밖의 표현도 담은 본문
+OTHER_REPRESENTATION_SUBMITS = [
+    (LOGIN, '{"method": "password", "identifier": "info@mail.test", "password": "1", "traits.email": "x"}', JSON),
+    (LOGIN, "method=password&identifier=info%40mail.test&password=1&traits=%7B%7D", FORM),
+    ("/auth/self-service/registration",
+     '{"method": "password", "traits": {"email": "info@mail.test"}, "password": "pw", "transient_payload.x": "1"}',
+     JSON),
+    ("/auth/self-service/registration", "method=password&traits.email=info%40mail.test&password=pw&Traits=%7B%7D",
+     FORM),
+    ("/auth/self-service/verification", '{"method": "code", "email": "info@mail.test", "traits": "{}"}', JSON),
+    ("/auth/self-service/recovery", "method=code&email=info%40mail.test&Method=code", FORM),
+]
+OTHER_REPRESENTATION_IDS = ["login_json", "login_form", "registration_json", "registration_form", "verification_json",
+                            "recovery_form"]
+
+
+def test_submission_bodies_in_other_representations_are_counted_per_ip(rate_limited, kratos):
+    refused = []
+    for i in range(60):
+        path, content, headers = OTHER_REPRESENTATION_SUBMITS[i % len(OTHER_REPRESENTATION_SUBMITS)]
+        refused.append(_submit(rate_limited, path, content=content, headers=headers))
+
+    limited = _login(rate_limited, LOGIN, "member@example.com")
+
+    assert [r.status_code for r in refused] == [400] * 60
+    assert {r.json()["error"]["id"] for r in refused} == {"invalid_request_body"}
+    assert limited.status_code == 429
+    assert kratos.public_requests == []
+
+
+@pytest.mark.parametrize("path,content,headers", OTHER_REPRESENTATION_SUBMITS, ids=OTHER_REPRESENTATION_IDS)
+def test_submission_bodies_in_other_representations_do_not_use_the_identifier_counter(rate_limited, kratos, path,
+                                                                                      content, headers):
+    body = dict(IDENTIFIER_SUBMITS)[path]
+    refused = [_submit(rate_limited, path, content=content, headers=headers) for _ in range(5)]
+
+    statuses = [_submit(rate_limited, path, body("info@mail.test")).status_code for _ in range(6)]
+
+    assert {(r.status_code, r.json()["error"]["id"]) for r in refused} == {(400, "invalid_request_body")}
+    _assert_limited_after(statuses, 5)
+    assert len([r for r in kratos.public_requests if r.url.path == path.removeprefix("/auth")]) == 5
+
+
 # ============ 가입·인증·복구: 같은 IP의 같은 이메일 ============
 
 @pytest.mark.parametrize(
@@ -279,6 +327,21 @@ def test_rejected_settings_submits_are_not_counted(rate_limited, kratos, resourc
         for _ in range(70)
     ]
     assert set(rejected) == {403}
+    assert _rename(rate_limited, kratos, guest, "철수").status_code == 200
+
+
+def test_settings_bodies_in_other_representations_are_not_counted(rate_limited, kratos, resource):
+    guest = make_guest(kratos, resource, name="민수")
+    token = f"token-{guest.identity_id}"
+    kratos.sessions[token] = guest.identity_id
+
+    refused = [
+        rate_limited.post(SETTINGS_SUBMIT, json={"method": "profile", "traits.name": f"x{i}"},
+                          headers={"X-Session-Token": token, **TOKEN})
+        for i in range(70)
+    ]
+
+    assert {(r.status_code, r.json()["error"]["id"]) for r in refused} == {(400, "invalid_request_body")}
     assert _rename(rate_limited, kratos, guest, "철수").status_code == 200
 
 
