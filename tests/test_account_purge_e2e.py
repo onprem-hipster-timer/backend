@@ -23,6 +23,7 @@ from app.db.session import _session_manager
 from app.domain.user import purge
 from app.models import (
     AccountDeletion,
+    Consent,
     Friendship,
     Meeting,
     MeetingParticipant,
@@ -184,7 +185,9 @@ def _populate(multi_user_e2e):
     c = multi_user_e2e.as_user("user-c", email="c@example.com")
     d = multi_user_e2e.as_user("user-d", email="d@example.com")
     for client in (a, b, c, d):
-        client.get("/v1/users/me")
+        version = client.get("/v1/users/me").json()["consent_version"]
+        consent = {"version": version, "age_over_14": True, "terms": True, "privacy": True}
+        assert client.put("/v1/users/me/consent", json=consent).status_code == 200
     _befriend(a, b)
     _befriend(b, d)
     a.post("/v1/friends/requests", json={"friend_code": _code(c)})
@@ -252,6 +255,7 @@ def _rows_with_sub(session: Session, sub: str) -> dict[str, int]:
     a_meetings = select(Meeting.id).where(Meeting.owner_id == sub)
     return {
         "user_profile": count(select(UserProfile).where(UserProfile.sub == sub)),
+        "consent": count(select(Consent).where(Consent.sub == sub)),
         "timersession": count(a_timers),
         "timer_tag": count(select(TimerTag).where(TimerTag.timer_id.in_(a_timers) | TimerTag.tag_id.in_(a_tags))),
         "schedule": count(a_schedules),
@@ -297,6 +301,7 @@ class TestPurgeDeletesEverything:
         _run(multi_user_e2e)
 
         assert b.get(f"/v1/schedules/{data['b_schedule']}").status_code == 200
+        assert b.get("/v1/users/me").json()["consent_required"] is False
         assert b.get(f"/v1/visibility/schedule/{data['b_schedule']}").json()["allowed_user_ids"] == ["user-d"]
         assert b.get("/v1/friends/ids").json() == ["user-d"]
         visibility = c.get(f"/v1/visibility/meeting/{data['c_meeting']}").json()

@@ -4,7 +4,7 @@
 탈퇴 신청 뒤 ACCOUNT_DELETION_GRACE_DAYS가 지난 계정을 지운다. 하루 한 번 실행한다
 (POST /internal/accounts/purge).
 
-1. 계정마다 한 트랜잭션: 프로필 행을 잠그고 아직 대상인지 다시 확인한 뒤 데이터를 지우고
+1. 계정마다 한 트랜잭션: 프로필 행을 잠그고 아직 대상인지 다시 확인한 뒤 데이터와 약관 동의 기록을 지우고
    account_deletion에 sub를 남겨 커밋한다. 다른 실행이 먼저 지웠거나 취소했으면 건너뛴다
 2. 커밋한 뒤 Kratos identity를 지운다. 실패하면 account_deletion에 남아 다음 실행이 다시 시도한다
 3. 가입 뒤 UNVERIFIED_SIGNUP_RETENTION_HOURS가 지나도 이메일을 인증하지 않았고 서비스를 이용한 적 없는
@@ -28,6 +28,7 @@ from app.crud import account_deletion as crud
 from app.crud.account_deletion import delete_user_data
 from app.crud.user_profile import get_profiles_by_subs
 from app.db.session import _session_manager
+from app.domain.consent.service import delete_consents
 from app.models.base import utc_now_naive
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def purge_account(session: Session, sub: str, cutoff: datetime) -> bool:
             session.rollback()
             return False
         delete_user_data(session, sub, profile.verified_email)
+        delete_consents(session, [sub])
         crud.add_deleted_account(session, sub, utc_now_naive())
         session.commit()
     except IntegrityError:
