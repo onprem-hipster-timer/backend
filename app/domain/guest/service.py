@@ -3,7 +3,7 @@
 
 - 접근 정책(check_access): 모든 게스트 확인이 이 함수를 쓴다.
   OPEN이면 허용, CLOSED면 거부하고 게스트를 남긴다, EXPIRED·MISSING이면 거부하고 게스트를 폐기한다
-- 폐기(discard_guest, discard_resource_guests): 게스트 행 삭제와 GuestDiscarded 이벤트를 커밋한 뒤
+- 폐기(discard_guest, discard_resource_guests): 게스트 행·약관 동의 삭제와 GuestDiscarded 이벤트를 한 트랜잭션으로 커밋한 뒤
   Kratos identity를 지운다. identity 삭제가 실패해도 행이 없으므로 접근은 닫힌다
   (로그인 훅은 행이 없는 게스트 identity를 거부한다). 실패는 로그로 남긴다
 - 이름 찾기(lookup)와 생성(create). 게스트 이름(정규형)은 guest.name에 두고, 리소스 안에서 겹치지 않는 것은
@@ -143,11 +143,12 @@ def _delete_guest_row(identity_id: str) -> bool:
         guest = crud.get_guest_by_identity(session, identity_id)
         if guest is not None:
             _delete_with_event(session, guest)
+        consent_service.delete_consents(session, [identity_id])
     return guest is not None
 
 
 async def discard_guest(identity_id: str) -> bool:
-    """게스트를 폐기한다. 게스트 행이 있었으면 True. Kratos identity는 행이 없어도 지운다"""
+    """게스트를 폐기한다. 게스트 행이 있었으면 True. 약관 동의와 Kratos identity는 행이 없어도 지운다"""
     deleted = await run_in_threadpool(_delete_guest_row, identity_id)
     await _delete_identity(identity_id)
     return deleted
@@ -159,6 +160,7 @@ def _delete_resource_guest_rows(resource_type: ResourceType, resource_id: UUID) 
         identity_ids = [guest.identity_id for guest in guests]
         for guest in guests:
             _delete_with_event(session, guest)
+        consent_service.delete_consents(session, identity_ids)
     return identity_ids
 
 

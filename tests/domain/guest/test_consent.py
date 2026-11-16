@@ -4,6 +4,7 @@
 - PUT /v1/guests/me/consent: 게스트 토큰. 현재 버전 동의를 기록한다. Turnstile 토큰은 받지 않는다
 - CONSENT_ENFORCED면 현재 버전에 동의하지 않은 게스트는 PUT /v1/guests/me/consent, DELETE /v1/guests/me 밖의
   게스트 경로가 428. 동의는 sub마다 따로라 회원과 게스트가 서로의 동의로 통과하지 않는다
+- 게스트를 폐기하면(자기 삭제, 리소스 단위 폐기) 동의 기록도 지운다
 
 428은 테스트 전용 라우트로 확인한다 (게스트 경로 중 동의 없이 부를 수 없는 경로가 아직 없다).
 """
@@ -26,6 +27,7 @@ from app.domain.guest.model import Guest
 from app.models.visibility import ResourceType
 from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
 
+CREATE = "/v1/guests"
 ME = "/v1/guests/me"
 CONSENT = "/v1/guests/me/consent"
 TOKEN = {"X-Turnstile-Token": "t"}
@@ -209,3 +211,71 @@ def test_member_and_guest_consents_are_separate(routes, guest_client, kratos, to
     other = make_guest(kratos, resource, name="다른 게스트")
     assert routes.get("/test/guest", headers=tokens.guest(other.identity_id)).status_code == 428
 
+
+# ============ 폐기 ============
+
+def test_self_delete_removes_consent(guest_client, kratos, tokens, resource):
+    guest_client.post(CREATE, headers=TOKEN, json={
+        "resource_type": "meeting", "resource_id": str(resource), "name": "민수", "password": "1234",
+        "consent": consent_body(),
+    })
+    [row] = guest_rows()
+    assert consent_rows() == {(row.identity_id, app_config.settings.CONSENT_VERSION)}
+
+    r = guest_client.delete(ME, headers={**tokens.guest(row.identity_id), **TOKEN})
+
+    assert r.status_code == 204
+    assert consent_rows() == set()
+
+
+@pytest.mark.asyncio
+async def test_resource_discard_removes_consent_of_its_guests_only(kratos, host, guest_db, resource, bump_version):
+    other = uuid.uuid4()
+    host.statuses[other] = GuestHostStatus.OPEN
+    first = make_guest(kratos, resource, name="a")
+    second = make_guest(kratos, resource, name="b")
+    elsewhere = make_guest(kratos, other, name="a")
+    for sub in (first.identity_id, second.identity_id, elsewhere.identity_id, "member-1"):
+        _agree(sub)
+    bump_version()
+    _agree(first.identity_id)
+
+    assert await service.discard_resource_guests(ResourceType.MEETING, resource) == 2
+
+    assert {sub for sub, _ in consent_rows()} == {elsewhere.identity_id, "member-1"}
+
+
+@pytest.mark.asyncio
+async def test_discard_removes_consent_even_without_guest_row(kratos, guest_db, resource):
+    guest = make_guest(kratos, resource)
+    _agree(guest.identity_id)
+    await service.discard_guest(guest.identity_id)
+    _agree(guest.identity_id)
+
+    await service.discard_guest(guest.identity_id)
+
+    assert consent_rows() == set()
+
+
+@pytest.mark.parametrize("discard", ["guest", "resource"])
+@pytest.mark.asyncio
+async def test_failed_consent_deletion_keeps_guest_row(kratos, guest_db, resource, monkeypatch, discard):
+    """동의 삭제와 게스트 행 삭제는 한 트랜잭션이다"""
+    from app.crud import consent as consent_crud
+
+    guest = make_guest(kratos, resource)
+    _agree(guest.identity_id)
+
+    def broken(session, subs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(consent_crud, "delete_consents", broken)
+    with pytest.raises(RuntimeError):
+        if discard == "guest":
+            await service.discard_guest(guest.identity_id)
+        else:
+            await service.discard_resource_guests(ResourceType.MEETING, resource)
+
+    assert [g.id for g in guest_rows()] == [guest.id]
+    assert consent_rows() == {(guest.identity_id, app_config.settings.CONSENT_VERSION)}
+    assert kratos.deleted == []

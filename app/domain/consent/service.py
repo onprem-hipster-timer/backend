@@ -6,7 +6,7 @@
 
 - 회원: 인증 의존성(app/core/auth/dependencies.py)과 GraphQL 컨텍스트의 428, PUT /v1/users/me/consent, 파기(app/domain/user/purge.py)
 - 게스트: 생성(Kratos를 부르기 전에 버전을 확인하고, 동의를 게스트 행과 한 트랜잭션에 기록), 게스트 의존성의 428,
-  PUT /v1/guests/me/consent (app/domain/guest)
+  PUT /v1/guests/me/consent, 폐기(게스트 행 삭제와 한 트랜잭션) (app/domain/guest)
 
 함수는 받은 세션에 쓰고 커밋하지 않는다.
 
