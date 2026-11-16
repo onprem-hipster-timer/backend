@@ -438,7 +438,7 @@ flowchart TD
 
 - 토큰은 1~2048자이고 헤더로만 받습니다. 본문의 값은 읽지 않습니다.
 - 토큰은 한 번만 받습니다. backend는 siteverify를 부르기 전에 토큰을 기록하고, 이미 기록한 토큰은 siteverify를 부르지 않고 `403`으로 거절합니다. 확인에 실패했거나 확인할 수 없었던 토큰도, 다른 단계에서 쓴 토큰도 같습니다. 기록은 토큰 유효 시간(300초)보다 조금 길게 둡니다.
-- 순서는 요청 한도 → Turnstile → 그 밖의 확인(입력 규칙, 리소스 상태, 이름 중복, 게스트 수, 게스트 JWT 판정) → Kratos입니다. 요청 한도에 걸린 요청은 Turnstile을 부르지 않고, Turnstile에서 거절된 요청은 Kratos에 닿지 않습니다.
+- `/v1/guests/*`의 순서는 요청 한도 → Turnstile → 그 밖의 확인(입력 규칙, 리소스 상태, 이름 중복, 게스트 수, 게스트 JWT 판정) → Kratos입니다. `/auth`에서는 요청 한도, 본문 형식, 식별자 규칙, 쿼리 문자열 규칙, 설정 제출의 세션 확인 다음에 Turnstile을 확인하고 그 뒤에 제출을 Kratos로 넘깁니다([`/auth` 프록시](auth-proxy.ko.md)). 요청 한도에 걸린 요청은 Turnstile을 부르지 않고, Turnstile에서 거절된 제출은 Kratos로 넘어가지 않습니다.
 - `X-Turnstile-Token`은 Kratos에 넘기지 않습니다.
 - 약관 동의 기록(`PUT /v1/guests/me/consent`)은 게스트 단계가 아니라 토큰을 받지 않습니다.
 - `GUEST_ENABLED`가 꺼져 있으면 확인하지 않습니다.
