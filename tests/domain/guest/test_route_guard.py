@@ -19,6 +19,12 @@ GUEST_TOKEN_NOT_REFUSED = {
     ("POST", "/v1/guests/lookup"),  # 인증 없음 (이름 찾기)
     ("DELETE", "/v1/guests/me"),  # 게스트 토큰 전용
     ("PUT", "/v1/guests/me/consent"),  # 게스트 토큰 전용
+    # 미팅: 회원과 그 미팅의 게스트 (tests/domain/guest/test_meeting_access.py)
+    ("GET", "/v1/meetings/{meeting_id}"),
+    ("GET", "/v1/meetings/{meeting_id}/result"),
+    ("GET", "/v1/meetings/{meeting_id}/availability"),
+    ("PUT", "/v1/meetings/{meeting_id}/availability"),
+    ("POST", "/v1/meetings/{meeting_id}/participate"),
     # 사용자 인증을 쓰지 않는 경로
     ("GET", "/health"),
     ("GET", "/openapi.json"),

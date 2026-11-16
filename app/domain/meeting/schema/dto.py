@@ -199,7 +199,7 @@ class MeetingRead(CustomModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    owner_id: str
+    owner_id: Optional[str] = None  # 소유자 sub. 로그인하지 않은 방문자와 게스트에게는 null
     title: str
     description: Optional[str] = None
     start_date: date

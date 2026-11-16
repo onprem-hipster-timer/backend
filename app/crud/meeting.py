@@ -92,10 +92,11 @@ def create_participant(
         meeting_id: UUID,
         user_id: Optional[str],
         data: ParticipantCreate,
+        guest_id: Optional[UUID] = None,
 ) -> MeetingParticipant:
-    """참여자 생성"""
+    """참여자 생성 (회원은 user_id, 게스트는 guest_id)"""
     participant = MeetingParticipant.model_validate(
-        data, update={"meeting_id": meeting_id, "user_id": user_id}
+        data, update={"meeting_id": meeting_id, "user_id": user_id, "guest_id": guest_id}
     )
     session.add(participant)
     session.flush()

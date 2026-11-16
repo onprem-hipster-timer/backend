@@ -286,9 +286,7 @@ class MeetingService:
         # 접근 권한 확인
         meeting, _ = self.get_meeting_with_access_check(meeting_id)
 
-        limit = self._cell_count(meeting)
-        if len(time_slots) > limit:
-            raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
+        check_time_slot_count(meeting, time_slots)
 
         # 참여자 확인
         participant = self.get_participant(meeting_id, participant_id)
@@ -297,16 +295,7 @@ class MeetingService:
         if participant.user_id != self.owner_id:
             raise MeetingParticipantNotFoundError()
 
-        # 기존 시간 슬롯 삭제
-        crud.delete_participant_time_slots(self.session, participant_id)
-
-        # 새로운 시간 슬롯 생성
-        created_slots = []
-        for slot_data in time_slots:
-            slot = crud.create_time_slot(self.session, participant_id, slot_data)
-            created_slots.append(slot)
-
-        return created_slots
+        return replace_time_slots(self.session, participant_id, time_slots)
 
     @staticmethod
     def _cell_count(meeting: Meeting) -> int:
@@ -342,3 +331,20 @@ class MeetingService:
             meeting_read.visibility_level = visibility.level
 
         return meeting_read
+
+
+def check_time_slot_count(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None:
+    """슬롯 수가 미팅의 칸 수(MeetingService._cell_count)보다 많으면 TooManyTimeSlotsError"""
+    limit = MeetingService._cell_count(meeting)
+    if len(time_slots) > limit:
+        raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
+
+
+def replace_time_slots(
+        session: Session,
+        participant_id: UUID,
+        time_slots: List[TimeSlotCreate],
+) -> List[MeetingTimeSlot]:
+    """참여자의 시간 슬롯을 모두 지우고 time_slots로 바꾼다"""
+    crud.delete_participant_time_slots(session, participant_id)
+    return [crud.create_time_slot(session, participant_id, slot_data) for slot_data in time_slots]

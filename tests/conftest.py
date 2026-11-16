@@ -580,6 +580,8 @@ def multi_user_e2e():
             user = self._user
             self._app.dependency_overrides[self._get_current_user] = lambda: user
             self._app.dependency_overrides[self._get_optional_current_user] = lambda: user
+            from app.api.v1.meetings import get_meeting_principal
+            self._app.dependency_overrides[get_meeting_principal] = lambda: user
             from app.websocket.auth import get_ws_current_user
             self._app.dependency_overrides[get_ws_current_user] = lambda: user
 
@@ -656,6 +658,9 @@ def multi_user_e2e():
             # get_optional_current_user override도 정리
             if get_optional_current_user in app.dependency_overrides:
                 del app.dependency_overrides[get_optional_current_user]
+
+            from app.api.v1.meetings import get_meeting_principal
+            app.dependency_overrides.pop(get_meeting_principal, None)
 
             # WebSocket 인증 override 정리
             from app.websocket.auth import get_ws_current_user

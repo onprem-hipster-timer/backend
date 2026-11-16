@@ -34,10 +34,11 @@ class MeetingResultService:
     참여자별 가능 시간 조회 및 공통 가능 시간 분석을 담당합니다.
     """
 
-    def __init__(self, session: Session, current_user: CurrentUser):
+    def __init__(self, session: Session, current_user: CurrentUser | None = None):
+        """current_user가 없으면 접근을 확인한 미팅을 받는 availability_of·result_of만 쓴다"""
         self.session = session
         self.current_user = current_user
-        self._meeting_service = MeetingService(session, current_user)
+        self._meeting_service = MeetingService(session, current_user) if current_user is not None else None
 
     def get_availability(self, meeting_id: UUID) -> List[AvailabilityRead]:
         """
@@ -48,9 +49,12 @@ class MeetingResultService:
         :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
-        self._meeting_service.get_meeting_with_access_check(meeting_id)
+        meeting, _ = self._meeting_service.get_meeting_with_access_check(meeting_id)
+        return self.availability_of(meeting)
 
-        participants = crud.get_participants(self.session, meeting_id)
+    def availability_of(self, meeting: Meeting, *, hide_user_ids: bool = False) -> List[AvailabilityRead]:
+        """미팅의 참여자별 가능 시간 (휴면 회원 제외). hide_user_ids면 참여자의 user_id를 비운다"""
+        participants = crud.get_participants(self.session, meeting.id)
         availability_list = []
 
         for participant in participants:
@@ -58,9 +62,12 @@ class MeetingResultService:
                 self.session,
                 participant.id,
             )
+            participant_read = ParticipantRead.model_validate(participant)
+            if hide_user_ids:
+                participant_read.user_id = None
             availability_list.append(
                 AvailabilityRead(
-                    participant=ParticipantRead.model_validate(participant),
+                    participant=participant_read,
                     time_slots=[
                         TimeSlotRead.model_validate(slot) for slot in time_slots
                     ],
@@ -81,15 +88,18 @@ class MeetingResultService:
         :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         """
         # 접근 권한 확인
-        meeting, is_shared = self._meeting_service.get_meeting_with_access_check(meeting_id)
+        meeting, _ = self._meeting_service.get_meeting_with_access_check(meeting_id)
+        return self.result_of(meeting, MeetingRead.model_validate(meeting))
 
+    def result_of(self, meeting: Meeting, meeting_read: MeetingRead) -> MeetingResultRead:
+        """미팅의 결과 그리드. 응답의 meeting은 meeting_read"""
         cells = self._generate_cells(meeting)
         cell_starts = [start for start, _ in cells]
         counts = [0] * len(cells)
 
         # 모든 참여자의 시간 슬롯을 JOIN 한 번으로 조회 (N+1 제거)
         intervals_by_participant: dict[UUID, list[tuple[datetime, datetime]]] = defaultdict(list)
-        for slot in crud.get_time_slots_by_meeting(self.session, meeting_id):
+        for slot in crud.get_time_slots_by_meeting(self.session, meeting.id):
             intervals_by_participant[slot.participant_id].append((slot.start_time, slot.end_time))
 
         # 합친 구간은 서로 겹치지 않으므로 참여자는 칸마다 많아야 한 번 센다
@@ -101,7 +111,7 @@ class MeetingResultService:
                     i += 1
 
         return MeetingResultRead(
-            meeting=MeetingRead.model_validate(meeting),
+            meeting=meeting_read,
             availability_grid=[
                 AvailabilityCell(start_time=start, end_time=end, count=count)
                 for (start, end), count in zip(cells, counts)

@@ -11,7 +11,7 @@ from app.api.v1.friends import router as friends_router
 from app.api.v1.graphql import create_graphql_router
 from app.api.v1.guests import router as guests_router
 from app.api.v1.holidays import router as holidays_router
-from app.api.v1.meetings import router as meetings_router
+from app.api.v1.meetings import router as meetings_router, shared_router as meetings_shared_router
 from app.api.v1.schedules import router as schedules_router
 from app.api.v1.tags import router as tags_router
 from app.api.v1.timers import router as timers_router
@@ -46,6 +46,8 @@ api_router.include_router(authed)
 api_router.include_router(holidays_router, prefix="/v1")
 # 게스트 이름 찾기·생성(무인증)과 게스트 토큰 경로. 회원 게이트 대신 게스트 의존성을 쓴다 (app/domain/guest/dependencies.py)
 api_router.include_router(guests_router, prefix="/v1")
+# 회원, 그 미팅의 게스트, 로그인하지 않은 방문자를 받는 미팅 경로. 회원 확인은 경로의 의존성이 한다 (app/api/v1/meetings.py)
+api_router.include_router(meetings_shared_router, prefix="/v1")
 api_router.include_router(timers_ws_router, prefix="/v1")
 api_router.include_router(create_graphql_router(), prefix="/v1/graphql", tags=["GraphQL"])
 api_router.include_router(ws_playground_router)  # WebSocket Playground (개발 전용)
