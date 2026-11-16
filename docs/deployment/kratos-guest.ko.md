@@ -360,12 +360,15 @@ curl -s -w ' %{http_code}\n' -X POST "$API/internal/kratos/hooks/login" -H "X-Kr
 ```bash
 R="\"resource_type\":\"$RESOURCE_TYPE\",\"resource_id\":\"$RESOURCE_ID\",\"name\":\"확인\""
 
-curl -s -X POST "$API/v1/guests/lookup" -H 'content-type: application/json' -H "X-Turnstile-Token: $TS_TOKEN1" -d "{$R}"
-# {"handle":null}
+FOUND=$(curl -s -X POST "$API/v1/guests/lookup" -H 'content-type: application/json' -H "X-Turnstile-Token: $TS_TOKEN1" -d "{$R}")
+echo "$FOUND"
+# {"handle":null,"consent_version":"<CONSENT_VERSION>"}
+VERSION=$(echo "$FOUND" | python3 -c 'import json,sys; print(json.load(sys.stdin)["consent_version"])')
+C="\"consent\":{\"version\":\"$VERSION\",\"age_over_14\":true,\"terms\":true,\"privacy\":true}"
 
 HANDLE=$(curl -s -X POST "$API/v1/guests" -H 'content-type: application/json' \
   -H "X-Turnstile-Token: $TS_TOKEN2" \
-  -d "{$R,\"password\":\"1\"}" \
+  -d "{$R,\"password\":\"1\",$C}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["handle"])')
 
 FLOW=$(curl -s "$API/auth/self-service/login/api" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
@@ -384,6 +387,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/users/me" -H "Authorization: B
 
 - 이름 찾기나 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고, `GuestVerificationFailedError`는 Turnstile 토큰(없음, 거절, 이미 쓴 토큰)입니다.
 - 생성이 `503`이면 backend가 Turnstile 확인 주소나 Kratos admin API에 닿지 않는 것입니다. backend 로그를 봅니다.
+- 생성이 `409` `ConsentVersionMismatchError`면 `consent.version`이 backend의 `CONSENT_VERSION`과 다른 것입니다. 이름 찾기 응답의 `consent_version`을 보냅니다.
 - 로그인이 `403` `guest_verification_failed`면 `X-Turnstile-Token` 헤더가 없거나, Turnstile이 토큰을 받지 않았거나, 이미 쓴 토큰입니다.
 - 로그인이 `400`이고 메시지 `id`가 `4000001`이면 로그인 훅이 거절한 것입니다. 훅 URL과 키를 확인합니다(4.2).
 

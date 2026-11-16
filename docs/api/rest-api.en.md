@@ -108,12 +108,13 @@ DELETE /v1/users/me/deletion              # Cancel account deletion
 Only answered when `GUEST_ENABLED=true` (404 otherwise).
 
 ```http
-POST   /v1/guests/lookup                  # Find the login identifier (handle) of the guest with that name in a resource (no authentication)
-POST   /v1/guests                         # Create a guest (no authentication). Returns the handle
+POST   /v1/guests/lookup                  # Find the login identifier (handle) of the guest with that name in a resource (no authentication). Also returns the current consent version
+POST   /v1/guests                         # Create a guest (no authentication, consent required). Returns the handle
 DELETE /v1/guests/me                      # The guest deletes itself (guest JWT)
+PUT    /v1/guests/me/consent              # Record the guest's consent (guest JWT)
 ```
 
-Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. The three routes above, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
+Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. Lookup, creation, self-deletion, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Recording consent takes no token. With `CONSENT_ENFORCED`, a guest that has not consented to the current version gets `428` (`message: "consent_required"`) on guest routes other than recording consent and self-deletion. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
 
 ### Holidays
 
