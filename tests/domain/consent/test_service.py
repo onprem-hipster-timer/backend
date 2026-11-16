@@ -2,10 +2,11 @@
 
 회원과 게스트가 같은 키(Kratos identity id, JWT sub)로 쓴다. (sub, version)마다 한 행이다.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import insert
 from sqlmodel import select
 
 import app.core.config as app_config
@@ -60,6 +61,27 @@ def test_recording_same_version_twice_keeps_one_row_with_first_time(test_session
 
     assert _rows(test_session) == {("a", app_config.settings.CONSENT_VERSION)}
     assert again.consented_at == first_at - timedelta(days=1)
+
+
+def test_record_keeps_row_that_another_request_recorded_first(test_session, monkeypatch):
+    from app.crud import consent as crud
+
+    version = app_config.settings.CONSENT_VERSION
+    earlier = datetime(2026, 1, 1)
+    test_session.execute(insert(Consent).values(sub="a", version=version, consented_at=earlier))
+    real, calls = crud.get_consent, []
+
+    def not_seen_yet(session, sub, version):
+        """첫 조회 때는 다른 요청의 행이 아직 보이지 않는다"""
+        calls.append(sub)
+        return None if len(calls) == 1 else real(session, sub, version)
+
+    monkeypatch.setattr(crud, "get_consent", not_seen_yet)
+
+    recorded = service.record_consent(test_session, "a", _consent())
+
+    assert recorded.consented_at == earlier
+    assert _rows(test_session) == {("a", version)}
 
 
 def test_new_version_is_pending_again_and_earlier_rows_stay(test_session, monkeypatch):

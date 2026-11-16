@@ -14,6 +14,7 @@
 """
 from typing import Iterable
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 import app.core.config as app_config
@@ -35,12 +36,23 @@ def consent_pending(session: Session, sub: str) -> bool:
 
 
 def record_consent(session: Session, sub: str, data: ConsentCreate) -> Consent:
-    """sub의 동의를 기록한다. 현재 버전이 아니면 ConsentVersionMismatchError"""
+    """sub의 동의를 기록한다. 현재 버전이 아니면 ConsentVersionMismatchError. 이미 기록한 버전이면 처음 행을 돌려준다"""
     check_version(data)
     existing = crud.get_consent(session, sub, data.version)
     if existing is not None:
         return existing
-    return crud.create_consent(session, Consent.model_validate(data, update={"sub": sub}))
+
+    # 앞서 쌓인 변경은 SAVEPOINT 밖에서 먼저 flush해, 그 변경의 IntegrityError를 여기서 삼키지 않는다
+    session.flush()
+    try:
+        with session.begin_nested():
+            return crud.create_consent(session, Consent.model_validate(data, update={"sub": sub}))
+    except IntegrityError:
+        # 같은 동의를 다른 요청이 먼저 기록했다
+        existing = crud.get_consent(session, sub, data.version)
+        if existing is None:
+            raise
+        return existing
 
 
 def delete_consents(session: Session, subs: Iterable[str]) -> None:
