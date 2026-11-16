@@ -204,5 +204,5 @@ def test_rename_through_proxy_updates_lookup(guest_client, kratos, resource):
 
     body = {"resource_type": "meeting", "resource_id": str(resource)}
     handle = kratos.identities[guest.identity_id]["traits"]["handle"]
-    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "철수"}).json() == {"handle": handle}
-    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "민수"}).json() == {"handle": None}
+    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "철수"}).json()["handle"] == handle
+    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "민수"}).json()["handle"] is None

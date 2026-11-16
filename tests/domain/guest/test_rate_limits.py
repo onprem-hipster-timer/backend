@@ -10,7 +10,7 @@ import pytest
 
 from app.middleware.guest_gate import _identifier_key
 from app.domain.guest.host import GuestHostStatus
-from tests.domain.guest.helpers import make_guest
+from tests.domain.guest.helpers import consent_body, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
@@ -47,6 +47,7 @@ def _body(resource, name="민수", password="1234") -> dict:
         "resource_id": str(resource),
         "name": name,
         "password": password,
+        "consent": consent_body(),
     }
 
 

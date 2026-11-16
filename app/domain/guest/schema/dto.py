@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import field_validator
 
 from app.core.base_model import CustomModel
+from app.domain.consent.schema.dto import ConsentCreate
 from app.models.visibility import ResourceType
 
 GUEST_NAME_MAX_LENGTH = 50
@@ -49,11 +50,13 @@ class GuestLookup(CustomModel):
 class GuestLookupRead(CustomModel):
     """게스트 이름 찾기 응답. 그 이름의 게스트가 없으면 handle은 null"""
     handle: str | None
+    consent_version: str  # 현재 시행 중인 약관 버전. 게스트를 만들 때 consent.version으로 보낸다
 
 
 class GuestCreate(GuestLookup):
-    """게스트 생성 요청"""
+    """게스트 생성 요청. consent는 회원 동의(PUT /v1/users/me/consent)와 같은 모양이다"""
     password: str
+    consent: ConsentCreate
 
     @field_validator("password")
     @classmethod

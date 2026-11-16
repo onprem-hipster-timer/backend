@@ -9,6 +9,7 @@ import uuid
 import pytest
 
 from app.domain.guest.host import GuestHostStatus
+from tests.domain.guest.helpers import consent_body
 
 
 @pytest.fixture
@@ -29,7 +30,8 @@ def _login(client, identifier: str, password: str):
 
 def _create_and_find(client, resource, name="민수", password="1234") -> str:
     body = {"resource_type": "meeting", "resource_id": str(resource), "name": name}
-    assert client.post("/v1/guests", json={**body, "password": password}, headers={"X-Turnstile-Token": "t"}).status_code == 201
+    create = {**body, "password": password, "consent": consent_body()}
+    assert client.post("/v1/guests", json=create, headers={"X-Turnstile-Token": "t"}).status_code == 201
     return client.post("/v1/guests/lookup", json=body, headers={"X-Turnstile-Token": "t"}).json()["handle"]
 
 

@@ -7,6 +7,9 @@ import uuid
 
 import pytest
 
+import app.core.config as app_config
+from app.domain.consent.exceptions import ConsentVersionMismatchError
+from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.guest import service
 from app.domain.guest.exceptions import (
     GuestEntryRefusedError,
@@ -16,14 +19,17 @@ from app.domain.guest.exceptions import (
 from app.domain.guest.host import GuestHostStatus
 from app.domain.guest.schema.dto import GuestCreate, GuestLookup
 from app.models.visibility import ResourceType
-from tests.domain.guest.helpers import guest_rows, make_guest
+from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
 
 pytestmark = pytest.mark.usefixtures("guest_db")
 
 
-def _create(resource, name="민수", password="1234", resource_type=ResourceType.MEETING) -> GuestCreate:
+def _create(
+        resource, name="민수", password="1234", resource_type=ResourceType.MEETING, version: str | None = None
+) -> GuestCreate:
     return GuestCreate(
-        resource_type=resource_type, resource_id=resource, name=name, password=password
+        resource_type=resource_type, resource_id=resource, name=name, password=password,
+        consent=ConsentCreate(**consent_body(version)),
     )
 
 
@@ -169,6 +175,57 @@ async def test_discarded_guests_name_is_free_again(kratos, resource):
     assert (await service.lookup(_lookup(resource))).handle is None
     again = await service.create(_create(resource))
     assert again.guest_id != created.guest_id
+
+
+# ============ 약관 동의 ============
+
+@pytest.mark.asyncio
+async def test_create_records_consent_for_new_identity(kratos, resource):
+    await service.create(_create(resource))
+    [row] = guest_rows()
+    assert consent_rows() == {(row.identity_id, app_config.settings.CONSENT_VERSION)}
+
+
+@pytest.mark.asyncio
+async def test_other_consent_version_is_refused_before_resource_check_and_kratos(kratos, host):
+    resource = uuid.uuid4()
+    host.statuses[resource] = GuestHostStatus.EXPIRED
+    guest = make_guest(kratos, resource)
+
+    with pytest.raises(ConsentVersionMismatchError):
+        await service.create(_create(resource, name="새 이름", version="2000-01-01"))
+
+    # 리소스 확인 전에 거절하므로 EXPIRED 리소스의 게스트도 폐기하지 않는다
+    assert [g.id for g in guest_rows()] == [guest.id]
+    assert list(kratos.identities) == [guest.identity_id]
+    assert kratos.deleted == []
+    assert consent_rows() == set()
+
+
+@pytest.mark.asyncio
+async def test_consent_failure_rolls_back_guest_row_and_removes_identity(kratos, resource, monkeypatch):
+    from app.crud import consent as consent_crud
+
+    def broken(session, consent):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(consent_crud, "create_consent", broken)
+    with pytest.raises(RuntimeError):
+        await service.create(_create(resource))
+
+    assert guest_rows() == []
+    assert consent_rows() == set()
+    assert kratos.identities == {}
+    assert len(kratos.deleted) == 1
+
+
+@pytest.mark.asyncio
+async def test_lookup_returns_current_consent_version(kratos, resource, monkeypatch):
+    await service.create(_create(resource))
+    monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+
+    assert (await service.lookup(_lookup(resource))).consent_version == "2099-01-01"
+    assert (await service.lookup(_lookup(resource, name="영희"))).consent_version == "2099-01-01"
 
 
 # ============ 이름 찾기 ============

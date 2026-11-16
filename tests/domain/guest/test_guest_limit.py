@@ -5,7 +5,7 @@ import pytest
 
 from app.domain.guest import service
 from app.domain.guest.host import GuestHostStatus
-from tests.domain.guest.helpers import guest_rows, make_guest
+from tests.domain.guest.helpers import consent_body, guest_rows, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
@@ -25,6 +25,7 @@ def _body(resource, name, password="1234") -> dict:
         "resource_id": str(resource),
         "name": name,
         "password": password,
+        "consent": consent_body(),
     }
 
 
@@ -84,7 +85,7 @@ def test_lookup_login_and_rename_work_on_full_resource(guest_client, kratos, res
     found = guest_client.post(
         LOOKUP, headers=TOKEN, json={"resource_type": "meeting", "resource_id": str(resource), "name": "g3"}
     )
-    assert found.json() == {"handle": handle}
+    assert found.json()["handle"] == handle
 
     flow = guest_client.get("/auth/self-service/login/api").json()["id"]
     login = guest_client.post(
@@ -104,4 +105,4 @@ def test_lookup_login_and_rename_work_on_full_resource(guest_client, kratos, res
     renamed = guest_client.post(
         LOOKUP, headers=TOKEN, json={"resource_type": "meeting", "resource_id": str(resource), "name": "바뀐 이름"}
     )
-    assert renamed.json() == {"handle": handle}
+    assert renamed.json()["handle"] == handle

@@ -16,9 +16,10 @@ from sqlalchemy import create_engine, text
 from app.domain.guest import service
 from app.domain.guest.exceptions import GuestNameTakenError
 from app.domain.guest.host import GuestHostStatus
+from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.guest.schema.dto import GuestCreate
 from app.models.visibility import ResourceType
-from tests.domain.guest.helpers import guest_rows, make_guest
+from tests.domain.guest.helpers import consent_body, guest_rows, make_guest
 
 _DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
 _IS_POSTGRESQL = _DATABASE_URL.startswith("postgresql")
@@ -61,7 +62,8 @@ def resource(host):
 
 def _create(resource, name="민수", password="1234") -> GuestCreate:
     return GuestCreate(
-        resource_type=ResourceType.MEETING, resource_id=resource, name=name, password=password
+        resource_type=ResourceType.MEETING, resource_id=resource, name=name, password=password,
+        consent=ConsentCreate(**consent_body()),
     )
 
 
@@ -163,7 +165,7 @@ async def test_creates_and_renames_on_one_resource_with_small_pool(small_pool, s
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
     guest = make_guest(slow_kratos, resource, name="민수")
-    body = {"resource_type": "meeting", "resource_id": str(resource), "password": "1234"}
+    body = {"resource_type": "meeting", "resource_id": str(resource), "password": "1234", "consent": consent_body()}
 
     token = {"X-Turnstile-Token": "t"}
     creates = [api.post("/v1/guests", json={**body, "name": f"g{i}"}, headers=token) for i in range(30)]

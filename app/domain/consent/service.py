@@ -5,6 +5,7 @@
 동의한 행이 있으면 동의한 것이다. 버전마다 한 행을 남기고, 같은 버전에 다시 동의하면 처음 행을 그대로 둔다.
 
 - 회원: 인증 의존성(app/core/auth/dependencies.py)과 GraphQL 컨텍스트의 428, PUT /v1/users/me/consent, 파기(app/domain/user/purge.py)
+- 게스트: 생성(Kratos를 부르기 전에 버전을 확인하고, 동의를 게스트 행과 한 트랜잭션에 기록) (app/domain/guest/service.py)
 
 함수는 받은 세션에 쓰고 커밋하지 않는다.
 
