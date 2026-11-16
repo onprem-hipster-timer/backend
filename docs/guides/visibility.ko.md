@@ -456,6 +456,15 @@ DELETE /v1/visibility/schedule/{schedule_id}
 
 `shared`에 나오는 것은 내가 접근할 수 있는 타인의 리소스 전부입니다: 친구의 `FRIENDS` 리소스, 내가 AllowList에 든 `SELECTED` 리소스, 내 인증된 이메일이 허용된 `ALLOWED_EMAILS` 리소스, 그리고 모든 회원의 `PUBLIC` 리소스. 차단 관계인 사용자와 휴면 계정의 리소스는 빠집니다.
 
+공유된 반복 일정은 내 반복 일정과 같이 조회 범위 안의 회차(가상 인스턴스)로 확장됩니다.
+각 회차는 `parent_id`가 원본 ID, `instance_start`가 회차의 원래 시작 시간이고 `is_shared: true`, `owner_id`는 소유자이며, 소유자가 수정·삭제한 회차가 반영됩니다.
+일반 공유 일정은 범위와 겹치면 그대로 반환됩니다. 접근권한이 사라지면 회차도 반환되지 않습니다.
+Schedule 목록의 태그 필터(`tag_ids`, `group_ids`)는 내 일정에만 적용되고 공유된 일정과 그 회차에는 적용되지 않습니다.
+
+공유된 반복 일정의 한 회차는 응답의 `instance_start` 필드로 `GET /v1/schedules/{parent_id}?instance_start=...`를 호출해 조회할 수 있고
+(접근 제어는 원본 일정과 같음), 수정·삭제는 다른 공유 일정과 같이 404를 반환합니다.
+자세한 내용은 [일정 가이드](schedule.ko.md)의 반복 일정 인스턴스 조회를 참고하세요.
+
 #### Schedule 조회 예시
 
 **GET /v1/schedules?start_date=2026-01-01&end_date=2026-01-31&scope=all**
@@ -533,7 +542,7 @@ interface TimerCreate {
 interface TodoCreate {
   title: string;
   description?: string;
-  todo_group_id?: string;  // 없으면 기본 할 일 그룹
+  todo_group_id?: string;  // 없으면 기본 해야 할 일 목록
   deadline?: string;
   parent_id?: string;
 }

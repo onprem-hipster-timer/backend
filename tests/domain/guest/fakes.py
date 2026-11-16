@@ -9,7 +9,8 @@ from app.domain.guest.host import GuestHostStatus
 KRATOS_ADMIN = "http://kratos-admin.test"
 KRATOS_PUBLIC = "http://kratos-public.test"
 TURNSTILE_VERIFY = "http://turnstile.test/siteverify"
-TURNSTILE_SECRET = "turnstile-test-secret"
+TURNSTILE_SECRET = "1x0000000000000000000000000000000AA"  # Cloudflare 테스트 키: 토큰을 한 번만 받는 기록을 쓰지 않는다
+TURNSTILE_PRODUCTION_SECRET = "turnstile-production-secret"
 
 
 class FakeKratos:
@@ -18,6 +19,8 @@ class FakeKratos:
     - down: "admin" 또는 "public"이 들어 있으면 그 API는 연결 오류
     - fail_create / fail_list / fail_get: admin 응답을 500으로
     - sessions: 세션 토큰 → identity id
+    - authentication_methods: whoami가 돌려줄 세션의 인증 방법
+    - public_requests: 공개 API가 받은 요청
     """
 
     def __init__(self):
@@ -30,6 +33,8 @@ class FakeKratos:
         self.fail_list = False
         self.fail_get = False
         self.list_requests: list[httpx.Request] = []
+        self.authentication_methods: list[dict] = [{"method": "password"}]
+        self.public_requests: list[httpx.Request] = []
 
     # ---- 테스트 준비 ----
     def add_identity(self, schema_id: str, traits: dict, password: str = "", verified: bool = False) -> dict:
@@ -94,6 +99,7 @@ class FakeKratos:
 
         if "public" in self.down:
             raise httpx.ConnectError("public down", request=request)
+        self.public_requests.append(request)
         path = request.url.path
         if request.method == "GET" and path in ("/self-service/login/api", "/self-service/settings/api"):
             return httpx.Response(200, json={"id": str(uuid.uuid4())})
@@ -115,12 +121,12 @@ class FakeKratos:
         if request.method == "GET" and path == "/sessions/whoami":
             if identity is None:
                 return httpx.Response(401, json={})
-            return httpx.Response(200, json={"identity": identity, "authentication_methods": [{"method": "password"}]})
+            return httpx.Response(200, json={"identity": identity, "authentication_methods": self.authentication_methods})
         if request.method == "POST" and path == "/self-service/settings":
             if identity is None:
                 return httpx.Response(401, json={})
             body = json.loads(request.content)
-            traits = body["traits"]
+            traits = body.get("traits", identity["traits"])
             if not await service.settings_change_allowed(body["method"], identity_id, identity["schema_id"], traits):
                 return httpx.Response(400, json={"ui": {"messages": [{"id": 4000001}]}})
             identity["traits"] = dict(traits)

@@ -6,7 +6,7 @@ Meeting Router
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser, get_current_user, get_optional_current_user
@@ -160,6 +160,7 @@ async def delete_meeting(
 async def create_participant(
         meeting_id: UUID,
         data: ParticipantCreate,
+        response: Response,
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -172,9 +173,12 @@ async def create_participant(
     참여자 등록
     
     인증 필수: 접근 권한이 있는 사용자만 참여 가능합니다.
+    미팅마다 사용자당 참여자는 한 명입니다. 처음 등록하면 201, 이미 참여했으면 표시 이름을 바꾼 기존 참여자를 200으로 반환합니다.
     """
     service = MeetingService(session, current_user)
-    participant = service.create_participant(meeting_id, data)
+    participant, created = service.create_participant(meeting_id, data)
+    if not created:
+        response.status_code = status.HTTP_200_OK
     participant_read = ParticipantRead.model_validate(participant)
 
     # 타임존 변환
@@ -187,6 +191,11 @@ async def set_availability(
         meeting_id: UUID,
         participant_id: UUID = Query(..., description="참여자 ID"),
         time_slots: List[TimeSlotCreate] = ...,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
         session: Session = Depends(get_db_transactional),
         current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -195,6 +204,8 @@ async def set_availability(
     
     인증 필수: 본인의 참여 시간만 설정 가능합니다.
     기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
+    슬롯은 반열린 구간 [start_time, end_time)이고 시간대가 없는 값은 UTC로 읽습니다. 보낸 구간 그대로 저장합니다.
+    슬롯 수는 미팅의 칸 수까지입니다 (넘으면 422). 슬롯이 미팅의 날짜·시간 범위나 칸에 맞는지는 검사하지 않습니다.
     
     :param meeting_id: 일정 조율 ID
     :param participant_id: 참여자 ID (쿼리 파라미터)
@@ -202,7 +213,10 @@ async def set_availability(
     """
     service = MeetingService(session, current_user)
     created_slots = service.set_time_slots(meeting_id, participant_id, time_slots)
-    return [TimeSlotRead.model_validate(slot) for slot in created_slots]
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return [TimeSlotRead.model_validate(slot).to_timezone(tz_obj) for slot in created_slots]
 
 
 @router.get("/{meeting_id}/availability", response_model=List[AvailabilityRead])
@@ -230,20 +244,7 @@ async def get_availability(
 
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
-    if tz_obj:
-        # AvailabilityRead 내부의 ParticipantRead와 TimeSlotRead의 datetime 필드 변환
-        converted_availability = []
-        for avail in availability:
-            converted_participant = avail.participant.to_timezone(tz_obj)
-            converted_availability.append(
-                AvailabilityRead(
-                    participant=converted_participant,
-                    time_slots=avail.time_slots,  # TimeSlotRead는 datetime 필드가 없음
-                )
-            )
-        return converted_availability
-
-    return availability
+    return [avail.to_timezone(tz_obj) for avail in availability]
 
 
 @router.get("/{meeting_id}/result", response_model=MeetingResultRead)
@@ -261,7 +262,7 @@ async def get_meeting_result(
     공통 가능 시간 분석 결과 조회
     
     인증 선택적: 접근 권한이 있는 경우 조회 가능합니다.
-    모든 참여자의 시간 선택을 집계하여 겹치는 시간대와 인원 수를 계산합니다.
+    미팅의 시간대에서 날짜·요일·하루 범위·시간 단위로 만든 칸마다, 그 칸을 모두 덮는 가능 시간을 가진 참여자 수를 셉니다.
     """
     if not current_user:
         from app.core.auth import get_current_user as require_auth
@@ -270,13 +271,6 @@ async def get_meeting_result(
     result_service = MeetingResultService(session, current_user)
     result = result_service.get_meeting_result(meeting_id)
 
-    # 타임존 변환 (MeetingRead의 datetime 필드만 변환)
+    # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None
-    if tz_obj:
-        converted_meeting = result.meeting.to_timezone(tz_obj)
-        return MeetingResultRead(
-            meeting=converted_meeting,
-            availability_grid=result.availability_grid,
-        )
-
-    return result
+    return result.to_timezone(tz_obj)

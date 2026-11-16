@@ -6,7 +6,7 @@
 회귀 테스트: tests/db/test_guest_migration.py
 
 Revision ID: f2b6d8a4c3e7
-Revises: aeb221d93ba3
+Revises: 911321f82154
 Create Date: 2026-11-14 12:00:00.000000+09:00
 
 """
@@ -19,7 +19,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'f2b6d8a4c3e7'
-down_revision: Union[str, None] = 'aeb221d93ba3'
+down_revision: Union[str, None] = '911321f82154'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

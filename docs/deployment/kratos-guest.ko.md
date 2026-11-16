@@ -22,7 +22,7 @@
 | `KRATOS_HOOK_API_KEY` | 무작위 값 (32자 이상 권장) | Kratos 훅 요청의 `X-Kratos-Hook-Key` 헤더와 같아야 한다 |
 | `KRATOS_ADMIN_URL` | 예: `http://127.0.0.1:4434` | backend가 게스트 identity를 만들고 지운다 |
 | `KRATOS_PUBLIC_URL` | 예: `http://127.0.0.1:4433` | `/auth` 프록시가 넘기는 곳. 게스트도 회원처럼 `/auth`로 로그인하고 JWT를 받는다 |
-| `TURNSTILE_SECRET_KEY` | Turnstile 위젯의 비밀 키 | 게스트 생성 요청의 `turnstile_token`을 확인한다 (1.1) |
+| `TURNSTILE_SECRET_KEY` | Turnstile 위젯의 비밀 키 | 게스트 단계 요청의 `X-Turnstile-Token` 토큰을 확인한다 (1.1) |
 | `TURNSTILE_VERIFY_URL` | 기본 `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 토큰 확인 주소. 보통 바꾸지 않는다 |
 | `KRATOS_GUEST_SCHEMA_ID` | `guest` (기본값) | Kratos의 게스트 identity schema id. 바꾸면 아래 Kratos 설정의 `'guest'`도 모두 바꾼다 |
 
@@ -40,28 +40,28 @@ backend는 `GUEST_ENABLED`와 상관없이 `schema_id` 클레임이 없는 토�
 
 ### 1.1 Cloudflare Turnstile
 
-게스트 생성(`POST /v1/guests`)과 게스트 handle의 로그인 제출(`POST /auth/self-service/login`)은 Cloudflare Turnstile 토큰을 요구합니다. 게스트를 켠 채 Turnstile을 끄는 설정은 없습니다.
+게스트 단계(이름 찾기 `POST /v1/guests/lookup`, 생성 `POST /v1/guests`, 자기 삭제 `DELETE /v1/guests/me`, 게스트 handle의 로그인 제출, 게스트 세션의 설정 제출)는 Cloudflare Turnstile 토큰을 요구합니다([Turnstile 토큰](../guides/guest.ko.md#turnstile-토큰)). 게스트를 켠 채 Turnstile을 끄는 설정은 없습니다.
 
 1. Cloudflare 대시보드의 Turnstile에서 위젯을 만들고, 호스트 이름에 게스트 화면을 띄우는 클라이언트의 도메인을 넣는다. 사이트 키와 비밀 키가 나온다.
-2. 사이트 키는 클라이언트에 넣는다. 클라이언트는 위젯에서 받은 토큰을 생성 요청의 `turnstile_token`으로, 로그인 제출의 `X-Turnstile-Token` 헤더로 보낸다.
+2. 사이트 키는 클라이언트에 넣는다. 클라이언트는 단계마다 위젯에서 새 토큰을 받아 `X-Turnstile-Token` 헤더로 보낸다.
 3. 비밀 키는 backend의 `TURNSTILE_SECRET_KEY`에 넣는다.
 
 - backend는 요청마다 `TURNSTILE_VERIFY_URL`에 비밀 키와 토큰만 보냅니다(접속 주소는 보내지 않는다). backend에서 `challenges.cloudflare.com`으로 나가는 HTTPS가 열려 있어야 합니다.
-- 토큰은 한 번만 확인할 수 있고 위젯이 준 뒤 5분 동안 유효합니다. 생성이 `403 GuestVerificationFailedError`면 클라이언트는 새 토큰을 받아 다시 보냅니다.
-- 이름 찾기(`POST /v1/guests/lookup`)와 회원 로그인은 토큰을 요구하지 않습니다. 로그인 제출의 `identifier`가 `@guest.invalid`로 끝날 때만 토큰을 확인합니다.
+- 토큰은 위젯이 준 뒤 5분 동안 유효하고 한 번만 받습니다. backend는 받은 토큰을 프로세스 메모리에 기록해 두고, 같은 토큰이 다시 오면 siteverify를 부르지 않고 `403`으로 거절합니다. `403`이면 클라이언트는 새 토큰을 받아 다시 보냅니다.
+- 회원 로그인은 토큰을 요구하지 않습니다. 로그인 제출의 `identifier`가 게스트 handle(`@guest.invalid`)일 때만 토큰을 확인합니다.
 - 로그인 토큰은 제출마다 확인합니다. 비밀번호가 틀리면 클라이언트는 새 토큰을 받아 다시 보냅니다.
 - `CORS_ALLOW_HEADERS`를 `*`가 아닌 목록으로 정했다면 `X-Turnstile-Token`을 넣습니다.
-- 개발·테스트용 비밀 키(Cloudflare 문서의 테스트 키): `1x0000000000000000000000000000000AA`는 어떤 토큰이든 통과시키고, `2x0000000000000000000000000000000AA`는 모두 거절합니다. 운영에 쓰지 않습니다.
+- 개발·테스트용 비밀 키(Cloudflare 문서의 테스트 키): `1x0000000000000000000000000000000AA`는 어떤 토큰이든 통과시키고, `2x0000000000000000000000000000000AA`는 모두 거절하고, `3x0000000000000000000000000000000AA`는 이미 쓴 토큰으로 답합니다. 테스트 키의 위젯은 늘 같은 더미 토큰을 주므로, 이 세 키로는 backend가 토큰을 기록하지 않습니다. 운영에 쓰지 않습니다.
 
 ### 1.2 접속 주소와 요청 한도
 
-게스트 이름 찾기, 게스트 생성, `/auth` 제출은 IP당 분당 10회로 제한합니다. 이 한도는 backend가 방문자의 주소를 바르게 알 때만 지켜집니다.
+게스트 이름 찾기와 생성은 각각 IP당 분당 100회, `/auth` 제출은 IP당 분당 60회로 제한하고, 로그인 제출은 같은 IP에서 같은 식별자로 분당 5회까지 받습니다. 이 한도는 backend가 방문자의 주소를 바르게 알 때만 지켜집니다.
 
 - backend 앞에 프록시가 있으면 프록시가 `X-Forwarded-For`를 방문자 주소로 덮어쓰고, backend는 그 프록시의 요청만 받아야 합니다(`ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`, 또는 `TRUSTED_PROXY_IPS`·`PROXY_FORCE`). 설정은 [환경 변수](../getting-started/configuration.ko.md)와 [레이트 리밋](../development/rate-limit.ko.md)에 있습니다.
 - uvicorn의 `FORWARDED_ALLOW_IPS`를 `*`로 두면서 프록시를 거치지 않은 요청도 받으면, 요청이 적어 넣은 `X-Forwarded-For`가 그대로 방문자 주소가 됩니다.
 - `/internal/kratos/hooks/*`는 Kratos만 부릅니다. 앞단에서 밖으로 열지 않는 것을 권합니다.
 - `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET`을 설정하면 backend는 `/health` 밖의 모든 요청에 그 헤더를 요구합니다. Kratos의 훅 요청도 같습니다. 훅 요청에 그 헤더가 없으면 backend가 `403`으로 답하고, Kratos는 게스트의 로그인과 설정 변경을 거절합니다(회원은 영향이 없다). 훅 요청이 그 헤더를 갖게 하려면 `web_hook`의 `headers`에 넣습니다(2.4).
-- Kratos 공개 API와 admin API는 backend만 닿는 주소에 둡니다. 공개 API에 backend를 거치지 않고 닿을 수 있으면 `/auth` 프록시의 확인(요청 한도, 게스트 로그인의 Turnstile 등)이 적용되지 않습니다([`/auth` 프록시](../guides/auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
+- Kratos 공개 API와 admin API는 backend만 닿는 주소에 둡니다. 공개 API에 backend를 거치지 않고 닿을 수 있으면 `/auth` 프록시의 확인(요청 한도, 게스트 로그인·설정 제출의 Turnstile 등)이 적용되지 않습니다([`/auth` 프록시](../guides/auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 
 ## 2. Kratos 설정
 
@@ -355,21 +355,22 @@ curl -s -w ' %{http_code}\n' -X POST "$API/internal/kratos/hooks/login" -H "X-Kr
 
 ### 4.3 생성, 로그인, JWT
 
-`TS_TOKEN`과 `TS_TOKEN2`는 Turnstile 위젯에서 받은 서로 다른 토큰입니다(생성용, 로그인용). backend가 테스트용 비밀 키(1.1)를 쓰는 환경에서는 아무 문자열이나 됩니다.
+`TS_TOKEN1`~`TS_TOKEN4`는 Turnstile 위젯에서 받은 서로 다른 토큰입니다(이름 찾기, 생성, 로그인, 자기 삭제). backend가 테스트용 비밀 키(1.1)를 쓰는 환경에서는 아무 문자열이나 되고, 같은 값을 다시 써도 됩니다.
 
 ```bash
 R="\"resource_type\":\"$RESOURCE_TYPE\",\"resource_id\":\"$RESOURCE_ID\",\"name\":\"확인\""
 
-curl -s -X POST "$API/v1/guests/lookup" -H 'content-type: application/json' -d "{$R}"
+curl -s -X POST "$API/v1/guests/lookup" -H 'content-type: application/json' -H "X-Turnstile-Token: $TS_TOKEN1" -d "{$R}"
 # {"handle":null}
 
 HANDLE=$(curl -s -X POST "$API/v1/guests" -H 'content-type: application/json' \
-  -d "{$R,\"password\":\"1\",\"turnstile_token\":\"$TS_TOKEN\"}" \
+  -H "X-Turnstile-Token: $TS_TOKEN2" \
+  -d "{$R,\"password\":\"1\"}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["handle"])')
 
 FLOW=$(curl -s "$API/auth/self-service/login/api" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 TOKEN=$(curl -s -X POST "$API/auth/self-service/login?flow=$FLOW" -H 'content-type: application/json' \
-  -H "X-Turnstile-Token: $TS_TOKEN2" \
+  -H "X-Turnstile-Token: $TS_TOKEN3" \
   -d "{\"method\":\"password\",\"identifier\":\"$HANDLE\",\"password\":\"1\"}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_token"])')
 JWT=$(curl -s "$API/auth/sessions/whoami?tokenize_as=api" -H "X-Session-Token: $TOKEN" \
@@ -381,9 +382,9 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/users/me" -H "Authorization: B
 # 403
 ```
 
-- 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고, `GuestVerificationFailedError`는 Turnstile 토큰입니다.
+- 이름 찾기나 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고, `GuestVerificationFailedError`는 Turnstile 토큰(없음, 거절, 이미 쓴 토큰)입니다.
 - 생성이 `503`이면 backend가 Turnstile 확인 주소나 Kratos admin API에 닿지 않는 것입니다. backend 로그를 봅니다.
-- 로그인이 `403` `guest_verification_failed`면 `X-Turnstile-Token` 헤더가 없거나 Turnstile이 토큰을 받지 않은 것입니다.
+- 로그인이 `403` `guest_verification_failed`면 `X-Turnstile-Token` 헤더가 없거나, Turnstile이 토큰을 받지 않았거나, 이미 쓴 토큰입니다.
 - 로그인이 `400`이고 메시지 `id`가 `4000001`이면 로그인 훅이 거절한 것입니다. 훅 URL과 키를 확인합니다(4.2).
 
 ### 4.4 회원
@@ -394,7 +395,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/users/me" -H "Authorization: B
 ### 4.5 정리
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$API/v1/guests/me" -H "Authorization: Bearer $JWT"
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$API/v1/guests/me" -H "Authorization: Bearer $JWT" \
+  -H "X-Turnstile-Token: $TS_TOKEN4"
 # 204
 curl -s -o /dev/null -w '%{http_code}\n' "$API/auth/sessions/whoami" -H "X-Session-Token: $TOKEN"
 # 401
@@ -410,7 +412,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$API/auth/sessions/whoami" -H "X-Sessi
 | backend가 출처 확인을 쓰는데 훅 요청에 그 헤더가 없다 | backend가 훅 요청을 `403`으로 거절하고(로그에 `Origin verification failed`), Kratos는 위와 같이 게스트 로그인·설정 변경을 거절한다. 회원은 영향이 없다 |
 | backend가 Kratos admin API에 닿지 않는다 | 게스트 생성이 `503`이고 게스트를 만들지 않는다. 게스트 폐기는 게스트 행만 지우고 identity 삭제 실패를 로그에 남긴다. 행이 없는 게스트 identity는 로그인할 수 없다. 이름 찾기는 Kratos를 부르지 않아 그대로 된다 |
 | backend가 Kratos 공개 API에 닿지 않는다 | `/auth` 요청이 `502`다. 회원과 게스트 모두 로그인하거나 JWT를 받을 수 없다 |
-| backend가 Turnstile 확인 주소에 닿지 않는다 | 게스트 생성과 게스트 로그인 제출이 `503`이다. 게스트를 만들지 않고 로그인을 Kratos에 넘기지 않는다. 이름 찾기, 이미 받은 세션으로 JWT 받기, 회원 로그인은 그대로 된다 |
+| backend가 Turnstile 확인 주소에 닿지 않는다 | 게스트 단계(이름 찾기, 생성, 자기 삭제, 게스트 로그인 제출, 게스트 세션의 설정 제출)가 `503`이다. 게스트를 만들거나 지우지 않고, 제출을 Kratos에 넘기지 않는다. 이미 받은 세션으로 JWT 받기와 회원 로그인은 그대로 된다 |
 
 ## 6. 로컬에서 켜기
 

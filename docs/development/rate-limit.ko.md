@@ -47,7 +47,7 @@ Rate Limit은 사용자별로 독립적으로 적용됩니다:
 | 인증됨 | JWT의 `sub` claim (OIDC 사용자 ID) |
 | 미인증 | 클라이언트 IP 주소 (`X-Forwarded-For` 또는 직접 연결 IP) |
 
-규칙에 `per_ip=True`가 있으면 토큰이 있어도 클라이언트 IP로 셉니다(게스트 이름 찾기·생성, `/auth` 제출).
+규칙에 `per_ip=True`가 있으면 토큰이 있어도 클라이언트 IP로 셉니다(게스트 이름 찾기·생성). `/auth` 제출은 이 미들웨어가 아니라 게스트 관문(`app/middleware/guest_gate.py`)이 셉니다(아래 "`/auth` 제출"). 게스트 단계의 Turnstile 확인은 두 경우 모두 요청 한도를 센 뒤에 합니다.
 
 ---
 
@@ -222,9 +222,8 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 | `/v1/tags` | POST | 60초 | 30 | Tag 생성 제한 |
 | `/v1/tags/groups` | POST | 60초 | 30 | TagGroup 생성 제한 |
 | `/v1/todos/groups` | POST | 60초 | 30 | TodoGroup 생성 제한 |
-| `/v1/guests/lookup` | POST | 60초 | 10 | 게스트 이름 찾기 (IP 단위) |
-| `/v1/guests` | POST | 60초 | 10 | 게스트 생성 (IP 단위) |
-| `/auth/*` | POST, PUT, PATCH, DELETE | 60초 | 10 | Kratos 프록시 제출: 로그인, 가입, 코드 제출, 설정 (IP 단위, 메서드마다 따로 센다). GET은 제한하지 않는다 |
+| `/v1/guests/lookup` | POST | 60초 | 100 | 게스트 이름 찾기 (IP 단위) |
+| `/v1/guests` | POST | 60초 | 100 | 게스트 생성 (IP 단위) |
 | `/v1/friends/requests` | POST | 60초 | 20 | 친구 요청(이메일 열거·스팸 억제, 더 엄격) |
 | `/v1/todos/*` | ALL | 60초 | 100 | Todo 일반 작업 |
 | `/v1/schedules/*` | ALL | 60초 | 60 | Schedule 일반 작업 |
@@ -232,6 +231,20 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 | `/v1/tags/*` | ALL | 60초 | 60 | Tag 일반 작업 |
 | `/v1/graphql` | ALL | 60초 | 60 | GraphQL 요청 |
 | `/v1/*` | ALL | 60초 | 60 | 기타 API (폴백) |
+
+### `/auth` 제출
+
+게스트 관문(`app/middleware/guest_gate.py`)이 `/auth` 프록시보다 먼저, Kratos로 나갈 경로에서 `KRATOS_PUBLIC_URL`의 경로를 뗀 경로로 판단해 셉니다. GET은 그 경로가 로그인·가입·설정·인증·복구 제출 경로인 것만 세고, 다른 GET(플로우 생성, whoami·JWT 발급, JWKS)은 세지 않습니다. 메서드마다 따로 셉니다. 규칙은 `app/ratelimit/config.py`의 `AUTH_*`입니다.
+
+| 대상 | 키 | Window | Max Requests |
+|------|----|--------|--------------|
+| 설정 밖의 제출, 제출 경로로 가는 GET(설정 포함) | 클라이언트 IP | 60초 | 60 |
+| 로그인·가입·인증·복구 제출 | 클라이언트 IP, 제출 경로, 식별자(로그인은 `identifier`, 가입은 `traits.email`, 인증·복구는 `email`) | 60초 | 5 |
+| GET 밖의 설정 제출 | 세션의 identity (IP로 세지 않는다) | 60초 | 10 |
+
+- 식별자는 Kratos가 식별자를 찾을 때처럼 앞뒤의 ASCII 공백(`\t`, `\n`, `\v`, `\f`, `\r`, 스페이스)을 떼고 소문자로 바꾼 뒤(`app/api/auth_proxy.py`의 `normalize_identifier`) 해시로 키에 넣습니다. 식별자에 ASCII 밖의 문자가 있는 제출은 IP로 센 뒤 `400` `invalid_identifier`로 거절하고 식별자로는 세지 않습니다. 본문을 읽을 수 없거나 식별자가 문자열이 아니면 IP·경로마다 한 칸으로 셉니다. 식별자가 없는 제출(소셜 로그인·가입)과 식별자를 읽지 않는 GET 제출은 IP 한도만 받습니다.
+- 설정 제출은 프록시의 세션 확인을 통과한 것만 셉니다.
+- 넘으면 미들웨어와 같은 형식의 429입니다.
 
 ### 규칙 적용 우선순위
 

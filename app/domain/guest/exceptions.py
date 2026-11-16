@@ -37,6 +37,6 @@ class GuestServiceUnavailableError(DomainException):
 
 
 class GuestVerificationFailedError(DomainException):
-    """게스트 생성 요청의 Turnstile 토큰이 확인을 통과하지 못함"""
+    """게스트 단계 요청의 Turnstile 토큰이 확인을 통과하지 못함 (app/middleware/guest_gate.py)"""
     status_code = status.HTTP_403_FORBIDDEN
     detail = "확인을 통과하지 못했습니다. 다시 시도하세요"

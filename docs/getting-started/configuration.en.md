@@ -95,12 +95,12 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 | `OIDC_JWKS` | Public JWKS JSON. When set, tokens are verified with these keys instead of discovery (issuers without discovery, such as Kratos). Served at `GET /auth/.well-known/jwks.json`, so startup fails if it contains private key material | - |
 | (token `schema_id`) | Not a setting. The backend refuses tokens without a `schema_id` claim (a non-empty string) with 401. The Kratos claims mapper sets it ([Authentication guide](../guides/auth.ko.md)) | - |
 | `OIDC_JWKS_CACHE_TTL_SECONDS` | JWKS cache TTL | `3600` |
-| `KRATOS_PUBLIC_URL` | Kratos public API that `/auth/*` is proxied to. When empty, `/auth/*` returns 404 | - |
+| `KRATOS_PUBLIC_URL` | Kratos public API that `/auth/*` is proxied to. A path in it is kept: with `http://kratos:4433/kratos`, `/auth/sessions/whoami` goes to `/kratos/sessions/whoami`. When empty, `/auth/*` returns 404 | - |
 | `KRATOS_ADMIN_URL` | Kratos admin API. Used to revoke sessions and delete identities on account deletion, and to create and delete guest identities. When empty, it is not called and identity deletion of purged accounts stays pending until it is set | - |
 | `GUEST_ENABLED` | Turns on guest accounts. When on, startup fails without `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `KRATOS_HOOK_API_KEY`, `KRATOS_GUEST_SCHEMA_ID` and `TURNSTILE_SECRET_KEY`. When off, `/v1/guests/*` and `/internal/kratos/hooks/*` return 404 and guest tokens get 403 ([Guest accounts (Kratos)](../deployment/kratos-guest.ko.md)) | `False` |
 | `KRATOS_GUEST_SCHEMA_ID` | Kratos identity schema id of guests. A token whose `schema_id` equals it is a guest | `guest` |
 | `KRATOS_HOOK_API_KEY` | Value Kratos web hooks send in the `X-Kratos-Hook-Key` header. `/internal/kratos/hooks/*` only answer when it matches | - |
-| `TURNSTILE_SECRET_KEY` | Secret key of the Cloudflare Turnstile widget. Verifies `turnstile_token` on guest creation (`POST /v1/guests`) and the `X-Turnstile-Token` header on guest login submissions. Required when `GUEST_ENABLED=true` | - |
+| `TURNSTILE_SECRET_KEY` | Secret key of the Cloudflare Turnstile widget. Verifies the `X-Turnstile-Token` header on every guest step (lookup, creation, self-deletion, guest login submissions, settings submissions from guest sessions). With a Cloudflare testing key, tokens are not recorded as used. Required when `GUEST_ENABLED=true` | - |
 | `TURNSTILE_VERIFY_URL` | Turnstile token verification endpoint | `https://challenges.cloudflare.com/turnstile/v0/siteverify` |
 | `ACCOUNT_DELETION_GRACE_DAYS` | Days between an account deletion request and the purge | `3` |
 | `UNVERIFIED_SIGNUP_RETENTION_HOURS` | Hours after which the purge run deletes sign-ups whose email was never verified | `24` |

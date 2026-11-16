@@ -13,6 +13,7 @@ from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.helpers import make_guest
 
 SETTINGS_SUBMIT = "/auth/self-service/settings?flow=f1"
+TOKEN = {"X-Turnstile-Token": "t"}  # Turnstile 확인은 tests/domain/guest/test_turnstile.py
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def _session(kratos, guest) -> dict:
 def _rename(client, kratos, guest, name, **json_overrides):
     handle = kratos.identities[guest.identity_id]["traits"]["handle"]
     body = {"method": "profile", "traits": {"handle": handle, "name": name}, **json_overrides}
-    return client.post(SETTINGS_SUBMIT, json=body, headers=_session(kratos, guest))
+    return client.post(SETTINGS_SUBMIT, json=body, headers={**_session(kratos, guest), **TOKEN})
 
 
 def test_guest_renames_through_proxy(guest_client, kratos, resource, guest_events):
@@ -70,7 +71,7 @@ def test_name_key_is_read_ignoring_case(guest_client, kratos, resource):
     r = guest_client.post(
         SETTINGS_SUBMIT,
         json={"method": "profile", "Traits": {"handle": handle, "NAME": "철수"}},
-        headers=_session(kratos, guest),
+        headers={**_session(kratos, guest), **TOKEN},
     )
     assert r.status_code == 409
 
@@ -83,7 +84,7 @@ def test_form_encoded_rename_to_taken_name_is_409(guest_client, kratos, resource
     r = guest_client.post(
         SETTINGS_SUBMIT,
         data={"method": "profile", "traits.handle": handle, "traits.name": "철수"},
-        headers=_session(kratos, guest),
+        headers={**_session(kratos, guest), **TOKEN},
     )
     assert r.status_code == 409
 
@@ -154,5 +155,5 @@ def test_rename_through_proxy_updates_lookup(guest_client, kratos, resource):
 
     body = {"resource_type": "meeting", "resource_id": str(resource)}
     handle = kratos.identities[guest.identity_id]["traits"]["handle"]
-    assert guest_client.post("/v1/guests/lookup", json={**body, "name": "철수"}).json() == {"handle": handle}
-    assert guest_client.post("/v1/guests/lookup", json={**body, "name": "민수"}).json() == {"handle": None}
+    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "철수"}).json() == {"handle": handle}
+    assert guest_client.post("/v1/guests/lookup", headers=TOKEN, json={**body, "name": "민수"}).json() == {"handle": None}

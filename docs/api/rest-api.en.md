@@ -109,11 +109,11 @@ Only answered when `GUEST_ENABLED=true` (404 otherwise).
 
 ```http
 POST   /v1/guests/lookup                  # Find the login identifier (handle) of the guest with that name in a resource (no authentication)
-POST   /v1/guests                         # Create a guest (no authentication, Turnstile token required). Returns the handle
+POST   /v1/guests                         # Create a guest (no authentication). Returns the handle
 DELETE /v1/guests/me                      # The guest deletes itself (guest JWT)
 ```
 
-Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. A guest's login submission needs a Turnstile token (`X-Turnstile-Token` header). Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
+Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. The three routes above, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
 
 ### Holidays
 
