@@ -154,6 +154,15 @@ def get_participant_by_user_id(
     return session.exec(statement).first()
 
 
+def get_participant_by_guest_id(
+        session: Session,
+        guest_id: UUID,
+) -> Optional[MeetingParticipant]:
+    """게스트의 참여자 조회 (게스트마다 하나)"""
+    statement = select(MeetingParticipant).where(MeetingParticipant.guest_id == guest_id)
+    return session.exec(statement).first()
+
+
 # ============================================================
 # MeetingTimeSlot CRUD
 # ============================================================

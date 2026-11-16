@@ -5,6 +5,7 @@
 - turnstile: 가짜 Turnstile siteverify와 Cloudflare 테스트 키 (kratos가 함께 켠다). 토큰 재사용을 거절하지 않는다
 - strict_turnstile: 운영 비밀 키의 Turnstile. 토큰은 한 번만 받는다
 - host: MEETING 리소스 종류에 등록한 가짜 호스트
+- meeting_host: MEETING 리소스 종류에 실제 미팅 호스트(app/domain/meeting/guest_host.py)를 등록한다 (host를 바꾼다)
 - guest_events: 발행된 게스트 이벤트 기록
 """
 import httpx
@@ -91,6 +92,15 @@ def host():
     register_guest_host(ResourceType.MEETING, fake)
     yield fake
     unregister_guest_host(ResourceType.MEETING)
+
+
+@pytest.fixture
+def meeting_host(host):
+    from app.domain.meeting import guest_host
+
+    guest_host.register()
+    yield
+    register_guest_host(ResourceType.MEETING, host)
 
 
 @pytest.fixture
