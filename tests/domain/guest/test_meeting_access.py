@@ -277,3 +277,66 @@ class TestGuest:
         assert client.patch(f"/v1/meetings/{meeting_id}", json={"title": "x"}, headers=headers).status_code == 403
         assert client.delete(f"/v1/meetings/{meeting_id}", headers=headers).status_code == 403
         assert client.get(f"/v1/meetings/{meeting_id}", headers=tokens.member(OWNER)).json()["title"] == MEETING["title"]
+
+
+# ============ 참여자 수와 참여자 역할 ============
+
+class TestParticipantCountAndRoles:
+    @pytest.fixture
+    def participants(self, client, tokens, meeting_id, guest) -> dict:
+        """MEMBER(가능 시간 있음), OWNER(가능 시간 없음), 게스트(가능 시간 있음), 휴면이 된 회원"""
+        owner = participate(client, meeting_id, tokens.member(OWNER), name="방장")
+        guest_participant = participate(client, meeting_id, tokens.guest(guest.identity_id))
+        set_slots(client, meeting_id, guest_participant["id"], tokens.guest(guest.identity_id))
+        participate(client, meeting_id, tokens.member("member-dormant"), name="휴면")
+        _go_dormant(client, tokens, "member-dormant")
+        return {"owner": owner["id"], "guest": guest_participant["id"]}
+
+    def test_count_is_same_for_anonymous_guest_and_member(self, client, tokens, meeting_id, guest, participants):
+        anonymous = client.get(f"/v1/meetings/{meeting_id}/result").json()
+        as_guest = client.get(f"/v1/meetings/{meeting_id}/result", headers=tokens.guest(guest.identity_id)).json()
+        as_member = client.get(f"/v1/meetings/{meeting_id}/result", headers=tokens.member(MEMBER)).json()
+
+        assert anonymous["participant_count"] == as_guest["participant_count"] == as_member["participant_count"] == 3
+        assert cell_count(anonymous) == cell_count(as_member) == 2
+
+    def test_count_follows_dormant_member_coming_back(self, client, tokens, meeting_id, participants):
+        _come_back(client, tokens, "member-dormant")
+
+        assert client.get(f"/v1/meetings/{meeting_id}/result").json()["participant_count"] == 4
+
+    def test_count_with_timezone_query(self, client, meeting_id, participants):
+        response = client.get(f"/v1/meetings/{meeting_id}/result", params={"timezone": "Asia/Seoul"})
+
+        assert response.json()["participant_count"] == 3
+
+    def test_anonymous_result_has_no_participant_ids(self, client, meeting_id, participants):
+        text = client.get(f"/v1/meetings/{meeting_id}/result").text
+
+        assert participants["owner"] not in text
+        assert participants["guest"] not in text
+        assert "방장" not in text and "민수" not in text
+
+    @pytest.mark.parametrize("viewer", ["member", "guest"])
+    def test_roles_in_availability(self, client, tokens, meeting_id, guest, participants, viewer):
+        headers = tokens.member(MEMBER) if viewer == "member" else tokens.guest(guest.identity_id)
+
+        availability = client.get(f"/v1/meetings/{meeting_id}/availability", headers=headers).json()
+
+        roles = {a["participant"]["display_name"]: (a["participant"]["is_owner"], a["participant"]["is_guest"])
+                 for a in availability}
+        assert roles == {"회원": (False, False), "방장": (True, False), "민수": (False, True)}
+        user_ids = {a["participant"]["display_name"]: a["participant"]["user_id"] for a in availability}
+        if viewer == "member":
+            assert user_ids == {"회원": MEMBER, "방장": OWNER, "민수": None}
+        else:
+            assert set(user_ids.values()) == {None}
+
+    def test_roles_in_participate_response(self, client, tokens, meeting_id, guest):
+        as_owner = participate(client, meeting_id, tokens.member(OWNER), name="방장")
+        as_guest = participate(client, meeting_id, tokens.guest(guest.identity_id))
+        as_member = participate(client, meeting_id, tokens.member(MEMBER), name="회원")
+
+        assert (as_owner["is_owner"], as_owner["is_guest"]) == (True, False)
+        assert (as_guest["is_owner"], as_guest["is_guest"]) == (False, True)
+        assert (as_member["is_owner"], as_member["is_guest"]) == (False, False)

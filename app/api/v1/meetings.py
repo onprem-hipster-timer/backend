@@ -252,7 +252,7 @@ async def create_participant(
         participant, created = MeetingService(session, caller.user).create_participant(meeting_id, data)
     if not created:
         response.status_code = status.HTTP_200_OK
-    participant_read = ParticipantRead.model_validate(participant)
+    participant_read = ParticipantRead.from_participant(participant, participant.meeting.owner_id)
 
     # 타임존 변환
     tz_obj = parse_timezone(tz) if tz else None

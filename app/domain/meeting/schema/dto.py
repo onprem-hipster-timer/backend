@@ -267,6 +267,16 @@ class ParticipantRead(CustomModel):
     user_id: Optional[str] = None
     display_name: str
     created_at: datetime
+    is_owner: bool = False  # 미팅 소유자의 참여자인지
+    is_guest: bool = False  # 게스트 참여자인지
+
+    @classmethod
+    def from_participant(cls, participant, owner_id: str) -> "ParticipantRead":
+        """참여자 행과 미팅 소유자의 sub로 만든다 (is_owner, is_guest를 채운다)"""
+        participant_read = cls.model_validate(participant)
+        participant_read.is_owner = participant.user_id is not None and participant.user_id == owner_id
+        participant_read.is_guest = participant.guest_id is not None
+        return participant_read
 
     def to_timezone(self, tz: timezone | str | None) -> "ParticipantRead":
         """
@@ -359,6 +369,7 @@ class AvailabilityCell(CustomModel):
 class MeetingResultRead(CustomModel):
     """공통 가능 시간 분석 결과 DTO"""
     meeting: MeetingRead
+    participant_count: int  # 참여자 수 (휴면 회원 제외, 가능 시간을 넣지 않은 참여자 포함)
     availability_grid: List[AvailabilityCell]  # 시작 시각 순
 
     def to_timezone(self, tz: timezone | str | None) -> "MeetingResultRead":
@@ -366,5 +377,6 @@ class MeetingResultRead(CustomModel):
             return self
         return MeetingResultRead.model_construct(
             meeting=self.meeting.to_timezone(tz),
+            participant_count=self.participant_count,
             availability_grid=[cell.to_timezone(tz) for cell in self.availability_grid],
         )

@@ -62,7 +62,7 @@ class MeetingResultService:
                 self.session,
                 participant.id,
             )
-            participant_read = ParticipantRead.model_validate(participant)
+            participant_read = ParticipantRead.from_participant(participant, meeting.owner_id)
             if hide_user_ids:
                 participant_read.user_id = None
             availability_list.append(
@@ -112,6 +112,7 @@ class MeetingResultService:
 
         return MeetingResultRead(
             meeting=meeting_read,
+            participant_count=crud.count_participants(self.session, meeting.id),
             availability_grid=[
                 AvailabilityCell(start_time=start, end_time=end, count=count)
                 for (start, end), count in zip(cells, counts)

@@ -6,6 +6,7 @@ Meeting CRUD 함수
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import Session, select, or_
 
 from app.crud.user_profile import dormant_subs
@@ -139,6 +140,20 @@ def get_participants(
     )
     results = session.exec(statement)
     return results.all()
+
+
+def count_participants(
+        session: Session,
+        meeting_id: UUID,
+) -> int:
+    """일정 조율의 참여자 수 (휴면 계정 제외, get_participants와 같은 참여자)"""
+    statement = (
+        select(func.count())
+        .select_from(MeetingParticipant)
+        .where(MeetingParticipant.meeting_id == meeting_id)
+        .where(_not_dormant_participant())
+    )
+    return session.exec(statement).one()
 
 
 def get_participant_by_user_id(
