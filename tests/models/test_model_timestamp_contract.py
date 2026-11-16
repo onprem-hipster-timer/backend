@@ -35,6 +35,7 @@ TIMESTAMP_TABLE_NAMES = {
 
 TIMESTAMPLESS_TABLE_NAMES = {
     "account_deletion",
+    "consent",
     "meeting_time_slot",
     "schedule_exception_tag",
     "schedule_tag",

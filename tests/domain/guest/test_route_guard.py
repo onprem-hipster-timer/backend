@@ -18,6 +18,7 @@ GUEST_TOKEN_NOT_REFUSED = {
     ("POST", "/v1/guests"),  # 인증 없음 (생성)
     ("POST", "/v1/guests/lookup"),  # 인증 없음 (이름 찾기)
     ("DELETE", "/v1/guests/me"),  # 게스트 토큰 전용
+    ("PUT", "/v1/guests/me/consent"),  # 게스트 토큰 전용
     # 사용자 인증을 쓰지 않는 경로
     ("GET", "/health"),
     ("GET", "/openapi.json"),

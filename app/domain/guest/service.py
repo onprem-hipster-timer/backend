@@ -3,11 +3,13 @@
 
 - 접근 정책(check_access): 모든 게스트 확인이 이 함수를 쓴다.
   OPEN이면 허용, CLOSED면 거부하고 게스트를 남긴다, EXPIRED·MISSING이면 거부하고 게스트를 폐기한다
-- 폐기(discard_guest, discard_resource_guests): 게스트 행 삭제와 GuestDiscarded 이벤트를 커밋한 뒤
+- 폐기(discard_guest, discard_resource_guests): 게스트 행·약관 동의 삭제와 GuestDiscarded 이벤트를 한 트랜잭션으로 커밋한 뒤
   Kratos identity를 지운다. identity 삭제가 실패해도 행이 없으므로 접근은 닫힌다
   (로그인 훅은 행이 없는 게스트 identity를 거부한다). 실패는 로그로 남긴다
 - 이름 찾기(lookup)와 생성(create). 게스트 이름(정규형)은 guest.name에 두고, 리소스 안에서 겹치지 않는 것은
   UNIQUE (resource_type, resource_id, name)이 보장한다. 로그인 식별자(handle)는 "<게스트 행 id>@guest.invalid"
+- 약관 동의는 회원과 같은 consent 테이블에 게스트의 identity id로 둔다 (app/domain/consent). 생성은 동의를 게스트 행과
+  한 트랜잭션에 기록하고, 이후의 동의(record_consent)는 게스트 행이 있을 때만 기록한다
 - Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed). 회원 로그인은 판정하지 않는다.
   이름 변경은 설정 훅이 guest.name을 바꾼다. 훅이 허용한 뒤 Kratos가 이름 저장에 실패하면 다음 이름 변경까지
   guest.name(찾기·중복 기준)과 Kratos trait name(토큰의 name)이 다르다
@@ -31,6 +33,8 @@ import app.core.config as app_config
 from app.core import kratos_admin
 from app.crud import guest as crud
 from app.db.session import _session_manager
+from app.domain.consent import service as consent_service
+from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.exceptions import (
     GuestAccessDeniedError,
@@ -139,11 +143,12 @@ def _delete_guest_row(identity_id: str) -> bool:
         guest = crud.get_guest_by_identity(session, identity_id)
         if guest is not None:
             _delete_with_event(session, guest)
+        consent_service.delete_consents(session, [identity_id])
     return guest is not None
 
 
 async def discard_guest(identity_id: str) -> bool:
-    """게스트를 폐기한다. 게스트 행이 있었으면 True. Kratos identity는 행이 없어도 지운다"""
+    """게스트를 폐기한다. 게스트 행이 있었으면 True. 약관 동의와 Kratos identity는 행이 없어도 지운다"""
     deleted = await run_in_threadpool(_delete_guest_row, identity_id)
     await _delete_identity(identity_id)
     return deleted
@@ -155,6 +160,7 @@ def _delete_resource_guest_rows(resource_type: ResourceType, resource_id: UUID) 
         identity_ids = [guest.identity_id for guest in guests]
         for guest in guests:
             _delete_with_event(session, guest)
+        consent_service.delete_consents(session, identity_ids)
     return identity_ids
 
 
@@ -188,27 +194,34 @@ async def _require_open(resource_type: ResourceType, resource_id: UUID) -> None:
 
 
 async def lookup(data: GuestLookup) -> GuestLookupRead:
-    """리소스에서 이름이 data.name인 게스트의 로그인 식별자(handle). 없으면 handle이 None"""
+    """리소스에서 이름이 data.name인 게스트의 로그인 식별자(handle). 없으면 handle이 None.
+    현재 약관 버전(consent_version)을 함께 돌려준다"""
     await _require_open(data.resource_type, data.resource_id)
     guest = await run_in_threadpool(_read_named_guest, data.resource_type, data.resource_id, data.name)
-    return GuestLookupRead(handle=guest_handle(guest.id) if guest is not None else None)
+    return GuestLookupRead(
+        handle=guest_handle(guest.id) if guest is not None else None,
+        consent_version=app_config.settings.CONSENT_VERSION,
+    )
 
 
-def _insert_guest(guest: Guest) -> None:
-    """게스트 행을 넣고 커밋한다. 리소스에 같은 이름이 이미 있으면 IntegrityError"""
+def _insert_guest(guest: Guest, consent: ConsentCreate) -> None:
+    """게스트 행과 약관 동의를 한 트랜잭션으로 넣고 커밋한다. 리소스에 같은 이름이 이미 있으면 IntegrityError"""
     with _session_manager.get_session() as session:
         crud.create_guest(session, guest)
+        consent_service.record_consent(session, guest.identity_id, consent)
         session.commit()
 
 
 async def create(data: GuestCreate) -> GuestRead:
     """새 게스트를 만들고 로그인 식별자(handle)를 돌려준다.
 
-    리소스 확인 → 같은 이름 확인(있으면 GuestNameTakenError) → 게스트 수 확인(MAX_GUESTS_PER_RESOURCE명이면
-    GuestLimitReachedError) → Kratos identity 생성 → 게스트 행 커밋.
-    Turnstile은 인터셉터가 먼저 확인한다 (app/middleware/guest_gate.py).
+    약관 버전 확인(현재 버전이 아니면 ConsentVersionMismatchError) → 리소스 확인 → 같은 이름 확인(있으면
+    GuestNameTakenError) → 게스트 수 확인(MAX_GUESTS_PER_RESOURCE명이면 GuestLimitReachedError) →
+    Kratos identity 생성 → 게스트 행과 동의 커밋.
+    Turnstile은 인터셉터가 먼저 확인한다 (app/middleware/guest_gate.py). 동의 항목이 빠졌거나 false면 요청 검증이 422로 답한다.
     행을 넣다가 같은 이름과 겹치면 만든 identity를 지우고 GuestNameTakenError.
     """
+    consent_service.check_version(data.consent)
     await _require_open(data.resource_type, data.resource_id)
     if await run_in_threadpool(_read_named_guest, data.resource_type, data.resource_id, data.name) is not None:
         raise GuestNameTakenError()
@@ -227,7 +240,7 @@ async def create(data: GuestCreate) -> GuestRead:
         raise GuestServiceUnavailableError()
     guest = Guest.model_validate(data, update={"id": guest_id, "identity_id": identity["id"]})
     try:
-        await run_in_threadpool(_insert_guest, guest)
+        await run_in_threadpool(_insert_guest, guest, data.consent)
     except IntegrityError:
         await _delete_identity(identity["id"])
         raise GuestNameTakenError()
@@ -261,6 +274,33 @@ async def name_taken_by_other(identity_id: str, name: object) -> bool:
     게스트 행이 없거나 이름이 문자열이 아니거나 정규형을 만들 수 없으면 False (설정 훅이 판정한다).
     """
     return await run_in_threadpool(_name_taken_by_other, identity_id, name)
+
+
+# ============ 약관 동의 ============
+
+def _read_consent_pending(identity_id: str) -> bool:
+    with _session_manager.get_session() as session:
+        return crud.get_guest_by_identity(session, identity_id) is not None and consent_service.consent_pending(
+            session, identity_id
+        )
+
+
+async def consent_pending(identity_id: str) -> bool:
+    """게스트 행이 있고 현재 약관 버전에 동의하지 않았으면 True. 행이 없는(폐기된) 게스트는 접근 확인이 거절한다"""
+    return await run_in_threadpool(_read_consent_pending, identity_id)
+
+
+def _record_consent(identity_id: str, data: ConsentCreate) -> None:
+    with _transaction() as session:
+        if crud.get_guest_by_identity(session, identity_id) is None:
+            raise GuestAccessDeniedError()
+        consent_service.record_consent(session, identity_id, data)
+
+
+async def record_consent(identity_id: str, data: ConsentCreate) -> None:
+    """게스트의 약관 동의를 기록한다. 게스트 행이 없으면 GuestAccessDeniedError, 현재 버전이 아니면
+    ConsentVersionMismatchError"""
+    await run_in_threadpool(_record_consent, identity_id, data)
 
 
 # ============ Kratos 훅 판정 ============

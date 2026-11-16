@@ -261,6 +261,38 @@ def test_more_than_one_identifier_or_unreadable_body_is_400(guest_client, kratos
     assert kratos.sessions == {}
 
 
+@pytest.mark.parametrize(
+    "representation", ["json_dotted_key", "json_traits_string", "form_traits", "multipart", "text_plain"]
+)
+def test_guest_login_body_in_other_representation_is_400_without_verification(guest_client, kratos, turnstile, guest,
+                                                                              representation):
+    handle = _handle(kratos, guest)
+    content, content_type = {
+        "json_dotted_key": (json.dumps({**_password(handle), "traits.email": "a@example.com"}), "application/json"),
+        "json_traits_string": (json.dumps({**_password(handle), "traits": "{}"}), "application/json"),
+        "form_traits": (f"method=password&identifier={handle}&password=1234&traits=%7B%7D",
+                        "application/x-www-form-urlencoded"),
+        "multipart": (
+            "".join(f'--b0\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'
+                    for k, v in _password(handle).items()) + "--b0--\r\n",
+            "multipart/form-data; boundary=b0",
+        ),
+        "text_plain": (json.dumps(_password(handle)), "text/plain"),
+    }[representation]
+
+    r = guest_client.post(
+        f"/auth/self-service/login?flow={uuid.uuid4()}",
+        content=content.encode(),
+        headers={"content-type": content_type, TOKEN_HEADER: "t"},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["error"]["id"] == "invalid_request_body"
+    assert turnstile.requests == []
+    assert _login_submits(kratos) == []
+    assert kratos.sessions == {}
+
+
 def test_guest_handle_in_query_is_refused(guest_client, kratos, turnstile, guest):
     r = guest_client.post(
         f"/auth/self-service/login?flow=f1&identifier={_handle(kratos, guest)}",

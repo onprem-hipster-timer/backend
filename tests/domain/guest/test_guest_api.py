@@ -3,8 +3,9 @@ import uuid
 
 import pytest
 
+import app.core.config as app_config
 from app.domain.guest.host import GuestHostStatus
-from tests.domain.guest.helpers import guest_rows, make_guest
+from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
@@ -25,6 +26,7 @@ def _body(resource, name="민수", password="1234", resource_type="meeting") -> 
         "resource_id": str(resource),
         "name": name,
         "password": password,
+        "consent": consent_body(),
     }
 
 
@@ -51,14 +53,14 @@ def test_lookup_returns_handle_of_named_guest(guest_client, resource):
     r = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource))
 
     assert r.status_code == 200, r.text
-    assert r.json() == {"handle": created["handle"]}
+    assert r.json() == {"handle": created["handle"], "consent_version": app_config.settings.CONSENT_VERSION}
 
 
 def test_lookup_without_guest_returns_null_handle(guest_client, resource):
     guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수"))
     r = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name="영희"))
     assert r.status_code == 200
-    assert r.json() == {"handle": None}
+    assert r.json() == {"handle": None, "consent_version": app_config.settings.CONSENT_VERSION}
 
 
 def test_lookup_takes_no_password(guest_client, resource):
@@ -172,6 +174,83 @@ def test_unknown_resource_type_is_422(guest_client, resource, path):
     assert guest_client.post(path, headers=TOKEN, json=_body(resource, resource_type="planet")).status_code == 422
 
 
+# ============ 약관 동의 ============
+
+def test_create_records_consent_for_guest_identity(guest_client, resource):
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
+    [row] = guest_rows()
+    assert consent_rows() == {(row.identity_id, app_config.settings.CONSENT_VERSION)}
+
+
+def test_create_without_consent_is_422_and_creates_nothing(guest_client, kratos, resource):
+    body = _body(resource)
+    del body["consent"]
+    assert guest_client.post(CREATE, headers=TOKEN, json=body).status_code == 422
+    assert guest_rows() == []
+    assert kratos.identities == {}
+    assert consent_rows() == set()
+
+
+@pytest.mark.parametrize("item", ["age_over_14", "terms", "privacy"])
+@pytest.mark.parametrize("value", [False, "missing"])
+def test_create_with_item_false_or_missing_is_422_and_creates_nothing(guest_client, kratos, resource, item, value):
+    body = _body(resource)
+    if value == "missing":
+        del body["consent"][item]
+    else:
+        body["consent"][item] = value
+    assert guest_client.post(CREATE, headers=TOKEN, json=body).status_code == 422
+    assert guest_rows() == []
+    assert kratos.identities == {}
+
+
+def test_create_with_other_version_is_409_and_creates_nothing(guest_client, kratos, resource):
+    body = {**_body(resource), "consent": consent_body("2000-01-01")}
+
+    r = guest_client.post(CREATE, headers=TOKEN, json=body)
+
+    assert r.status_code == 409
+    assert r.json()["error_type"] == "ConsentVersionMismatchError"
+    assert r.json()["message"] == "Consent version is not current"
+    assert guest_rows() == []
+    assert kratos.identities == {}
+    assert consent_rows() == set()
+
+
+@pytest.mark.parametrize("case", ["taken_name", "closed", "missing", "full"])
+def test_consent_version_is_checked_before_resource_and_name(guest_client, kratos, host, resource, case, monkeypatch):
+    from app.domain.guest import service
+
+    target = resource
+    if case == "taken_name":
+        make_guest(kratos, resource, name="민수")
+    elif case == "closed":
+        host.statuses[target] = GuestHostStatus.CLOSED
+    elif case == "missing":
+        target = uuid.uuid4()
+    else:
+        monkeypatch.setattr(service, "MAX_GUESTS_PER_RESOURCE", 1)
+        make_guest(kratos, resource, name="영희")
+    identities = dict(kratos.identities)
+
+    r = guest_client.post(CREATE, headers=TOKEN, json={**_body(target), "consent": consent_body("2000-01-01")})
+
+    assert r.json()["error_type"] == "ConsentVersionMismatchError"
+    assert kratos.identities == identities
+    assert kratos.deleted == []
+
+
+def test_lookup_returns_current_consent_version_to_send_on_create(guest_client, resource, monkeypatch):
+    monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+
+    version = guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource)).json()["consent_version"]
+    body = {**_body(resource), "consent": consent_body(version)}
+
+    assert version == "2099-01-01"
+    assert guest_client.post(CREATE, headers=TOKEN, json=body).status_code == 201
+    assert {v for _, v in consent_rows()} == {"2099-01-01"}
+
+
 # ============ 자기 삭제 ============
 
 def test_guest_deletes_itself(guest_client, kratos, tokens, resource, guest_events):
@@ -276,9 +355,9 @@ def test_nfc_and_nfd_name_are_one_name(guest_client, kratos, resource):
     created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="민수")).json()
 
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=_nfd("민수"))).status_code == 409
-    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=_nfd("민수"))).json() == {
-        "handle": created["handle"]
-    }
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=_nfd("민수"))).json()[
+        "handle"
+    ] == created["handle"]
     assert len(guest_rows()) == 1
 
 
@@ -326,9 +405,9 @@ def test_whitespace_runs_are_one_space(guest_client, kratos, resource, variant):
     created = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name="김 민수")).json()
 
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, name=variant)).status_code == 409
-    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=variant)).json() == {
-        "handle": created["handle"]
-    }
+    assert guest_client.post(LOOKUP, headers=TOKEN, json=_lookup_body(resource, name=variant)).json()[
+        "handle"
+    ] == created["handle"]
 
 
 def test_name_is_stored_in_canonical_form(guest_client, kratos, resource):

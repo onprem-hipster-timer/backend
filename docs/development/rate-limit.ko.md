@@ -242,7 +242,7 @@ Rate Limit 규칙은 엔드포인트와 HTTP 메서드에 따라 다르게 적�
 | 로그인·가입·인증·복구 제출 | 클라이언트 IP, 제출 경로, 식별자(로그인은 `identifier`, 가입은 `traits.email`, 인증·복구는 `email`) | 60초 | 5 |
 | GET 밖의 설정 제출 | 세션의 identity (IP로 세지 않는다) | 60초 | 10 |
 
-- 식별자는 Kratos가 식별자를 찾을 때처럼 앞뒤의 ASCII 공백(`\t`, `\n`, `\v`, `\f`, `\r`, 스페이스)을 떼고 소문자로 바꾼 뒤(`app/api/auth_proxy.py`의 `normalize_identifier`) 해시로 키에 넣습니다. 식별자에 ASCII 밖의 문자가 있는 제출은 IP로 센 뒤 `400` `invalid_identifier`로 거절하고 식별자로는 세지 않습니다. 본문을 읽을 수 없거나 식별자가 문자열이 아니면 IP·경로마다 한 칸으로 셉니다. 식별자가 없는 제출(소셜 로그인·가입)과 식별자를 읽지 않는 GET 제출은 IP 한도만 받습니다.
+- 식별자는 Kratos가 식별자를 찾을 때처럼 앞뒤의 ASCII 공백(`\t`, `\n`, `\v`, `\f`, `\r`, 스페이스)을 떼고 소문자로 바꾼 뒤(`app/api/auth_proxy.py`의 `normalize_identifier`) 해시로 키에 넣습니다. 식별자에 ASCII 밖의 문자가 있는 제출과 본문이 프록시가 값을 읽는 형식이 아닌 제출([`/auth` 프록시](../guides/auth-proxy.ko.md)의 본문 형식)은 IP로 센 뒤 `400` `invalid_identifier`, `400` `invalid_request_body`로 거절하고 식별자로는 세지 않습니다. 로그인 식별자를 `identifier`와 `password_identifier`로 함께 보냈거나 식별자가 문자열이 아니면 IP·경로마다 한 칸으로 셉니다. 식별자가 없는 제출(소셜 로그인·가입)과 식별자를 읽지 않는 GET 제출은 IP 한도만 받습니다.
 - 설정 제출은 프록시의 세션 확인을 통과한 것만 셉니다.
 - 넘으면 미들웨어와 같은 형식의 429입니다.
 

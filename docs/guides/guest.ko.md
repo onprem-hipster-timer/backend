@@ -16,12 +16,14 @@
 | 비밀번호 | Kratos 비밀번호 정책 | 비어 있지 않고 UTF-8로 72바이트 이하면 된다 |
 | 이메일 인증 | 로그인에 필요 | 없음. handle을 처음부터 인증된 주소로 만든다(메일이 가지 않는 주소) |
 | 만들 때 | Kratos 가입 플로우 | `POST /v1/guests` |
+| 약관 동의 | `PUT /v1/users/me/consent` | 생성 요청의 `consent`. 약관 버전이 바뀌면 `PUT /v1/guests/me/consent` |
 | 로그인 | Kratos 로그인 플로우 | 같은 플로우 |
 | Cloudflare Turnstile | 없음 | 이름 찾기, 생성, 로그인 제출, 이름 변경, 자기 삭제마다 새 토큰(`X-Turnstile-Token` 헤더) 필요 |
 | 접근 범위 | 회원 경로 전체 | 자기 리소스의 게스트 경로만 |
 
 - 게스트 기능은 `GUEST_ENABLED=true`일 때만 켜집니다(기본 꺼짐). 꺼져 있으면 게스트 엔드포인트는 404이고, 게스트 토큰은 모든 경로에서 거부됩니다.
-- 게스트를 켜려면 Cloudflare Turnstile이 필요합니다. 게스트의 모든 단계(이름 찾기, 생성, 로그인 제출, 이름 변경, 자기 삭제)가 토큰을 요구합니다([Turnstile 토큰](#turnstile-토큰)). `TURNSTILE_SECRET_KEY`가 없으면 서버가 뜨지 않고, Turnstile 없이 게스트를 켜는 설정은 없습니다.
+- 게스트를 켜려면 Cloudflare Turnstile이 필요합니다. 게스트의 모든 단계(이름 찾기, 생성, 로그인 제출, 이름 변경, 자기 삭제)가 토큰을 요구합니다([Turnstile 토큰](#turnstile-토큰)). 약관 동의 기록(`PUT /v1/guests/me/consent`)은 단계가 아니라 토큰을 받지 않습니다. `TURNSTILE_SECRET_KEY`가 없으면 서버가 뜨지 않고, Turnstile 없이 게스트를 켜는 설정은 없습니다.
+- 게스트도 회원과 같은 약관(만 14세 이상, 이용약관, 개인정보처리방침)에 같은 버전(`CONSENT_VERSION`)으로 동의합니다. 동의 기록은 회원과 같은 `consent` 테이블에 Kratos identity id(JWT의 `sub`)로 두므로, 회원과 게스트는 서로의 동의로 통과하지 않습니다([약관 동의](#약관-동의--put-v1guestsmeconsent)).
 - 게스트는 자기 이름만 바꿀 수 있습니다. 로그인 식별자·비밀번호 변경과 소셜 로그인 연결은 Kratos 설정 훅이 거절합니다.
 - 회원 경로는 게스트 토큰을 거부합니다. `/v1/*`의 인증 경로와 GraphQL은 `403`, WebSocket은 연결을 `1008`로 닫습니다.
 - 이 저장소에는 게스트를 받는 리소스가 아직 없습니다. 미팅도 호스트를 등록하지 않았습니다([리소스가 게스트를 받게 하기](#리소스가-게스트를-받게-하기)). 이 문서의 `meeting` 예시는 요청 모양을 보이기 위한 것입니다.
@@ -34,6 +36,7 @@
 |----|---------|---------|
 | Kratos identity | handle, 비밀번호, 이름(`traits.name`) | 로그인, 세션, JWT의 `name` |
 | `guest` 테이블 | identity id, 리소스, 이름(`name`) | 이름 찾기, 이름 중복 검사, 접근 확인 |
+| `consent` 테이블 | identity id, 동의한 약관 버전, 동의 시각 | 약관 동의 판정(`428`). 회원과 함께 쓴다 |
 
 ## 구성 요소와 경계
 
@@ -72,7 +75,7 @@ flowchart TB
 | 구간 | 확인 수단 | 없거나 틀리면 |
 |------|-----------|---------------|
 | 클라이언트 → `POST /v1/guests/lookup`, `POST /v1/guests` | 없음(인증 없는 경로) | — |
-| 클라이언트 → 게스트 경로, `DELETE /v1/guests/me` | 게스트 JWT (`Authorization: Bearer`) | `401`/`403` |
+| 클라이언트 → 게스트 경로, `DELETE /v1/guests/me`, `PUT /v1/guests/me/consent` | 게스트 JWT (`Authorization: Bearer`) | `401`/`403` |
 | 클라이언트 → `/auth/*` | Kratos 세션 토큰 (`X-Session-Token`) 또는 없음(로그인 전) | Kratos가 판정 |
 | 클라이언트 → 게스트 단계 (이름 찾기, 생성, 자기 삭제, 게스트 handle의 로그인 제출, 게스트 세션의 설정 제출) | Turnstile 토큰 (`X-Turnstile-Token`, 한 번만 쓸 수 있다) | `403`/`503` |
 | 앞단 프록시 → backend | `ORIGIN_VERIFY_HEADER`·`ORIGIN_VERIFY_SECRET` (설정했을 때) | `403` |
@@ -87,22 +90,25 @@ flowchart TB
 
 게스트는 이름과 비밀번호만 입력합니다. 클라이언트는 다음 순서로 호출합니다.
 
-1. Turnstile 위젯에서 토큰을 받아 `POST /v1/guests/lookup`으로 그 리소스에 그 이름의 게스트가 있는지 찾는다.
-2. 없으면(`handle: null`) 새 토큰으로 `POST /v1/guests`를 불러 게스트를 만든다. 응답에 `handle`이 있다.
+1. Turnstile 위젯에서 토큰을 받아 `POST /v1/guests/lookup`으로 그 리소스에 그 이름의 게스트가 있는지 찾는다. 응답에 현재 약관 버전(`consent_version`)이 있다.
+2. 없으면(`handle: null`) 게스트에게 약관 세 항목의 동의를 받고, 새 토큰으로 `POST /v1/guests`를 불러 게스트를 만든다. `consent.version`에는 1번의 `consent_version`을 넣는다. 응답에 `handle`이 있다.
 3. 새 토큰으로, `handle`과 비밀번호로 회원과 같은 Kratos 로그인 플로우를 `/auth`로 호출한다.
 4. 세션 토큰으로 JWT를 받아(`GET /auth/sessions/whoami?tokenize_as=api`) 게스트 경로에 쓴다.
 
 토큰은 모두 `X-Turnstile-Token` 헤더에 넣습니다. 이름이 이미 있으면 2번을 건너뜁니다. 3번에서 비밀번호가 틀리면 Kratos가 `400`으로 거절합니다. Turnstile 토큰은 한 번만 쓸 수 있으므로 1~3번에 각각 하나가 필요하고, 다시 시도할 때마다 새 토큰을 받습니다.
 
+게스트 경로가 `428` `ConsentRequiredError`로 답하면 약관 버전이 바뀐 것입니다. 이름 찾기로 새 `consent_version`을 받아 게스트에게 다시 동의를 받고 `PUT /v1/guests/me/consent`로 보냅니다([약관 동의](#약관-동의--put-v1guestsmeconsent)).
+
 ```http
 POST /v1/guests/lookup
 X-Turnstile-Token: <위젯 토큰 1>
 {"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수"}
-→ 200 {"handle": null}
+→ 200 {"handle": null, "consent_version": "2026-11-13"}
 
 POST /v1/guests
 X-Turnstile-Token: <위젯 토큰 2>
-{"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수", "password": "1234"}
+{"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수", "password": "1234",
+ "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}}
 → 201 {"guest_id": "0b9c...", "handle": "0b9c...@guest.invalid", ...}
 
 GET  /auth/self-service/login/api
@@ -136,18 +142,19 @@ sequenceDiagram
     T-->>B: success<br/>(false · 이미 쓴 토큰이면 403,<br/>닿지 않으면 503)
     B->>B: 호스트 상태가 OPEN인가
     B->>D: (리소스, 이름) 조회
-    B-->>C: handle 또는 null
+    B-->>C: handle 또는 null,<br/>현재 약관 버전
 
-    C->>B: POST /v1/guests<br/>(리소스, 이름, 비밀번호)<br/>+ X-Turnstile-Token
+    C->>B: POST /v1/guests<br/>(리소스, 이름, 비밀번호, 동의)<br/>+ X-Turnstile-Token
     B->>T: 비밀 키 + 토큰
     T-->>B: success<br/>(false · 이미 쓴 토큰이면 403,<br/>닿지 않으면 503)
-    B->>B: 입력 규칙 · 이름 정규형<br/>(아니면 422)
+    B->>B: 입력 규칙 · 이름 정규형 ·<br/>동의 세 항목<br/>(아니면 422)
+    B->>B: 동의한 약관 버전이 현재 버전인가<br/>(아니면 409)
     B->>B: 호스트 상태가 OPEN인가<br/>(아니면 403)
     B->>D: 이름이 이미 있는가<br/>(있으면 409)
     B->>D: 게스트가 100명인가<br/>(맞으면 409)
     B->>K: identity 생성<br/>(guest schema, handle, 이름, 비밀번호,<br/>handle을 인증된 주소로)
     K-->>B: identity id<br/>(실패하면 503)
-    B->>D: 행 삽입<br/>(UNIQUE 리소스 + 이름)
+    B->>D: 행 삽입 + 약관 동의 기록<br/>(한 트랜잭션, UNIQUE 리소스 + 이름)
     alt 삽입 실패
         B->>K: 방금 만든 identity 삭제
         B-->>C: 409 (이름 중복)<br/>또는 오류
@@ -157,13 +164,15 @@ sequenceDiagram
 ```
 
 - `handle`은 `<guest_id>@guest.invalid`이고, `guest_id`는 backend가 삽입 전에 만든 행 id입니다.
-- Turnstile은 다른 확인보다 먼저입니다(2~3번, 8~9번). 그 뒤의 확인(10~13번)에서 거절돼도 토큰은 다시 쓸 수 없고, Kratos는 부르지 않습니다.
-- Kratos 호출 동안 DB 트랜잭션을 열어 두지 않습니다. 이름 중복은 16번의 UNIQUE 제약이 최종으로 막습니다.
+- Turnstile은 다른 확인보다 먼저입니다(2~3번, 8~9번). 그 뒤의 확인(10~14번)에서 거절돼도 토큰은 다시 쓸 수 없고, Kratos는 부르지 않습니다.
+- 약관 버전 확인(11번)은 리소스·이름 확인보다 먼저입니다. 버전이 다르면 리소스가 `EXPIRED`·`MISSING`이어도 게스트를 폐기하지 않습니다.
+- Kratos 호출 동안 DB 트랜잭션을 열어 두지 않습니다. 이름 중복은 17번의 UNIQUE 제약이 최종으로 막습니다. 동의 기록이 실패하면 게스트 행도 남지 않고 만든 identity를 지웁니다.
 
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 순서 전체 | `app/domain/guest/service.py` (`lookup`, `create`) | `tests/domain/guest/test_lookup_create.py`, `test_guest_api.py` |
 | 이름 정규형 | `app/domain/guest/schema/dto.py` (`normalize_guest_name`) | `tests/domain/guest/test_guest_api.py` |
+| 약관 동의 | `app/domain/consent/service.py` (`check_version`, `record_consent`) | `tests/domain/guest/test_guest_api.py`, `test_lookup_create.py` |
 | 100명 상한 | `service.MAX_GUESTS_PER_RESOURCE` | `tests/domain/guest/test_guest_limit.py` |
 | Turnstile | `app/middleware/guest_gate.py`, `app/core/turnstile.py` | `tests/domain/guest/test_turnstile.py` |
 | 동시 생성 | `guest` 테이블의 UNIQUE 제약 | `tests/domain/guest/test_name_concurrency.py` (PostgreSQL) |
@@ -185,7 +194,7 @@ sequenceDiagram
     K-->>C: flow id
 
     C->>P: POST /auth/self-service/<br/>login?flow=…<br/>(handle, 비밀번호)<br/>+ X-Turnstile-Token
-    P->>P: 요청 한도 (IP당 분당 60회,<br/>같은 IP · handle 분당 5회)<br/>identifier는 ASCII 문자만<br/>쿼리 문자열에 flow만
+    P->>P: 요청 한도 (IP당 분당 60회,<br/>같은 IP · handle 분당 5회)<br/>본문은 JSON 객체나 URL 인코딩 폼<br/>identifier는 ASCII 문자만<br/>쿼리 문자열에 flow만
     opt identifier가 게스트 handle일 때만
         P->>T: 비밀 키 + 토큰
         T-->>P: success<br/>(false · 토큰 없음 · 이미 쓴 토큰이면 403,<br/>닿지 않으면 503)
@@ -224,11 +233,12 @@ sequenceDiagram
 
 | 단계 | 일어나는 일 |
 |------|-------------|
-| 생성 | `POST /v1/guests`. 리소스가 게스트를 받고(`OPEN`) 그 이름이 비어 있고 게스트가 100명 미만이면 Kratos identity와 게스트 행을 만든다 |
+| 생성 | `POST /v1/guests`. 현재 약관 버전에 동의했고 리소스가 게스트를 받고(`OPEN`) 그 이름이 비어 있고 게스트가 100명 미만이면 Kratos identity, 게스트 행, 약관 동의 기록을 만든다 |
 | 로그인 | Kratos 로그인 플로우. Kratos 로그인 훅이 backend에 묻고, 게스트 행이 있고 리소스가 `OPEN`일 때만 세션을 만든다 |
 | 이름 변경 | Kratos 설정 플로우(`method: profile`)로 `traits.name`을 바꾼다. 설정 훅이 `guest.name`을 바꾸고 `GuestRenamed` 이벤트를 낸다 |
+| 약관 동의 | 약관 버전이 바뀌면 `PUT /v1/guests/me/consent`로 다시 동의한다. `CONSENT_ENFORCED`면 그때까지 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`이다 |
 | 자기 삭제 | `DELETE /v1/guests/me` |
-| 폐기 | 아래 조건에서 게스트 행과 Kratos identity를 지우고 `GuestDiscarded` 이벤트를 낸다 |
+| 폐기 | 아래 조건에서 게스트 행, 약관 동의 기록, Kratos identity를 지우고 `GuestDiscarded` 이벤트를 낸다 |
 
 게스트는 다음 경우에 폐기됩니다.
 
@@ -271,7 +281,7 @@ sequenceDiagram
     participant R as 리소스 도메인
     participant K as Kratos<br/>admin API
 
-    B->>D: 행 삭제 + GuestDiscarded<br/>(한 트랜잭션, 커밋)
+    B->>D: 행 삭제 + 약관 동의 삭제<br/>+ GuestDiscarded<br/>(한 트랜잭션, 커밋)
     D-->>R: GuestDiscarded 핸들러
     B->>K: identity 삭제
     Note over B,K: 실패하면 로그만 남긴다.<br/>행이 없으므로 그 identity는<br/>로그인 훅과 게스트 경로에서 거절된다
@@ -282,10 +292,12 @@ sequenceDiagram
 | Kratos 세션 | identity가 지워지면 바로 끊긴다 |
 | 이미 받은 JWT | 만료(tokenizer `ttl`, 기본 10분)까지 서명은 유효하다. 게스트 경로는 행이 없어 `403`, 회원 경로는 `schema_id`로 `403` |
 | 이름 | 다시 쓸 수 있다 |
+| 약관 동의 기록 | 게스트 행과 함께 지운다 |
 
 | 확인 | 코드 | 테스트 |
 |------|------|--------|
 | 접근 정책과 폐기 | `app/domain/guest/service.py` (`check_access`, `discard_guest`, `discard_resource_guests`) | `tests/domain/guest/test_policy.py` |
+| 폐기할 때 약관 동의 삭제 | `app/domain/guest/service.py` (`_delete_guest_row`, `_delete_resource_guest_rows`) | `tests/domain/guest/test_consent.py` |
 | 호스트 계약 | `app/domain/guest/host.py` | `tests/domain/guest/test_policy.py` |
 
 ## 이름과 비밀번호 규칙
@@ -355,7 +367,7 @@ flowchart TD
 
 #### 게스트 경로
 
-`require_guest_access(resource_type, id_param)`을 명시한 경로만 게스트를 받습니다. 판정은 요청마다 다시 합니다.
+`require_guest_access(resource_type, id_param)`을 명시한 경로만 게스트를 받습니다. 판정은 요청마다 다시 합니다. 약관 동의 확인까지는 `get_current_guest`가 하고(`DELETE /v1/guests/me`, `PUT /v1/guests/me/consent`는 여기까지), 그 뒤는 `require_guest_access`가 합니다.
 
 ```mermaid
 flowchart TD
@@ -367,7 +379,9 @@ flowchart TD
     S -->|"아니오"| C401
     S -->|"예"| D{"schema_id ==<br/>KRATOS_GUEST_SCHEMA_ID"}
     D -->|"아니오"| X403
-    D -->|"예"| E{"guest 행이 있다<br/>(identity id = 토큰의 sub)"}
+    D -->|"예"| CN{"CONSENT_ENFORCED이고<br/>guest 행이 있는데<br/>현재 약관 버전에 동의하지 않았다<br/>(동의 기록 · 자기 삭제 밖)"}
+    CN -->|"예"| X428["428"]
+    CN -->|"아니오"| E{"guest 행이 있다<br/>(identity id = 토큰의 sub)"}
     E -->|"없음"| X403
     E -->|"있음"| F{"행의 리소스 ==<br/>경로 파라미터의 리소스"}
     F -->|"다름"| X403
@@ -382,6 +396,7 @@ flowchart TD
 | `ensure_member` | `app/core/auth/dependencies.py` | `tests/core/test_auth_guest_token.py` |
 | `schema_id` 읽기 | `app/core/auth/model.py` (`CurrentUser.from_claims`, `is_guest`) | `tests/core/test_auth_guest_token.py` |
 | 게스트 의존성 | `app/domain/guest/dependencies.py` | `tests/domain/guest/test_dependencies.py` |
+| 약관 동의 (`428`, 허용 경로 `GUEST_CONSENT_ALLOWED_ROUTES`) | `app/domain/guest/dependencies.py` (`get_current_guest`) | `tests/domain/guest/test_consent.py` |
 | 행·리소스·호스트 상태 | `app/domain/guest/service.py` (`authorize`, `check_access`) | `tests/domain/guest/test_policy.py` |
 | 모든 경로가 게스트 토큰을 거부하는지 | 경로 전체 | `tests/domain/guest/test_route_guard.py` (받는 경로는 허용 목록에 올린다) |
 
@@ -422,6 +437,7 @@ flowchart TD
 - 토큰은 한 번만 받습니다. backend는 siteverify를 부르기 전에 토큰을 기록하고, 이미 기록한 토큰은 siteverify를 부르지 않고 `403`으로 거절합니다. 확인에 실패했거나 확인할 수 없었던 토큰도, 다른 단계에서 쓴 토큰도 같습니다. 기록은 토큰 유효 시간(300초)보다 조금 길게 둡니다.
 - 순서는 요청 한도 → Turnstile → 그 밖의 확인(입력 규칙, 리소스 상태, 이름 중복, 게스트 수, 게스트 JWT 판정) → Kratos입니다. 요청 한도에 걸린 요청은 Turnstile을 부르지 않고, Turnstile에서 거절된 요청은 Kratos에 닿지 않습니다.
 - `X-Turnstile-Token`은 Kratos에 넘기지 않습니다.
+- 약관 동의 기록(`PUT /v1/guests/me/consent`)은 게스트 단계가 아니라 토큰을 받지 않습니다.
 - `GUEST_ENABLED`가 꺼져 있으면 확인하지 않습니다.
 
 | 결과 | `/v1/guests/*` (`error_type`) | `/auth` (`error.id`) |
@@ -441,11 +457,15 @@ flowchart TD
 }
 ```
 
-응답 (200): 그 이름의 게스트가 있으면 `{"handle": "<guest_id>@guest.invalid"}`, 없으면 `{"handle": null}`.
+응답 (200): 그 이름의 게스트가 있으면 `handle`이 `"<guest_id>@guest.invalid"`, 없으면 `null`입니다. `consent_version`은 현재 약관 시행일(`CONSENT_VERSION`)이고, 생성과 동의 기록에 그대로 보냅니다.
+
+```json
+{"handle": null, "consent_version": "2026-11-13"}
+```
 
 | 상태 | 뜻 |
 |------|----|
-| `200` | 찾았거나(`handle`) 없다(`null`) |
+| `200` | 찾았거나(`handle`) 없다(`null`). 어느 쪽이든 `consent_version`이 있다 |
 | `403` | 리소스가 없거나, 지금 게스트를 받지 않거나, 게스트 기간이 끝났다. 세 경우 응답이 같다 (`GuestEntryRefusedError`) |
 | `403` | Turnstile 토큰을 받지 않았다 (`GuestVerificationFailedError`) |
 | `503` | Turnstile을 확인할 수 없다 (`GuestServiceUnavailableError`) |
@@ -461,7 +481,8 @@ flowchart TD
   "resource_type": "meeting",
   "resource_id": "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b",
   "name": "민수",
-  "password": "1234"
+  "password": "1234",
+  "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
 }
 ```
 
@@ -471,6 +492,7 @@ flowchart TD
 | `resource_id` | 리소스 UUID |
 | `name` | [이름 규칙](#이름과-비밀번호-규칙) |
 | `password` | [비밀번호 규칙](#이름과-비밀번호-규칙) |
+| `consent` | 회원 동의(`PUT /v1/users/me/consent`)와 같은 모양. `version`은 이름 찾기의 `consent_version`, `age_over_14`·`terms`·`privacy`(만 14세 이상, 이용약관, 개인정보처리방침)는 모두 `true` |
 
 응답 (201):
 
@@ -483,17 +505,18 @@ flowchart TD
 }
 ```
 
-서버는 Turnstile 토큰, 입력 규칙, 리소스 상태, 이름 중복, 게스트 수 순으로 확인합니다. Turnstile 뒤의 확인에서 거절돼도 그 토큰은 다시 쓸 수 없습니다.
+서버는 Turnstile 토큰, 입력 규칙(동의 세 항목 포함), 약관 버전, 리소스 상태, 이름 중복, 게스트 수 순으로 확인합니다. Turnstile 뒤의 확인에서 거절돼도 그 토큰은 다시 쓸 수 없습니다. 약관 동의는 게스트 행과 한 트랜잭션으로 기록합니다.
 
 | 상태 | `error_type` | 뜻 |
 |------|--------------|----|
 | `201` | | 만들었다 |
+| `409` | `ConsentVersionMismatchError` | `consent.version`이 현재 약관 시행일이 아니다. 이름 찾기의 `consent_version`으로 다시 동의를 받는다 |
 | `403` | `GuestEntryRefusedError` | 리소스가 없거나, 지금 게스트를 받지 않거나, 게스트 기간이 끝났다 |
 | `409` | `GuestNameTakenError` | 이 리소스에 같은 이름의 게스트가 있다 |
 | `409` | `GuestLimitReachedError` | 이 리소스에 게스트가 이미 100명이다 |
 | `403` | `GuestVerificationFailedError` | Turnstile 토큰을 받지 않았다. 위젯에서 새 토큰을 받아 다시 보낸다 |
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
-| `422` | | 입력 규칙 위반 |
+| `422` | | 입력 규칙 위반. `consent`가 없거나 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
 | `429` | | IP당 분당 100회를 넘었다 (이름 찾기와 따로 센다) |
 
 ### 로그인과 JWT
@@ -512,7 +535,7 @@ GET  /auth/sessions/whoami?tokenize_as=api
 - 로그인 제출의 `identifier`가 게스트 handle이면 `X-Turnstile-Token` 헤더의 토큰을 확인한 뒤 Kratos에 넘깁니다. 헤더가 없거나 Turnstile이 받지 않았거나 이미 쓴 토큰이면 `403` `guest_verification_failed`, 확인할 수 없으면 `503` `guest_verification_unavailable`이고 Kratos에 넘기지 않습니다. 토큰은 제출마다 새로 받습니다.
 - `identifier`(`password_identifier` 포함, JSON 키는 대소문자 구분 없이)는 Kratos가 식별자를 찾을 때처럼 앞뒤의 ASCII 공백을 떼고 소문자로 바꾼 값이 `@guest.invalid`로 끝나면 게스트 handle로 봅니다.
 - `identifier`에 ASCII 밖의 문자가 있으면 토큰을 확인하지 않고 `400` `invalid_identifier`입니다.
-- `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문을 읽을 수 없으면 `400` `invalid_request_body`입니다.
+- `identifier`를 둘 이상 보내거나(`password_identifier` 포함) 본문이 프록시가 값을 읽는 형식([본문 형식](auth-proxy.ko.md#판정-순서))이 아니면 `400` `invalid_request_body`입니다.
 - 비밀번호가 틀리면 Kratos가 `400`(메시지 `id` `4000006`)으로 거절합니다. 메시지 `id`는 Kratos 응답 본문의 `ui.messages[].id`입니다.
 - 게스트 행이 없거나 리소스가 `OPEN`이 아니면 로그인 훅이 거절해 `400`(메시지 `id` `4000001`)입니다.
 - JWT 클레임에는 `sub`(게스트의 Kratos identity id), `schema_id`(게스트 schema id), `name`이 있고 `email`은 없습니다. 이후 요청에는 `Authorization: Bearer <JWT>`를 붙입니다.
@@ -542,6 +565,7 @@ Content-Type: application/json
 | `503` `guest_verification_unavailable` | Turnstile을 확인할 수 없다 |
 | `400` 메시지 `id` `4000001` | 설정 훅이 거절했다: 이름이 정규형이 아니거나, `handle`이 다르거나, 리소스가 `OPEN`이 아니거나, 그 사이 다른 게스트가 그 이름을 가졌다 |
 | `403` | `method`가 `profile`이 아니다 (`password`, `oidc` 등). Kratos 설정 훅도 다시 거절한다 |
+| `400` `invalid_request_body` | 본문이 프록시가 값을 읽는 형식이 아니다. JSON 객체(`traits`는 객체)나 URL 인코딩 폼(`traits.name`처럼 점으로 이은 필드)만 받는다 ([본문 형식](auth-proxy.ko.md#판정-순서)) |
 
 - 지금 이름과 같은 이름으로 바꾸는 요청은 받고, 아무것도 바꾸지 않습니다.
 - 이름 중복은 `guest` 테이블의 UNIQUE 제약이 막습니다. 요청이 `/auth` 프록시를 거치지 않아도 같습니다.
@@ -560,7 +584,7 @@ sequenceDiagram
     participant D as guest 테이블
 
     C->>P: POST /auth/self-service/<br/>settings?flow=…<br/>(method: profile, traits)<br/>+ X-Session-Token<br/>+ X-Turnstile-Token
-    P->>P: 쿼리 문자열에 flow만
+    P->>P: 본문은 JSON 객체나 URL 인코딩 폼<br/>쿼리 문자열에 flow만
     P->>P: method가 profile인가<br/>세션 토큰이 있는가<br/>(아니면 403)
     P->>K: whoami<br/>(그 세션 토큰)
     K-->>P: 세션의 identity
@@ -594,7 +618,30 @@ sequenceDiagram
 
 ### 자기 삭제 — `DELETE /v1/guests/me`
 
-게스트 JWT와 `X-Turnstile-Token` 헤더의 토큰이 필요합니다. Turnstile 확인이 JWT 판정보다 먼저입니다. 응답은 `204`이고, 새 토큰으로 다시 불러도 `204`입니다. 회원 토큰은 `403`, 토큰이 없거나 `schema_id` 클레임이 없으면 `401`입니다.
+게스트 JWT와 `X-Turnstile-Token` 헤더의 토큰이 필요합니다. Turnstile 확인이 JWT 판정보다 먼저입니다. 응답은 `204`이고, 새 토큰으로 다시 불러도 `204`입니다. 회원 토큰은 `403`, 토큰이 없거나 `schema_id` 클레임이 없으면 `401`입니다. 현재 약관 버전에 동의하지 않았어도 부를 수 있습니다.
+
+### 약관 동의 — `PUT /v1/guests/me/consent`
+
+게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다.
+
+```json
+{"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
+```
+
+| 상태 | `error_type` | 뜻 |
+|------|--------------|----|
+| `204` | | 기록했다. 같은 버전에 다시 동의해도 `204`이고 처음 기록을 둔다 |
+| `409` | `ConsentVersionMismatchError` | `version`이 현재 약관 시행일이 아니다 |
+| `422` | | 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
+| `403` | `GuestAccessDeniedError` | 게스트 행이 없다(폐기된 게스트). 회원 토큰도 `403` |
+| `401` | | 토큰이 없거나 `schema_id` 클레임이 없다 |
+
+`CONSENT_ENFORCED`(기본 켜짐)면 현재 약관 버전에 동의하지 않은 게스트는 이 경로와 `DELETE /v1/guests/me` 밖의 게스트 경로가 `428` `ConsentRequiredError`(`message: "consent_required"`)입니다. 회원의 `428`과 같은 응답입니다. 폐기된 게스트(guest 행이 없다)는 `428`이 아니라 접근 확인의 `403`을 받습니다. 현재 버전은 이름 찾기의 `consent_version`으로 받습니다. 약관 버전(`CONSENT_VERSION`)을 바꾸면 모든 게스트가 다시 동의해야 합니다.
+
+| 확인 | 코드 | 테스트 |
+|------|------|--------|
+| 동의 기록과 `428` | `app/api/v1/guests.py`, `app/domain/guest/service.py` (`record_consent`, `consent_pending`), `app/domain/guest/dependencies.py` | `tests/domain/guest/test_consent.py` |
+| 동의 판정·기록 (회원과 같다) | `app/domain/consent/service.py` | `tests/domain/consent/test_service.py` |
 
 ### `/auth` 프록시가 받지 않는 게스트 관련 요청
 
@@ -603,7 +650,8 @@ sequenceDiagram
 | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 | `400` `address_not_accepted` |
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출에 `X-Turnstile-Token`이 없거나, Turnstile이 받지 않거나, 이미 쓴 토큰이다 (`GUEST_ENABLED`) | `403` `guest_verification_failed` |
 | 게스트 handle의 로그인 제출이나 게스트 세션의 설정 제출인데 Turnstile을 확인할 수 없다 (`GUEST_ENABLED`) | `503` `guest_verification_unavailable` |
-| 로그인 제출에 `identifier`가 둘 이상이거나 본문을 읽을 수 없다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
+| 로그인 제출에 `identifier`가 둘 이상이다 (`GUEST_ENABLED`) | `400` `invalid_request_body` |
+| 로그인·가입·설정·인증·복구 제출(GET 밖)의 본문이 프록시가 값을 읽는 형식이 아니다 (읽을 수 없거나 키가 겹치는 본문 포함, [본문 형식](auth-proxy.ko.md#판정-순서)) | `400` `invalid_request_body` |
 | 로그인·가입·설정·인증·복구 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 값이 있다 (인증 GET은 `flow`·`code` 밖) | `400` `invalid_request_body` |
 | 로그인·가입·인증·복구 제출의 식별자(`identifier`, `traits.email`, `email`)에 ASCII 밖의 문자가 있다 | `400` `invalid_identifier` |
 | Kratos로 보낼 URL을 만들 수 없다 (퍼센트 인코딩을 푼 경로나 쿼리 문자열의 제어 문자, 65536자를 넘는 URL) | `400` `invalid_request_url` |
@@ -704,7 +752,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | 진입점 | 쓰는 것 |
 |--------|---------|
 | 게스트 관문 (`middleware/guest_gate.py`) | 게스트 예외(Turnstile 거절 응답). Turnstile은 `core/turnstile` |
-| `/v1/guests/*` (`api/v1/guests.py`) | 서비스(찾기·생성·폐기), 게스트 의존성(`DELETE /v1/guests/me`) |
+| `/v1/guests/*` (`api/v1/guests.py`) | 서비스(찾기·생성·폐기·약관 동의 기록), 게스트 의존성(`DELETE /v1/guests/me`, `PUT /v1/guests/me/consent`) |
 | Kratos 훅 수신 (`api/kratos_hooks.py`) | 서비스(로그인·설정 판정) |
 | `/auth` 프록시 (`api/auth_proxy.py`) | 서비스(이름 중복 조회) |
 | 리소스의 게스트 경로 | 게스트 의존성 |
@@ -720,6 +768,7 @@ graph TD
     SVC --> HOST["host.py<br/>GuestHost 등록부"]
     SVC --> EV["events.py<br/>GuestDiscarded ·<br/>GuestRenamed"]
     SVC --> CRUD["crud/guest.py"] --> TBL[("guest 테이블")]
+    SVC --> CON["domain/consent<br/>약관 동의 (회원과 같다)"] --> CTBL[("consent 테이블")]
     SVC --> EXT["core/kratos_admin"]
     RES["리소스 도메인<br/>호스트 구현 ·<br/>이벤트 핸들러"] -.->|등록| HOST
     RES -.->|등록| EV
@@ -731,7 +780,7 @@ graph TD
 - 게스트 도메인은 리소스 도메인을 import하지 않습니다. 리소스가 호스트와 이벤트 핸들러를 등록하고(점선), 게스트 도메인은 등록부를 통해서만 리소스의 상태를 묻습니다.
 - 토큰 검증은 회원과 같은 `authenticate_request`를 씁니다. 그 뒤 회원 판정(`ensure_member`) 대신 게스트 판정으로 갑니다([인증 가이드](auth.ko.md)).
 - Kratos에 닿는 곳은 둘입니다. 게스트 도메인은 admin API(`kratos_admin`)로 identity를 만들고 지우고, 공개 API는 `/auth` 프록시만 부릅니다.
-- DB는 `service.py`가 자기 세션으로 `crud/guest.py`를 통해서만 씁니다.
+- DB는 `service.py`가 자기 세션으로 `crud/guest.py`와 약관 동의 서비스(`domain/consent`)를 통해서만 씁니다. 게스트 의존성의 약관 동의 확인도 `service.py`(`consent_pending`)를 거칩니다.
 
 ## 제한
 
@@ -753,6 +802,7 @@ graph TD
 | `app/domain/guest/host.py` | 호스트 계약 |
 | `app/domain/guest/dependencies.py` | 게스트 경로 의존성 |
 | `app/models/guest.py` | `guest` 테이블 |
+| `app/domain/consent/`, `app/models/consent.py` | 약관 동의 판정·기록·삭제와 `consent` 테이블 (회원과 함께 쓴다) |
 | `app/api/v1/guests.py` | `/v1/guests/*` |
 | `app/api/kratos_hooks.py` | Kratos 훅 수신 |
 | `app/api/auth_proxy.py` | `/auth` 프록시의 게스트 처리 ([`/auth` 프록시](auth-proxy.ko.md)) |

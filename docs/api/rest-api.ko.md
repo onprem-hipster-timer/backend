@@ -108,12 +108,13 @@ DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 `GUEST_ENABLED=true`일 때만 응답합니다(꺼져 있으면 404).
 
 ```http
-POST   /v1/guests/lookup                  # 리소스에서 그 이름의 게스트 로그인 식별자(handle) 찾기 (인증 없음)
-POST   /v1/guests                         # 게스트 생성 (인증 없음). handle 반환
+POST   /v1/guests/lookup                  # 리소스에서 그 이름의 게스트 로그인 식별자(handle) 찾기 (인증 없음). 현재 약관 버전도 반환
+POST   /v1/guests                         # 게스트 생성 (인증 없음, 약관 동의 consent 필요). handle 반환
 DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게스트 JWT)
+PUT    /v1/guests/me/consent              # 게스트의 약관 동의 기록 (게스트 JWT)
 ```
 
-게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 위 세 경로와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 이름 찾기·생성·자기 삭제와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 약관 동의 기록은 토큰을 받지 않습니다. `CONSENT_ENFORCED`면 현재 약관 버전에 동의하지 않은 게스트는 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`(`message: "consent_required"`)입니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
 
 ### 공휴일 (Holidays)
 

@@ -19,6 +19,10 @@ Kratos는 api 컨테이너 옆 사이드카라 밖에서 직접 닿지 않는다
 - 내용을 검사하는 제출(설정, 가입·로그인, 인증·복구)은 Kratos로 보낼 URL의 쿼리 문자열에 flow 하나만 받는다(키는 대소문자
   구분 없이). Kratos는 쿼리 문자열의 제출 값도 읽으므로 다른 키가 있으면 400 invalid_request_body로 거절하고 넘기지 않는다.
   이 경로로 가는 GET도 제출로 보고 같은 규칙을 적용한다. 인증 GET은 인증 메일의 링크처럼 code도 하나 받는다
+- 내용을 검사하는 제출의 GET 밖의 본문은 이 프록시가 값을 읽는 표현만 받는다(body_refusal, GUEST_ENABLED와 상관없이).
+  미디어 타입은 application/json이나 application/x-www-form-urlencoded이고, JSON은 키가 겹치지 않는 객체로 최상위 키에 점이 없고
+  traits가 있으면 객체이며, 폼은 UTF-8로 키가 겹치지 않고 traits 필드가 없다. Kratos는 이 밖의 표현에서도 제출 값을 읽으므로
+  아니면 400 invalid_request_body로 거절하고 넘기지 않는다
 - GUEST_ENABLED면 로그인 제출의 식별자(identifier, password_identifier)가 게스트 handle 주소인지 본다. 게스트 handle
   로그인은 인터셉터가 Turnstile을 확인한 뒤 넘긴다. 식별자가 둘 이상이거나 본문을 읽을 수 없으면 400 invalid_request_body.
   X-Turnstile-Token은 Kratos에 넘기지 않는다 (요청 헤더 허용 목록에 없다)
@@ -44,7 +48,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from urllib.parse import parse_qs, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -122,6 +126,25 @@ def _make_client() -> httpx.AsyncClient:
     )
 
 
+FORM_MEDIA_TYPE = "application/x-www-form-urlencoded"
+JSON_MEDIA_TYPE = "application/json"
+
+
+def _media_type(content_type: str) -> str:
+    """Content-Type의 미디어 타입 (; 앞, 앞뒤 공백 없이, 소문자)"""
+    return content_type.split(";")[0].strip().lower()
+
+
+def _is_form(content_type: str) -> bool:
+    """본문이 URL 인코딩 폼인지"""
+    return _media_type(content_type) == FORM_MEDIA_TYPE
+
+
+def _form_pairs(body: bytes) -> list[tuple[str, str]]:
+    """폼 본문의 (키, 값) 쌍 (빈 값 포함). UTF-8이 아니면 UnicodeDecodeError"""
+    return parse_qsl(body.decode(), keep_blank_values=True)
+
+
 def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
     # 키는 대소문자 구분 없이 비교해 대소문자만 다른 키도 겹친 것으로 본다 (Kratos가 같은 키로 읽는 것보다 넓다)
     keys = [key.lower() for key, _ in pairs]
@@ -130,16 +153,24 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
     return dict(pairs)
 
 
+def _load_json(body: bytes) -> object:
+    """본문을 JSON으로 읽는다. JSON이 아니거나 키가 겹치거나(_no_duplicate_keys) 너무 깊게 중첩됐으면 ValueError"""
+    try:
+        return json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except RecursionError:
+        raise ValueError("too deeply nested") from None
+
+
 def _submitted_method(content_type: str, body: bytes) -> str | None:
     """제출 본문의 method. 읽을 수 없거나 키가 겹치면 None.
 
     키가 겹치면 여기와 Kratos가 서로 다른 값을 읽을 수 있으므로 받지 않는다.
     """
     try:
-        if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
-            values = parse_qs(body.decode(), keep_blank_values=True).get("method", [])
+        if _is_form(content_type):
+            values = [value for key, value in _form_pairs(body) if key == "method"]
             return values[0] if len(values) == 1 else None
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     method = data.get("method") if isinstance(data, dict) else None
@@ -163,15 +194,15 @@ _UNREADABLE = object()
 
 def _submitted_identifier(content_type: str, body: bytes) -> object:
     """로그인 제출의 식별자 값(없으면 None). 읽을 수 없거나 식별자가 둘 이상이면 _UNREADABLE"""
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return _UNREADABLE
         values = [value for key, value in pairs if key.lower() in IDENTIFIER_KEYS]
     else:
         try:
-            data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+            data = _load_json(body)
         except (ValueError, UnicodeDecodeError):
             return _UNREADABLE
         if not isinstance(data, dict):
@@ -203,10 +234,10 @@ def _is_guest_handle(identifier: object) -> bool:
 def _submitted_name(content_type: str, body: bytes) -> object:
     """설정 제출 본문의 traits.name. 없거나 읽을 수 없으면 None (키는 대소문자 구분 없이 찾는다)"""
     try:
-        if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
-            values = parse_qs(body.decode(), keep_blank_values=True).get("traits.name", [])
+        if _is_form(content_type):
+            values = [value for key, value in _form_pairs(body) if key == "traits.name"]
             return values[0] if len(values) == 1 else None
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     traits = _get_ignoring_case(data, "traits")
@@ -224,9 +255,9 @@ def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> o
 
     키는 대소문자 구분 없이 찾는다. 폼 본문의 키는 path를 점으로 이은 것이다.
     """
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return _UNREADABLE
         form_key = ".".join(path)
@@ -235,7 +266,7 @@ def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> o
             return _UNREADABLE
         return values[0] if values else None
     try:
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return _UNREADABLE
     for key in path:
@@ -268,9 +299,9 @@ def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
 
     소셜 계정의 이메일은 제공자 매퍼가 준 값(제공자가 검증한 이메일)만 쓴다.
     """
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return None
         methods = [value for key, value in pairs if key == "method"]
@@ -281,7 +312,7 @@ def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
         return urlencode([(key, value) for key, value in pairs if key != "traits.email"]).encode()
 
     try:
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     if not isinstance(data, dict):
@@ -503,6 +534,44 @@ def identifier_refusal(submission: Submission) -> Response | None:
     if isinstance(identifier, str) and not identifier.isascii():
         return _invalid_identifier()
     return None
+
+
+def _readable_body(content_type: str, body: bytes) -> bool:
+    """본문이 이 프록시가 값을 읽는 표현인지.
+
+    - 미디어 타입(; 앞, 앞뒤 공백 없이, 대소문자 구분 없이)은 application/json이나 application/x-www-form-urlencoded
+    - JSON: 키가 겹치지 않는(_no_duplicate_keys) 객체이고, 최상위 키에 점이 없으며, traits(키는 대소문자 구분 없이)가 있으면 객체다
+    - 폼: UTF-8이고, 키가 겹치지 않으며(대소문자 구분 없이), traits 필드(대소문자 구분 없이)가 없다
+    """
+    if _is_form(content_type):
+        try:
+            keys = [key.lower() for key, _ in _form_pairs(body)]
+        except UnicodeDecodeError:
+            return False
+        return len(keys) == len(set(keys)) and "traits" not in keys
+    if _media_type(content_type) != JSON_MEDIA_TYPE:
+        return False
+    try:
+        data = _load_json(body)
+    except ValueError:
+        return False
+    return (
+        isinstance(data, dict)
+        and not any("." in key for key in data)
+        and all(isinstance(value, dict) for key, value in data.items() if key.lower() == "traits")
+    )
+
+
+def body_refusal(submission: Submission) -> Response | None:
+    """검사하는 제출 경로로 가는 GET 밖의 제출 본문이 이 프록시가 값을 읽는 표현(_readable_body)이 아니면
+    400 invalid_request_body, 아니면 None. GUEST_ENABLED와 상관없다.
+
+    Kratos는 JSON 최상위의 점이 든 키, 문자열 traits, 폼의 traits 필드, multipart 본문에서도 값을 읽는다.
+    인터셉터(app/middleware/guest_gate.py)가 IP 단위로 센 뒤, 식별자의 ASCII 규칙보다 먼저 부른다.
+    """
+    if submission.method == "GET" or submission.path not in INSPECTED_SUBMIT_PATHS:
+        return None
+    return None if _readable_body(submission.content_type, submission.body) else _unreadable_body()
 
 
 async def inspect_submission(submission: Submission, session_token: str | None) -> Response | None:

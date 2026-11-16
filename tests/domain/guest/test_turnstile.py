@@ -14,7 +14,7 @@ import app.core.config as app_config
 from app.core import turnstile as turnstile_client
 from app.domain.guest.host import GuestHostStatus
 from tests.domain.guest.fakes import TURNSTILE_SECRET, TURNSTILE_VERIFY
-from tests.domain.guest.helpers import guest_rows, make_guest
+from tests.domain.guest.helpers import consent_body, guest_rows, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
@@ -65,7 +65,10 @@ class Step:
         if self.name == "lookup":
             body = {"resource_type": "meeting", "resource_id": str(self.resource), "name": "민수"}
         elif self.name == "create":
-            body = {"resource_type": "meeting", "resource_id": str(self.resource), "name": "영희", "password": "1234"}
+            body = {
+                "resource_type": "meeting", "resource_id": str(self.resource), "name": "영희", "password": "1234",
+                "consent": consent_body(),
+            }
         elif self.name == "delete":
             headers = {**self.tokens.guest(self.guest.identity_id), **headers}
         elif self.name == "login":
@@ -286,9 +289,29 @@ def test_verification_comes_before_resource_and_name_checks(
         assert r.json()["error_type"] == "GuestVerificationFailedError"
 
 
+@pytest.mark.parametrize("consent", ["missing", "false_item", "other_version"])
+def test_verification_comes_before_consent_checks(guest_client, kratos, turnstile, resource, consent):
+    """동의 항목이 빠졌거나(422) 버전이 다르더라도(409) 토큰 거절이 먼저다"""
+    body = {"resource_type": "meeting", "resource_id": str(resource), "name": "영희", "password": "1234"}
+    if consent == "false_item":
+        body["consent"] = {**consent_body(), "terms": False}
+    elif consent == "other_version":
+        body["consent"] = consent_body("2000-01-01")
+    turnstile.success = False
+
+    r = guest_client.post(CREATE, json=body, headers={TOKEN_HEADER: WIDGET_TOKEN})
+
+    assert r.status_code == 403
+    assert r.json()["error_type"] == "GuestVerificationFailedError"
+    assert kratos.identities == {}
+
+
 def test_checks_after_verification_still_apply(guest_client, kratos, host, turnstile, resource):
     make_guest(kratos, resource, name="영희")
-    body = {"resource_type": "meeting", "resource_id": str(resource), "name": "영희", "password": "1234"}
+    body = {
+        "resource_type": "meeting", "resource_id": str(resource), "name": "영희", "password": "1234",
+        "consent": consent_body(),
+    }
     assert guest_client.post(CREATE, json=body, headers={TOKEN_HEADER: WIDGET_TOKEN}).status_code == 409
 
     closed = uuid.uuid4()

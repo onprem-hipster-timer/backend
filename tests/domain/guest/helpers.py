@@ -2,6 +2,7 @@
 import uuid
 from uuid import UUID
 
+import app.core.config as app_config
 from app.db.session import _session_manager
 from app.domain.guest.model import Guest
 from app.domain.guest.schema.dto import normalize_guest_name
@@ -42,3 +43,23 @@ def guest_rows() -> list[Guest]:
         for row in rows:
             session.expunge(row)
         return rows
+
+
+def consent_body(version: str | None = None) -> dict:
+    """POST /v1/guests의 consent, PUT /v1/guests/me/consent의 본문 (기본은 현재 약관 버전)"""
+    return {
+        "version": version or app_config.settings.CONSENT_VERSION,
+        "age_over_14": True,
+        "terms": True,
+        "privacy": True,
+    }
+
+
+def consent_rows() -> set[tuple[str, str]]:
+    """consent 테이블의 (sub, version)"""
+    from sqlmodel import select
+
+    from app.models.consent import Consent
+
+    with _session_manager.get_session() as session:
+        return {(c.sub, c.version) for c in session.exec(select(Consent)).all()}

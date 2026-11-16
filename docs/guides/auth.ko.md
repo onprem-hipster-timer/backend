@@ -500,6 +500,7 @@ async function fetchJwt() {
 ```
 
 - 제출 요청의 쿼리 문자열에는 `flow`만 넣습니다. 다른 값이 있으면 프록시가 `400`으로 거절합니다. 제출 경로로 가는 GET도 같고, 인증 메일의 링크(`GET /auth/self-service/verification?flow=…&code=…`)만 `code`를 더 담습니다.
+- 제출 본문은 JSON 객체(`Content-Type: application/json`)나 URL 인코딩 폼(`application/x-www-form-urlencoded`)으로 보냅니다. JSON에서는 `traits`를 객체로(`{"traits": {"email": …}}`), 폼에서는 `traits.email`처럼 점으로 이은 필드로 보냅니다. 그 밖의 형식(`multipart/form-data`, `"traits.email"` 같은 JSON 키, 문자열 `traits`, 겹치는 키)은 프록시가 `400` `invalid_request_body`로 거절합니다.
 - 로그인 `identifier`, 가입 `traits.email`, 인증·복구 `email`에는 ASCII 문자만 씁니다. ASCII 밖의 문자가 있으면 프록시가 Kratos에 넘기지 않고 `400` `invalid_identifier`로 답합니다.
 - `/auth`로 가는 GET 밖의 요청과 제출 경로로 가는 GET은 IP당 분당 60회이고, 로그인·가입·인증·복구 제출은 같은 IP에서 같은 식별자로 분당 5회까지입니다. 설정 제출은 identity당 분당 10회입니다. JWT 갱신(`GET`)은 이 한도에 들지 않습니다.
 - 로그아웃은 `DELETE /auth/self-service/logout/api`에 세션 토큰을 보냅니다. 세션은 바로 끝나고, 이미 받은 JWT는 만료까지 유효합니다.
