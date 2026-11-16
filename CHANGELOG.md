@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.16-6e39e06] - 2026-11-16
+
 ### Added
 
 - **Guest accounts (off by default)**: With `GUEST_ENABLED=true`, a guest is created with `POST /v1/guests` (no authentication; `resource_type`, `resource_id`, `name`, `password`, `consent`), which returns 201 with `guest_id`, `handle`, `resource_type` and `resource_id`. `POST /v1/guests/lookup` (no authentication; `resource_type`, `resource_id`, `name`) returns the `handle` of the guest with that name in that resource, or `"handle": null`, together with `consent_version`, the current `CONSENT_VERSION`. The client signs in with `handle` and the password through the Kratos login flow under `/auth` and gets JWTs through `/auth/sessions/whoami?tokenize_as=api`, like members. `DELETE /v1/guests/me` deletes the calling guest (204). With `GUEST_ENABLED=false` these endpoints return 404.
@@ -509,7 +515,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-da99ae8...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.16-6e39e06...HEAD
+[v2026.11.16-6e39e06]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-da99ae8...v2026.11.16-6e39e06
 [v2026.11.15-da99ae8]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...v2026.11.15-da99ae8
 [v2026.11.15-ea415eb]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...v2026.11.15-ea415eb
 [v2026.11.14-27a3ef9]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.13-541f2db...v2026.11.14-27a3ef9
