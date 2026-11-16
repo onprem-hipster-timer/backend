@@ -13,7 +13,6 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine, text
 
-from app.core import kratos_slots
 from app.domain.guest import service
 from app.domain.guest.exceptions import GuestNameTakenError
 from app.domain.guest.host import GuestHostStatus
@@ -132,12 +131,6 @@ def small_pool(guest_client):
         engine.dispose()
 
 
-@pytest.fixture
-def wide_slots(kratos, monkeypatch):
-    """몰린 요청이 모두 게스트 Kratos 자리를 바로 잡는다. 자리 상한은 test_kratos_slots.py가 본다"""
-    monkeypatch.setattr(kratos_slots, "guest_slots", kratos_slots.Slots(100))
-
-
 @pytest_asyncio.fixture
 async def api():
     from app.main import app
@@ -166,7 +159,6 @@ async def _elapsed(request) -> float:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("wide_slots")
 async def test_creates_and_renames_on_one_resource_with_small_pool(small_pool, slow_kratos, host, resource, api):
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
