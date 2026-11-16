@@ -12,7 +12,8 @@
 - 이름 찾기(lookup)와 생성(create). 게스트 이름(정규형)은 guest.name에 두고, 리소스 안에서 겹치지 않는 것은
   UNIQUE (resource_type, resource_id, name)이 보장한다. 로그인 식별자(handle)는 "<게스트 행 id>@guest.invalid"
 - 약관 동의는 회원과 같은 consent 테이블에 게스트의 identity id로 둔다 (app/domain/consent). 생성은 동의를 게스트 행과
-  한 트랜잭션에 기록하고, 이후의 동의(record_consent)는 게스트 행이 있을 때만 기록한다
+  한 트랜잭션에 기록하고, 이후의 동의(record_consent)는 게스트 행을 잠그고(FOR NO KEY UPDATE) 행이 있을 때만
+  기록한다. 폐기의 게스트 행 삭제는 이 잠금이 풀린 뒤 동의를 함께 지우므로 폐기된 게스트의 동의는 남지 않는다
 - Kratos 로그인 훅·설정 훅 판정(login_allowed, settings_change_allowed). 회원 로그인은 판정하지 않는다.
   이름 변경은 설정 훅이 guest.name을 바꾼다. 훅이 허용한 뒤 Kratos가 이름 저장에 실패하면 다음 이름 변경까지
   guest.name(찾기·중복 기준)과 Kratos trait name(토큰의 name)이 다르다
@@ -314,14 +315,14 @@ async def consent_pending(identity_id: str) -> bool:
 
 def _record_consent(identity_id: str, data: ConsentCreate) -> None:
     with _transaction() as session:
-        if crud.get_guest_by_identity(session, identity_id) is None:
+        if crud.get_guest_by_identity(session, identity_id, for_update=True) is None:
             raise GuestAccessDeniedError()
         consent_service.record_consent(session, identity_id, data)
 
 
 async def record_consent(identity_id: str, data: ConsentCreate) -> None:
     """게스트의 약관 동의를 기록한다. 게스트 행이 없으면 GuestAccessDeniedError, 현재 버전이 아니면
-    ConsentVersionMismatchError"""
+    ConsentVersionMismatchError. 커밋할 때까지 게스트 행을 잠근다(폐기는 그동안 기다린다)"""
     await run_in_threadpool(_record_consent, identity_id, data)
 
 

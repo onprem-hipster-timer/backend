@@ -24,6 +24,7 @@ from app.core.auth import CurrentUser
 from app.crud import user_profile as crud
 from app.domain.consent import service as consent_service
 from app.domain.consent.schema.dto import ConsentCreate
+from app.domain.user.exceptions import AccountDeletedError
 from app.domain.user.model import UserProfile
 from app.models.base import utc_now_naive
 
@@ -135,7 +136,11 @@ class UserProfileService:
         return profile
 
     def record_consent(self, data: ConsentCreate) -> UserProfile:
-        """현재 약관 버전에 대한 동의를 기록. 다른 버전이면 ConsentVersionMismatchError."""
+        """현재 약관 버전에 대한 동의를 기록. 다른 버전이면 ConsentVersionMismatchError, 파기한 계정이면
+        AccountDeletedError. 커밋할 때까지 프로필 행을 잠근다(파기는 그동안 기다린다)."""
+        crud.get_by_sub(self.session, self.current_user.sub, for_update=True)
+        if account_state(self.session, self.current_user.sub) == AccountState.DELETED:
+            raise AccountDeletedError()
         consent_service.record_consent(self.session, self.current_user.sub, data)
         return self.sync_from_current_user()
 

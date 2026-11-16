@@ -639,6 +639,8 @@ sequenceDiagram
 | `403` | `GuestAccessDeniedError` | 게스트 행이 없다(폐기된 게스트). 회원 토큰도 `403` |
 | `401` | | 토큰이 없거나 `schema_id` 클레임이 없다 |
 
+같은 게스트의 동의 기록과 폐기가 겹치면, 동의 기록이 먼저 게스트 행을 잠갔을 때는 폐기가 그 동의까지 지우고 폐기가 먼저 행을 지웠을 때는 동의 기록이 `403`입니다.
+
 `CONSENT_ENFORCED`(기본 켜짐)면 현재 약관 버전에 동의하지 않은 게스트는 이 경로와 `DELETE /v1/guests/me` 밖의 게스트 경로가 `428` `ConsentRequiredError`(`message: "consent_required"`)입니다. 회원의 `428`과 같은 응답입니다. 폐기된 게스트(guest 행이 없다)는 `428`이 아니라 접근 확인의 `403`을 받습니다. 현재 버전은 이름 찾기의 `consent_version`으로 받습니다. 약관 버전(`CONSENT_VERSION`)을 바꾸면 모든 게스트가 다시 동의해야 합니다.
 
 | 확인 | 코드 | 테스트 |
