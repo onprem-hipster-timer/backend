@@ -3,6 +3,7 @@ import app.valid.schedule  # noqa: F401
 import app.valid.tag  # noqa: F401
 import app.valid.todo_group  # noqa: F401
 from app.models.account_deletion import AccountDeletion
+from app.models.consent import Consent
 from app.models.friendship import Friendship, FriendshipStatus
 from app.models.guest import Guest
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
@@ -34,6 +35,8 @@ __all__ = [
     # User profile (OIDC sub ↔ 표시정보 JIT 캐시)
     "UserProfile",
     "AccountDeletion",
+    # 약관 동의 (회원·게스트)
+    "Consent",
     # Meeting
     "Meeting",
     "MeetingParticipant",

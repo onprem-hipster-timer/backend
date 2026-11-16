@@ -22,7 +22,8 @@ from sqlmodel import Session
 import app.core.config as app_config
 from app.core.auth import CurrentUser
 from app.crud import user_profile as crud
-from app.domain.user.exceptions import ConsentVersionMismatchError
+from app.domain.consent import service as consent_service
+from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.user.model import UserProfile
 from app.models.base import utc_now_naive
 
@@ -75,12 +76,6 @@ def deletion_scheduled_at(profile: UserProfile) -> datetime | None:
     if profile.deletion_requested_at is None:
         return None
     return profile.deletion_requested_at + timedelta(days=app_config.settings.ACCOUNT_DELETION_GRACE_DAYS)
-
-
-def consent_pending(session: Session, sub: str) -> bool:
-    """현재 약관 버전에 동의하지 않았으면 True (프로필이 없으면 True)"""
-    profile = crud.get_by_sub(session, sub)
-    return profile is None or profile.consent_version != app_config.settings.CONSENT_VERSION
 
 
 class UserProfileService:
@@ -139,17 +134,10 @@ class UserProfileService:
         )
         return profile
 
-    @staticmethod
-    def consent_required(profile: UserProfile) -> bool:
-        """현재 약관 버전에 동의하지 않았으면 True"""
-        return profile.consent_version != app_config.settings.CONSENT_VERSION
-
-    def record_consent(self, version: str) -> UserProfile:
+    def record_consent(self, data: ConsentCreate) -> UserProfile:
         """현재 약관 버전에 대한 동의를 기록. 다른 버전이면 ConsentVersionMismatchError."""
-        if version != app_config.settings.CONSENT_VERSION:
-            raise ConsentVersionMismatchError()
-        profile = self.sync_from_current_user()
-        return crud.record_consent(self.session, profile, version)
+        consent_service.record_consent(self.session, self.current_user.sub, data)
+        return self.sync_from_current_user()
 
     def request_deletion(self) -> tuple[UserProfile, bool]:
         """탈퇴 신청(휴면). 이미 신청했으면 처음 시각을 유지한다. 새로 신청했으면 True."""

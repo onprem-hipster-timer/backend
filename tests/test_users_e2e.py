@@ -253,3 +253,22 @@ class TestConsent:
         assert self._agree(a).status_code == 200
         assert a.get("/v1/users/me").json()["consent_required"] is False
         assert b.get("/v1/users/me").json()["consent_required"] is True
+
+    def test_consent_is_one_row_per_sub_and_version(self, multi_user_e2e, monkeypatch):
+        """동의는 consent 테이블에 (sub, 버전)마다 한 행이다 (app/domain/consent)"""
+        import app.core.config as app_config
+        from sqlmodel import select
+
+        from app.db.session import _session_manager
+        from app.models.consent import Consent
+
+        a = multi_user_e2e.as_user("user-a")
+        first = app_config.settings.CONSENT_VERSION
+        assert self._agree(a).status_code == 200
+        assert self._agree(a).status_code == 200
+        monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+        assert self._agree(a).status_code == 200
+
+        with _session_manager.get_session() as session:
+            rows = {(c.sub, c.version) for c in session.exec(select(Consent)).all()}
+        assert rows == {("user-a", first), ("user-a", "2099-01-01")}

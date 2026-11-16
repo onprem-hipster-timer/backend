@@ -174,12 +174,10 @@ def get_current_user_synced(
     - CONSENT_ENFORCED면 현재 약관 버전에 동의하지 않은 사용자는 CONSENT_ALLOWED_ROUTES 밖이면 428.
     """
     # 지연 import: domain.user.service가 app.core.auth.CurrentUser를 import하므로 순환 회피
-    from app.domain.user.exceptions import (
-        AccountDeletedError,
-        AccountDeletionPendingError,
-        ConsentRequiredError,
-    )
-    from app.domain.user.service import AccountState, UserProfileService, account_state, consent_pending
+    from app.domain.consent.exceptions import ConsentRequiredError
+    from app.domain.consent.service import consent_pending
+    from app.domain.user.exceptions import AccountDeletedError, AccountDeletionPendingError
+    from app.domain.user.service import AccountState, UserProfileService, account_state
 
     if account_state(session, current_user.sub) == AccountState.DELETED:
         raise AccountDeletedError()

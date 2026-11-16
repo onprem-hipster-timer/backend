@@ -17,6 +17,8 @@ from app.core.auth import CurrentUser, ensure_member, oidc_client
 import app.core.config as app_config
 from app.core.config import settings
 from app.db.session import get_db
+from app.domain.consent.exceptions import ConsentRequiredError
+from app.domain.consent.service import consent_pending
 from app.domain.schedule.schema.query import schema
 
 
@@ -62,10 +64,6 @@ async def get_context(request: Request, session: Session = Depends(get_db)) -> d
     if current_user is not None:
         _require_active_account(session, current_user.sub)
     if current_user is not None and app_config.settings.CONSENT_ENFORCED:
-        # 지연 import: domain.user.service가 app.core.auth를 import하므로 순환 회피
-        from app.domain.user.exceptions import ConsentRequiredError
-        from app.domain.user.service import consent_pending
-
         if consent_pending(session, current_user.sub):
             raise ConsentRequiredError()
 

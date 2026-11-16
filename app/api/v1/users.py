@@ -19,8 +19,10 @@ from app.core import kratos_admin
 from app.core.audit import log_account_access
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import CommittingSession, get_db_transactional
+from app.domain.consent.schema.dto import ConsentCreate
+from app.domain.consent.service import consent_pending
 from app.domain.user.model import UserProfile
-from app.domain.user.schema.dto import ConsentCreate, MyProfileRead
+from app.domain.user.schema.dto import MyProfileRead
 from app.domain.user.service import UserProfileService, deletion_scheduled_at
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -37,7 +39,7 @@ async def get_my_profile(
     `friend_code`를 공유하면 상대가 그 코드로 친구 요청을 보낼 수 있다.
     """
     profile = UserProfileService(session, current_user).sync_from_current_user()
-    return _to_read(profile)
+    return _to_read(session, profile)
 
 
 @router.put("/me/consent", response_model=MyProfileRead)
@@ -51,8 +53,8 @@ async def put_my_consent(
 
     `version`은 응답 전에 받은 현재 약관 시행일이어야 한다(다르면 409).
     """
-    profile = UserProfileService(session, current_user).record_consent(data.version)
-    return _to_read(profile)
+    profile = UserProfileService(session, current_user).record_consent(data)
+    return _to_read(session, profile)
 
 
 @router.post("/me/deletion", response_model=MyProfileRead)
@@ -70,7 +72,7 @@ async def request_my_deletion(
     profile, requested = UserProfileService(session, current_user).request_deletion()
     if requested:
         background_tasks.add_task(_after_deletion_requested, current_user.sub, _client_ip(request))
-    return _to_read(profile)
+    return _to_read(session, profile)
 
 
 @router.delete("/me/deletion", response_model=MyProfileRead)
@@ -84,7 +86,7 @@ async def cancel_my_deletion(
     profile, cancelled = UserProfileService(session, current_user).cancel_deletion()
     if cancelled:
         background_tasks.add_task(log_account_access, "deletion_cancelled", current_user.sub, _client_ip(request))
-    return _to_read(profile)
+    return _to_read(session, profile)
 
 
 async def _after_deletion_requested(sub: str, ip: str | None) -> None:
@@ -96,14 +98,14 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _to_read(profile: UserProfile) -> MyProfileRead:
+def _to_read(session: Session, profile: UserProfile) -> MyProfileRead:
     return MyProfileRead(
         id=profile.sub,
         display_name=profile.display_name,
         avatar_url=profile.avatar_url,
         friend_code=profile.friend_code,
         consent_version=app_config.settings.CONSENT_VERSION,
-        consent_required=UserProfileService.consent_required(profile),
+        consent_required=consent_pending(session, profile.sub),
         deletion_requested_at=profile.deletion_requested_at,
         deletion_scheduled_at=deletion_scheduled_at(profile),
     )

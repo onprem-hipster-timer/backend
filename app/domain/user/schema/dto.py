@@ -5,7 +5,7 @@ User Domain DTO
 표시정보는 친구 목록/받은 요청 등 관계 성립/시도 상대에 한해서만 노출된다.)
 """
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from app.core.base_model import CustomModel
 
@@ -20,11 +20,3 @@ class MyProfileRead(CustomModel):
     consent_required: bool  # consent_version에 동의하지 않았으면 True
     deletion_requested_at: Optional[datetime] = None  # 탈퇴 신청 시각. 값이 있으면 휴면 계정
     deletion_scheduled_at: Optional[datetime] = None  # 이 시각 뒤 파기된다 (신청 시각 + 유예 기간)
-
-
-class ConsentCreate(CustomModel):
-    """약관 동의 (PUT /v1/users/me/consent) — 세 항목 모두 true여야 한다"""
-    version: str  # 동의한 약관 시행일. 현재 CONSENT_VERSION과 같아야 한다
-    age_over_14: Literal[True]
-    terms: Literal[True]
-    privacy: Literal[True]
