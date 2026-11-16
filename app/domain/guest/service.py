@@ -280,11 +280,13 @@ async def name_taken_by_other(identity_id: str, name: object) -> bool:
 
 def _read_consent_pending(identity_id: str) -> bool:
     with _session_manager.get_session() as session:
-        return consent_service.consent_pending(session, identity_id)
+        return crud.get_guest_by_identity(session, identity_id) is not None and consent_service.consent_pending(
+            session, identity_id
+        )
 
 
 async def consent_pending(identity_id: str) -> bool:
-    """게스트가 현재 약관 버전에 동의하지 않았으면 True"""
+    """게스트 행이 있고 현재 약관 버전에 동의하지 않았으면 True. 행이 없는(폐기된) 게스트는 접근 확인이 거절한다"""
     return await run_in_threadpool(_read_consent_pending, identity_id)
 
 

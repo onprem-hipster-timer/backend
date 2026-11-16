@@ -181,6 +181,19 @@ def test_guest_without_current_consent_gets_428_until_it_agrees(
     assert routes.get(url, headers=headers).status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_discarded_guest_gets_403_on_resource_route(routes, kratos, tokens, resource, enforced):
+    guest = make_guest(kratos, resource)
+    headers = tokens.guest(guest.identity_id)
+    _agree(guest.identity_id)
+    await service.discard_guest(guest.identity_id)
+
+    r = routes.get(f"/test/meetings/{resource}", headers=headers)
+
+    assert r.status_code == 403
+    assert r.json()["error_type"] == "GuestAccessDeniedError"
+
+
 def test_consent_and_self_delete_are_allowed_without_consent(guest_client, kratos, tokens, resource, enforced):
     agreeing = make_guest(kratos, resource, name="동의")
     leaving = make_guest(kratos, resource, name="떠남")
