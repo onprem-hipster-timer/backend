@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Guests in meetings**: meetings accept guests (`resource_type: "meeting"`, `resource_id` = meeting id). A meeting accepts guests (`OPEN`) while `allow_guests` is true, its visibility is `public`, its owner has not requested account deletion and its guest period has not ended. While `allow_guests` is off, the visibility is not `public` or the owner is dormant (`CLOSED`), its guests get 403 and are kept, and they can continue once the meeting accepts guests again. The guest period ends at 00:00 in the meeting's `timezone` on `end_date` + 31 days (30 days after `end_date` ends); from then on its guests get 403 and are discarded (`EXPIRED`). Deleting a meeting discards its guests after the deletion is committed; guests of meetings removed by an account purge are discarded by the same daily run (`MISSING`). Guide: `docs/guides/meeting.ko.md`.
+  - `allow_guests` (default `false`) on `MeetingCreate`, `MeetingUpdate` and `MeetingRead`. `true` is accepted only while the meeting's visibility is `public`; otherwise the request returns 422 `InvalidMeetingError` and the meeting is unchanged. New meetings have no visibility setting, so `POST /v1/meetings` accepts only `false`. `null` in `PATCH` returns 422. Changing the visibility later keeps the value. Migration `a4c8e2f6b1d3`.
+  - A guest of the meeting can call `GET /v1/meetings/{id}`, `GET /v1/meetings/{id}/result`, `GET /v1/meetings/{id}/availability`, `POST /v1/meetings/{id}/participate` and `PUT /v1/meetings/{id}/availability` with its guest JWT. Guests of other meetings, discarded guests, and guests while the meeting is not `OPEN` get 403 as on other guest routes; with `CONSENT_ENFORCED`, a guest that has not consented to the current version gets 428. Other meeting routes refuse guest tokens (403). Meeting routes take no Turnstile token.
+  - A guest has one participant per meeting, whose `display_name` is the guest's name: `POST /v1/meetings/{id}/participate` returns 201 the first time and 200 with the same participant afterwards; the `display_name` sent is validated but not used. When the guest changes its name, the participant's `display_name` follows. A guest can set only its own participant's availability; another `participant_id` returns 404 `MeetingParticipantNotFoundError`. When a guest is discarded (self-deletion included), the database deletes its participant and time slots (`meeting_participant.guest_id` referencing `guest.id` with `ON DELETE CASCADE`, unique, never set together with `user_id`; migration `b5d9f3a7c2e4`).
+- **Public meetings without signing in**: `GET /v1/meetings/{id}` and `GET /v1/meetings/{id}/result` answer requests without a token for meetings whose visibility is `public` and whose owner is not dormant. Other meetings return the same 404 `MeetingNotFoundError` as a missing meeting. Without a token, `GET /v1/meetings/{id}/availability`, `POST /v1/meetings/{id}/participate` and `PUT /v1/meetings/{id}/availability` return 401 whether or not the meeting exists. A request whose token fails verification gets 401 on these routes.
+- **Participant count and roles**: `GET /v1/meetings/{id}/result` returns `participant_count`, the number of participants excluding those of dormant members and including participants without time slots; it is the same for every caller. Participants in `POST /v1/meetings/{id}/participate` and `GET /v1/meetings/{id}/availability` responses have `is_owner` (the meeting owner's participant) and `is_guest` (a guest's participant).
+
+### Changed
+
+- **Meeting responses to guests and requests without a token**: `owner_id` of the meeting is `null` and `user_id` of every participant is `null`. `MeetingRead.owner_id` is nullable in the API schema. Responses to members are unchanged.
 
 ---
 

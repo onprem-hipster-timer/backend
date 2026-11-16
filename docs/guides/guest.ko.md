@@ -26,7 +26,7 @@
 - 게스트도 회원과 같은 약관(만 14세 이상, 이용약관, 개인정보처리방침)에 같은 버전(`CONSENT_VERSION`)으로 동의합니다. 동의 기록은 회원과 같은 `consent` 테이블에 Kratos identity id(JWT의 `sub`)로 두므로, 회원과 게스트는 서로의 동의로 통과하지 않습니다([약관 동의](#약관-동의--put-v1guestsmeconsent)).
 - 게스트는 자기 이름만 바꿀 수 있습니다. 로그인 식별자·비밀번호 변경과 소셜 로그인 연결은 Kratos 설정 훅이 거절합니다.
 - 회원 경로는 게스트 토큰을 거부합니다. `/v1/*`의 인증 경로와 GraphQL은 `403`, WebSocket은 연결을 `1008`로 닫습니다.
-- 이 저장소에는 게스트를 받는 리소스가 아직 없습니다. 미팅도 호스트를 등록하지 않았습니다([리소스가 게스트를 받게 하기](#리소스가-게스트를-받게-하기)). 이 문서의 `meeting` 예시는 요청 모양을 보이기 위한 것입니다.
+- 게스트를 받는 리소스는 미팅(`resource_type: "meeting"`)입니다. 미팅이 게스트를 받는 조건과 게스트가 쓰는 미팅 경로는 [미팅 가이드의 게스트 계정](meeting.ko.md#게스트-계정)에 있습니다.
 - 게스트를 켜도 회원 로그인의 Kratos 판정은 그대로입니다. Kratos가 로그인 훅으로 backend에 묻는 것은 게스트 로그인뿐입니다. 로그인 요청 자체는 회원과 게스트 모두 `/auth` 프록시를 지납니다.
 - 게스트 JWT에는 `email` 클레임이 없고 `email_verified`는 `false`입니다. handle은 이메일로 쓰이지 않습니다.
 
@@ -669,7 +669,11 @@ sequenceDiagram
 
 ### 1. 호스트 계약 구현과 등록
 
-리소스 종류마다 `GuestHost`를 구현해 `register_guest_host`로 등록합니다. 등록하지 않은 리소스 종류는 `MISSING`으로 봅니다.
+리소스 종류마다 `GuestHost`를 구현해 `register_guest_host`로 등록합니다. 등록하지 않은 리소스 종류는 `MISSING`으로 봅니다. 지금 등록된 호스트는 미팅 하나입니다.
+
+| 리소스 종류 | 구현 | 상태 규칙 |
+|-------------|------|-----------|
+| `meeting` | `app/domain/meeting/guest_host.py` | [미팅 가이드의 게스트 계정](meeting.ko.md#게스트-계정) |
 
 | `GuestHostStatus` | 뜻 | 접근 정책 |
 |-------------------|----|-----------|
@@ -679,24 +683,15 @@ sequenceDiagram
 | `MISSING` | 리소스가 없다 | 거부, 게스트를 폐기한다 |
 
 ```python
-# 예시: 미팅이 게스트를 받는다면 (이 저장소에는 없는 파일이고, accepts_guests·guest_period_over도 예시다)
-# app/domain/meeting/guest_host.py
-from uuid import UUID
-
-from sqlmodel import Session
-
-from app.domain.guest.host import GuestHostStatus, register_guest_host
-from app.models.visibility import ResourceType
-
-
+# app/domain/meeting/guest_host.py (요약)
 class MeetingGuestHost:
     def guest_status(self, session: Session, resource_id: UUID) -> GuestHostStatus:
         meeting = session.get(Meeting, resource_id)
         if meeting is None:
             return GuestHostStatus.MISSING
-        if meeting.guest_period_over():
+        if utc_now_naive() >= guest_period_end(meeting):
             return GuestHostStatus.EXPIRED
-        if not meeting.accepts_guests:
+        if not meeting.allow_guests or not is_public(session, ResourceType.MEETING, meeting.id, meeting.owner_id):
             return GuestHostStatus.CLOSED
         return GuestHostStatus.OPEN
 
@@ -707,7 +702,7 @@ def register() -> None:
 
 - `guest_status`는 읽기만 하고 세션을 커밋하지 않습니다.
 - 하루 한 번 실행은 게스트가 있는 리소스마다 `guest_status`를 부릅니다. 지워진 리소스는 `MISSING`을 돌려줍니다.
-- 등록은 앱 시작 때 한 번 합니다(이벤트 핸들러 등록과 같은 자리). 테스트는 `register_guest_host`·`unregister_guest_host`로 가짜 호스트를 둡니다(`tests/domain/guest/conftest.py`).
+- 등록은 앱 시작 때 한 번 합니다(`app/main.py`의 lifespan, 이벤트 핸들러 등록 바로 뒤). 테스트는 `register_guest_host`·`unregister_guest_host`로 가짜 호스트를 두고(`host`), 실제 미팅 호스트는 `meeting_host`로 둡니다(`tests/domain/guest/conftest.py`).
 
 ### 2. 게스트 경로
 
@@ -728,6 +723,7 @@ async def guest_view(guest: Guest = Depends(require_guest_access(ResourceType.ME
 
 - 토큰이 게스트 토큰이고, 게스트 행이 있고, 그 행의 리소스가 경로 파라미터의 리소스와 같고, 접근 정책이 허용할 때만 통과합니다. 아니면 `403`입니다. 토큰이 없거나 `schema_id` 클레임이 없으면 `401`이고, `GUEST_ENABLED`가 꺼져 있으면 토큰과 상관없이 `403`입니다.
 - 게스트를 받는 경로는 회원 게이트(`get_current_user_synced`)가 걸린 `/v1` 인증 라우터 밖에 둡니다.
+- 회원과 게스트를 한 경로에서 받으려면 토큰의 `schema_id`로 갈라, 게스트 토큰은 `require_guest_access`로, 회원 토큰은 인증 라우터와 같은 `get_current_user_synced`로 확인합니다. 미팅의 조회·참여·가능 시간·결과 경로가 이렇게 합니다(`app/api/v1/meetings.py`의 `get_meeting_caller`).
 - 새 경로가 게스트 토큰을 거부하지 않으면 `tests/domain/guest/test_route_guard.py`가 실패합니다. 게스트를 받는 경로는 그 테스트의 허용 목록에 올립니다.
 
 ### 3. 이벤트
@@ -741,6 +737,8 @@ async def guest_view(guest: Guest = Depends(require_guest_access(ResourceType.ME
 
 핸들러는 `@register(GuestDiscarded)`로 등록하고, 모듈을 `app/shared/messagebus.py`의 `register_handlers`에 더합니다([도메인 이벤트](../development/domain-events.ko.md)).
 
+미팅은 `GuestRenamed`로 게스트 참여자의 표시 이름을 바꿉니다(`app/domain/meeting/event_handlers.py`). 게스트 참여자는 `meeting_participant.guest_id`가 `guest.id`를 `ON DELETE CASCADE`로 참조해, 게스트 행이 지워지면 DB가 참여자와 가능 시간을 지웁니다. 그래서 `GuestDiscarded` 핸들러는 두지 않습니다.
+
 ### 4. 리소스를 지울 때
 
 리소스 삭제를 커밋한 뒤 게스트를 모두 폐기합니다. 부르지 않아도 다음 게스트 확인이나 하루 한 번 실행에서 `MISSING`으로 폐기되지만, 그때까지 게스트 행과 Kratos identity가 남습니다.
@@ -751,9 +749,11 @@ from app.domain.guest.service import discard_resource_guests
 await discard_resource_guests(ResourceType.MEETING, meeting_id)
 ```
 
+미팅은 `DELETE /v1/meetings/{id}`가 삭제를 커밋한 뒤 부릅니다. 회원 파기처럼 이 함수를 부르지 않고 지운 미팅의 게스트는 하루 한 번 실행이 `MISSING`으로 폐기합니다.
+
 ## 객체 의존성
 
-게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 여섯입니다.
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 일곱입니다.
 
 | 진입점 | 쓰는 것 |
 |--------|---------|
@@ -762,7 +762,8 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | Kratos 훅 수신 (`api/kratos_hooks.py`) | 서비스(로그인·설정 판정) |
 | `/auth` 프록시 (`api/auth_proxy.py`) | 서비스(이름 중복 조회) |
 | 하루 한 번 실행 (`api/internal.py`) | 서비스(EXPIRED·MISSING 리소스의 게스트 폐기) |
-| 리소스의 게스트 경로 | 게스트 의존성 |
+| 리소스의 게스트 경로 (미팅: `api/v1/meetings.py`) | 게스트 의존성 |
+| 리소스 삭제 (미팅: `DELETE /v1/meetings/{id}`) | 서비스(리소스의 게스트 폐기) |
 
 그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.
 
@@ -816,4 +817,5 @@ graph TD
 | `app/middleware/guest_gate.py` | 게스트 관문: 게스트 단계 표, Turnstile 토큰 읽기·확인·거절 응답, `/auth` 제출 한도 |
 | `app/core/turnstile.py` | Turnstile siteverify 호출, 토큰 사용 기록 |
 | `app/core/auth/dependencies.py` | `ensure_member` (회원 경로의 게스트 거부) |
+| `app/domain/meeting/guest_host.py`, `app/api/v1/meetings.py`, `app/domain/meeting/visitor_service.py` | 게스트를 받는 리소스(미팅)의 호스트, 경로, 게스트용 서비스 ([미팅 가이드](meeting.ko.md#게스트-계정)) |
 | `tests/domain/guest/` | 테스트 |

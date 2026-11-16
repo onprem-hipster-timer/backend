@@ -7,7 +7,7 @@
 > 읽기 경로(파트 1~3)는 미구현 · 추적: [#50](https://github.com/onprem-hipster-timer/backend/issues/50)
 >
 > 구현 모듈: `app/shared/{events,uow,messagebus}.py` · 이벤트: `app/domain/{todo,schedule,timer}/events.py` ·
-> 핸들러: `app/domain/{schedule,todo,timer}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
+> 핸들러: `app/domain/{schedule,todo,timer,meeting}/event_handlers.py` · 테스트: `tests/shared/test_messagebus.py`,
 > `tests/domain/todo/test_projection_policy.py`, `tests/domain/schedule/test_backpropagation.py`,
 > `tests/domain/timer/test_linked_timer_policy.py`, `tests/domain/timer/test_todo_status.py`
 
@@ -293,6 +293,7 @@ def handle(events, session):
 | `TodoStatusChanged` | ✅ 구현 (`app/domain/todo/events.py` → 핸들러 `app/domain/timer/event_handlers.py`) |
 | `TimerCompleted`, `TimerCancelled` | ✅ 구현 (`app/domain/timer/events.py` → 핸들러 `app/domain/todo/event_handlers.py`) |
 | `GuestDiscarded`, `GuestRenamed` | ✅ 발행 (`app/domain/guest/events.py`). 게스트를 받는 리소스가 핸들러를 등록한다 ([게스트 가이드](../guides/guest.ko.md)) |
+| `GuestRenamed` | ✅ 구현 (→ 핸들러 `app/domain/meeting/event_handlers.py`, 게스트 참여자의 표시 이름) |
 
 !!! note "반복 일정 × source_todo (결정)"
     마감은 시점이므로 그 투영이 반복 시리즈가 되는 것 자체가 모순 — source-linked

@@ -12,7 +12,7 @@
 
 게스트를 켜도 회원 로그인의 Kratos 판정은 그대로입니다. Kratos가 훅으로 backend에 묻는 것은 게스트의 로그인과 설정 변경뿐입니다. 로그인·설정 요청 자체는 회원과 게스트 모두 backend의 `/auth` 프록시를 지납니다.
 
-이 저장소에는 게스트를 받는 리소스가 아직 없습니다. 아래 설정을 마쳐도 리소스가 호스트를 등록하기 전에는 게스트 이름 찾기와 생성이 `403`입니다([리소스가 게스트를 받게 하기](../guides/guest.ko.md#리소스가-게스트를-받게-하기)).
+게스트를 받는 리소스는 미팅입니다. 아래 설정을 마치면 게스트 허용(`allow_guests`)을 켠 `public` 미팅에서 게스트를 만들 수 있고, 그 밖의 미팅에서는 게스트 이름 찾기와 생성이 `403`입니다([미팅 가이드의 게스트 계정](../guides/meeting.ko.md#게스트-계정)).
 
 ## 1. backend 환경 변수
 
@@ -332,7 +332,7 @@ SELFSERVICE_FLOWS_SETTINGS_AFTER_OIDC_HOOKS_0_CONFIG_AUTH_CONFIG_VALUE=<키>
 
 ## 4. 설정 후 확인
 
-`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 게스트를 받는 리소스(호스트를 등록한 리소스)가 하나 있어야 4.3부터 확인할 수 있습니다. 이 저장소에는 아직 없으므로 4.1, 4.2, 4.4까지 확인합니다(`RESOURCE_TYPE`, `RESOURCE_ID`). JSON은 `python3`로 읽습니다. backend가 출처 확인을 쓰고 `API`가 앞단 프록시를 거치지 않는 주소면, backend로 보내는 `curl`마다 `-H "<ORIGIN_VERIFY_HEADER의 값>: <ORIGIN_VERIFY_SECRET>"`을 더합니다(없으면 `403`).
+`API`는 backend 주소, `KRATOS_PUBLIC`은 Kratos 공개 API 주소, `KEY`는 훅 키입니다. 4.3은 게스트를 받는 미팅이 하나 있어야 합니다. 회원으로 미팅을 만들고 공개 범위를 `public`으로 정한 뒤 `allow_guests`를 켜고, `RESOURCE_TYPE`은 `meeting`, `RESOURCE_ID`는 그 미팅 id로 둡니다([미팅 가이드의 게스트 계정](../guides/meeting.ko.md#게스트-계정)). JSON은 `python3`로 읽습니다. backend가 출처 확인을 쓰고 `API`가 앞단 프록시를 거치지 않는 주소면, backend로 보내는 `curl`마다 `-H "<ORIGIN_VERIFY_HEADER의 값>: <ORIGIN_VERIFY_SECRET>"`을 더합니다(없으면 `403`).
 
 ### 4.1 Kratos가 게스트 schema를 안다
 
@@ -383,9 +383,11 @@ echo "$JWT" | python3 -c 'import base64,json,sys; p=sys.stdin.read().split(".")[
 
 curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/users/me" -H "Authorization: Bearer $JWT"
 # 403
+curl -s -o /dev/null -w '%{http_code}\n' "$API/v1/meetings/$RESOURCE_ID" -H "Authorization: Bearer $JWT"
+# 200
 ```
 
-- 이름 찾기나 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고, `GuestVerificationFailedError`는 Turnstile 토큰(없음, 거절, 이미 쓴 토큰)입니다.
+- 이름 찾기나 생성이 `403`이면 응답의 `error_type`을 봅니다. `GuestEntryRefusedError`는 리소스가 게스트를 받지 않는 것이고(미팅이면 공개 범위, `allow_guests`, 게스트 기간을 확인한다), `GuestVerificationFailedError`는 Turnstile 토큰(없음, 거절, 이미 쓴 토큰)입니다.
 - 생성이 `503`이면 backend가 Turnstile 확인 주소나 Kratos admin API에 닿지 않는 것입니다. backend 로그를 봅니다.
 - 생성이 `409` `ConsentVersionMismatchError`면 `consent.version`이 backend의 `CONSENT_VERSION`과 다른 것입니다. 이름 찾기 응답의 `consent_version`을 보냅니다.
 - 로그인이 `403` `guest_verification_failed`면 `X-Turnstile-Token` 헤더가 없거나, Turnstile이 토큰을 받지 않았거나, 이미 쓴 토큰입니다.
@@ -434,4 +436,4 @@ KRATOS_HOOK_API_KEY=dev-only-kratos-hook-key
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-게스트를 받는 리소스(호스트)가 등록되어 있어야 게스트를 만들 수 있습니다. 등록된 호스트가 없으면 이름 찾기와 생성은 `403`입니다.
+게스트는 `allow_guests`를 켠 `public` 미팅에서 만들 수 있습니다. 그 밖의 리소스에서는 이름 찾기와 생성이 `403`입니다.
