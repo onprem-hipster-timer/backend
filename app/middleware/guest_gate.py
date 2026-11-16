@@ -20,7 +20,7 @@ X-Turnstile-Token 헤더의 토큰이 확인을 통과해야 라우트에 닿는
 - X-Turnstile-Token은 Kratos에 넘기지 않는다 (프록시의 요청 헤더 허용 목록에 없다)
 
 /auth 제출(프록시 라우트가 받는 메서드 중 GET 밖의 요청과, 검사 경로(auth_proxy._submit_path)가 설정·로그인·가입·인증·복구
-제출 경로인 GET)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고 다음을 거친다. 그 밖의 GET은 거치지
+제출 경로인 GET)은 프록시(app/api/auth_proxy.py)보다 먼저 여기서 본문을 한 번 읽고 다음을 순서대로 거친다(_AUTH_CHECKS). 그 밖의 GET은 거치지
 않는다. 읽은 것(Kratos로 보낼 URL, 본문, 식별자, 세션의 identity, 게스트 여부)은 request.state.auth_submission으로
 넘기고, 프록시는 그 URL·본문으로 Kratos에 보낸다.
 
@@ -110,8 +110,10 @@ async def _v1_step_refusal(request: Request) -> Response | None:
     return JSONResponse(status_code=error.status_code, content=error.dict())
 
 
-async def _auth_step_refusal(request: Request) -> Response | None:
-    """/auth 게스트 제출의 Turnstile. 거절은 프록시 JSON이다"""
+async def _auth_step_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """/auth 게스트 제출의 Turnstile. 게스트 제출이 아니면 확인하지 않는다. 거절은 프록시 JSON이다"""
+    if not submission.guest or submission.path not in AUTH_STEPS:
+        return None
     failure = await _verification_failure(request)
     if failure is None:
         return None
@@ -150,13 +152,21 @@ async def _rate_limit_refusal(key: str, method: str, rule: RateLimitRule) -> Res
     return rate_limited_response(result)
 
 
+def _counted_by_identity(submission: auth_proxy.Submission) -> bool:
+    """GET 밖의 설정 제출인지. IP가 아니라 검사를 통과한 세션의 identity 단위로 센다"""
+    return submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET"
+
+
 async def _submit_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
     """설정 밖의 제출과 GET 제출을 IP 단위로 센다"""
-    if not app_config.settings.RATE_LIMIT_ENABLED:
-        return None
-    if submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
+    if not app_config.settings.RATE_LIMIT_ENABLED or _counted_by_identity(submission):
         return None
     return await _rate_limit_refusal(await client_ip_key(request), request.method, AUTH_SUBMIT_PER_IP)
+
+
+async def _identifier_rule_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """식별자의 ASCII 규칙 (auth_proxy.identifier_refusal)"""
+    return auth_proxy.identifier_refusal(submission)
 
 
 async def _identifier_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
@@ -167,12 +177,30 @@ async def _identifier_rate_limit_refusal(request: Request, submission: auth_prox
     return await _rate_limit_refusal(key, request.method, AUTH_SUBMIT_PER_IDENTIFIER)
 
 
-async def _settings_rate_limit_refusal(request: Request, identity_id: str | None) -> Response | None:
-    """검사를 통과한 설정 제출을 세션의 identity 단위로 센다 (identity id가 없으면 IP 단위)"""
-    if not app_config.settings.RATE_LIMIT_ENABLED:
+async def _inspection_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """프록시의 제출 검사 (auth_proxy.inspect_submission). submission의 identity_id·guest를 채운다"""
+    return await auth_proxy.inspect_submission(submission, request.headers.get("x-session-token"))
+
+
+async def _settings_rate_limit_refusal(request: Request, submission: auth_proxy.Submission) -> Response | None:
+    """검사를 통과한 GET 밖의 설정 제출을 세션의 identity 단위로 센다 (identity id가 없으면 IP 단위)"""
+    if not app_config.settings.RATE_LIMIT_ENABLED or not _counted_by_identity(submission):
         return None
+    identity_id = submission.identity_id
     key = f"identity:{identity_id}" if identity_id else await client_ip_key(request)
     return await _rate_limit_refusal(key, request.method, AUTH_SETTINGS_PER_IDENTITY)
+
+
+# /auth 제출의 검사. 위에서부터 돌고 처음 나온 거절로 답한다. 모두 (request, submission)을 받고, 해당하지 않으면 None이다.
+# _settings_rate_limit_refusal과 _auth_step_refusal은 _inspection_refusal이 채운 identity_id·guest를 읽는다
+_AUTH_CHECKS = (
+    _submit_rate_limit_refusal,
+    _identifier_rule_refusal,
+    _identifier_rate_limit_refusal,
+    _inspection_refusal,
+    _settings_rate_limit_refusal,
+    _auth_step_refusal,
+)
 
 
 async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Response | None:
@@ -186,18 +214,10 @@ async def _auth_submit_refusal(request: Request, path: str, body: bytes) -> Resp
     if submission is None:
         return None
     request.state.auth_submission = submission
-    refusal = await _submit_rate_limit_refusal(request, submission)
-    if refusal is None:
-        refusal = auth_proxy.identifier_refusal(submission)
-    if refusal is None:
-        refusal = await _identifier_rate_limit_refusal(request, submission)
-    if refusal is None:
-        refusal = await auth_proxy.inspect_submission(submission, request.headers.get("x-session-token"))
-    if refusal is None and submission.path == auth_proxy.SETTINGS_SUBMIT_PATH and submission.method != "GET":
-        refusal = await _settings_rate_limit_refusal(request, submission.identity_id)
-    if refusal is None and submission.guest and submission.path in AUTH_STEPS:
-        refusal = await _auth_step_refusal(request)
-    return refusal
+    for check in _AUTH_CHECKS:
+        if refusal := await check(request, submission):
+            return refusal
+    return None
 
 
 def _is_v1_step(scope: Scope) -> bool:
