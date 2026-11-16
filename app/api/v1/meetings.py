@@ -3,14 +3,15 @@ Meeting Router
 
 일정 조율 REST API 엔드포인트
 
-- router: 회원만 (인증 라우터, app/api/v1/__init__.py). 생성·목록·수정·삭제
+- router: 회원만 (인증 라우터, app/api/v1/__init__.py). 생성·목록·수정·삭제·참여자 빼기
 - shared_router: 회원, 그 미팅의 게스트, 로그인하지 않은 방문자. 조회·참여·가능 시간·결과
   - 회원: 인증 라우터와 같은 확인(get_current_user_synced) 뒤 공개 범위로 판정한다 (MeetingService)
   - 게스트: require_guest_access(MEETING, "meeting_id")가 판정한다 (MeetingGuestService)
   - 로그인하지 않은 방문자: 미팅 조회와 결과만 (MeetingVisitorService). 참여·가능 시간은 401
   - 게스트와 방문자의 응답에는 회원의 sub(owner_id, 참여자의 user_id)를 넣지 않는다
 
-테스트: tests/domain/guest/test_meeting_access.py, tests/domain/guest/test_meeting_participation.py
+테스트: tests/domain/guest/test_meeting_access.py, tests/domain/guest/test_meeting_participation.py,
+tests/domain/guest/test_meeting_participant_removal.py
 """
 from dataclasses import dataclass
 from typing import Optional, List
@@ -34,7 +35,7 @@ from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.guest.dependencies import get_current_guest, require_guest_access
 from app.domain.guest.model import Guest
-from app.domain.guest.service import discard_resource_guests
+from app.domain.guest.service import discard_guest, discard_resource_guests
 from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
@@ -221,6 +222,25 @@ async def delete_meeting(
     service = MeetingService(session, current_user)
     service.delete_meeting(meeting_id)
     background_tasks.add_task(discard_resource_guests, ResourceType.MEETING, meeting_id)
+    return {"ok": True}
+
+
+@router.delete("/{meeting_id}/participants/{participant_id}", status_code=status.HTTP_200_OK)
+async def remove_participant(
+        meeting_id: UUID,
+        participant_id: UUID,
+        session: Session = CommittingSession,
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    참여자 빼기
+
+    인증 필수: 소유자만 뺄 수 있습니다(자기 참여자 포함). 다른 회원에게는 없는 미팅과 같은 404입니다.
+    참여자와 그 가능 시간이 지워집니다. 게스트 참여자는 그 게스트를 폐기합니다(게스트 자기 삭제와 같다).
+    """
+    guest_identity_id = MeetingService(session, current_user).remove_participant(meeting_id, participant_id)
+    if guest_identity_id is not None:
+        await discard_guest(guest_identity_id)
     return {"ok": True}
 
 

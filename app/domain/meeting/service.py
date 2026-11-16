@@ -16,6 +16,7 @@ from sqlmodel import Session
 from app.core.auth import CurrentUser
 from app.crud import meeting as crud
 from app.crud import visibility as visibility_crud
+from app.domain.guest.model import Guest
 from app.domain.meeting.exceptions import (
     InvalidMeetingError,
     MeetingNotFoundError,
@@ -221,6 +222,35 @@ class MeetingService:
         participant.display_name = data.display_name
         self.session.flush()
         return participant
+
+    def remove_participant(self, meeting_id: UUID, participant_id: UUID) -> str | None:
+        """
+        참여자 빼기 (소유자만)
+
+        회원 참여자는 지운다. 게스트 참여자는 지우지 않고 그 게스트의 identity id를 돌려준다.
+        부르는 쪽이 게스트 서비스의 discard_guest로 게스트를 폐기하면 DB가 참여자를 지운다.
+        어느 쪽이든 가능 시간은 DB의 ON DELETE CASCADE가 지운다.
+
+        :param meeting_id: 일정 조율 ID
+        :param participant_id: 참여자 ID
+        :return: 게스트 참여자면 그 게스트의 Kratos identity id, 아니면 None
+        :raises MeetingNotFoundError: 일정 조율이 없거나 소유자가 아닌 경우
+        :raises MeetingParticipantNotFoundError: 그 미팅의 참여자가 아닌 경우
+        """
+        self.get_meeting(meeting_id)
+
+        participant = crud.get_participant(self.session, meeting_id, participant_id)
+        if participant is None:
+            raise MeetingParticipantNotFoundError()
+
+        if participant.guest_id is None:
+            crud.delete_participant(self.session, participant)
+            return None
+
+        guest = self.session.get(Guest, participant.guest_id)
+        if guest is None:  # 다른 요청이 그 게스트를 막 폐기했다 (참여자도 함께 지워졌다)
+            raise MeetingParticipantNotFoundError()
+        return guest.identity_id
 
     def get_participant(
             self,

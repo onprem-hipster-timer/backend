@@ -179,6 +179,12 @@ def get_participant_by_guest_id(
     return session.exec(statement).first()
 
 
+def delete_participant(session: Session, participant: MeetingParticipant) -> None:
+    """참여자 삭제 (가능 시간은 DB의 ON DELETE CASCADE가 지운다)"""
+    session.delete(participant)
+    session.flush()
+
+
 # ============================================================
 # MeetingTimeSlot CRUD
 # ============================================================
