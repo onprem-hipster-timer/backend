@@ -48,7 +48,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from urllib.parse import parse_qs, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -126,6 +126,25 @@ def _make_client() -> httpx.AsyncClient:
     )
 
 
+FORM_MEDIA_TYPE = "application/x-www-form-urlencoded"
+JSON_MEDIA_TYPE = "application/json"
+
+
+def _media_type(content_type: str) -> str:
+    """Content-Type의 미디어 타입 (; 앞, 앞뒤 공백 없이, 소문자)"""
+    return content_type.split(";")[0].strip().lower()
+
+
+def _is_form(content_type: str) -> bool:
+    """본문이 URL 인코딩 폼인지"""
+    return _media_type(content_type) == FORM_MEDIA_TYPE
+
+
+def _form_pairs(body: bytes) -> list[tuple[str, str]]:
+    """폼 본문의 (키, 값) 쌍 (빈 값 포함). UTF-8이 아니면 UnicodeDecodeError"""
+    return parse_qsl(body.decode(), keep_blank_values=True)
+
+
 def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
     # 키는 대소문자 구분 없이 비교해 대소문자만 다른 키도 겹친 것으로 본다 (Kratos가 같은 키로 읽는 것보다 넓다)
     keys = [key.lower() for key, _ in pairs]
@@ -148,8 +167,8 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
     키가 겹치면 여기와 Kratos가 서로 다른 값을 읽을 수 있으므로 받지 않는다.
     """
     try:
-        if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
-            values = parse_qs(body.decode(), keep_blank_values=True).get("method", [])
+        if _is_form(content_type):
+            values = [value for key, value in _form_pairs(body) if key == "method"]
             return values[0] if len(values) == 1 else None
         data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
@@ -175,9 +194,9 @@ _UNREADABLE = object()
 
 def _submitted_identifier(content_type: str, body: bytes) -> object:
     """로그인 제출의 식별자 값(없으면 None). 읽을 수 없거나 식별자가 둘 이상이면 _UNREADABLE"""
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return _UNREADABLE
         values = [value for key, value in pairs if key.lower() in IDENTIFIER_KEYS]
@@ -215,8 +234,8 @@ def _is_guest_handle(identifier: object) -> bool:
 def _submitted_name(content_type: str, body: bytes) -> object:
     """설정 제출 본문의 traits.name. 없거나 읽을 수 없으면 None (키는 대소문자 구분 없이 찾는다)"""
     try:
-        if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
-            values = parse_qs(body.decode(), keep_blank_values=True).get("traits.name", [])
+        if _is_form(content_type):
+            values = [value for key, value in _form_pairs(body) if key == "traits.name"]
             return values[0] if len(values) == 1 else None
         data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
@@ -236,9 +255,9 @@ def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> o
 
     키는 대소문자 구분 없이 찾는다. 폼 본문의 키는 path를 점으로 이은 것이다.
     """
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return _UNREADABLE
         form_key = ".".join(path)
@@ -280,9 +299,9 @@ def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
 
     소셜 계정의 이메일은 제공자 매퍼가 준 값(제공자가 검증한 이메일)만 쓴다.
     """
-    if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            pairs = parse_qsl(body.decode(), keep_blank_values=True)
+            pairs = _form_pairs(body)
         except UnicodeDecodeError:
             return None
         methods = [value for key, value in pairs if key == "method"]
@@ -524,22 +543,23 @@ def _readable_body(content_type: str, body: bytes) -> bool:
     - JSON: 키가 겹치지 않는(_no_duplicate_keys) 객체이고, 최상위 키에 점이 없으며, traits(키는 대소문자 구분 없이)가 있으면 객체다
     - 폼: UTF-8이고, 키가 겹치지 않으며(대소문자 구분 없이), traits 필드(대소문자 구분 없이)가 없다
     """
-    media_type = content_type.split(";")[0].strip().lower()
-    if media_type == "application/x-www-form-urlencoded":
+    if _is_form(content_type):
         try:
-            keys = [key.lower() for key, _ in parse_qsl(body.decode(), keep_blank_values=True)]
+            keys = [key.lower() for key, _ in _form_pairs(body)]
         except UnicodeDecodeError:
             return False
         return len(keys) == len(set(keys)) and "traits" not in keys
-    if media_type != "application/json":
+    if _media_type(content_type) != JSON_MEDIA_TYPE:
         return False
     try:
         data = _load_json(body)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:
         return False
-    if not isinstance(data, dict) or any("." in key for key in data):
-        return False
-    return all(isinstance(value, dict) for key, value in data.items() if key.lower() == "traits")
+    return (
+        isinstance(data, dict)
+        and not any("." in key for key in data)
+        and all(isinstance(value, dict) for key, value in data.items() if key.lower() == "traits")
+    )
 
 
 def body_refusal(submission: Submission) -> Response | None:
