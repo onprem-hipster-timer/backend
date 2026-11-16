@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
@@ -30,10 +30,11 @@ from app.core.auth import (
     get_current_user_synced,
     security,
 )
-from app.db.session import get_db_transactional
+from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
 from app.domain.guest.dependencies import get_current_guest, require_guest_access
 from app.domain.guest.model import Guest
+from app.domain.guest.service import discard_resource_guests
 from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
     MeetingCreate,
@@ -208,16 +209,18 @@ async def update_meeting(
 @router.delete("/{meeting_id}", status_code=status.HTTP_200_OK)
 async def delete_meeting(
         meeting_id: UUID,
-        session: Session = Depends(get_db_transactional),
+        background_tasks: BackgroundTasks,
+        session: Session = CommittingSession,
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     일정 조율 삭제
     
-    인증 필수: 소유자만 삭제 가능합니다.
+    인증 필수: 소유자만 삭제 가능합니다. 삭제를 커밋한 뒤 그 미팅의 게스트를 모두 폐기합니다.
     """
     service = MeetingService(session, current_user)
     service.delete_meeting(meeting_id)
+    background_tasks.add_task(discard_resource_guests, ResourceType.MEETING, meeting_id)
     return {"ok": True}
 
 
