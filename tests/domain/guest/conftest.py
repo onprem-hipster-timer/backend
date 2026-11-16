@@ -2,7 +2,8 @@
 
 - guest_db: 앱 세션 매니저를 테스트 엔진으로 바꾼다 (게스트 서비스는 자기 세션을 연다)
 - kratos: 가짜 Kratos admin·공개 API(/auth 프록시가 넘기는 곳), 가짜 Turnstile, GUEST_ENABLED=true 설정
-- turnstile: 가짜 Turnstile siteverify (kratos가 함께 켠다)
+- turnstile: 가짜 Turnstile siteverify와 Cloudflare 테스트 키 (kratos가 함께 켠다). 토큰 재사용을 거절하지 않는다
+- strict_turnstile: 운영 비밀 키의 Turnstile. 토큰은 한 번만 받는다
 - host: MEETING 리소스 종류에 등록한 가짜 호스트
 - guest_events: 발행된 게스트 이벤트 기록
 """
@@ -20,6 +21,7 @@ from app.shared import messagebus
 from tests.domain.guest.fakes import (
     KRATOS_ADMIN,
     KRATOS_PUBLIC,
+    TURNSTILE_PRODUCTION_SECRET,
     TURNSTILE_SECRET,
     TURNSTILE_VERIFY,
     FakeHost,
@@ -53,7 +55,14 @@ def turnstile(monkeypatch):
     monkeypatch.setattr(app_config.settings, "TURNSTILE_SECRET_KEY", TURNSTILE_SECRET)
     monkeypatch.setattr(app_config.settings, "TURNSTILE_VERIFY_URL", TURNSTILE_VERIFY)
     monkeypatch.setattr(turnstile_client, "_make_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake)))
+    monkeypatch.setattr(turnstile_client, "_spent_tokens", turnstile_client._SpentTokens())
     return fake
+
+
+@pytest.fixture
+def strict_turnstile(turnstile, monkeypatch):
+    monkeypatch.setattr(app_config.settings, "TURNSTILE_SECRET_KEY", TURNSTILE_PRODUCTION_SECRET)
+    return turnstile
 
 
 @pytest.fixture

@@ -89,7 +89,8 @@ class Settings(BaseSettings):
     KRATOS_GUEST_SCHEMA_ID: str = "guest"  # Kratos의 게스트 identity schema id (JWT schema_id 클레임과 비교)
     # Kratos web_hook이 X-Kratos-Hook-Key 헤더로 보내는 값. /internal/kratos/hooks/*는 이 값이 맞아야 응답한다
     KRATOS_HOOK_API_KEY: str = ""
-    # Cloudflare Turnstile. POST /v1/guests는 turnstile_token을 이 비밀 키로 확인한다. 게스트를 켜면 필요하다
+    # Cloudflare Turnstile. 게스트 단계의 X-Turnstile-Token 토큰을 이 비밀 키로 확인한다 (app/middleware/guest_gate.py).
+    # 게스트를 켜면 필요하다
     TURNSTILE_SECRET_KEY: str = ""
     TURNSTILE_VERIFY_URL: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 

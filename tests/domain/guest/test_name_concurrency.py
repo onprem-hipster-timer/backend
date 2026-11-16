@@ -61,7 +61,7 @@ def resource(host):
 
 def _create(resource, name="민수", password="1234") -> GuestCreate:
     return GuestCreate(
-        resource_type=ResourceType.MEETING, resource_id=resource, name=name, password=password, turnstile_token="t"
+        resource_type=ResourceType.MEETING, resource_id=resource, name=name, password=password
     )
 
 
@@ -146,7 +146,7 @@ async def _rename(api, kratos, guest, name):
     return await api.post(
         f"/auth/self-service/settings?flow={uuid.uuid4()}",
         json={"method": "profile", "traits": {"handle": handle, "name": name}},
-        headers={"X-Session-Token": token},
+        headers={"X-Session-Token": token, "X-Turnstile-Token": "t"},
     )
 
 
@@ -163,9 +163,10 @@ async def test_creates_and_renames_on_one_resource_with_small_pool(small_pool, s
     other = uuid.uuid4()
     host.statuses[other] = GuestHostStatus.OPEN
     guest = make_guest(slow_kratos, resource, name="민수")
-    body = {"resource_type": "meeting", "resource_id": str(resource), "password": "1234", "turnstile_token": "t"}
+    body = {"resource_type": "meeting", "resource_id": str(resource), "password": "1234"}
 
-    creates = [api.post("/v1/guests", json={**body, "name": f"g{i}"}) for i in range(30)]
+    token = {"X-Turnstile-Token": "t"}
+    creates = [api.post("/v1/guests", json={**body, "name": f"g{i}"}, headers=token) for i in range(30)]
     renames = [_rename(api, slow_kratos, guest, f"r{i}") for i in range(10)]
 
     async def run():
@@ -173,7 +174,9 @@ async def test_creates_and_renames_on_one_resource_with_small_pool(small_pool, s
             asyncio.gather(*creates, *renames),
             _elapsed(lambda: api.get("/health")),
             _elapsed(lambda: api.post(
-                "/v1/guests/lookup", json={"resource_type": "meeting", "resource_id": str(other), "name": "x"}
+                "/v1/guests/lookup",
+                json={"resource_type": "meeting", "resource_id": str(other), "name": "x"},
+                headers=token,
             )),
         )
 

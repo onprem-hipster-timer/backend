@@ -243,6 +243,34 @@ def get_schedule_exceptions(
     return results.all()
 
 
+def get_schedule_exceptions_by_parent_ids(
+        session: Session,
+        parent_ids: list[UUID],
+        start_date: datetime,
+        end_date: datetime,
+) -> list[ScheduleException]:
+    """
+    지정한 반복 일정들의 날짜 범위 내 예외 인스턴스를 배치 조회합니다 (소유자 검증 없음).
+
+    접근 권한이 확인된 일정의 ID만 넘겨야 합니다.
+
+    :param session: DB 세션
+    :param parent_ids: 원본 일정 ID 목록
+    :param start_date: 조회 시작 날짜
+    :param end_date: 조회 종료 날짜
+    :return: 예외 인스턴스 리스트
+    """
+    if not parent_ids:
+        return []
+    statement = (
+        select(ScheduleException)
+        .where(ScheduleException.parent_id.in_(parent_ids))
+        .where(ScheduleException.exception_date >= start_date)
+        .where(ScheduleException.exception_date <= end_date)
+    )
+    return list(session.exec(statement).all())
+
+
 def get_schedule_exception_by_date(
         session: Session,
         parent_id: UUID,
