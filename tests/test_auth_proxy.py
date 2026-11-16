@@ -1254,6 +1254,7 @@ REFUSED_BODIES = {
     "json_array": (b'[{"method": "METHOD"}]', "application/json"),
     "json_string": (b'"METHOD"', "application/json"),
     "json_broken": (b'{"method": "METHOD"', "application/json"),
+    "json_deeply_nested": (b'{"method": "METHOD", "x": ' + b"[" * 100000 + b"]" * 100000 + b"}", "application/json"),
     "json_empty": (b"", "application/json"),
     "json_not_utf8": (b'{"method": "METHOD", "x": "\xff"}', "application/json"),
     "form_traits": (b"method=METHOD&traits=%7B%22email%22%3A%22a%40example.com%22%7D", FORM_TYPE),

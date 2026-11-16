@@ -134,6 +134,14 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
     return dict(pairs)
 
 
+def _load_json(body: bytes) -> object:
+    """본문을 JSON으로 읽는다. JSON이 아니거나 키가 겹치거나(_no_duplicate_keys) 너무 깊게 중첩됐으면 ValueError"""
+    try:
+        return json.loads(body, object_pairs_hook=_no_duplicate_keys)
+    except RecursionError:
+        raise ValueError("too deeply nested") from None
+
+
 def _submitted_method(content_type: str, body: bytes) -> str | None:
     """제출 본문의 method. 읽을 수 없거나 키가 겹치면 None.
 
@@ -143,7 +151,7 @@ def _submitted_method(content_type: str, body: bytes) -> str | None:
         if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
             values = parse_qs(body.decode(), keep_blank_values=True).get("method", [])
             return values[0] if len(values) == 1 else None
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     method = data.get("method") if isinstance(data, dict) else None
@@ -175,7 +183,7 @@ def _submitted_identifier(content_type: str, body: bytes) -> object:
         values = [value for key, value in pairs if key.lower() in IDENTIFIER_KEYS]
     else:
         try:
-            data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+            data = _load_json(body)
         except (ValueError, UnicodeDecodeError):
             return _UNREADABLE
         if not isinstance(data, dict):
@@ -210,7 +218,7 @@ def _submitted_name(content_type: str, body: bytes) -> object:
         if content_type.split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
             values = parse_qs(body.decode(), keep_blank_values=True).get("traits.name", [])
             return values[0] if len(values) == 1 else None
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     traits = _get_ignoring_case(data, "traits")
@@ -239,7 +247,7 @@ def _submitted_value(content_type: str, body: bytes, path: tuple[str, ...]) -> o
             return _UNREADABLE
         return values[0] if values else None
     try:
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return _UNREADABLE
     for key in path:
@@ -285,7 +293,7 @@ def _without_oidc_email(content_type: str, body: bytes) -> bytes | None:
         return urlencode([(key, value) for key, value in pairs if key != "traits.email"]).encode()
 
     try:
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return None
     if not isinstance(data, dict):
@@ -526,7 +534,7 @@ def _readable_body(content_type: str, body: bytes) -> bool:
     if media_type != "application/json":
         return False
     try:
-        data = json.loads(body, object_pairs_hook=_no_duplicate_keys)
+        data = _load_json(body)
     except (ValueError, UnicodeDecodeError):
         return False
     if not isinstance(data, dict) or any("." in key for key in data):

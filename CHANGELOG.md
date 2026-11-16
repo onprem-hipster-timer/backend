@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`/auth` requests whose Kratos URL cannot be built**: a request under `/auth/` of any method whose URL to Kratos cannot be built (a control character in the path after percent-decoding or in the query string, or a URL longer than 65536 characters) returns 400 `invalid_request_url`, is not forwarded and is not counted against the `/auth` rate limits. These requests returned 500 before.
 - **`KRATOS_PUBLIC_URL` with a path**: when `KRATOS_PUBLIC_URL` has a path (such as `http://kratos:4433/kratos`), `/auth` requests are forwarded below that path, and `..` in the request path does not leave it. Every `/auth` check (rate limits, the query string rule, login, settings, verification and recovery checks, guest Turnstile, access log) compares the request path below that path, so the checks apply the same with or without a path. Previously the checks compared the full path and did not apply when `KRATOS_PUBLIC_URL` had a path.
+- **Deeply nested JSON bodies on `/auth` submissions**: a login, registration, settings, verification or recovery submission other than GET whose JSON body is nested too deeply to parse returns 400 `invalid_request_body` and is not forwarded. These requests returned 500 before.
 
 ---
 
