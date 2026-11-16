@@ -95,11 +95,23 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 
     # 참여자 정보
     user_id: str | None = Field(default=None, index=True)  # OIDC sub (로그인한 경우)
-    display_name: str  # 표시 이름 (닉네임)
+    # 게스트 참여자의 게스트 행. 게스트 행이 지워지면 DB가 참여자와 가능 시간을 지운다
+    guest_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("guest.id", ondelete="CASCADE", name="fk_meeting_participant_guest_id"),
+            nullable=True,
+        ),
+    )
+    display_name: str  # 표시 이름 (닉네임). 게스트 참여자는 게스트 이름
 
-    # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
     __table_args__ = (
+        # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
         UniqueConstraint("meeting_id", "user_id", name="uq_meeting_participant_meeting_user"),
+        # 게스트마다 참여자 한 명
+        UniqueConstraint("guest_id", name="uq_meeting_participant_guest"),
+        # 회원 참여자이면서 게스트 참여자일 수 없다 (둘 다 NULL인 예전 행은 둔다)
+        CheckConstraint("user_id IS NULL OR guest_id IS NULL", name="ck_meeting_participant_user_or_guest"),
     )
 
     # Relationships
