@@ -243,6 +243,7 @@ sequenceDiagram
 게스트는 다음 경우에 폐기됩니다.
 
 - 게스트가 자기를 삭제할 때
+- 리소스 소유자가 그 게스트를 뺄 때. 미팅은 생성자가 게스트 참여자를 뺄 때다(`DELETE /v1/meetings/{id}/participants/{participant_id}`)
 - 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때. 로그인·게스트 경로·이름 변경은 그 게스트를, 이름 찾기·생성은 그 리소스의 게스트 전부를 폐기한다. 호스트를 등록하지 않은 리소스 종류는 `MISSING`이다
 - 리소스가 지워지면서 `discard_resource_guests`를 부를 때
 - 하루 한 번 실행(`POST /internal/accounts/purge`, [운영 배포](../deployment/production.ko.md#회원-탈퇴-파기))에서 리소스가 `EXPIRED`나 `MISSING`일 때. 게스트가 있는 리소스마다 호스트 상태를 읽어 그 리소스의 게스트 전부를 폐기하고, 폐기한 수를 응답의 `guests_discarded`로 돌려준다. `GUEST_ENABLED`가 꺼져 있어도 폐기한다
@@ -265,6 +266,7 @@ stateDiagram-v2
     state "폐기" as Discarded
     [*] --> Present: POST /v1/guests
     Present --> Discarded: DELETE /v1/guests/me
+    Present --> Discarded: 리소스 소유자가 뺀다
     Present --> Discarded: 게스트 확인에서 EXPIRED 또는 MISSING
     Present --> Discarded: 하루 한 번 실행에서 EXPIRED 또는 MISSING
     Present --> Discarded: discard_resource_guests
@@ -301,6 +303,7 @@ sequenceDiagram
 | 접근 정책과 폐기 | `app/domain/guest/service.py` (`check_access`, `discard_guest`, `discard_resource_guests`) | `tests/domain/guest/test_policy.py` |
 | 폐기할 때 약관 동의 삭제 | `app/domain/guest/service.py` (`_delete_guest_row`, `_delete_resource_guest_rows`) | `tests/domain/guest/test_consent.py` |
 | 하루 한 번 실행의 폐기 | `app/domain/guest/service.py` (`discard_stale_guests`), `app/api/internal.py` | `tests/domain/guest/test_stale_guests.py`, `tests/test_account_purge_e2e.py` (`TestGuestDiscard`) |
+| 미팅 생성자가 게스트 참여자를 뺄 때의 폐기 | `app/api/v1/meetings.py` (`remove_participant`) | `tests/domain/guest/test_meeting_participant_removal.py` |
 | 호스트 계약 | `app/domain/guest/host.py` | `tests/domain/guest/test_policy.py` |
 
 ## 이름과 비밀번호 규칙
@@ -751,9 +754,21 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 
 미팅은 `DELETE /v1/meetings/{id}`가 삭제를 커밋한 뒤 부릅니다. 회원 파기처럼 이 함수를 부르지 않고 지운 미팅의 게스트는 하루 한 번 실행이 `MISSING`으로 폐기합니다.
 
+### 5. 리소스 소유자가 게스트 하나를 뺄 때
+
+리소스에 저장한 그 게스트의 것을 직접 지우지 않고 자기 삭제와 같은 폐기를 부릅니다. 게스트 행을 지우면 리소스 쪽은 `GuestDiscarded` 핸들러나 FK의 `ON DELETE CASCADE`로 지워집니다.
+
+```python
+from app.domain.guest.service import discard_guest
+
+await discard_guest(guest.identity_id)
+```
+
+미팅은 `DELETE /v1/meetings/{id}/participants/{participant_id}`가 생성자인지와 그 미팅의 참여자인지를 확인한 뒤, 게스트 참여자면 부릅니다.
+
 ## 객체 의존성
 
-게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 일곱입니다.
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 여덟입니다.
 
 | 진입점 | 쓰는 것 |
 |--------|---------|
@@ -764,6 +779,7 @@ await discard_resource_guests(ResourceType.MEETING, meeting_id)
 | 하루 한 번 실행 (`api/internal.py`) | 서비스(EXPIRED·MISSING 리소스의 게스트 폐기) |
 | 리소스의 게스트 경로 (미팅: `api/v1/meetings.py`) | 게스트 의존성 |
 | 리소스 삭제 (미팅: `DELETE /v1/meetings/{id}`) | 서비스(리소스의 게스트 폐기) |
+| 소유자가 게스트를 뺀다 (미팅: `DELETE /v1/meetings/{id}/participants/{participant_id}`) | 서비스(게스트 하나 폐기) |
 
 그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.
 
