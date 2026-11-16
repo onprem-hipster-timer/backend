@@ -31,7 +31,9 @@ Kratos로 보낼 URL을 만들 수 없는 요청(퍼센트 인코딩을 푼 경�
 flowchart TD
     A["GET 밖의 /auth/* 요청,<br/>제출 경로의 GET"] --> RL{"요청 한도<br/>IP당 분당 60회<br/>(GET 밖의 설정 제출은 세지 않음)"}
     RL -->|"초과"| R429["429"]
-    RL -->|"이내"| AS{"로그인 · 가입 · 인증 · 복구 제출의<br/>식별자가 ASCII 문자만인가"}
+    RL -->|"이내"| BF{"GET 밖의 로그인 · 가입 · 설정 ·<br/>인증 · 복구 제출의 본문이<br/>프록시가 읽는 형식인가"}
+    BF -->|"아니오"| R400["400<br/>invalid_request_body"]
+    BF -->|"예 · 해당 없음"| AS{"로그인 · 가입 · 인증 · 복구 제출의<br/>식별자가 ASCII 문자만인가"}
     AS -->|"아니오"| R400I["400<br/>invalid_identifier"]
     AS -->|"예 · 해당 없음"| RI{"로그인 · 가입 · 인증 · 복구 제출의<br/>같은 IP · 식별자<br/>분당 5회"}
     RI -->|"초과"| R429
@@ -43,7 +45,17 @@ flowchart TD
     QS -->|"예 · GET 밖"| NEXT["경로별 확인"]
 ```
 
-식별자는 GET 밖의 제출에서 로그인의 `identifier`(`password_identifier` 포함), 가입의 `traits.email`, 인증·복구의 `email`입니다. JSON 본문이든 폼 본문이든 식별자가 ASCII 밖의 문자를 담은 문자열이면 `400` `invalid_identifier`로 답하고 Kratos에 넘기지 않습니다. 이 거절은 IP 요청 한도에는 세고 같은 IP·식별자 요청 한도에는 세지 않습니다. 식별자가 없거나, 문자열이 아니거나, 둘 이상이거나, 본문을 읽을 수 없으면 이 확인으로는 거절하지 않습니다.
+**본문 형식.** GET 밖의 로그인·가입·설정·인증·복구 제출은 프록시가 값을 읽는 한 가지 표현의 본문만 받습니다. 아래에 맞지 않으면 `GUEST_ENABLED`와 상관없이 `400` `invalid_request_body`로 답하고 Kratos에 넘기지 않습니다. 이 거절은 IP 요청 한도에는 세고 같은 IP·식별자 요청 한도에는 세지 않습니다. GET 밖의 설정 제출은 IP로 세지 않으므로 어느 한도에도 세지 않습니다.
+
+| 항목 | 받는 것 |
+|------|---------|
+| `Content-Type` | `application/json`이나 `application/x-www-form-urlencoded` (`;` 뒤의 매개변수는 보지 않고, 대소문자 구분 없이). `multipart/form-data`, `text/plain`, 헤더 없음 등 그 밖의 값은 받지 않는다 |
+| JSON 본문 | 객체. 키가 겹치지 않는다(대소문자 구분 없이, 안쪽 객체 포함). 최상위 키에 `.`이 없다. `traits`(키는 대소문자 구분 없이)가 있으면 객체다 |
+| 폼 본문 | UTF-8. 키가 한 번씩만 나온다(대소문자 구분 없이). `traits` 필드(대소문자 구분 없이)가 없다. `traits`의 값은 `traits.email`처럼 점으로 이은 필드로 보낸다 |
+
+Kratos는 이 밖의 표현(JSON의 `"traits.email"` 같은 키, 문자열로 보낸 `traits`, 폼의 `traits` 필드, `multipart/form-data`)에서도 제출 값을 읽으므로, 프록시가 값을 읽는 표현만 넘깁니다. GET 제출과 제출 경로 밖의 요청(플로우 생성, 로그아웃, 소셜 로그인 콜백 등)의 본문은 보지 않고 그대로 넘깁니다.
+
+식별자는 GET 밖의 제출에서 로그인의 `identifier`(`password_identifier` 포함), 가입의 `traits.email`, 인증·복구의 `email`입니다. JSON 본문이든 폼 본문이든 식별자가 ASCII 밖의 문자를 담은 문자열이면 `400` `invalid_identifier`로 답하고 Kratos에 넘기지 않습니다. 이 거절은 IP 요청 한도에는 세고 같은 IP·식별자 요청 한도에는 세지 않습니다. 식별자가 없거나, 문자열이 아니거나, 둘 이상이면 이 확인으로는 거절하지 않습니다.
 
 **경로별 확인.** GET 밖의 제출에만 합니다. Kratos는 GET 제출의 값을 쿼리 문자열에서만 읽고, 쿼리 문자열은 공통 단계에서 확인했습니다. 위에서 아래 순서로 하고, 모두 지나면 Kratos로 넘깁니다.
 
@@ -112,7 +124,7 @@ flowchart TD
 | 상태 | `id` | 언제 |
 |------|------|------|
 | `429` | (본문은 [레이트 리밋](../development/rate-limit.ko.md)의 429 형식) | GET 밖의 요청과 제출 경로로 가는 GET이 IP당 분당 60회, 로그인·가입·인증·복구 제출이 같은 IP·식별자로 분당 5회, 설정 제출이 identity당 분당 10회를 넘었다. 메서드마다 따로 세고, Kratos 제출은 모두 `POST`다 |
-| `400` | `invalid_request_body` | 검사하는 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 키가 있다(인증 GET은 `flow`·`code` 밖). 본문을 읽을 수 없거나 같은 값을 둘 이상 보냈다 (`method`, `email`, `identifier`) |
+| `400` | `invalid_request_body` | 검사하는 제출(GET 포함)의 쿼리 문자열에 `flow` 밖의 키가 있다(인증 GET은 `flow`·`code` 밖). GET 밖의 검사하는 제출의 본문이 프록시가 값을 읽는 형식이 아니다(위 본문 형식. 읽을 수 없거나 키가 겹치는 본문 포함). 로그인 제출에 `identifier`와 `password_identifier`를 함께 보냈다(`GUEST_ENABLED`). 본문 형식의 거절은 IP 요청 한도에는 세고 같은 IP·식별자 요청 한도에는 세지 않는다 |
 | `400` | `invalid_request_url` | Kratos로 보낼 URL을 만들 수 없다. 퍼센트 인코딩을 푼 경로나 쿼리 문자열에 제어 문자가 있거나 URL이 65536자를 넘는다. 메서드와 경로에 상관없이 답하고, 요청 한도에 세지 않는다 |
 | `400` | `invalid_identifier` | GET 밖의 로그인·가입·인증·복구 제출의 식별자(`identifier`·`password_identifier`, `traits.email`, `email`)에 ASCII 밖의 문자가 있다. IP 요청 한도에는 세고 같은 IP·식별자 요청 한도에는 세지 않는다 |
 | `400` | `address_not_accepted` | 인증·복구 제출의 `email`이 `@guest.invalid`로 끝난다 |
@@ -122,7 +134,7 @@ flowchart TD
 | `409` | `guest_name_taken` | 게스트의 이름 변경이 같은 리소스의 다른 게스트 이름이다 |
 | `502` | (본문 `{"detail": "Authentication service unavailable"}`) | Kratos 공개 API에 닿지 않는다 |
 
-게스트 제출(게스트 handle 로그인, 게스트 세션의 설정 제출)의 Turnstile 확인과 게스트 이름 변경은 `GUEST_ENABLED=true`일 때만 합니다. 요청 한도, 쿼리 문자열 규칙, 식별자의 ASCII 규칙, `@guest.invalid` 주소 거절, 설정 제출 제한, 소셜 제출의 `traits.email` 버리기는 `GUEST_ENABLED`와 상관없이 합니다.
+게스트 제출(게스트 handle 로그인, 게스트 세션의 설정 제출)의 Turnstile 확인과 게스트 이름 변경은 `GUEST_ENABLED=true`일 때만 합니다. 요청 한도, 쿼리 문자열 규칙, 본문 형식 규칙, 식별자의 ASCII 규칙, `@guest.invalid` 주소 거절, 설정 제출 제한, 소셜 제출의 `traits.email` 버리기는 `GUEST_ENABLED`와 상관없이 합니다.
 
 ## Kratos 공개 API를 backend 뒤에 두기
 
@@ -137,6 +149,7 @@ flowchart TD
 | `@guest.invalid` 주소의 인증·복구 제출 거절 | 게스트 schema로의 셀프 가입 없음 (`default_schema_id`) |
 | 게스트 로그인·설정 제출의 Turnstile 확인 | 게스트의 비밀번호 복구 없음 (schema에 recovery 주소 없음) |
 | 로그인 식별자·이메일의 ASCII 규칙 | |
+| 제출 본문의 형식 (JSON 객체나 URL 인코딩 폼) | |
 | 쿠키와 요청 헤더 거르기 | |
 | 접근 기록, 메일 잡 실행 요청 | |
 
@@ -152,6 +165,7 @@ backend의 JWT 검증, 회원·게스트 구분, 게스트 경로의 요청별 �
 | Kratos URL과 검사 경로, 만들 수 없는 URL | `app/api/auth_proxy.py` (`kratos_url`, `_submit_path`, `invalid_request_url`), `app/middleware/guest_gate.py` | `tests/test_auth_proxy.py`, `tests/domain/guest/test_turnstile.py` |
 | 요청 한도 | `app/middleware/guest_gate.py` (`_submit_rate_limit_refusal`, `_identifier_rate_limit_refusal`, `_settings_rate_limit_refusal`), `app/ratelimit/config.py` (`AUTH_*`) | `tests/domain/guest/test_rate_limits.py` |
 | 식별자의 ASCII 규칙, 식별자 비교 | `app/api/auth_proxy.py` (`identifier_refusal`, `normalize_identifier`) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_rate_limits.py`, `test_guest_login_turnstile.py` |
+| 제출 본문의 형식 | `app/api/auth_proxy.py` (`body_refusal`) | `tests/test_auth_proxy.py`, `tests/domain/guest/test_rate_limits.py`, `test_rename_proxy.py`, `test_guest_login_turnstile.py` |
 | 게스트 제출의 Turnstile | `app/middleware/guest_gate.py`, `app/core/turnstile.py`, 게스트 handle 판정은 `app/api/auth_proxy.py` | `tests/domain/guest/test_turnstile.py`, `test_guest_login_turnstile.py` |
 | 게스트 이름 변경 | `app/domain/guest/service.py` (`name_taken_by_other`) | `tests/domain/guest/test_rename_proxy.py` |
 | 메일 잡 | `app/core/courier.py` | `tests/core/test_courier.py` |
