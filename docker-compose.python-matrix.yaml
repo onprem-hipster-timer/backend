@@ -5,7 +5,7 @@
 #     docker compose -f docker-compose.python-matrix.yaml up --build --abort-on-container-exit
 #
 #   특정 버전만 테스트:
-#     docker compose -f docker-compose.python-matrix.yaml up --build python313
+#     docker compose -f docker-compose.python-matrix.yaml up --build python314
 #     docker compose -f docker-compose.python-matrix.yaml up --build python312
 #
 #   PostgreSQL과 함께 테스트:
@@ -37,7 +37,7 @@ services:
     command: ["-v", "--tb=short", "-x"]
 
   # ============================================
-  # Python 3.14
+  # Python 3.14 (현재 프로젝트 기본 버전)
   # ============================================
   python314:
     container_name: test-python314
@@ -53,7 +53,7 @@ services:
     command: ["-v", "--tb=short", "-x"]
 
   # ============================================
-  # Python 3.13 (현재 프로젝트 기본 버전)
+  # Python 3.13
   # ============================================
   python313:
     container_name: test-python313
