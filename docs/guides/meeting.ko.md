@@ -178,8 +178,8 @@ interface MeetingCreate {
   end_time: string;             // "18:00:00", 하루의 끝까지면 "00:00:00"
   time_slot_minutes?: number;   // 30 (기본값)
   allow_guests?: boolean;       // false (기본값). true는 422 (새 미팅은 공개 범위가 private)
-  visibility?: VisibilitySettings;
 }
+// 공개 범위는 만든 뒤 PUT /v1/visibility/meeting/{id}로 정한다
 
 // Response: Meeting
 ```
@@ -196,12 +196,7 @@ interface MeetingCreate {
   "available_days": [0, 2, 4],
   "start_time": "09:00:00",
   "end_time": "18:00:00",
-  "time_slot_minutes": 30,
-  "visibility": {
-    "level": "allowed_emails",
-    "allowed_emails": ["alice@company.com", "bob@company.com"],
-    "allowed_domains": ["company.com"]
-  }
+  "time_slot_minutes": 30
 }
 ```
 
@@ -516,7 +511,6 @@ interface MeetingCreate {
   end_time: string;
   time_slot_minutes?: number;
   allow_guests?: boolean;
-  visibility?: VisibilitySettings;
 }
 
 interface MeetingUpdate {
@@ -612,10 +606,13 @@ const meeting = await createMeeting({
   start_time: "09:00:00",
   end_time: "18:00:00",
   time_slot_minutes: 60,
-  visibility: {
-    level: "allowed_emails",
-    allowed_domains: ["company.com"],  // 회사 이메일만 허용
-  },
+});
+
+// 공개 범위 설정 (회사 이메일만 허용)
+await fetch(`/v1/visibility/meeting/${meeting.id}`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ level: "allowed_emails", allowed_domains: ["company.com"] }),
 });
 
 // 공유 링크 생성
