@@ -8,7 +8,7 @@ from typing import List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import NaiveDatetime
-from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint, false
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -51,6 +51,12 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 다음 날 00:00)
     time_slot_minutes: int = Field(default=30)  # 시간 선택 단위 (분)
+
+    # 게스트를 받는지. 공개 범위가 PUBLIC일 때만 켤 수 있다 (MeetingService)
+    allow_guests: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=false()),
+    )
 
     __table_args__ = (
         CheckConstraint("start_date <= end_date", name="ck_meeting_date_range"),

@@ -31,8 +31,10 @@ from app.domain.meeting.schema.dto import (
     TimeSlotCreate,
 )
 from app.domain.visibility.enums import ResourceType
-from app.domain.visibility.service import VisibilityService
+from app.domain.visibility.service import VisibilityService, is_public
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
+
+ALLOW_GUESTS_REQUIRES_PUBLIC = "allow_guests can be true only while the meeting's visibility is public"
 
 
 class MeetingService:
@@ -54,7 +56,10 @@ class MeetingService:
         
         :param data: 일정 조율 생성 데이터
         :return: 생성된 일정 조율
+        :raises InvalidMeetingError: allow_guests가 true인 경우 (새 미팅은 공개 범위 설정이 없어 PRIVATE이다)
         """
+        if data.allow_guests:
+            raise InvalidMeetingError(ALLOW_GUESTS_REQUIRES_PUBLIC)
         meeting = crud.create_meeting(self.session, data, self.owner_id)
         return meeting
 
@@ -117,12 +122,17 @@ class MeetingService:
         :param data: 업데이트 데이터
         :return: 업데이트된 일정 조율
         :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises InvalidMeetingError: 저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기는 경우
+        :raises InvalidMeetingError: 저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기는 경우,
+            allow_guests에 true를 보냈는데 공개 범위가 PUBLIC이 아닌 경우
         """
         meeting = crud.get_meeting(self.session, meeting_id, self.owner_id)
         if not meeting:
             raise MeetingNotFoundError()
 
+        if data.allow_guests is True and not is_public(
+                self.session, ResourceType.MEETING, meeting_id, meeting.owner_id,
+        ):
+            raise InvalidMeetingError(ALLOW_GUESTS_REQUIRES_PUBLIC)
         self._validate_merged(meeting, data)
         updated_meeting = crud.update_meeting(self.session, meeting, data)
         return updated_meeting

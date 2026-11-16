@@ -90,6 +90,7 @@ class MeetingCreate(CustomModel):
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 하루의 끝)
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
+    allow_guests: bool = False  # 게스트를 받는지. true는 공개 범위가 public일 때만 (MeetingService)
 
     @field_validator("title")
     @classmethod
@@ -157,6 +158,7 @@ class MeetingUpdate(CustomModel):
     start_time: time | None = MISSING
     end_time: time | None = MISSING
     time_slot_minutes: int | None = MISSING
+    allow_guests: bool = MISSING
 
     @field_validator("title")
     @classmethod
@@ -207,6 +209,7 @@ class MeetingRead(CustomModel):
     start_time: time
     end_time: time
     time_slot_minutes: int
+    allow_guests: bool = False
     created_at: datetime
     updated_at: datetime
     # 접근권한 관련 필드

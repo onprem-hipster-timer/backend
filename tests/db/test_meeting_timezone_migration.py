@@ -79,7 +79,8 @@ def test_migrated_meeting_columns_match_model(engine_and_config, tmp_path: Path)
     SQLModel.metadata.create_all(modeled)
 
     def shape(engine: sa.Engine) -> dict[str, tuple]:
-        return {name: (c["nullable"], c["default"]) for name, c in _columns(engine).items()}
+        # 서버 기본값의 표기는 방언마다 다르므로(false · 0) 있는지만 비교한다
+        return {name: (c["nullable"], c["default"] is not None) for name, c in _columns(engine).items()}
 
     assert shape(migrated) == shape(modeled)
     modeled.dispose()
