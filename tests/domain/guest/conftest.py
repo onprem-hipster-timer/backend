@@ -140,7 +140,9 @@ class Tokens:
         from joserfc import jwt
 
         now = int(time.time())
-        body = {"iss": ISSUER, "aud": AUDIENCE, "sub": sub, "iat": now, "nbf": now, "exp": now + 600, **claims}
+        # 검증은 leeway 없이 지금 시각과 비교한다. 벽시계가 뒤로 조금 돌아가도 거절되지 않게 iat·nbf를 1분 앞당긴다
+        issued = now - 60
+        body = {"iss": ISSUER, "aud": AUDIENCE, "sub": sub, "iat": issued, "nbf": issued, "exp": now + 600, **claims}
         if schema_id is not None:
             body["schema_id"] = schema_id
         return jwt.encode({"alg": "ES256", "kid": "guest-test"}, body, self.key, algorithms=["ES256"])
