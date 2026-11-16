@@ -63,6 +63,10 @@ async def lifespan(app: FastAPI):
         register_handlers()
         logger.info("✅ Domain event handlers registered")
 
+        # 1-1-1. 게스트를 받는 리소스의 호스트 등록 (app/domain/guest/host.py)
+        from app.domain.meeting import guest_host
+        guest_host.register()
+
         # 1-2. 실시간 publisher를 커밋 후 큐의 sink로 연결
         _publisher = create_publisher(asyncio.get_running_loop())
         set_after_commit_sink(as_after_commit_sink(_publisher))
