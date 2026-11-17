@@ -43,7 +43,7 @@ from app.domain.meeting.schema.dto import (
     MeetingUpdate,
     ParticipantCreate,
     ParticipantRead,
-    TimeSlotCreate,
+    TimeSlotList,
     TimeSlotRead,
     AvailabilityRead,
     MeetingResultRead,
@@ -283,7 +283,7 @@ async def create_participant(
 async def set_availability(
         meeting_id: UUID,
         participant_id: UUID = Query(..., description="참여자 ID"),
-        time_slots: List[TimeSlotCreate] = ...,
+        time_slots: TimeSlotList = ...,
         tz: Optional[str] = Query(
             None,
             alias="timezone",
@@ -299,6 +299,7 @@ async def set_availability(
     기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
     슬롯은 반열린 구간 [start_time, end_time)이고 시간대가 없는 값은 UTC로 읽습니다. 보낸 구간 그대로 저장합니다.
     슬롯 수는 미팅의 칸 수까지입니다 (넘으면 422). 슬롯이 미팅의 날짜·시간 범위나 칸에 맞는지는 검사하지 않습니다.
+    슬롯마다 kind(available, unavailable, 기본 available)가 있고, available 슬롯과 unavailable 슬롯이 겹치면 422입니다(맞닿는 것은 됩니다).
     
     :param meeting_id: 일정 조율 ID
     :param participant_id: 참여자 ID (쿼리 파라미터)

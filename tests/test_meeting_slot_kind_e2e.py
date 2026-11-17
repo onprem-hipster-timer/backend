@@ -151,3 +151,80 @@ def test_slot_cap_counts_both_kinds(e2e_client):
     assert response.status_code == 422, response.text
     assert response.json()["error_type"] == "TooManyTimeSlotsError"
 
+
+# ============================================================
+# 한 참여자의 available 구간과 unavailable 구간은 겹칠 수 없다 (맞닿는 것은 된다)
+# ============================================================
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "slots",
+    [
+        [_slot("09:00", "10:00", "available"), _slot("09:30", "10:30", "unavailable")],
+        [_slot("09:30", "10:30", "unavailable"), _slot("09:00", "10:00", "available")],
+        [_slot("09:00", "10:00", "available"), _slot("09:00", "10:00", "unavailable")],  # 같은 구간
+        [_slot("09:00", "10:00"), _slot("09:00", "10:00", "unavailable")],  # kind 없으면 available
+        [_slot("09:00", "11:00", "unavailable"), _slot("09:30", "10:00")],  # 안에 들어간다
+        [_slot("09:30", "10:00", "unavailable"), _slot("09:00", "11:00")],
+        # 맞닿은 available 둘을 합친 구간과 겹친다
+        [_slot("09:00", "09:30"), _slot("09:30", "10:00"), _slot("09:20", "09:40", "unavailable")],
+        # 먼 available 뒤 겹치는 available
+        [_slot("10:30", "11:00", "unavailable"), _slot("09:00", "09:15"), _slot("09:15", "10:31")],
+        [{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-06T10:00:00Z", "kind": "available"},
+         {"start_time": "2024-02-06T09:00:00Z", "end_time": "2024-02-06T09:30:00Z", "kind": "unavailable"}],
+        [{"start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T10:00:01Z", "kind": "available"},
+         _slot("10:00", "10:30", "unavailable")],
+        # 같은 시각을 다른 오프셋으로
+        [{"start_time": "2024-02-05T18:00:00+09:00", "end_time": "2024-02-05T19:00:00+09:00"},
+         _slot("09:59", "10:30", "unavailable")],
+    ],
+)
+def test_overlapping_available_and_unavailable_is_422_and_keeps_stored(e2e_client, slots):
+    meeting_id = _create(e2e_client)
+    participant_id = _participate(e2e_client, meeting_id)
+    _put(e2e_client, meeting_id, participant_id, [_slot("09:00", "09:30", "unavailable")])
+    before = _stored(e2e_client, meeting_id)
+
+    response = _put(e2e_client, meeting_id, participant_id, slots)
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body"]]
+    assert "overlap" in detail[0]["msg"]
+    assert _stored(e2e_client, meeting_id) == before
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "slots",
+    [
+        [_slot("09:00", "10:00", "available"), _slot("10:00", "11:00", "unavailable")],  # 맞닿는다
+        [_slot("10:00", "11:00", "available"), _slot("09:00", "10:00", "unavailable")],
+        [_slot("09:00", "09:30", "unavailable"), _slot("09:30", "10:00"), _slot("10:00", "10:30", "unavailable")],
+        [_slot("09:00", "10:00"), _slot("09:30", "10:30")],  # 같은 종류는 겹쳐도 된다
+        [_slot("09:00", "10:00", "unavailable"), _slot("09:00", "10:00", "unavailable")],
+        [_slot("09:00", "09:30", "unavailable"), _slot("09:15", "10:00", "unavailable"), _slot("10:00", "11:00")],
+    ],
+)
+def test_touching_kinds_and_overlapping_same_kind_accepted(e2e_client, slots):
+    meeting_id = _create(e2e_client)
+    participant_id = _participate(e2e_client, meeting_id)
+
+    response = _put(e2e_client, meeting_id, participant_id, slots)
+
+    assert response.status_code == 200, response.text
+    assert len(_stored(e2e_client, meeting_id)) == len(slots)
+
+
+@pytest.mark.e2e
+def test_different_participants_may_overlap_with_different_kinds(multi_user_e2e):
+    owner = multi_user_e2e.as_user("owner")
+    member = multi_user_e2e.as_user("member")
+    meeting_id = _create(owner)
+    owner.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
+
+    assert _put(owner, meeting_id, _participate(owner, meeting_id), [_slot("09:00", "10:00")]).status_code == 200
+    assert _put(
+        member, meeting_id, _participate(member, meeting_id), [_slot("09:00", "10:00", "unavailable")],
+    ).status_code == 200
+

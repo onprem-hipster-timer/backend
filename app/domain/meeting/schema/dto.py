@@ -4,13 +4,14 @@ Meeting Domain DTO (Data Transfer Objects)
 일정 조율 관련 데이터 전송 객체
 """
 import unicodedata
+from bisect import bisect_left
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Optional, List
+from typing import Annotated, Optional, List
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.relativedelta import relativedelta
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import AfterValidator, ConfigDict, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
@@ -339,6 +340,37 @@ class TimeSlotCreate(CustomModel):
     def validate_time_range(cls, v, info):
         validate_time_order(info.data.get("start_time"), v)
         return v
+
+
+def merge_intervals(intervals: List[tuple[datetime, datetime]]) -> List[tuple[datetime, datetime]]:
+    """겹치거나 맞닿은 반열린 구간을 합친다 (시작 순)"""
+    merged: List[tuple[datetime, datetime]] = []
+    for start, end in sorted(intervals):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _validate_kinds_do_not_overlap(slots: List[TimeSlotCreate]) -> List[TimeSlotCreate]:
+    """한 참여자의 available 구간과 unavailable 구간은 겹칠 수 없다 (맞닿는 것은 된다)"""
+    available = merge_intervals([
+        (slot.start_time, slot.end_time) for slot in slots if slot.kind == TimeSlotKind.AVAILABLE
+    ])
+    starts = [start for start, _ in available]
+    for slot in slots:
+        if slot.kind != TimeSlotKind.UNAVAILABLE:
+            continue
+        # unavailable 구간의 끝보다 먼저 시작하는 마지막 available 구간만 보면 된다
+        i = bisect_left(starts, slot.end_time) - 1
+        if i >= 0 and available[i][1] > slot.start_time:
+            raise ValueError("available and unavailable time slots must not overlap")
+    return slots
+
+
+# PUT /availability의 요청 본문: 참여자의 가능 시간 전체
+TimeSlotList = Annotated[List[TimeSlotCreate], AfterValidator(_validate_kinds_do_not_overlap)]
 
 
 class TimeSlotRead(CustomModel):

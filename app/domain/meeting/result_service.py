@@ -23,6 +23,7 @@ from app.domain.meeting.schema.dto import (
     AvailabilityCell,
     MeetingResultRead,
     meeting_dates,
+    merge_intervals,
 )
 from app.domain.meeting.service import MeetingService
 from app.models.meeting import Meeting, TimeSlotKind
@@ -106,7 +107,7 @@ class MeetingResultService:
 
         # 합친 구간은 서로 겹치지 않으므로 참여자는 칸마다 많아야 한 번 센다
         for intervals in intervals_by_participant.values():
-            for start, end in self._merge_intervals(intervals):
+            for start, end in merge_intervals(intervals):
                 i = bisect_left(cell_starts, start)
                 while i < len(cells) and cells[i][1] <= end:
                     counts[i] += 1
@@ -141,16 +142,3 @@ class MeetingResultService:
                 cells.append((current, cell_end))
                 current = cell_end
         return cells
-
-    @staticmethod
-    def _merge_intervals(
-            intervals: List[tuple[datetime, datetime]],
-    ) -> List[tuple[datetime, datetime]]:
-        """겹치거나 맞닿은 반열린 구간을 합친다"""
-        merged: List[tuple[datetime, datetime]] = []
-        for start, end in sorted(intervals):
-            if merged and start <= merged[-1][1]:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-            else:
-                merged.append((start, end))
-        return merged
