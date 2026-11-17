@@ -96,12 +96,18 @@ DELETE /v1/friends/block/{user_id}        # 차단 해제
 
 ```http
 GET    /v1/users/me                       # 본인 표시정보 + 친구코드(공유용)
+PUT    /v1/users/me/analytics-consent     # 사용성 분석 동의(선택) 설정
 POST   /v1/users/me/deletion              # 회원 탈퇴 신청 (휴면)
 DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 ```
 
+!!! info "사용성 분석 동의"
+    회원이 사용성 분석을 허용하는지(선택)를 계정에 저장해 어느 기기에서든 같은 선택을 씁니다. `GET /v1/users/me` 응답의 `analytics_consent`는 `"granted"`, `"denied"`, 고르지 않았으면 `null`이고 `analytics_consent_updated_at`은 값을 마지막으로 바꾼 시각입니다(고르지 않았으면 `null`).
+    `PUT /v1/users/me/analytics-consent`에 `{"analytics_consent": "granted"}` 또는 `{"analytics_consent": "denied"}`를 보내면 저장하고 본인 프로필(`GET /v1/users/me`와 같은 모양)을 `200`으로 돌려줍니다. 저장된 값과 같으면 시각을 바꾸지 않습니다. 다른 값, `null`, 필드가 없는 본문은 `422`이고 `null`(고르지 않음)로 되돌리는 요청은 없습니다.
+    약관 동의와 따로입니다. `consent_required`에 영향이 없고, 현재 약관에 동의하지 않은 회원도 바꿀 수 있습니다. 휴면 계정은 `423`, 게스트 토큰은 `403`, 토큰이 없으면 `401`입니다. 계정을 파기하면 프로필과 함께 지웁니다.
+
 !!! info "회원 탈퇴"
-    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 위 세 경로 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
+    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 프로필 조회와 탈퇴 신청·취소 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
 
 ### 게스트 (Guests)
 

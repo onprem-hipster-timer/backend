@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Usability analytics consent**: a member's optional usability analytics choice is stored on the account. `GET /v1/users/me` (and every response shaped like it) returns `analytics_consent` (`"granted"`, `"denied"`, or `null` when not chosen) and `analytics_consent_updated_at` (when the value last changed, `null` when not chosen). `PUT /v1/users/me/analytics-consent` with `{"analytics_consent": "granted" | "denied"}` sets it and returns the profile (200); sending the stored value again keeps the time, and other values, `null` or a missing field return 422. It is separate from the terms consent: it does not change `consent_required`, and with `CONSENT_ENFORCED` a member who has not consented to the current terms can still set it (no 428). Dormant accounts get 423, guest tokens 403, requests without a token 401. The value is stored in `user_profile` (`analytics_consent`, `analytics_consent_updated_at`, migration `73e8f92c2d27`; existing members are `null`) and is deleted with the profile when the account is purged.
 
 ---
 
