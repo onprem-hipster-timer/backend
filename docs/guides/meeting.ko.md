@@ -374,33 +374,35 @@ interface TimeSlotCreate {
 // Response: TimeSlot[]
 ```
 
-**예시:**
+**예시** (`hourly`, 2024-02-05~2024-02-06, 하루 09:00–18:00, `Asia/Seoul`):
 
 ```json
 [
   {
-    "start_time": "2024-02-02T09:00:00+09:00",
-    "end_time": "2024-02-02T12:00:00+09:00"
+    "start_time": "2024-02-05T09:00:00+09:00",
+    "end_time": "2024-02-05T12:00:00+09:00"
   },
   {
-    "start_time": "2024-02-05T14:07:00+09:00",
-    "end_time": "2024-02-06T10:00:00+09:00"
+    "start_time": "2024-02-06T09:00:00+09:00",
+    "end_time": "2024-02-06T13:00:00+09:00",
+    "kind": "unavailable"
   },
   {
     "start_time": "2024-02-06T13:00:00+09:00",
-    "end_time": "2024-02-06T15:00:00+09:00",
-    "kind": "unavailable"
+    "end_time": "2024-02-06T18:00:00+09:00"
   }
 ]
 ```
+
+2024-02-05는 가능한 시간만 표시한 날이고, 2024-02-06은 불가능한 시간을 표시하고 나머지를 가능으로 채운 날입니다([unavailable 구간과 하루 범위](#unavailable-구간과-하루-범위)).
 
 **응답 예시** (`?timezone=Asia/Seoul`):
 
 ```json
 [
-  { "id": "uuid-1", "participant_id": "uuid-p", "start_time": "2024-02-02T09:00:00+0900", "end_time": "2024-02-02T12:00:00+0900", "kind": "available" },
-  { "id": "uuid-2", "participant_id": "uuid-p", "start_time": "2024-02-05T14:07:00+0900", "end_time": "2024-02-06T10:00:00+0900", "kind": "available" },
-  { "id": "uuid-3", "participant_id": "uuid-p", "start_time": "2024-02-06T13:00:00+0900", "end_time": "2024-02-06T15:00:00+0900", "kind": "unavailable" }
+  { "id": "uuid-1", "participant_id": "uuid-p", "start_time": "2024-02-05T09:00:00+0900", "end_time": "2024-02-05T12:00:00+0900", "kind": "available" },
+  { "id": "uuid-2", "participant_id": "uuid-p", "start_time": "2024-02-06T09:00:00+0900", "end_time": "2024-02-06T13:00:00+0900", "kind": "unavailable" },
+  { "id": "uuid-3", "participant_id": "uuid-p", "start_time": "2024-02-06T13:00:00+0900", "end_time": "2024-02-06T18:00:00+0900", "kind": "available" }
 ]
 ```
 
@@ -413,6 +415,57 @@ interface TimeSlotCreate {
   칸 수 = 미팅 날짜 수(기간의 날 수 - `excluded_dates` 수) × 하루 범위(분) ÷ `time_slot_minutes`, 올림.
   예: 5일 × 09:00–18:00 / 30분 = 90, 하루 × 00:00–00:00 / 30분 = 48.
 - 같은 구간을 여러 번 보내면 보낸 만큼 저장되고, 개수 제한에도 그만큼 셉니다.
+- `unavailable` 구간을 보내면 하루 범위를 빈틈없이 채워야 합니다(아래).
+
+##### unavailable 구간과 하루 범위
+
+참여자는 두 가지로 답합니다. 가능한 시간만 표시하면(`available` 구간만) 표시하지 않은 시간은 불가능으로 봅니다.
+불가능한 시간을 표시하면(`unavailable` 구간이 있으면) 하루 범위를 `available`·`unavailable` 구간으로 빈틈없이 채워야 합니다.
+
+- 하루 범위는 미팅 날짜(기간에서 `excluded_dates`를 뺀 날)마다 미팅 `timezone`의 `start_time`~`end_time`(00:00이면 다음 날 00:00)이고, 결과 칸과 같은 실제 시각입니다. 일광 절약 시간이 바뀌는 날은 23시간이나 25시간입니다.
+- 채워야 하는 날은 `mode`마다 다릅니다.
+  - `hourly`: 날마다 따로 봅니다. 하루 범위에 `unavailable` 구간이 걸친 날만 채웁니다. 한 요청에 두 가지로 답한 날이 섞여도 됩니다.
+  - `daily`·`weekly`: 답 전체로 봅니다. 어느 날이든 `unavailable` 구간이 걸치면 모든 미팅 날짜를 채웁니다.
+- 구간은 하루 범위 안쪽만 봅니다. 하루 범위 밖(제외 날짜, 기간 밖, 하루 범위 앞뒤)의 구간이나 부분은 이 규칙과 상관없고, 하루 범위에 맞닿기만 한 구간은 걸친 것이 아닙니다.
+- 어기면 `422`이고 저장된 가능 시간은 그대로입니다. 오류 모양은 겹침 거절과 같고, `msg`에 규칙과 처음으로 다 채우지 않은 날짜가 있습니다. 겹침은 이 규칙보다 먼저 봅니다.
+- 저장할 때의 `mode`로 봅니다. 나중에 `mode`를 바꿔도 저장된 가능 시간을 다시 보지 않습니다.
+
+`daily` 미팅(2024-02-05~2024-02-07, UTC, 하루 전체)의 예. 첫날만 불가능이고 나머지 이틀은 가능으로 채웠습니다.
+
+```json
+[
+  { "start_time": "2024-02-05T00:00:00Z", "end_time": "2024-02-06T00:00:00Z", "kind": "unavailable" },
+  { "start_time": "2024-02-06T00:00:00Z", "end_time": "2024-02-08T00:00:00Z" }
+]
+```
+
+거절되는 예. `hourly` 미팅(2024-02-05~2024-02-07, UTC, 하루 09:00–11:00)에서 2024-02-06의 09:00–10:00만 불가능으로 표시했습니다.
+
+```json
+[
+  { "start_time": "2024-02-05T09:00:00Z", "end_time": "2024-02-05T10:00:00Z" },
+  { "start_time": "2024-02-06T09:00:00Z", "end_time": "2024-02-06T10:00:00Z", "kind": "unavailable" }
+]
+```
+
+```json
+{
+  "detail": [
+    {
+      "type": "value_error",
+      "loc": ["body"],
+      "msg": "Value error, hourly meetings: a day with unavailable time slots must be fully covered by available and unavailable time slots (2024-02-06 is not)",
+      "input": [
+        { "start_time": "2024-02-05T09:00:00+0000", "end_time": "2024-02-05T10:00:00+0000", "kind": "available" },
+        { "start_time": "2024-02-06T09:00:00+0000", "end_time": "2024-02-06T10:00:00+0000", "kind": "unavailable" }
+      ],
+      "ctx": { "error": {} }
+    }
+  ]
+}
+```
+
+`daily`·`weekly`의 `msg`는 `daily meetings: with unavailable time slots, every meeting day must be fully covered by available and unavailable time slots (<날짜> is not)`입니다.
 
 #### 전체 가능 시간 조회
 
@@ -819,7 +872,7 @@ function TimeSlotSelector({
 | `401` | 인증 필요 | 토큰이 유효하지 않다. 로그인이 필요한 경로([접근 권한](#접근-권한))에 토큰이 없다 |
 | `403` | 게스트 토큰 | 다른 미팅의 게스트, 게스트 상태가 `OPEN`이 아님, 폐기된 게스트, 회원만 쓰는 미팅 경로 ([게스트 계정](#게스트-계정)) |
 | `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자, 참여자 빼기에서 그 미팅의 참여자가 아닌 참여자 |
-| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·제외 날짜, 방식의 규칙 위반, 미팅 입력 제한·수정 결과 위반, 가능 구간과 불가능 구간이 겹침, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true` |
+| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·제외 날짜, 방식의 규칙 위반, 미팅 입력 제한·수정 결과 위반, 가능 구간과 불가능 구간이 겹침, 불가능 구간이 있는데 하루 범위를 다 채우지 않음, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true` |
 | `429` | 요청 한도 초과 | [레이트 리밋](../development/rate-limit.ko.md) |
 
 요청 본문 하나만 보고 판단하는 422는 FastAPI 검증 오류 형식(`detail` 배열)입니다.
