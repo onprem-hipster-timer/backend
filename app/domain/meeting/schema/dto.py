@@ -374,6 +374,29 @@ def merge_intervals(intervals: List[tuple[datetime, datetime]]) -> List[tuple[da
     return merged
 
 
+def subtract_intervals(
+        intervals: List[tuple[datetime, datetime]],
+        cuts: List[tuple[datetime, datetime]],
+) -> List[tuple[datetime, datetime]]:
+    """반열린 구간들에서 cuts와 겹치는 부분을 뺀 구간 (시작 순). 맞닿기만 한 cut은 아무것도 빼지 않는다"""
+    cuts = merge_intervals(cuts)
+    remaining: List[tuple[datetime, datetime]] = []
+    for start, end in sorted(intervals):
+        for cut_start, cut_end in cuts:
+            if cut_start >= end:
+                break
+            if cut_end <= start:
+                continue
+            if cut_start > start:
+                remaining.append((start, cut_start))
+            start = cut_end
+            if start >= end:
+                break
+        if start < end:
+            remaining.append((start, end))
+    return remaining
+
+
 def _validate_kinds_do_not_overlap(slots: List[TimeSlotCreate]) -> List[TimeSlotCreate]:
     """한 참여자의 available 구간과 unavailable 구간은 겹칠 수 없다 (맞닿는 것은 된다)"""
     available = merge_intervals([

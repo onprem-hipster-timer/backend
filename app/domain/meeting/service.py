@@ -30,6 +30,7 @@ from app.domain.meeting.schema.dto import (
     meeting_dates,
     meeting_day_ranges,
     merge_intervals,
+    subtract_intervals,
     MODE_RULE_FIELDS,
     MeetingCreate,
     MeetingUpdate,
@@ -409,6 +410,41 @@ def check_time_slots(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None
             "input": [slot.model_dump(mode="json") for slot in time_slots],
             "ctx": {"error": ValueError(message)},
         }])
+
+
+def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) -> List[TimeSlotCreate]:
+    """게스트 가져오기에서 회원의 가능 시간에 게스트의 가능 시간을 합친다 (시작 순)
+
+    - 같은 종류의 구간은 합집합이다. 겹치거나 맞닿은 구간은 하나가 된다
+    - 게스트 구간이 회원의 다른 종류 구간과 겹치면 회원의 답을 두고 게스트 구간에서 그 부분을 뺀다
+    - 그래도 하루 범위 규칙(check_time_slots)을 어기면(저장한 뒤 미팅의 방식·하루 범위가 바뀐 답), 채워야 하는 날의
+      빈 시간을 unavailable로 채운다. available만 표시한 답에서 표시하지 않은 시간은 불가능이므로 같은 답이다
+    - 슬롯 수 제한은 보지 않는다
+    """
+    def intervals(slots, kind):
+        return [(slot.start_time, slot.end_time) for slot in slots if slot.kind == kind]
+
+    member_available = intervals(member_slots, TimeSlotKind.AVAILABLE)
+    member_unavailable = intervals(member_slots, TimeSlotKind.UNAVAILABLE)
+    available = merge_intervals(
+        member_available + subtract_intervals(intervals(guest_slots, TimeSlotKind.AVAILABLE), member_unavailable)
+    )
+    unavailable = merge_intervals(
+        member_unavailable + subtract_intervals(intervals(guest_slots, TimeSlotKind.UNAVAILABLE), member_available)
+    )
+    covered = merge_intervals(available + unavailable)
+    gaps = [
+        gap
+        for _, start, end in _days_to_cover(meeting, unavailable)
+        for gap in subtract_intervals([(start, end)], covered)
+    ]
+    unavailable = merge_intervals(unavailable + gaps)
+    slots = [
+        TimeSlotCreate(start_time=start, end_time=end, kind=kind)
+        for kind, merged in ((TimeSlotKind.AVAILABLE, available), (TimeSlotKind.UNAVAILABLE, unavailable))
+        for start, end in merged
+    ]
+    return sorted(slots, key=lambda slot: slot.start_time)
 
 
 def _first_uncovered_day(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> date | None:
