@@ -324,6 +324,21 @@ class TestPurgeDeletesEverything:
             b_participants = session.exec(select(MeetingParticipant).where(MeetingParticipant.user_id == "user-b")).all()
             assert [p.meeting_id for p in b_participants] == [UUID(data["c_meeting"])]
 
+    def test_analytics_consent_is_removed_with_account(self, multi_user_e2e, kratos):
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        for client in (a, b):
+            version = client.get("/v1/users/me").json()["consent_version"]
+            consent = {"version": version, "age_over_14": True, "terms": True, "privacy": True, "analytics": True}
+            assert client.put("/v1/users/me/consent", json=consent).status_code == 200
+        _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))
+
+        _run(multi_user_e2e)
+
+        with _db() as session:
+            chosen = session.exec(select(Consent.sub).where(Consent.analytics.is_not(None))).all()
+        assert chosen == ["user-b"]
+
     def test_purged_token_is_rejected_without_new_profile(self, multi_user_e2e, kratos):
         a = multi_user_e2e.as_user("user-a")
         _request_and_age(a, "user-a", _grace() + timedelta(minutes=1))

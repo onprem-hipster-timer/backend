@@ -63,3 +63,14 @@ def consent_rows() -> set[tuple[str, str]]:
 
     with _session_manager.get_session() as session:
         return {(c.sub, c.version) for c in session.exec(select(Consent)).all()}
+
+
+def consent_analytics() -> dict[str, bool | None]:
+    """현재 약관 버전 consent 행의 sub → 사용성 분석 동의(analytics)"""
+    from sqlmodel import select
+
+    from app.models.consent import Consent
+
+    with _session_manager.get_session() as session:
+        rows = session.exec(select(Consent).where(Consent.version == app_config.settings.CONSENT_VERSION)).all()
+        return {c.sub: c.analytics for c in rows}

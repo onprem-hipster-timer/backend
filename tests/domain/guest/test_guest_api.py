@@ -6,7 +6,7 @@ import pytest
 
 import app.core.config as app_config
 from app.domain.guest.host import GuestHostStatus
-from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
+from tests.domain.guest.helpers import consent_analytics, consent_body, consent_rows, guest_rows, make_guest
 
 CREATE = "/v1/guests"
 LOOKUP = "/v1/guests/lookup"
@@ -245,6 +245,30 @@ def test_create_records_consent_for_guest_identity(guest_client, resource):
     assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource)).status_code == 201
     [row] = guest_rows()
     assert consent_rows() == {(row.identity_id, app_config.settings.CONSENT_VERSION)}
+
+
+@pytest.mark.parametrize("analytics", [True, False])
+def test_create_records_analytics_sent_with_consent(guest_client, resource, analytics):
+    chose = _body(resource, name="민수")
+    chose["consent"]["analytics"] = analytics
+    left_out = _body(resource, name="영희")
+
+    assert guest_client.post(CREATE, headers=TOKEN, json=chose).status_code == 201
+    assert guest_client.post(CREATE, headers=TOKEN, json=left_out).status_code == 201
+
+    identity = {row.name: row.identity_id for row in guest_rows()}
+    assert consent_analytics() == {identity["민수"]: analytics, identity["영희"]: None}
+
+
+@pytest.mark.parametrize("value", ["yes", 1, "true"])
+def test_create_with_non_boolean_analytics_is_422_and_creates_nothing(guest_client, kratos, resource, value):
+    body = _body(resource)
+    body["consent"]["analytics"] = value
+
+    assert guest_client.post(CREATE, headers=TOKEN, json=body).status_code == 422
+    assert guest_rows() == []
+    assert kratos.identities == {}
+    assert consent_rows() == set()
 
 
 def test_create_without_consent_is_422_and_creates_nothing(guest_client, kratos, resource):
