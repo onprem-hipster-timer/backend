@@ -4,12 +4,13 @@ UserProfile CRUD 함수
 사용자 표시 프로필 데이터 접근 레이어.
 """
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable
 
 from sqlmodel import Session, select
 
 from app.models.account_deletion import AccountDeletion
-from app.models.user_profile import UserProfile
+from app.models.user_profile import AnalyticsConsent, UserProfile
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,18 @@ def create_profile(session: Session, data: UserProfileSyncData) -> UserProfile:
 def set_deletion_requested_at(session: Session, profile: UserProfile, value) -> UserProfile:
     """탈퇴 신청 시각 기록(None이면 취소)"""
     profile.deletion_requested_at = value
+    session.add(profile)
+    session.flush()
+    session.refresh(profile)
+    return profile
+
+
+def set_analytics_consent(
+        session: Session, profile: UserProfile, value: AnalyticsConsent, at: datetime,
+) -> UserProfile:
+    """사용성 분석 동의와 바꾼 시각 기록"""
+    profile.analytics_consent = value
+    profile.analytics_consent_updated_at = at
     session.add(profile)
     session.flush()
     session.refresh(profile)

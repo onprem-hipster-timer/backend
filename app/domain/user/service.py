@@ -26,6 +26,7 @@ from app.domain.consent import service as consent_service
 from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.user.exceptions import AccountDeletedError
 from app.domain.user.model import UserProfile
+from app.domain.user.schema.dto import AnalyticsConsentUpdate
 from app.models.base import utc_now_naive
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,13 @@ class UserProfileService:
             raise AccountDeletedError()
         consent_service.record_consent(self.session, self.current_user.sub, data)
         return self.sync_from_current_user()
+
+    def set_analytics_consent(self, data: AnalyticsConsentUpdate) -> UserProfile:
+        """사용성 분석 동의를 정한다. 저장된 값과 같으면 바꾸지 않는다(시각도 그대로)."""
+        profile = self.sync_from_current_user()
+        if profile.analytics_consent == data.analytics_consent:
+            return profile
+        return crud.set_analytics_consent(self.session, profile, data.analytics_consent, utc_now_naive())
 
     def request_deletion(self) -> tuple[UserProfile, bool]:
         """탈퇴 신청(휴면). 이미 신청했으면 처음 시각을 유지한다. 새로 신청했으면 True."""
