@@ -19,7 +19,7 @@ import app.models  # noqa: F401  # register every table in SQLModel.metadata
 import app.models.holiday  # noqa: F401
 from tests.db.conftest import database_url_for, migration_database
 
-BEFORE_ALLOW_GUESTS = "73e8f92c2d27"
+BEFORE_ALLOW_GUESTS = "34f0c570658d"
 ALLOW_GUESTS = "a4c8e2f6b1d3"
 GUEST_ID = "b5d9f3a7c2e4"
 
