@@ -5,7 +5,7 @@ Guest Domain DTO
 이름은 공백 문자(Python 공백, 유니코드 Zs)가 이어진 곳을 공백 하나(U+0020)로 바꾸고 앞뒤를 뗀 뒤 1~50자이고,
 Cc·Cf·Cs·Co·Cn·Zl·Zp 범주의 문자는 받지 않는다. 같은 리소스 안에서 이름은 겹치지 않는다
 (정규화한 이름이 정확히 같으면 같은 이름).
-비밀번호는 비어 있지 않고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
+비밀번호는 생성 때 4자(코드 포인트) 이상이고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
 """
 import unicodedata
 from uuid import UUID
@@ -17,6 +17,7 @@ from app.domain.consent.schema.dto import ConsentCreate
 from app.models.visibility import ResourceType
 
 GUEST_NAME_MAX_LENGTH = 50
+GUEST_PASSWORD_MIN_LENGTH = 4
 GUEST_PASSWORD_MAX_BYTES = 72
 
 
@@ -64,6 +65,8 @@ class GuestCreate(GuestLookup):
         v = unicodedata.normalize("NFC", v)
         if not v:
             raise ValueError("비밀번호를 입력하세요")
+        if len(v) < GUEST_PASSWORD_MIN_LENGTH:
+            raise ValueError(f"비밀번호는 {GUEST_PASSWORD_MIN_LENGTH}자 이상이어야 합니다")
         if len(v.encode("utf-8")) > GUEST_PASSWORD_MAX_BYTES:
             raise ValueError(f"비밀번호는 {GUEST_PASSWORD_MAX_BYTES}바이트 이하여야 합니다")
         return v

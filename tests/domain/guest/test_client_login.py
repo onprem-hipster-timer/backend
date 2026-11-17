@@ -9,7 +9,7 @@ import uuid
 import pytest
 
 from app.domain.guest.host import GuestHostStatus
-from tests.domain.guest.helpers import consent_body
+from tests.domain.guest.helpers import consent_body, make_guest
 
 
 @pytest.fixture
@@ -57,3 +57,10 @@ def test_login_is_refused_when_resource_closes(guest_client, host, resource):
     handle = _create_and_find(guest_client, resource)
     host.statuses[resource] = GuestHostStatus.CLOSED
     assert _login(guest_client, handle, "1234").status_code == 400
+
+
+def test_existing_guest_with_shorter_password_still_logs_in(guest_client, kratos, resource):
+    """비밀번호 길이는 생성 때만 본다"""
+    guest = make_guest(kratos, resource, password="1")
+
+    assert _login(guest_client, f"{guest.id}@guest.invalid", "1").status_code == 200
