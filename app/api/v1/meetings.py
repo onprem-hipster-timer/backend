@@ -3,7 +3,7 @@ Meeting Router
 
 일정 조율 REST API 엔드포인트
 
-- router: 회원만 (인증 라우터, app/api/v1/__init__.py). 생성·목록·수정·삭제·참여자 빼기
+- router: 회원만 (인증 라우터, app/api/v1/__init__.py). 생성·목록·수정·삭제·참여자 빼기·게스트 가져오기
 - shared_router: 회원, 그 미팅의 게스트, 로그인하지 않은 방문자. 조회·참여·가능 시간·결과
   - 회원: 인증 라우터와 같은 확인(get_current_user_synced) 뒤 공개 범위로 판정한다 (MeetingService)
   - 게스트: require_guest_access(MEETING, "meeting_id")가 판정한다 (MeetingGuestService)
@@ -11,7 +11,8 @@ Meeting Router
   - 게스트와 방문자의 응답에는 회원의 sub(owner_id, 참여자의 user_id)를 넣지 않는다
 
 테스트: tests/domain/guest/test_meeting_access.py, tests/domain/guest/test_meeting_participation.py,
-tests/domain/guest/test_meeting_participant_removal.py
+tests/domain/guest/test_meeting_participant_removal.py, tests/domain/guest/test_meeting_guest_import.py,
+tests/domain/guest/test_meeting_guest_import_concurrency.py
 """
 from dataclasses import dataclass
 from typing import Optional, List
@@ -23,6 +24,7 @@ from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
 import app.core.config as app_config
+from app.api.v1.guests import require_guest_enabled
 from app.core.auth import (
     CurrentUser,
     authenticate_request,
@@ -31,13 +33,17 @@ from app.core.auth import (
     get_current_user_synced,
     security,
 )
+from app.core.config import settings
+from app.crud import user_profile as user_profile_crud
 from app.db.session import CommittingSession, get_db_transactional
 from app.domain.dateutil.service import parse_timezone
-from app.domain.guest.dependencies import get_current_guest, require_guest_access
+from app.domain.guest import service as guest_service
+from app.domain.guest.dependencies import get_current_guest, guest_from_token, require_guest_access
 from app.domain.guest.model import Guest
 from app.domain.guest.service import discard_guest, discard_resource_guests
 from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
+    GuestImport,
     MeetingCreate,
     MeetingRead,
     MeetingUpdate,
@@ -242,6 +248,49 @@ async def remove_participant(
     if guest_identity_id is not None:
         await discard_guest(guest_identity_id)
     return {"ok": True}
+
+
+@router.post(
+    "/{meeting_id}/guest-import",
+    response_model=AvailabilityRead,
+    dependencies=[Depends(require_guest_enabled)],
+    include_in_schema=settings.GUEST_ENABLED,
+)
+async def import_guest(
+        meeting_id: UUID,
+        data: GuestImport,
+        tz: Optional[str] = Query(
+            None,
+            alias="timezone",
+            description="타임존 (예: UTC, +09:00, Asia/Seoul). 지정하지 않으면 UTC로 반환"
+        ),
+        session: Session = Depends(get_db_transactional),
+        current_user: CurrentUser = Depends(get_current_user),
+):
+    """
+    게스트 가져오기
+
+    인증 필수: 회원만. 본문의 guest_token은 이 미팅 게스트의 JWT로, 그 게스트를 쥐고 있다는 증명입니다.
+    게스트 참여자의 가능 시간을 회원의 참여자에 합치고(없으면 프로필 표시 이름으로 만든다) 게스트를 폐기합니다.
+    DB 변경은 한 트랜잭션이고, 게스트의 Kratos identity는 커밋한 뒤 지웁니다.
+    회원이 접근할 수 없는 미팅은 404 MeetingNotFoundError, 게스트 토큰이 아니거나 검증에 실패하면 422,
+    게스트가 없거나(가져온 뒤 다시 부른 경우 포함) 다른 미팅의 게스트면 404 GuestNotFoundError,
+    같은 참여자를 쓰는 다른 요청과 겹치면 409이고 아무것도 바뀌지 않습니다. GUEST_ENABLED가 꺼져 있으면 404.
+    """
+    MeetingService(session, current_user).get_meeting_with_access_check(meeting_id)
+    guest_user = await guest_from_token(data.guest_token)
+    profile = user_profile_crud.get_by_sub(session, current_user.sub)
+    profile_name = profile.display_name if profile is not None else None
+    availability = await guest_service.import_guest(
+        guest_user.sub,
+        ResourceType.MEETING,
+        meeting_id,
+        lambda tx, guest: MeetingService(tx, current_user).merge_guest(meeting_id, guest, profile_name),
+    )
+
+    # 타임존 변환
+    tz_obj = parse_timezone(tz) if tz else None
+    return availability.to_timezone(tz_obj)
 
 
 @shared_router.post(

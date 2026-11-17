@@ -437,6 +437,11 @@ class TimeSlotRead(CustomModel):
         return TimeSlotRead.model_construct(**data)
 
 
+class GuestImport(CustomModel):
+    """게스트 가져오기 요청 (POST /v1/meetings/{meeting_id}/guest-import)"""
+    guest_token: str  # 그 미팅 게스트의 JWT. 게스트를 쥐고 있다는 증명이다
+
+
 class AvailabilityRead(CustomModel):
     """참여자별 가능 시간 조회 DTO"""
     participant: ParticipantRead

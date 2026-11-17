@@ -32,11 +32,14 @@ from app.domain.meeting.schema.dto import (
     merge_intervals,
     subtract_intervals,
     MODE_RULE_FIELDS,
+    AvailabilityRead,
     MeetingCreate,
     MeetingUpdate,
     MeetingRead,
     ParticipantCreate,
+    ParticipantRead,
     TimeSlotCreate,
+    TimeSlotRead,
 )
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService, is_public
@@ -236,6 +239,42 @@ class MeetingService:
             return existing, False
 
         return participant, True
+
+    def merge_guest(self, meeting_id: UUID, guest: Guest, profile_name: str | None) -> AvailabilityRead:
+        """
+        게스트 가져오기: 게스트 참여자의 가능 시간을 이 회원의 참여자에 합친다 (merge_time_slots)
+
+        게스트 서비스의 import_guest가 게스트 행을 잠근 트랜잭션 안에서 부르고, 이어서 게스트를 지운다.
+        회원 참여자가 없으면 프로필 표시 이름으로 만든다. 표시 이름이 없거나 참여자 이름 규칙에 맞지 않으면 게스트 이름이다.
+        있으면 표시 이름은 그대로다. 회원·게스트 참여자와 그 가능 시간은 잠그고 읽는다(NOWAIT).
+
+        :return: 회원 참여자와 합친 가능 시간
+        :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
+        """
+        meeting, _ = self.get_meeting_with_access_check(meeting_id)
+        try:
+            data = ParticipantCreate(display_name=profile_name)
+        except ValidationError:
+            data = ParticipantCreate(display_name=guest.name)
+        participant = crud.get_participant_by_user_id(self.session, meeting_id, self.owner_id, lock=True)
+        if participant is None:
+            # 같은 회원의 참여자를 다른 요청이 먼저 만들면 unique 제약이 막고(IntegrityError) 트랜잭션 전체가 되돌아간다
+            participant = crud.create_participant(self.session, meeting_id, user_id=self.owner_id, data=data)
+            member_slots = []
+        else:
+            member_slots = crud.get_participant_time_slots(self.session, participant.id, lock=True)
+        guest_participant = crud.get_participant_by_guest_id(self.session, guest.id, lock=True)
+        guest_slots = (
+            crud.get_participant_time_slots(self.session, guest_participant.id, lock=True)
+            if guest_participant is not None else []
+        )
+        slots = replace_time_slots(
+            self.session, participant.id, merge_time_slots(meeting, member_slots, guest_slots),
+        )
+        return AvailabilityRead(
+            participant=ParticipantRead.from_participant(participant, meeting.owner_id),
+            time_slots=[TimeSlotRead.model_validate(slot) for slot in slots],
+        )
 
     def _rename_participant(
             self,

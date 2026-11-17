@@ -40,3 +40,21 @@ class GuestVerificationFailedError(DomainException):
     """게스트 단계 요청의 Turnstile 토큰이 확인을 통과하지 못함 (app/middleware/guest_gate.py)"""
     status_code = status.HTTP_403_FORBIDDEN
     detail = "확인을 통과하지 못했습니다. 다시 시도하세요"
+
+
+class GuestNotFoundError(DomainException):
+    """가져올 게스트가 없음 (없거나, 폐기됐거나, 다른 리소스의 게스트)"""
+    status_code = status.HTTP_404_NOT_FOUND
+    detail = "게스트를 찾을 수 없습니다"
+
+
+class GuestTokenInvalidError(DomainException):
+    """요청 본문의 게스트 토큰이 검증을 통과하지 못했거나 게스트 토큰이 아님"""
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    detail = "게스트 토큰이 아니거나 유효하지 않습니다"
+
+
+class GuestImportConflictError(DomainException):
+    """가져오기가 같은 참여자를 쓰는 다른 요청과 겹쳐 아무것도 바꾸지 않음"""
+    status_code = status.HTTP_409_CONFLICT
+    detail = "다른 요청과 겹쳐 가져오지 못했습니다. 다시 시도하세요"
