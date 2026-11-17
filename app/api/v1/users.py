@@ -20,7 +20,7 @@ from app.core.audit import log_account_access
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import CommittingSession, get_db_transactional
 from app.domain.consent.schema.dto import ConsentCreate
-from app.domain.consent.service import consent_pending
+from app.domain.consent.service import current_consent
 from app.domain.user.model import UserProfile
 from app.domain.user.schema.dto import MyProfileRead
 from app.domain.user.service import UserProfileService, deletion_scheduled_at
@@ -49,9 +49,10 @@ async def put_my_consent(
         current_user: CurrentUser = Depends(get_current_user),
 ):
     """
-    만 14세 이상 확인, 이용약관, 개인정보처리방침 동의 기록.
+    만 14세 이상 확인, 이용약관, 개인정보처리방침 동의 기록. 사용성 분석 동의(`analytics`)는 선택이다.
 
     `version`은 응답 전에 받은 현재 약관 시행일이어야 한다(다르면 409).
+    같은 버전에 다시 보내면 `analytics`만 바꾼다(빠졌거나 null이거나 저장된 값과 같으면 그대로).
     """
     profile = UserProfileService(session, current_user).record_consent(data)
     return _to_read(session, profile)
@@ -99,13 +100,16 @@ def _client_ip(request: Request) -> str | None:
 
 
 def _to_read(session: Session, profile: UserProfile) -> MyProfileRead:
+    consent = current_consent(session, profile.sub)
     return MyProfileRead(
         id=profile.sub,
         display_name=profile.display_name,
         avatar_url=profile.avatar_url,
         friend_code=profile.friend_code,
         consent_version=app_config.settings.CONSENT_VERSION,
-        consent_required=consent_pending(session, profile.sub),
+        consent_required=consent is None,
         deletion_requested_at=profile.deletion_requested_at,
         deletion_scheduled_at=deletion_scheduled_at(profile),
+        analytics_consent=consent.analytics if consent else None,
+        analytics_consent_updated_at=consent.analytics_updated_at if consent else None,
     )

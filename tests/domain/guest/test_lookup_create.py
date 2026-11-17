@@ -48,7 +48,7 @@ def resource(host):
 
 @pytest.mark.asyncio
 async def test_create_makes_identity_and_row(kratos, resource):
-    result = await service.create(_create(resource, password="1"))
+    result = await service.create(_create(resource, password="abcd"))
 
     [row] = guest_rows()
     assert result.guest_id == row.id
@@ -65,7 +65,7 @@ async def test_create_makes_identity_and_row(kratos, resource):
     assert identity["verifiable_addresses"] == [
         {"value": handle, "via": "email", "verified": True, "status": "completed"}
     ]
-    assert kratos.passwords[row.identity_id] == "1"
+    assert kratos.passwords[row.identity_id] == "abcd"
     assert handle == f"{row.id}@guest.invalid"
     assert row.name == "민수"
 

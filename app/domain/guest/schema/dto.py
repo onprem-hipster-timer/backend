@@ -5,7 +5,8 @@ Guest Domain DTO
 이름은 공백 문자(Python 공백, 유니코드 Zs)가 이어진 곳을 공백 하나(U+0020)로 바꾸고 앞뒤를 뗀 뒤 1~50자이고,
 Cc·Cf·Cs·Co·Cn·Zl·Zp 범주의 문자는 받지 않는다. 같은 리소스 안에서 이름은 겹치지 않는다
 (정규화한 이름이 정확히 같으면 같은 이름).
-비밀번호는 비어 있지 않고 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다. 다른 규칙은 없다.
+비밀번호는 생성 때 4자(코드 포인트) 이상이고 공백 문자만으로 되어 있지 않으며 UTF-8로 72바이트 이하(bcrypt 한도)면 받는다.
+앞뒤 공백을 떼지 않고, 다른 규칙은 없다.
 """
 import unicodedata
 from uuid import UUID
@@ -17,6 +18,7 @@ from app.domain.consent.schema.dto import ConsentCreate
 from app.models.visibility import ResourceType
 
 GUEST_NAME_MAX_LENGTH = 50
+GUEST_PASSWORD_MIN_LENGTH = 4
 GUEST_PASSWORD_MAX_BYTES = 72
 
 
@@ -24,10 +26,15 @@ GUEST_PASSWORD_MAX_BYTES = 72
 REFUSED_NAME_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
 
+def _is_space(ch: str) -> bool:
+    """이름과 비밀번호 규칙이 보는 공백 문자 (Python 공백, 유니코드 Zs)"""
+    return ch.isspace() or unicodedata.category(ch) == "Zs"
+
+
 def normalize_guest_name(value: str) -> str:
     """이름의 정규형: NFC, 이어진 공백 문자는 공백 하나, 앞뒤 공백 없음. 규칙에 맞지 않으면 ValueError"""
     name = unicodedata.normalize("NFC", value)
-    name = " ".join("".join(" " if ch.isspace() or unicodedata.category(ch) == "Zs" else ch for ch in name).split())
+    name = " ".join("".join(" " if _is_space(ch) else ch for ch in name).split())
     if any(unicodedata.category(ch) in REFUSED_NAME_CATEGORIES for ch in name):
         raise ValueError("이름에 쓸 수 없는 문자가 있습니다")
     if not 1 <= len(name) <= GUEST_NAME_MAX_LENGTH:
@@ -64,6 +71,10 @@ class GuestCreate(GuestLookup):
         v = unicodedata.normalize("NFC", v)
         if not v:
             raise ValueError("비밀번호를 입력하세요")
+        if len(v) < GUEST_PASSWORD_MIN_LENGTH:
+            raise ValueError(f"비밀번호는 {GUEST_PASSWORD_MIN_LENGTH}자 이상이어야 합니다")
+        if all(_is_space(ch) for ch in v):
+            raise ValueError("비밀번호에는 공백이 아닌 문자가 있어야 합니다")
         if len(v.encode("utf-8")) > GUEST_PASSWORD_MAX_BYTES:
             raise ValueError(f"비밀번호는 {GUEST_PASSWORD_MAX_BYTES}바이트 이하여야 합니다")
         return v

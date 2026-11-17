@@ -13,7 +13,7 @@
 | 로그인 식별자 | 이메일 | 서버가 만든 `<guest_id>@guest.invalid`(`handle`). 게스트가 입력하지 않는다 |
 | 이름 | 선택 | 필수. 1~50자, 같은 리소스 안에서 겹치지 않는다 |
 | 수 | 제한 없음 | 리소스 하나에 100명까지 |
-| 비밀번호 | Kratos 비밀번호 정책 | 비어 있지 않고 UTF-8로 72바이트 이하면 된다 |
+| 비밀번호 | Kratos 비밀번호 정책 | 4자 이상이고 공백만으로 되어 있지 않으며 UTF-8로 72바이트 이하면 된다 |
 | 이메일 인증 | 로그인에 필요 | 없음. handle을 처음부터 인증된 주소로 만든다(메일이 가지 않는 주소) |
 | 만들 때 | Kratos 가입 플로우 | `POST /v1/guests` |
 | 약관 동의 | `PUT /v1/users/me/consent` | 생성 요청의 `consent`. 약관 버전이 바뀌면 `PUT /v1/guests/me/consent` |
@@ -36,7 +36,7 @@
 |----|---------|---------|
 | Kratos identity | handle, 비밀번호, 이름(`traits.name`) | 로그인, 세션, JWT의 `name` |
 | `guest` 테이블 | identity id, 리소스, 이름(`name`) | 이름 찾기, 이름 중복 검사, 접근 확인 |
-| `consent` 테이블 | identity id, 동의한 약관 버전, 동의 시각 | 약관 동의 판정(`428`). 회원과 함께 쓴다 |
+| `consent` 테이블 | identity id, 동의한 약관 버전, 동의 시각, 사용성 분석 동의(선택)와 그 시각 | 약관 동의 판정(`428`). 회원과 함께 쓴다 |
 
 ## 구성 요소와 경계
 
@@ -103,12 +103,12 @@ flowchart TB
 POST /v1/guests/lookup
 X-Turnstile-Token: <위젯 토큰 1>
 {"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수"}
-→ 200 {"handle": null, "consent_version": "2026-11-13"}
+→ 200 {"handle": null, "consent_version": "2026-11-19"}
 
 POST /v1/guests
 X-Turnstile-Token: <위젯 토큰 2>
 {"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수", "password": "1234",
- "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}}
+ "consent": {"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true}}
 → 201 {"guest_id": "0b9c...", "handle": "0b9c...@guest.invalid", ...}
 
 GET  /auth/self-service/login/api
@@ -316,7 +316,12 @@ sequenceDiagram
 - 결합자 없는 이모지(`🙂`, `👍🏽`, `🇰🇷`)는 쓸 수 있습니다. U+200D로 이은 이모지(가족 이모지 등)는 쓸 수 없습니다.
 - 생성과 이름 찾기는 받은 이름을 정규형으로 바꿉니다. 이름 변경은 이미 정규형인 이름만 받습니다(Kratos가 저장할 값을 backend가 바꿀 수 없다).
 
-비밀번호는 NFC로 정규화한 뒤 비어 있지 않고 UTF-8로 72바이트 이하면 받습니다. 다른 규칙은 없습니다. 로그인 때는 클라이언트가 NFC로 보냅니다.
+비밀번호는 NFC로 정규화한 뒤 4자 이상이고 공백 문자만으로 되어 있지 않으며 UTF-8로 72바이트 이하면 받습니다. 앞뒤 공백을 떼지 않고, 다른 규칙은 없습니다. 로그인 때는 클라이언트가 NFC로 보냅니다.
+
+- 글자 수는 NFC로 바꾼 문자열의 유니코드 코드 포인트 수입니다. 한글 음절, 이모지 하나(`🙂`)는 1자이고, NFC로 합쳐지지 않는 결합 문자는 따로 셉니다.
+- 4자보다 짧으면 `422`(`비밀번호는 4자 이상이어야 합니다`)입니다.
+- 공백 문자만으로 되어 있으면 `422`(`비밀번호에는 공백이 아닌 문자가 있어야 합니다`)입니다. 공백 문자는 이름 규칙 2단계와 같습니다(공백, 탭·줄바꿈, NBSP·전각 공백 등). 다른 문자가 하나라도 있으면(`a   `, ` ab c`) 받고 보낸 그대로 저장합니다.
+- 두 규칙은 생성 때만 봅니다. 로그인과 이름 찾기는 그대로이고, 4자보다 짧거나 공백만인 비밀번호로 이미 만든 게스트도 그 비밀번호로 로그인합니다.
 
 ## 요청 판정 순서
 
@@ -463,7 +468,7 @@ flowchart TD
 응답 (200): 그 이름의 게스트가 있으면 `handle`이 `"<guest_id>@guest.invalid"`, 없으면 `null`입니다. `consent_version`은 현재 약관 시행일(`CONSENT_VERSION`)이고, 생성과 동의 기록에 그대로 보냅니다.
 
 ```json
-{"handle": null, "consent_version": "2026-11-13"}
+{"handle": null, "consent_version": "2026-11-19"}
 ```
 
 | 상태 | 뜻 |
@@ -485,7 +490,7 @@ flowchart TD
   "resource_id": "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b",
   "name": "민수",
   "password": "1234",
-  "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
+  "consent": {"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true, "analytics": false}
 }
 ```
 
@@ -495,7 +500,7 @@ flowchart TD
 | `resource_id` | 리소스 UUID |
 | `name` | [이름 규칙](#이름과-비밀번호-규칙) |
 | `password` | [비밀번호 규칙](#이름과-비밀번호-규칙) |
-| `consent` | 회원 동의(`PUT /v1/users/me/consent`)와 같은 모양. `version`은 이름 찾기의 `consent_version`, `age_over_14`·`terms`·`privacy`(만 14세 이상, 이용약관, 개인정보처리방침)는 모두 `true` |
+| `consent` | 회원 동의(`PUT /v1/users/me/consent`)와 같은 모양. `version`은 이름 찾기의 `consent_version`, `age_over_14`·`terms`·`privacy`(만 14세 이상, 이용약관, 개인정보처리방침)는 모두 `true`. `analytics`(사용성 분석 동의)는 선택이고 `true`·`false`, 생략하거나 `null`이면 고르지 않은 것이다 |
 
 응답 (201):
 
@@ -519,7 +524,7 @@ flowchart TD
 | `409` | `GuestLimitReachedError` | 이 리소스에 게스트가 이미 100명이다 |
 | `403` | `GuestVerificationFailedError` | Turnstile 토큰을 받지 않았다. 위젯에서 새 토큰을 받아 다시 보낸다 |
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
-| `422` | | 입력 규칙 위반. `consent`가 없거나 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
+| `422` | | 입력 규칙 위반. `consent`가 없거나 세 항목 중 하나라도 빠졌거나 `true`가 아니거나 `analytics`가 불리언·`null`이 아니다 |
 | `429` | | IP당 분당 100회를 넘었다 (이름 찾기와 따로 센다) |
 
 ### 로그인과 JWT
@@ -625,17 +630,17 @@ sequenceDiagram
 
 ### 약관 동의 — `PUT /v1/guests/me/consent`
 
-게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다.
+게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다. `analytics`(사용성 분석 동의)는 선택입니다.
 
 ```json
-{"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
+{"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}
 ```
 
 | 상태 | `error_type` | 뜻 |
 |------|--------------|----|
-| `204` | | 기록했다. 같은 버전에 다시 동의해도 `204`이고 처음 기록을 둔다 |
+| `204` | | 기록했다. 같은 버전에 다시 동의해도 `204`이고 처음 기록을 두며, `analytics`를 보냈고 저장된 값과 다르면 그 값과 시각만 바꾼다 |
 | `409` | `ConsentVersionMismatchError` | `version`이 현재 약관 시행일이 아니다 |
-| `422` | | 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
+| `422` | | 세 항목 중 하나라도 빠졌거나 `true`가 아니거나 `analytics`가 불리언·`null`이 아니다 |
 | `403` | `GuestAccessDeniedError` | 게스트 행이 없다(폐기된 게스트). 회원 토큰도 `403` |
 | `401` | | 토큰이 없거나 `schema_id` 클레임이 없다 |
 
@@ -794,7 +799,7 @@ graph TD
 - 이름은 리소스 안에서 겹치지 않고, 대소문자를 구분합니다.
 - 이름 찾기와 생성은 각각 IP당 분당 100회, `/auth` 제출은 IP당 분당 60회이고 로그인 제출은 같은 IP·handle로 분당 5회입니다(`app/ratelimit/config.py`). 요청에 토큰이 있어도 IP로 셉니다. 이름 변경(설정 제출)은 IP로 세지 않고 게스트 identity당 분당 10회입니다.
 - 한도는 backend 인스턴스의 메모리에서 셉니다. 인스턴스가 여럿이면 인스턴스마다 따로 셉니다. 같은 IP를 쓰는 사용자들(NAT, 사무실)은 IP 한도를 함께 씁니다.
-- 게스트 비밀번호에는 길이 규칙이 없고 handle은 이름 찾기로 받을 수 있으므로, 게스트 로그인 시도는 Turnstile 확인과 `/auth` 제출 한도가 제한합니다. 둘 다 backend에서 하므로 Kratos 공개 API는 backend 뒤에만 둡니다([`/auth` 프록시](auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
+- 게스트 비밀번호는 4자부터 받고 handle은 이름 찾기로 받을 수 있으므로, 게스트 로그인 시도는 Turnstile 확인과 `/auth` 제출 한도가 제한합니다. 둘 다 backend에서 하므로 Kratos 공개 API는 backend 뒤에만 둡니다([`/auth` 프록시](auth-proxy.ko.md#kratos-공개-api를-backend-뒤에-두기)).
 - Turnstile 토큰의 사용 기록도 backend 인스턴스의 메모리에 있어 인스턴스마다 따로입니다. Cloudflare siteverify도 같은 토큰을 두 번 통과시키지 않습니다.
 - 게스트는 비밀번호를 바꾸거나 찾을 수 없습니다. 비밀번호를 잊으면 그 이름으로 다시 들어갈 수 없고, 다른 이름으로 새 게스트를 만듭니다.
 - 리소스 하나의 게스트는 100명까지입니다(`MAX_GUESTS_PER_RESOURCE`). 수는 넣기 전에 세므로, 100명 경계에서 동시에 만들면 동시 요청 수만큼 넘을 수 있습니다. 폐기된 게스트의 자리는 다시 쓸 수 있고, 가득 찬 리소스에서도 이름 찾기·로그인·이름 변경은 됩니다.
