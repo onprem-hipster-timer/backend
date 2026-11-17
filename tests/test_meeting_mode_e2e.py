@@ -3,11 +3,12 @@ Meeting 답하는 방식(mode) E2E 테스트
 
 mode는 생성 때 필수이고 PATCH로 바꿀 수 있다. 바꿔도 저장된 날짜와 참여자의 가능 시간은 그대로다.
 방식의 규칙은 생성과 수정(저장된 값에 수정 내용을 합친 결과) 모두에서 검사한다.
+수정은 규칙이 읽는 필드(MODE_RULE_FIELDS) 중 하나라도 저장된 값과 달라질 때만 규칙을 본다.
 - hourly: 기간은 7일 이하
 - daily: 하루 범위는 하루 전체(00:00–00:00)
 - weekly: 기간은 정확히 7일, 제외 날짜 없음, 하루 범위는 하루 전체
 """
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -255,3 +256,177 @@ def test_patch_keeping_mode_rules_is_applied(e2e_client, mode, patch):
     assert response.status_code == 200, response.text
     stored = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
     assert {key: stored[key] for key in patch} == patch
+
+
+# ============================================================
+# 방식의 규칙을 어기는 저장된 미팅 (규칙이 생기기 전의 행)
+# ============================================================
+
+# (저장된 행, 규칙 필드를 바꾸지만 여전히 어기는 수정, 규칙을 지키게 하는 수정)
+LEGACY_MEETINGS = {
+    "hourly_longer_than_7_days": (
+        {"mode": "hourly", **_days("2024-02-05", 10), "start_time": "09:00:00", "end_time": "18:00:00",
+         "time_slot_minutes": 30},
+        {"end_date": "2024-02-13"},  # 9일
+        {"end_date": "2024-02-11"},  # 7일
+    ),
+    "daily_not_whole_day": (
+        {"mode": "daily", "start_date": "2024-02-05", "end_date": "2024-03-05", "start_time": "09:00:00",
+         "end_time": "18:00:00", "time_slot_minutes": 30},
+        {"start_time": "10:00:00"},
+        WHOLE_DAY,
+    ),
+    "weekly_not_whole_day": (
+        {"mode": "weekly", **_days("2024-02-05", 7), "start_time": "09:00:00", "end_time": "18:00:00",
+         "time_slot_minutes": 30},
+        {"end_time": "17:00:00"},
+        WHOLE_DAY,
+    ),
+    "weekly_not_7_days": (
+        {"mode": "weekly", **_days("2024-02-05", 10), **WHOLE_DAY, "time_slot_minutes": 1440},
+        {"end_date": "2024-02-12"},  # 8일
+        {"end_date": "2024-02-11"},  # 7일
+    ),
+    "weekly_with_excluded_dates": (
+        {"mode": "weekly", **_days("2024-02-05", 7), **WHOLE_DAY, "time_slot_minutes": 1440,
+         "excluded_dates": ["2024-02-07"]},
+        {"excluded_dates": ["2024-02-08"]},
+        {"excluded_dates": []},
+    ),
+}
+
+
+def _insert(row: dict) -> str:
+    """API를 거치지 않고 mock 사용자(test-user-id)의 미팅 행을 넣는다"""
+    from app.db.session import _session_manager
+    from app.models.meeting import Meeting
+
+    with _session_manager.get_session() as session:
+        meeting = Meeting(
+            owner_id="test-user-id",
+            title="예전 미팅",
+            timezone="UTC",
+            start_date=date.fromisoformat(row["start_date"]),
+            end_date=date.fromisoformat(row["end_date"]),
+            excluded_dates=[date.fromisoformat(day) for day in row.get("excluded_dates", [])],
+            mode=row["mode"],
+            start_time=time.fromisoformat(row["start_time"]),
+            end_time=time.fromisoformat(row["end_time"]),
+            time_slot_minutes=row["time_slot_minutes"],
+        )
+        session.add(meeting)
+        session.commit()
+        return str(meeting.id)
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("shape", LEGACY_MEETINGS)
+def test_legacy_rows_break_mode_rules(e2e_client, shape):
+    """기준: 이 행들은 생성으로는 만들 수 없다"""
+    row, _, _ = LEGACY_MEETINGS[shape]
+
+    response = e2e_client.post("/v1/meetings", json={"title": "예전 미팅", "timezone": "UTC", **row})
+
+    assert response.status_code == 422, response.text
+    assert row["mode"] in response.json()["detail"][0]["msg"]
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("shape", LEGACY_MEETINGS)
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"title": "새 제목"},
+        {"description": "설명"},
+        {"description": None},
+        {"timezone": "Asia/Seoul"},
+        {"time_slot_minutes": 60},
+        {"allow_guests": False},
+        {"title": "새 제목", "start_date": None, "end_date": None, "start_time": None, "end_time": None},
+    ],
+)
+def test_legacy_row_accepts_patch_without_rule_fields(e2e_client, shape, patch):
+    row, _, _ = LEGACY_MEETINGS[shape]
+    meeting_id = _insert(row)
+    before = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json=patch)
+
+    assert response.status_code == 200, response.text
+    stored = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+    sent = {key: value for key, value in patch.items() if value is not None or key == "description"}
+    assert {key: stored[key] for key in sent} == sent
+    unchanged = set(before) - set(sent) - {"updated_at"}
+    assert {key: stored[key] for key in unchanged} == {key: before[key] for key in unchanged}
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("shape", LEGACY_MEETINGS)
+def test_legacy_row_accepts_rule_fields_sent_unchanged(e2e_client, shape):
+    """화면이 폼 전체를 보내도 규칙 필드가 저장된 값과 같으면 바뀐 것이 아니다"""
+    row, _, _ = LEGACY_MEETINGS[shape]
+    meeting_id = _insert(row)
+    before = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+    body = {
+        key: before[key]
+        for key in ("mode", "start_date", "end_date", "excluded_dates", "start_time", "end_time")
+    }
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json={**body, "title": "새 제목"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["title"] == "새 제목"
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("shape", LEGACY_MEETINGS)
+def test_legacy_row_refuses_rule_field_change_that_still_breaks_rules(e2e_client, shape):
+    row, still_breaking, _ = LEGACY_MEETINGS[shape]
+    meeting_id = _insert(row)
+    before = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+
+    for patch in (still_breaking, {**still_breaking, "title": "새 제목"}):
+        response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json=patch)
+
+        assert response.status_code == 422, response.text
+        assert response.json()["error_type"] == "InvalidMeetingError"
+        assert row["mode"] in response.json()["message"]
+        assert e2e_client.get(f"/v1/meetings/{meeting_id}").json() == before
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize("shape", LEGACY_MEETINGS)
+def test_legacy_row_accepts_patch_that_fixes_rules(e2e_client, shape):
+    row, _, fixing = LEGACY_MEETINGS[shape]
+    meeting_id = _insert(row)
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json=fixing)
+
+    assert response.status_code == 200, response.text
+    stored = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+    assert {key: stored[key] for key in fixing} == fixing
+    # 이제 규칙을 지키므로 생성으로도 같은 미팅을 만들 수 있다
+    fields = ("mode", "start_date", "end_date", "excluded_dates", "start_time", "end_time", "time_slot_minutes")
+    body = {"title": "같은 모양", "timezone": "UTC", **{key: stored[key] for key in fields}}
+    assert e2e_client.post("/v1/meetings", json=body).status_code == 201
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "shape, patch",
+    [
+        ("daily_not_whole_day", {"time_slot_minutes": 600}),  # 하루 범위 9시간보다 크다
+        ("weekly_not_whole_day", {"title": "새 제목", "time_slot_minutes": 1440}),
+        ("hourly_longer_than_7_days", {"title": "   "}),
+        ("weekly_with_excluded_dates", {"description": "x" * 2001}),
+    ],
+)
+def test_legacy_row_still_checks_other_rules(e2e_client, shape, patch):
+    row, _, _ = LEGACY_MEETINGS[shape]
+    meeting_id = _insert(row)
+    before = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json=patch)
+
+    assert response.status_code == 422, response.text
+    assert e2e_client.get(f"/v1/meetings/{meeting_id}").json() == before

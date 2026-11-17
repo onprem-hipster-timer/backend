@@ -11,7 +11,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.relativedelta import relativedelta
-from pydantic import AfterValidator, ConfigDict, field_validator, model_validator
+from pydantic import AfterValidator, ConfigDict, ValidationInfo, field_validator, model_validator
 from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
@@ -28,6 +28,8 @@ TIME_SLOT_MINUTES_MIN = 5
 TIME_SLOT_MINUTES_MAX = 1440
 HOURLY_MAX_DAYS = 7
 WEEKLY_DAYS = 7
+# 방식의 규칙(MeetingCreate.validate_mode)이 읽는 필드
+MODE_RULE_FIELDS = ("mode", "start_date", "end_date", "excluded_dates", "start_time", "end_time")
 
 
 def daily_range(start_time: time, end_time: time) -> timedelta:
@@ -85,6 +87,7 @@ class MeetingCreate(CustomModel):
     """일정 조율 생성 DTO
 
     수정(PATCH) 때도 저장된 값에 수정 내용을 합쳐 이 DTO로 다시 검증한다 (MeetingService.update_meeting).
+    방식의 규칙은 그때 MODE_RULE_FIELDS 중 하나라도 저장된 값과 달라질 때만 본다 (검증 context의 skip_mode_rules).
     """
     title: str
     description: Optional[str] = None
@@ -154,8 +157,10 @@ class MeetingCreate(CustomModel):
         return self
 
     @model_validator(mode="after")
-    def validate_mode(self):
+    def validate_mode(self, info: ValidationInfo):
         """hourly는 7일 이하. daily는 하루 전체(00:00–00:00). weekly는 정확히 7일, 제외 날짜 없음, 하루 전체"""
+        if (info.context or {}).get("skip_mode_rules"):
+            return self
         days = (self.end_date - self.start_date).days + 1
         whole_day = self.start_time == time(0) and self.end_time == time(0)
         if self.mode == MeetingMode.HOURLY and days > HOURLY_MAX_DAYS:

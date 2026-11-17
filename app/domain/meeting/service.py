@@ -25,6 +25,7 @@ from app.domain.meeting.exceptions import (
 from app.domain.meeting.schema.dto import (
     daily_range,
     meeting_dates,
+    MODE_RULE_FIELDS,
     MeetingCreate,
     MeetingUpdate,
     MeetingRead,
@@ -123,8 +124,8 @@ class MeetingService:
         :param data: 업데이트 데이터
         :return: 업데이트된 일정 조율
         :raises MeetingNotFoundError: 일정 조율을 찾을 수 없는 경우
-        :raises InvalidMeetingError: 저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기는 경우,
-            allow_guests에 true를 보냈는데 공개 범위가 PUBLIC이 아닌 경우
+        :raises InvalidMeetingError: 저장된 값에 수정 내용을 합친 미팅이 생성 규칙을 어기는 경우
+            (방식의 규칙은 MODE_RULE_FIELDS가 바뀔 때만), allow_guests에 true를 보냈는데 공개 범위가 PUBLIC이 아닌 경우
         """
         meeting = crud.get_meeting(self.session, meeting_id, self.owner_id)
         if not meeting:
@@ -143,6 +144,8 @@ class MeetingService:
         """저장된 값에 수정 내용을 합친 결과를 MeetingCreate 규칙으로 검증한다.
 
         apply_update와 같이 보내지 않은 필드와 NOT NULL 필드의 null은 저장된 값을 쓴다.
+        방식의 규칙은 MODE_RULE_FIELDS 중 하나라도 저장된 값과 달라질 때만 본다.
+        그래서 규칙을 어기는 저장된 미팅도 제목처럼 규칙과 무관한 필드는 고칠 수 있다.
         """
         merged = {name: getattr(meeting, name) for name in MeetingCreate.model_fields}
         columns = Meeting.__table__.columns
@@ -150,8 +153,9 @@ class MeetingService:
             if value is MISSING or (value is None and not columns[key].nullable):
                 continue
             merged[key] = value
+        rules_changed = any(merged[name] != getattr(meeting, name) for name in MODE_RULE_FIELDS)
         try:
-            MeetingCreate.model_validate(merged)
+            MeetingCreate.model_validate(merged, context={"skip_mode_rules": not rules_changed})
         except ValidationError as e:
             raise InvalidMeetingError(
                 "; ".join(error["msg"] for error in e.errors(include_url=False))
