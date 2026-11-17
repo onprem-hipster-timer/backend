@@ -2,15 +2,15 @@
 
 - 같은 종류의 구간은 합집합이다. 겹치거나 맞닿은 구간은 하나가 된다
 - 게스트 구간이 회원의 다른 종류 구간과 겹치면 회원의 답을 두고 게스트 구간에서 그 부분을 뺀다
-- 합친 답은 겹침 규칙과 하루 범위 규칙을 지킨다. 하루 범위를 채워야 하는 날의 빈 시간은 unavailable로 채운다
+- 합친 unavailable 구간이 하루 범위에 걸친 날의 빈 시간은 unavailable로 채운다
 - 슬롯 수 제한은 보지 않는다
 """
 from datetime import date, datetime, time
 
 import pytest
 
-from app.domain.meeting.schema.dto import TimeSlotCreate, _validate_kinds_do_not_overlap, subtract_intervals
-from app.domain.meeting.service import _first_uncovered_day, merge_time_slots
+from app.domain.meeting.schema.dto import TimeSlotCreate, subtract_intervals
+from app.domain.meeting.service import merge_time_slots
 from app.models.meeting import Meeting, MeetingMode, TimeSlotKind
 
 AV, UN = TimeSlotKind.AVAILABLE, TimeSlotKind.UNAVAILABLE
@@ -44,11 +44,6 @@ def _s(day: int, start: str, end: str, kind=AV, end_day: int | None = None) -> T
 
 def _answer(slots) -> list[tuple]:
     return [(slot.start_time, slot.end_time, slot.kind) for slot in slots]
-
-
-def _valid(meeting: Meeting, slots) -> bool:
-    _validate_kinds_do_not_overlap(slots)
-    return _first_uncovered_day(meeting, slots) is None
 
 
 class TestSameKind:
@@ -154,7 +149,7 @@ class TestOtherKind:
 
 
 class TestDayCoverage:
-    """두 답이 저장할 때의 규칙을 지켰으면 합친 답도 지킨다. 저장 뒤 미팅이 바뀌어 규칙을 어기게 된 답은 빈 시간을 채운다"""
+    """합친 unavailable 구간이 하루 범위에 걸친 날의 빈 시간을 채운다. hourly는 날마다, daily·weekly는 미팅 날짜 전체"""
 
     @pytest.mark.parametrize("member, guest", [
         # hourly: 날마다 따로 본다
@@ -168,7 +163,6 @@ class TestDayCoverage:
 
         merged = merge_time_slots(meeting, member, guest)
 
-        assert _valid(meeting, merged)
         assert _covered(merged) == _covered(member + guest)
 
     @pytest.mark.parametrize("member, guest", [
@@ -184,7 +178,6 @@ class TestDayCoverage:
 
         merged = merge_time_slots(meeting, member, guest)
 
-        assert _valid(meeting, merged)
         assert _covered(merged) == _covered(member + guest)
 
     def test_hourly_day_left_uncovered_is_filled_with_unavailable(self):
@@ -201,7 +194,6 @@ class TestDayCoverage:
             (_at(2, "11:00"), _at(2, "12:00"), UN),
             (_at(3, "09:00"), _at(3, "10:00"), AV),
         ]
-        assert _valid(meeting, merged)
 
     def test_hourly_fill_comes_from_the_guest_side_too(self):
         """게스트가 범위가 늘기 전에 답했고 회원은 다른 날에 답했다"""
@@ -215,7 +207,6 @@ class TestDayCoverage:
             (_at(2, "08:00"), _at(2, "11:00"), UN),
             (_at(3, "09:00"), _at(3, "10:00"), AV),
         ]
-        assert _valid(meeting, merged)
 
     def test_daily_every_day_left_uncovered_is_filled_with_unavailable(self):
         """회원은 hourly일 때 첫날만 불가능으로 답했고, 미팅이 daily로 바뀌었다"""
@@ -230,7 +221,6 @@ class TestDayCoverage:
             (_at(3, "00:00"), _at(4, "00:00"), AV),
             (_at(4, "00:00"), _at(5, "00:00"), UN),
         ]
-        assert _valid(meeting, merged)
 
     def test_weekly_is_judged_like_daily(self):
         meeting = _meeting(MeetingMode.WEEKLY, time(0), time(0), days=(2, 8))
@@ -240,7 +230,6 @@ class TestDayCoverage:
         merged = merge_time_slots(meeting, member, guest)
 
         assert _answer(merged) == [(_at(2, "00:00"), _at(9, "00:00"), UN)]
-        assert _valid(meeting, merged)
 
     def test_available_only_answers_are_not_filled(self):
         meeting = _meeting()
@@ -263,7 +252,6 @@ class TestDayCoverage:
             (_at(2, "20:00"), _at(2, "21:00"), UN),
             (_at(3, "09:00"), _at(3, "09:30"), UN),
         ]
-        assert _valid(meeting, merged)
 
 
 def test_slot_count_is_not_limited():

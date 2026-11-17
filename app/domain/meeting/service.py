@@ -3,13 +3,12 @@ Meeting Service
 
 일정 조율 서비스 비즈니스 로직 (CRUD + 참여자 관리)
 """
-from bisect import bisect_left, bisect_right
+from bisect import bisect_left
 from datetime import date, datetime
 from math import ceil
 from typing import List
 from uuid import UUID
 
-from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic.experimental.missing_sentinel import MISSING
 from sqlalchemy.exc import IntegrityError
@@ -374,7 +373,6 @@ class MeetingService:
         :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         :raises MeetingParticipantNotFoundError: 참여자가 없거나 본인 참여자가 아닌 경우
         :raises TooManyTimeSlotsError: 슬롯 수가 미팅의 칸 수보다 많은 경우
-        :raises RequestValidationError: unavailable 구간이 있는데 하루 범위를 다 채우지 않은 경우
         """
         # 접근 권한 확인
         meeting, _ = self.get_meeting_with_access_check(meeting_id)
@@ -426,29 +424,11 @@ class MeetingService:
 def check_time_slots(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None:
     """가능 시간을 저장하기 전에 미팅과 함께 보는 규칙. 회원과 게스트의 저장이 모두 거친다
 
-    - 슬롯 수가 미팅의 칸 수(MeetingService._cell_count)보다 많으면 TooManyTimeSlotsError
-    - unavailable 구간이 있는 묶음의 미팅 날짜는 available·unavailable 구간이 하루 범위를 빈틈없이 덮어야 한다.
-      묶음은 hourly면 날마다, daily·weekly면 미팅 날짜 전체다. 하루 범위 밖의 구간은 보지 않는다.
-      어기면 본문 검증(TimeSlotList의 겹침 거절)과 같은 모양의 422 (RequestValidationError)
+    슬롯 수가 미팅의 칸 수(MeetingService._cell_count)보다 많으면 TooManyTimeSlotsError
     """
     limit = MeetingService._cell_count(meeting)
     if len(time_slots) > limit:
         raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
-
-    day = _first_uncovered_day(meeting, time_slots)
-    if day is not None:
-        if meeting.mode == MeetingMode.HOURLY:
-            rule = "a day with unavailable time slots must be fully covered"
-        else:
-            rule = "with unavailable time slots, every meeting day must be fully covered"
-        message = f"{meeting.mode.value} meetings: {rule} by available and unavailable time slots ({day} is not)"
-        raise RequestValidationError([{
-            "type": "value_error",
-            "loc": ("body",),
-            "msg": f"Value error, {message}",
-            "input": [slot.model_dump(mode="json") for slot in time_slots],
-            "ctx": {"error": ValueError(message)},
-        }])
 
 
 def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) -> List[TimeSlotCreate]:
@@ -456,8 +436,7 @@ def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) ->
 
     - 같은 종류의 구간은 합집합이다. 겹치거나 맞닿은 구간은 하나가 된다
     - 게스트 구간이 회원의 다른 종류 구간과 겹치면 회원의 답을 두고 게스트 구간에서 그 부분을 뺀다
-    - 그래도 하루 범위 규칙(check_time_slots)을 어기면(저장한 뒤 미팅의 방식·하루 범위가 바뀐 답), 채워야 하는 날의
-      빈 시간을 unavailable로 채운다. available만 표시한 답에서 표시하지 않은 시간은 불가능이므로 같은 답이다
+    - 합친 unavailable 구간이 하루 범위에 걸친 날(_days_to_cover)의 빈 시간을 unavailable로 채운다
     - 슬롯 수 제한은 보지 않는다
     """
     def intervals(slots, kind):
@@ -486,19 +465,6 @@ def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) ->
     return sorted(slots, key=lambda slot: slot.start_time)
 
 
-def _first_uncovered_day(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> date | None:
-    """unavailable 구간이 하루 범위에 걸친 묶음에서, 구간들이 하루 범위를 다 덮지 않은 첫 날짜. 없으면 None"""
-    unavailable = merge_intervals([
-        (slot.start_time, slot.end_time) for slot in time_slots if slot.kind == TimeSlotKind.UNAVAILABLE
-    ])
-    # 합친 구간은 서로 떨어져 있으므로 하루 범위는 한 구간이 덮어야 다 덮인다
-    covered = merge_intervals([(slot.start_time, slot.end_time) for slot in time_slots])
-    for day, start, end in _days_to_cover(meeting, unavailable):
-        if not _covers(covered, start, end):
-            return day
-    return None
-
-
 def _days_to_cover(
         meeting: Meeting,
         unavailable: List[tuple[datetime, datetime]],
@@ -521,12 +487,6 @@ def _overlaps(merged: List[tuple[datetime, datetime]], start: datetime, end: dat
     """합친 구간 중 [start, end)와 겹치는 것이 있으면 True (맞닿는 것은 겹치지 않는다)"""
     i = bisect_left(merged, (end,)) - 1  # end 전에 시작하는 마지막 구간
     return i >= 0 and merged[i][1] > start
-
-
-def _covers(merged: List[tuple[datetime, datetime]], start: datetime, end: datetime) -> bool:
-    """합친 구간 하나가 [start, end)를 다 덮으면 True"""
-    i = bisect_right(merged, (start, datetime.max)) - 1  # start 이전에 시작하는 마지막 구간
-    return i >= 0 and merged[i][1] >= end
 
 
 def replace_time_slots(

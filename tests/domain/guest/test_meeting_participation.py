@@ -114,34 +114,36 @@ class TestAvailability:
     def test_guest_sets_unavailable_slot_and_it_is_not_counted(self, client, tokens, meeting_id, guest):
         headers = tokens.guest(guest.identity_id)
         participant = participate(client, meeting_id, headers)
-        rest_of_day = {"start_time": "2099-03-02T10:00:00Z", "end_time": "2099-03-02T11:00:00Z"}
 
-        response = set_slots(
-            client, meeting_id, participant["id"], headers, slots=[{**SLOT, "kind": "unavailable"}, rest_of_day],
-        )
+        response = set_slots(client, meeting_id, participant["id"], headers, slots=[{**SLOT, "kind": "unavailable"}])
 
         assert response.status_code == 200
-        assert [s["kind"] for s in response.json()] == ["unavailable", "available"]
+        assert [s["kind"] for s in response.json()] == ["unavailable"]
         availability = client.get(f"/v1/meetings/{meeting_id}/availability", headers=headers).json()
-        assert sorted(s["kind"] for a in availability for s in a["time_slots"]) == ["available", "unavailable"]
+        assert [s["kind"] for a in availability for s in a["time_slots"]] == ["unavailable"]
         assert cell_count(client.get(f"/v1/meetings/{meeting_id}/result").json()) == 0
 
-    def test_unavailable_with_gap_gets_same_refusal_as_member(self, client, tokens, meeting_id, guest):
-        """하루 범위 09:00–11:00 중 09:00–10:00만 unavailable"""
+    def test_partial_answer_is_stored_as_sent_like_member(self, client, tokens, meeting_id, guest):
+        """하루 범위 09:00–11:00 중 09:00–10:00만 unavailable, 다음 날 10:00–11:00만 available"""
         headers = tokens.guest(guest.identity_id)
         participant = participate(client, meeting_id, headers)
-        set_slots(client, meeting_id, participant["id"], headers)
         member = participate(client, meeting_id, tokens.member(MEMBER))
-        slots = [{**SLOT, "kind": "unavailable"}]
+        slots = [
+            {**SLOT, "kind": "unavailable"},
+            {"start_time": "2099-03-03T10:00:00Z", "end_time": "2099-03-03T11:00:00Z", "kind": "available"},
+        ]
 
         guest_response = set_slots(client, meeting_id, participant["id"], headers, slots=slots)
         member_response = set_slots(client, meeting_id, member["id"], tokens.member(MEMBER), slots=slots)
 
-        assert guest_response.status_code == member_response.status_code == 422
-        assert guest_response.json() == member_response.json()
-        assert guest_response.json()["detail"][0]["msg"].endswith("(2099-03-02 is not)")
-        assert _slot_count(participant["id"]) == 1
-        assert _slot_count(member["id"]) == 0
+        assert guest_response.status_code == member_response.status_code == 200
+        expected = [
+            ("2099-03-02T09:00:00+0000", "2099-03-02T10:00:00+0000", "unavailable"),
+            ("2099-03-03T10:00:00+0000", "2099-03-03T11:00:00+0000", "available"),
+        ]
+        for response in (guest_response, member_response):
+            assert [(s["start_time"], s["end_time"], s["kind"]) for s in response.json()] == expected
+        assert _slot_count(participant["id"]) == _slot_count(member["id"]) == 2
 
     def test_overlapping_available_and_unavailable_is_422(self, client, tokens, meeting_id, guest):
         headers = tokens.guest(guest.identity_id)

@@ -23,7 +23,7 @@ from app.domain.guest.events import GuestDiscarded
 from app.domain.meeting import guest_host
 from app.domain.meeting import service as meeting_service
 from app.domain.meeting.schema.dto import TimeSlotCreate, _validate_kinds_do_not_overlap
-from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
+from app.models.meeting import MeetingParticipant, MeetingTimeSlot
 from tests.domain.guest.conftest import Tokens
 from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
 from tests.domain.guest.meeting_helpers import (
@@ -136,18 +136,9 @@ def _grid(result: dict) -> list[tuple]:
     return [(c["start_time"], c["count"], c["unavailable_count"]) for c in result["availability_grid"]]
 
 
-def _meeting_row(meeting_id: str) -> Meeting:
-    with _session_manager.get_session() as session:
-        meeting = session.get(Meeting, uuid.UUID(meeting_id))
-        session.expunge(meeting)
-        return meeting
-
-
-def _assert_valid_answer(meeting_id: str, slots: list[dict]) -> None:
-    """저장 규칙 중 겹침과 하루 범위 규칙을 지킨다 (슬롯 수 제한은 보지 않는다)"""
-    answer = [TimeSlotCreate(**s) for s in slots]
-    _validate_kinds_do_not_overlap(answer)
-    assert meeting_service._first_uncovered_day(_meeting_row(meeting_id), answer) is None
+def _assert_valid_answer(slots: list[dict]) -> None:
+    """저장 규칙 중 겹침 규칙을 지킨다 (슬롯 수 제한은 보지 않는다)"""
+    _validate_kinds_do_not_overlap([TimeSlotCreate(**s) for s in slots])
 
 
 # ============ 가져오기 ============
@@ -234,7 +225,7 @@ class TestImport:
             _read(2, "09:00", "10:00", "unavailable"), _read(2, "10:00", "11:00"),
             _read(3, "09:00", "10:00"), _read(3, "10:00", "11:00", "unavailable"),
         ]
-        _assert_valid_answer(meeting_id, slots)
+        _assert_valid_answer(slots)
 
     def test_response_matches_availability_read_and_takes_timezone(self, client, tokens, meeting_id, guest):
         _answer_as_guest(client, tokens, meeting_id, guest, [_slot(2, "09:00", "10:00")])
@@ -322,7 +313,7 @@ class TestDayCoverage:
             _read(2, "09:00", "10:00"), _read(2, "10:00", "11:00", "unavailable"),
             _read(3, "09:00", "11:00", "unavailable"), _read(4, "09:30", "10:00"),
         ]
-        _assert_valid_answer(meeting_id, slots)
+        _assert_valid_answer(slots)
 
     def test_hourly_day_left_uncovered_after_range_change_is_filled_with_unavailable(
             self, client, tokens, meeting_id, guest,
@@ -339,7 +330,7 @@ class TestDayCoverage:
             _read(2, "09:00", "10:00", "unavailable"), _read(2, "10:00", "11:00"),
             _read(2, "11:00", "12:00", "unavailable"), _read(3, "09:00", "10:00"),
         ]
-        _assert_valid_answer(meeting_id, slots)
+        _assert_valid_answer(slots)
 
     @pytest.fixture
     def daily_meeting(self, client, tokens) -> str:
@@ -376,7 +367,7 @@ class TestDayCoverage:
 
         slots = response.json()["time_slots"]
         assert _answer(slots) == [self._read_day(2, until=3), self._read_day(4, "unavailable")]
-        _assert_valid_answer(daily_meeting, slots)
+        _assert_valid_answer(slots)
 
     def test_daily_days_left_uncovered_after_mode_change_are_filled_with_unavailable(
             self, client, tokens, kratos, daily_meeting,
@@ -393,7 +384,7 @@ class TestDayCoverage:
         assert _answer(slots) == [
             self._read_day(2, "unavailable"), self._read_day(3), self._read_day(4, "unavailable"),
         ]
-        _assert_valid_answer(daily_meeting, slots)
+        _assert_valid_answer(slots)
 
 
 # ============ 게스트 상태 ============

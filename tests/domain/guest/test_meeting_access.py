@@ -315,10 +315,8 @@ class TestParticipantCountAndRoles:
     def test_unavailable_count_is_same_for_anonymous_guest_and_member(
             self, client, tokens, meeting_id, guest, participants,
     ):
-        rest_of_day = {"start_time": "2099-03-02T10:00:00Z", "end_time": "2099-03-02T11:00:00Z"}
         response = set_slots(
-            client, meeting_id, participants["owner"], tokens.member(OWNER),
-            slots=[{**SLOT, "kind": "unavailable"}, rest_of_day],
+            client, meeting_id, participants["owner"], tokens.member(OWNER), slots=[{**SLOT, "kind": "unavailable"}],
         )
         assert response.status_code == 200, response.text
 
