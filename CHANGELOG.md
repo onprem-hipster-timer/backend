@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **Hourly meeting rule counts meeting days**: an `hourly` meeting may have at most 7 meeting days (the dates from `start_date` to `end_date` minus `excluded_dates`); the period itself may be as long as the input limits allow. More meeting days are refused with 422 (`hourly meetings must have at most 7 meeting days`) on create, and on update when `mode`, `start_date`, `end_date` or `excluded_dates` changes.
 
 ---
 
