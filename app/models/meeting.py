@@ -4,17 +4,25 @@ Meeting 모델
 일정 조율 서비스를 위한 모델들
 """
 from datetime import date, time
+from enum import Enum
 from typing import List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import NaiveDatetime
-from sqlalchemy import Boolean, Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint, false
+from sqlalchemy import Boolean, Column, Enum as SQLEnum, ForeignKey, JSON, CheckConstraint, UniqueConstraint, false
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
 
 if TYPE_CHECKING:
     pass
+
+
+class MeetingMode(str, Enum):
+    """참여자가 미팅에 답하는 방식. 프론트엔드는 이 값으로 화면을 정한다"""
+    HOURLY = "hourly"  # 날짜와 하루 시간 범위 안에서 시간을 고른다
+    DAILY = "daily"  # 날짜만 고른다. 하루 전체가 한 답이다
+    WEEKLY = "weekly"  # 요일만 고른다 (매주 반복)
 
 
 class Meeting(UUIDBase, TimestampMixin, table=True):
@@ -39,6 +47,14 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
 
     # 날짜·요일·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
     timezone: str
+
+    # 답하는 방식. 바꿔도 저장된 날짜와 가능 시간은 그대로다
+    mode: MeetingMode = Field(
+        sa_column=Column(
+            SQLEnum(MeetingMode, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=False,
+        )
+    )
 
     # 요일 기반 설정 (JSON array of integers 0-6, 0=월요일)
     # 예: [0, 2, 4] = 월, 수, 금

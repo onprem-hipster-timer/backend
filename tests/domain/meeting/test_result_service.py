@@ -31,6 +31,7 @@ def meeting_data() -> MeetingCreate:
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
         timezone="UTC",
+        mode="hourly",
         available_days=[0, 2, 4],  # 월, 수, 금
         start_time=time(9, 0),
         end_time=time(18, 0),
@@ -138,6 +139,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),
             end_date=date(2024, 2, 5),
             timezone="UTC",
+            mode="hourly",
             available_days=[0],
             start_time=time(9, 0),
             end_time=time(12, 0),
@@ -176,6 +178,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),  # 월요일
             end_date=date(2024, 2, 5),
             timezone="UTC",
+            mode="hourly",
             available_days=[0],
             start_time=time(10, 0),
             end_time=time(12, 0),
@@ -213,6 +216,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),
             end_date=date(2024, 2, 5),
             timezone="UTC",
+            mode="hourly",
             available_days=[0],
             start_time=time(10, 0),
             end_time=time(12, 0),
@@ -257,6 +261,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),
             end_date=date(2024, 2, 5),
             timezone="UTC",
+            mode="hourly",
             available_days=[0],
             start_time=time(9, 0),
             end_time=time(12, 0),
@@ -308,6 +313,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),  # 월요일
             end_date=date(2024, 2, 9),  # 금요일
             timezone="UTC",
+            mode="hourly",
             available_days=[0],  # 월요일만
             start_time=time(9, 0),
             end_time=time(10, 0),
@@ -346,6 +352,7 @@ class TestMeetingResult:
             start_date=date(2024, 2, 5),
             end_date=date(2024, 2, 5),
             timezone="UTC",
+            mode="hourly",
             available_days=[0],
             start_time=time(9, 0),
             end_time=time(10, 0),

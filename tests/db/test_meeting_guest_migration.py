@@ -193,9 +193,10 @@ def test_existing_participants_keep_rows_with_null_guest_id(before_guest_id) -> 
 def test_upgraded_constraints(before_guest_id) -> None:
     """게스트당 참여자 하나, user_id와 guest_id는 함께 둘 수 없다, 게스트 행을 지우면 참여자와 가능 시간도 지워진다"""
     engine, config = before_guest_id
-    command.upgrade(config, "head")
     with engine.begin() as connection:
         connection.execute(_INSERT_MEETING, {"id": _MEETING})
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
         connection.execute(_INSERT_GUEST, {"id": _GUEST, "identity": "i1", "resource": _MEETING, "name": "민수"})
         connection.execute(_INSERT_GUEST, {"id": _OTHER_GUEST, "identity": "i2", "resource": _MEETING, "name": "지수"})
         connection.execute(_INSERT_GUEST_PARTICIPANT, {"id": "1" * 32, "meeting": _MEETING, "user": None, "guest": _GUEST})

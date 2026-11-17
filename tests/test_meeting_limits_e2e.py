@@ -12,6 +12,7 @@ BASE_MEETING = {
     "start_date": "2024-02-05",  # 월요일
     "end_date": "2024-02-09",  # 금요일
     "timezone": "UTC",
+    "mode": "hourly",
     "available_days": [0, 1, 2, 3, 4],
     "start_time": "09:00:00",
     "end_time": "18:00:00",
@@ -172,7 +173,7 @@ def test_meeting_title_is_trimmed(e2e_client):
 # ============================================================
 
 _SHAPE_FIELDS = (
-    "title", "description", "start_date", "end_date", "timezone", "available_days",
+    "title", "description", "start_date", "end_date", "timezone", "mode", "available_days",
     "start_time", "end_time", "time_slot_minutes",
 )
 

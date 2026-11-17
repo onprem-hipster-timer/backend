@@ -25,6 +25,7 @@ def _open_meeting():
             start_date=date(2999, 1, 1),
             end_date=date(2999, 1, 3),
             timezone="UTC",
+            mode="hourly",
             available_days=[0, 1, 2, 3, 4, 5, 6],
             start_time=time(9),
             end_time=time(18),

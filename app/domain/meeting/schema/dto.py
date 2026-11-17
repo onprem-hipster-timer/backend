@@ -15,6 +15,7 @@ from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
+from app.models.meeting import MeetingMode
 from app.models.visibility import VisibilityLevel
 from app.utils.validators import validate_time_order
 
@@ -86,6 +87,7 @@ class MeetingCreate(CustomModel):
     start_date: date
     end_date: date
     timezone: str  # 날짜·요일·시간을 해석하는 IANA 시간대
+    mode: MeetingMode  # 답하는 방식
     available_days: List[int]  # 요일 리스트 (0-6, 0=월요일)
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 하루의 끝)
@@ -154,6 +156,7 @@ class MeetingUpdate(CustomModel):
     start_date: date | None = MISSING
     end_date: date | None = MISSING
     timezone: str = MISSING
+    mode: MeetingMode = MISSING
     available_days: list[int] | None = MISSING
     start_time: time | None = MISSING
     end_time: time | None = MISSING
@@ -205,6 +208,7 @@ class MeetingRead(CustomModel):
     start_date: date
     end_date: date
     timezone: str
+    mode: MeetingMode
     available_days: List[int]
     start_time: time
     end_time: time

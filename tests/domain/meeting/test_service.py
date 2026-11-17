@@ -33,6 +33,7 @@ def meeting_data() -> MeetingCreate:
         start_date=date(2024, 2, 1),
         end_date=date(2024, 2, 7),
         timezone="UTC",
+        mode="hourly",
         available_days=[0, 2, 4],  # 월, 수, 금
         start_time=time(9, 0),
         end_time=time(18, 0),
@@ -62,6 +63,7 @@ class TestCreateMeeting:
         assert meeting.description == "다음 주 회의 일정을 조율합니다"
         assert meeting.start_date == date(2024, 2, 1)
         assert meeting.end_date == date(2024, 2, 7)
+        assert meeting.mode == "hourly"
         assert meeting.available_days == [0, 2, 4]
         assert meeting.start_time == time(9, 0)
         assert meeting.end_time == time(18, 0)

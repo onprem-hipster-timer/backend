@@ -13,6 +13,7 @@ SEOUL_MEETING = {
     "start_date": "2024-02-05",  # 월요일
     "end_date": "2024-02-06",
     "timezone": "Asia/Seoul",
+    "mode": "hourly",
     "available_days": [0, 1],
     "start_time": "09:00:00",
     "end_time": "12:00:00",

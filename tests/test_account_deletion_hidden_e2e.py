@@ -67,6 +67,7 @@ def _make_meeting(client) -> str:
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
+            "mode": "hourly",
             "available_days": [0, 2, 4],
             "start_time": "09:00:00",
             "end_time": "18:00:00",
