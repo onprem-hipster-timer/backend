@@ -2,24 +2,25 @@
 # 사용법:
 #   시작: docker compose -f docker-compose.test.yaml up -d
 #   종료: docker compose -f docker-compose.test.yaml down -v
+#
+# 버려도 되는 테스트 데이터만 둔다. 데이터 디렉터리는 tmpfs라 컨테이너를 멈추면 사라지고,
+# 디스크 동기화(fsync 등)를 꺼서 테스트마다 테이블을 만들고 지우는 시간을 줄인다.
 
 services:
   postgres:
     image: postgres:16-alpine
     container_name: test-postgres
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
     ports:
       - "5432:5432"
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpass
       POSTGRES_DB: testdb
-    volumes:
-      - postgres_test_data:/var/lib/postgresql/data
+    tmpfs:
+      - /var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
       interval: 5s
       timeout: 3s
       retries: 5
-
-volumes:
-  postgres_test_data:
