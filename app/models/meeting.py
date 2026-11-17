@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import NaiveDatetime
 from sqlalchemy import Boolean, Column, Enum as SQLEnum, ForeignKey, JSON, CheckConstraint, UniqueConstraint, false
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
@@ -23,6 +24,18 @@ class MeetingMode(str, Enum):
     HOURLY = "hourly"  # 날짜와 하루 시간 범위 안에서 시간을 고른다
     DAILY = "daily"  # 날짜만 고른다. 하루 전체가 한 답이다
     WEEKLY = "weekly"  # 요일만 고른다 (매주 반복)
+
+
+class DateList(TypeDecorator):
+    """date 목록을 ISO 날짜 문자열의 JSON 배열로 저장한다"""
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return [day.isoformat() for day in value]
+
+    def process_result_value(self, value, dialect):
+        return [date.fromisoformat(day) for day in value]
 
 
 class Meeting(UUIDBase, TimestampMixin, table=True):
@@ -41,11 +54,17 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     title: str
     description: str | None = None
 
-    # 일정 기간
+    # 일정 기간. 첫날과 마지막 날은 언제나 미팅 날짜다
     start_date: date
     end_date: date
 
-    # 날짜·요일·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
+    # 기간에서 빼는 날짜. 기간 안쪽(첫날·마지막 날이 아닌 날)만, 겹치지 않게 정렬해 둔다 (MeetingCreate)
+    excluded_dates: List[date] = Field(
+        default_factory=list,
+        sa_column=Column(DateList, nullable=False),
+    )
+
+    # 날짜·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
     timezone: str
 
     # 답하는 방식. 바꿔도 저장된 날짜와 가능 시간은 그대로다
@@ -54,13 +73,6 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
             SQLEnum(MeetingMode, native_enum=False, values_callable=lambda x: [e.value for e in x]),
             nullable=False,
         )
-    )
-
-    # 요일 기반 설정 (JSON array of integers 0-6, 0=월요일)
-    # 예: [0, 2, 4] = 월, 수, 금
-    available_days: List[int] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False)
     )
 
     # 시간 범위 설정

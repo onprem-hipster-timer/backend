@@ -12,7 +12,6 @@ MEETING = {
     "end_date": "2099-03-06",
     "timezone": "UTC",
     "mode": "hourly",
-    "available_days": [0, 1, 2, 3, 4, 5, 6],
     "start_time": "09:00:00",
     "end_time": "11:00:00",
     "time_slot_minutes": 60,

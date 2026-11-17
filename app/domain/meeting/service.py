@@ -3,7 +3,6 @@ Meeting Service
 
 일정 조율 서비스 비즈니스 로직 (CRUD + 참여자 관리)
 """
-from datetime import timedelta
 from math import ceil
 from typing import List
 from uuid import UUID
@@ -25,6 +24,7 @@ from app.domain.meeting.exceptions import (
 )
 from app.domain.meeting.schema.dto import (
     daily_range,
+    meeting_dates,
     MeetingCreate,
     MeetingUpdate,
     MeetingRead,
@@ -329,11 +329,8 @@ class MeetingService:
 
     @staticmethod
     def _cell_count(meeting: Meeting) -> int:
-        """기간 안의 고른 요일 수 x 하루 범위(분) / 시간 단위(분), 올림"""
-        days = sum(
-            (meeting.start_date + timedelta(days=offset)).weekday() in meeting.available_days
-            for offset in range((meeting.end_date - meeting.start_date).days + 1)
-        )
+        """미팅 날짜 수 x 하루 범위(분) / 시간 단위(분), 올림"""
+        days = len(meeting_dates(meeting.start_date, meeting.end_date, meeting.excluded_dates))
         daily_minutes = daily_range(meeting.start_time, meeting.end_time).total_seconds() // 60
         return ceil(days * max(daily_minutes, 0) / meeting.time_slot_minutes)
 

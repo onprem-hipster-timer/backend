@@ -1,7 +1,7 @@
 """
 Meeting 입력 제한 E2E 테스트
 
-표시 이름, 미팅 모양(기간·요일·시간 단위), 수정 후 미팅, 참여 중복, 가능 시간 개수의 규칙
+표시 이름, 미팅 모양(기간·제외 날짜·시간 단위), 수정 후 미팅, 참여 중복, 가능 시간 개수의 규칙
 """
 from datetime import date, datetime, timedelta
 
@@ -13,7 +13,6 @@ BASE_MEETING = {
     "end_date": "2024-02-09",  # 금요일
     "timezone": "UTC",
     "mode": "hourly",
-    "available_days": [0, 1, 2, 3, 4],
     "start_time": "09:00:00",
     "end_time": "18:00:00",
     "time_slot_minutes": 30,
@@ -70,7 +69,7 @@ def test_display_name_rejected(e2e_client, display_name):
 
 
 # ============================================================
-# 미팅 모양: 기간 3개월 이내, 요일 1개 이상, 시간 단위 5–1440분이면서 하루 범위 이하
+# 미팅 모양: 기간 3개월 이내, 제외 날짜는 기간 안쪽, 시간 단위 5–1440분이면서 하루 범위 이하
 # ============================================================
 
 @pytest.mark.e2e
@@ -86,7 +85,7 @@ def test_display_name_rejected(e2e_client, display_name):
         {"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440},  # 00:00 끝 = 하루의 끝
         {"start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 30},
         {"start_time": "22:00:00", "end_time": "00:00:00", "time_slot_minutes": 120},
-        {"available_days": [6]},
+        {"excluded_dates": ["2024-02-06", "2024-02-08"]},
         {"title": "a" * 200},
         {"description": "d" * 2000},
         {"description": None},
@@ -105,7 +104,7 @@ def test_meeting_shape_accepted(e2e_client, overrides):
         {"start_date": "2024-02-05", "end_date": "2024-05-06"},  # 3개월 + 1일
         {"start_date": "2024-11-30", "end_date": "2025-03-01"},
         {"start_date": "2024-02-05", "end_date": "2024-02-04"},
-        {"available_days": []},
+        {"excluded_dates": ["2024-02-05"]},
         {"time_slot_minutes": 4},
         {"time_slot_minutes": 1441},
         {"start_time": "00:00:00", "end_time": "23:59:59", "time_slot_minutes": 1440},  # 하루 범위(24시간 미만)보다 김
@@ -173,7 +172,7 @@ def test_meeting_title_is_trimmed(e2e_client):
 # ============================================================
 
 _SHAPE_FIELDS = (
-    "title", "description", "start_date", "end_date", "timezone", "mode", "available_days",
+    "title", "description", "start_date", "end_date", "excluded_dates", "timezone", "mode",
     "start_time", "end_time", "time_slot_minutes",
 )
 
@@ -205,7 +204,7 @@ def _shape(meeting: dict) -> dict:
         {"start_time": "09:00:00", "end_time": "10:00:00", "time_slot_minutes": 90},
         {"time_slot_minutes": 4},
         {"time_slot_minutes": 1441},
-        {"available_days": []},
+        {"excluded_dates": ["2024-02-09"]},
         {"title": ""},
         {"title": "   "},
         {"title": "a" * 201},
@@ -420,8 +419,9 @@ def test_slots_over_meeting_cell_count_rejected_and_stored_kept(e2e_client):
         # 이틀 x 60분 / 25분 = 4.8 → 5
         ({"start_date": "2024-02-05", "end_date": "2024-02-06", "start_time": "09:00:00",
           "end_time": "10:00:00", "time_slot_minutes": 25}, 5),
-        # 기간 7일 중 월요일만: 1일 x 540분 / 30분 = 18
-        ({"start_date": "2024-02-05", "end_date": "2024-02-11", "available_days": [0]}, 18),
+        # 기간 7일 중 제외 5일: 2일 x 540분 / 30분 = 36
+        ({"start_date": "2024-02-05", "end_date": "2024-02-11",
+          "excluded_dates": ["2024-02-06", "2024-02-07", "2024-02-08", "2024-02-09", "2024-02-10"]}, 36),
         # 하루 전체(00:00–00:00) / 30분 = 48
         ({"start_date": "2024-02-05", "end_date": "2024-02-05", "start_time": "00:00:00",
           "end_time": "00:00:00"}, 48),
@@ -445,16 +445,6 @@ def test_slot_cap_is_meeting_cell_count(e2e_client, overrides, cell_count):
 
 
 @pytest.mark.e2e
-def test_meeting_without_matching_day_accepts_only_empty_slots(e2e_client):
-    """기간 안에 고른 요일이 없으면 칸이 0개라 빈 목록만 받는다"""
-    meeting_id = _create_meeting(e2e_client, start_date="2024-02-06", end_date="2024-02-06", available_days=[0])
-    participant_id = _participate(e2e_client, meeting_id)
-
-    assert _put_slots(e2e_client, meeting_id, participant_id, []).status_code == 200
-    assert _put_slots(e2e_client, meeting_id, participant_id, [_grid_slots(_WEEK)[0]]).status_code == 422
-
-
-@pytest.mark.e2e
 def test_duplicate_slots_are_stored_as_sent_and_count_toward_cap(e2e_client):
     meeting_id = _create_meeting(e2e_client, start_date="2024-02-05", end_date="2024-02-05",
                                  start_time="09:00:00", end_time="10:00:00", time_slot_minutes=30)  # 2칸
@@ -471,10 +461,10 @@ def test_duplicate_slots_are_stored_as_sent_and_count_toward_cap(e2e_client):
     "overrides, slot_date",
     [
         # 날짜만 고르는 미팅: 하루 전체(00:00–00:00)를 한 칸으로
-        ({"start_date": "2024-02-05", "end_date": "2024-05-05", "available_days": [0, 1, 2, 3, 4, 5, 6],
+        ({"start_date": "2024-02-05", "end_date": "2024-05-05",
           "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-05-05"),
         # 요일만 고르는 미팅: 7일 기간, 하루 전체를 한 칸으로
-        ({"start_date": "2024-02-05", "end_date": "2024-02-11", "available_days": [0, 1, 2, 3, 4, 5, 6],
+        ({"start_date": "2024-02-05", "end_date": "2024-02-11",
           "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-02-11"),
     ],
 )

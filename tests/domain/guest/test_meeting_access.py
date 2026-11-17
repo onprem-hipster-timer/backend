@@ -69,7 +69,7 @@ class TestAnonymous:
 
         assert response.status_code == 200
         body = response.json()
-        for field in ("title", "description", "start_date", "end_date", "timezone", "mode", "available_days",
+        for field in ("title", "description", "start_date", "end_date", "timezone", "mode",
                       "start_time", "end_time", "time_slot_minutes"):
             assert body[field] == MEETING[field]
         assert body["allow_guests"] is True

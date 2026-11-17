@@ -5,7 +5,7 @@ Meeting Result Service
 """
 from bisect import bisect_left
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from typing import List
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -22,6 +22,7 @@ from app.domain.meeting.schema.dto import (
     AvailabilityRead,
     AvailabilityCell,
     MeetingResultRead,
+    meeting_dates,
 )
 from app.domain.meeting.service import MeetingService
 from app.models.meeting import Meeting
@@ -80,7 +81,7 @@ class MeetingResultService:
         """
         공통 가능 시간 분석 결과 조회
 
-        미팅의 시간대에서 날짜·요일·하루 범위·시간 단위로 칸을 만들고, 칸마다 그 칸을 모두 덮는
+        미팅의 시간대에서 미팅 날짜(제외 날짜를 뺀 기간)·하루 범위·시간 단위로 칸을 만들고, 칸마다 그 칸을 모두 덮는
         가능 시간을 가진 참여자 수를 셉니다. 한 참여자의 슬롯은 합친 구간으로 봅니다.
 
         :param meeting_id: 일정 조율 ID
@@ -123,16 +124,14 @@ class MeetingResultService:
         """
         결과 그리드의 칸 [start, end) (UTC naive, 시작 순)
 
-        날마다 미팅 시간대의 start_time~end_time(00:00이면 다음 날 00:00)을 UTC 시각으로 바꾸고,
+        미팅 날짜마다 미팅 시간대의 start_time~end_time(00:00이면 다음 날 00:00)을 UTC 시각으로 바꾸고,
         그 사이를 실제 경과 시간 time_slot_minutes마다 나눕니다. 일광 절약 시간 전환이 있는 날도
         칸은 이어지는 실제 시각이고, 마지막 칸은 하루 범위의 끝에서 자릅니다.
         """
         zone = ZoneInfo(meeting.timezone)
         step = timedelta(minutes=meeting.time_slot_minutes)
         cells = []
-        for day in self._generate_available_dates(
-                meeting.start_date, meeting.end_date, meeting.available_days,
-        ):
+        for day in meeting_dates(meeting.start_date, meeting.end_date, meeting.excluded_dates):
             end_day = day + timedelta(days=1) if meeting.end_time == time(0) else day
             current = ensure_utc_naive(datetime.combine(day, meeting.start_time, zone))
             day_end = ensure_utc_naive(datetime.combine(end_day, meeting.end_time, zone))
@@ -154,30 +153,3 @@ class MeetingResultService:
             else:
                 merged.append((start, end))
         return merged
-
-    def _generate_available_dates(
-            self,
-            start_date: date,
-            end_date: date,
-            available_days: List[int],
-    ) -> List[date]:
-        """
-        요일 기반 날짜 생성
-
-        start_date ~ end_date 범위 내에서 available_days에 해당하는 날짜만 반환합니다.
-
-        :param start_date: 시작 날짜
-        :param end_date: 종료 날짜
-        :param available_days: 요일 리스트 (0-6, 0=월요일)
-        :return: 가능한 날짜 리스트
-        """
-        available_dates = []
-        current_date = start_date
-
-        while current_date <= end_date:
-            # weekday(): 0=월요일, 6=일요일
-            if current_date.weekday() in available_days:
-                available_dates.append(current_date)
-            current_date += timedelta(days=1)
-
-        return available_dates

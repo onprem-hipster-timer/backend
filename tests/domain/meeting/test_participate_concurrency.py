@@ -33,7 +33,6 @@ def test_concurrent_participation_keeps_one(test_engine, test_user):
             end_date=date(2024, 2, 9),
             timezone="UTC",
             mode="hourly",
-            available_days=[0, 1, 2, 3, 4],
             start_time=dtime(9),
             end_time=dtime(18),
         ))

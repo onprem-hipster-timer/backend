@@ -33,6 +33,13 @@ def daily_range(start_time: time, end_time: time) -> timedelta:
     return end - datetime.combine(date.min, start_time)
 
 
+def meeting_dates(start_date: date, end_date: date, excluded_dates: List[date]) -> List[date]:
+    """미팅의 날짜: start_date~end_date에서 excluded_dates를 뺀 날 (순서대로)"""
+    days = (start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1))
+    excluded = set(excluded_dates)
+    return [day for day in days if day not in excluded]
+
+
 def _validate_title(v: str) -> str:
     """앞뒤 공백을 뺀 1–200자"""
     v = v.strip()
@@ -47,16 +54,10 @@ def _validate_description(v: str | None) -> str | None:
     return v
 
 
-def _validate_available_days(v: list[int]) -> list[int]:
-    """요일 리스트 검증 (0-6, 중복 불가, 1개 이상)"""
-    if not isinstance(v, list):
-        raise ValueError("available_days must be a list")
-    if not v:
-        raise ValueError("available_days must not be empty")
-    if not all(isinstance(d, int) and 0 <= d <= 6 for d in v):
-        raise ValueError("available_days must contain integers 0-6")
+def _validate_excluded_dates(v: list[date]) -> list[date]:
+    """겹치지 않는 날짜, 정렬해 돌려준다 (기간 안쪽인지는 MeetingCreate.validate_shape)"""
     if len(set(v)) != len(v):
-        raise ValueError("available_days must not contain duplicates")
+        raise ValueError("excluded_dates must not contain duplicates")
     return sorted(v)
 
 
@@ -86,9 +87,9 @@ class MeetingCreate(CustomModel):
     description: Optional[str] = None
     start_date: date
     end_date: date
-    timezone: str  # 날짜·요일·시간을 해석하는 IANA 시간대
+    excluded_dates: List[date] = []  # 기간에서 빼는 날짜. 첫날·마지막 날이 아닌 기간 안쪽 날짜만
+    timezone: str  # 날짜·시간을 해석하는 IANA 시간대
     mode: MeetingMode  # 답하는 방식
-    available_days: List[int]  # 요일 리스트 (0-6, 0=월요일)
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 하루의 끝)
     time_slot_minutes: int = 30  # 시간 선택 단위 (분)
@@ -109,11 +110,10 @@ class MeetingCreate(CustomModel):
     def validate_timezone(cls, v):
         return _validate_timezone(v)
 
-    @field_validator("available_days")
+    @field_validator("excluded_dates")
     @classmethod
-    def validate_available_days(cls, v):
-        """요일 리스트 검증"""
-        return _validate_available_days(v)
+    def validate_excluded_dates(cls, v):
+        return _validate_excluded_dates(v)
 
     @field_validator("end_date")
     @classmethod
@@ -141,9 +141,11 @@ class MeetingCreate(CustomModel):
 
     @model_validator(mode="after")
     def validate_shape(self):
-        """기간은 start_date + 3개월(같은 날, 없으면 그 달 말일)까지, 시간 단위는 하루 범위 이하"""
+        """기간은 start_date + 3개월(같은 날, 없으면 그 달 말일)까지, 제외 날짜는 기간 안쪽, 시간 단위는 하루 범위 이하"""
         if self.end_date > self.start_date + MAX_PERIOD:
             raise ValueError("end_date must be no later than 3 months after start_date")
+        if not all(self.start_date < day < self.end_date for day in self.excluded_dates):
+            raise ValueError("excluded_dates must be after start_date and before end_date")
         if self.time_slot_minutes * 60 > daily_range(self.start_time, self.end_time).total_seconds():
             raise ValueError("time_slot_minutes must not exceed end_time - start_time")
         return self
@@ -155,9 +157,9 @@ class MeetingUpdate(CustomModel):
     description: str | None = MISSING
     start_date: date | None = MISSING
     end_date: date | None = MISSING
+    excluded_dates: list[date] = MISSING
     timezone: str = MISSING
     mode: MeetingMode = MISSING
-    available_days: list[int] | None = MISSING
     start_time: time | None = MISSING
     end_time: time | None = MISSING
     time_slot_minutes: int | None = MISSING
@@ -180,13 +182,10 @@ class MeetingUpdate(CustomModel):
     def validate_timezone(cls, v):
         return _validate_timezone(v)
 
-    @field_validator("available_days")
+    @field_validator("excluded_dates")
     @classmethod
-    def validate_available_days(cls, v):
-        """요일 리스트 검증"""
-        if v is not None:
-            return _validate_available_days(v)
-        return v
+    def validate_excluded_dates(cls, v):
+        return _validate_excluded_dates(v)
 
     @field_validator("time_slot_minutes")
     @classmethod
@@ -207,9 +206,9 @@ class MeetingRead(CustomModel):
     description: Optional[str] = None
     start_date: date
     end_date: date
+    excluded_dates: List[date]
     timezone: str
     mode: MeetingMode
-    available_days: List[int]
     start_time: time
     end_time: time
     time_slot_minutes: int

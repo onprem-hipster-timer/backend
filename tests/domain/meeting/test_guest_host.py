@@ -32,7 +32,6 @@ def _meeting(
         end_date=end_date,
         timezone=timezone,
         mode="hourly",
-        available_days=[0, 1, 2, 3, 4, 5, 6],
         start_time=time(9),
         end_time=time(18),
         time_slot_minutes=30,

@@ -9,6 +9,7 @@ import pytest
 
 from app.domain.meeting.result_service import MeetingResultService
 from app.domain.meeting.schema.dto import (
+    meeting_dates,
     MeetingCreate,
     ParticipantCreate,
     TimeSlotCreate,
@@ -28,11 +29,11 @@ def meeting_data() -> MeetingCreate:
     return MeetingCreate(
         title="팀 회의 일정 조율",
         description="다음 주 회의 일정을 조율합니다",
-        start_date=date(2024, 2, 1),
+        start_date=date(2024, 2, 2),
         end_date=date(2024, 2, 7),
+        excluded_dates=[date(2024, 2, 3), date(2024, 2, 4), date(2024, 2, 6)],  # 금, 월, 수가 남는다
         timezone="UTC",
         mode="hourly",
-        available_days=[0, 2, 4],  # 월, 수, 금
         start_time=time(9, 0),
         end_time=time(18, 0),
         time_slot_minutes=30,
@@ -80,7 +81,7 @@ class TestMeetingResult:
             sample_meeting.id,
             participant1.id,
             [TimeSlotCreate(
-                start_time=datetime(2024, 2, 2, 9, 0),  # 금요일 (weekday=4, available_days에 포함)
+                start_time=datetime(2024, 2, 2, 9, 0),
                 end_time=datetime(2024, 2, 2, 12, 0),
             )],
         )
@@ -90,7 +91,7 @@ class TestMeetingResult:
             sample_meeting.id,
             participant2.id,
             [TimeSlotCreate(
-                start_time=datetime(2024, 2, 2, 10, 0),  # 금요일 (weekday=4, available_days에 포함)
+                start_time=datetime(2024, 2, 2, 10, 0),
                 end_time=datetime(2024, 2, 2, 13, 0),
             )],
         )
@@ -113,23 +114,16 @@ class TestMeetingResult:
         # 12:00-13:00 구간은 참여자2만 가능
         assert slots[datetime(2024, 2, 2, 12, 0)] == 1
 
-    def test_generate_available_dates(self, test_session, test_user):
-        """요일 기반 날짜 생성 테스트"""
-        result_service = MeetingResultService(test_session, test_user)
-
-        # 월, 수, 금만 가능
-        available_dates = result_service._generate_available_dates(
-            start_date=date(2024, 2, 1),  # 목요일
-            end_date=date(2024, 2, 7),  # 수요일
-            available_days=[0, 2, 4],  # 월, 수, 금
-        )
-
-        # 2월 1일(목) ~ 2월 7일(수) 중 월, 수, 금만 포함
-        # 2월 2일(금), 2월 5일(월), 2월 7일(수)
-        assert len(available_dates) == 3
-        assert date(2024, 2, 2) in available_dates  # 금요일
-        assert date(2024, 2, 5) in available_dates  # 월요일
-        assert date(2024, 2, 7) in available_dates  # 수요일
+    def test_meeting_dates(self):
+        """미팅 날짜는 기간에서 제외 날짜를 뺀 날 (순서대로)"""
+        assert meeting_dates(date(2024, 2, 2), date(2024, 2, 7), [date(2024, 2, 6), date(2024, 2, 3)]) == [
+            date(2024, 2, 2), date(2024, 2, 4), date(2024, 2, 5), date(2024, 2, 7),
+        ]
+        assert meeting_dates(date(2024, 2, 5), date(2024, 2, 5), []) == [date(2024, 2, 5)]
+        # 2024-02-28~03-01: 윤년의 2월 29일
+        assert meeting_dates(date(2024, 2, 28), date(2024, 3, 1), []) == [
+            date(2024, 2, 28), date(2024, 2, 29), date(2024, 3, 1),
+        ]
 
     def test_generate_cells(self, test_session, test_user):
         """칸은 하루 범위를 시간 단위로 나눈 반열린 구간"""
@@ -140,7 +134,6 @@ class TestMeetingResult:
             end_date=date(2024, 2, 5),
             timezone="UTC",
             mode="hourly",
-            available_days=[0],
             start_time=time(9, 0),
             end_time=time(12, 0),
             time_slot_minutes=30,
@@ -179,7 +172,6 @@ class TestMeetingResult:
             end_date=date(2024, 2, 5),
             timezone="UTC",
             mode="hourly",
-            available_days=[0],
             start_time=time(10, 0),
             end_time=time(12, 0),
             time_slot_minutes=30,
@@ -217,7 +209,6 @@ class TestMeetingResult:
             end_date=date(2024, 2, 5),
             timezone="UTC",
             mode="hourly",
-            available_days=[0],
             start_time=time(10, 0),
             end_time=time(12, 0),
             time_slot_minutes=30,
@@ -262,7 +253,6 @@ class TestMeetingResult:
             end_date=date(2024, 2, 5),
             timezone="UTC",
             mode="hourly",
-            available_days=[0],
             start_time=time(9, 0),
             end_time=time(12, 0),
             time_slot_minutes=60,
@@ -300,21 +290,20 @@ class TestMeetingResult:
             datetime(2024, 2, 5, 11, 0): 1,  # p2만
         }
 
-    def test_get_meeting_result_non_available_day_slot_ignored(
+    def test_get_meeting_result_excluded_date_slot_ignored(
             self, test_session, test_user
     ):
-        """available_days에 없는 날짜의 슬롯은 무시"""
+        """제외 날짜의 슬롯은 무시"""
         service = MeetingService(test_session, test_user)
         result_service = MeetingResultService(test_session, test_user)
 
-        # 월요일(0)만 허용
         meeting = service.create_meeting(MeetingCreate(
-            title="요일 필터",
-            start_date=date(2024, 2, 5),  # 월요일
-            end_date=date(2024, 2, 9),  # 금요일
+            title="제외 날짜",
+            start_date=date(2024, 2, 5),
+            end_date=date(2024, 2, 7),
+            excluded_dates=[date(2024, 2, 6)],
             timezone="UTC",
             mode="hourly",
-            available_days=[0],  # 월요일만
             start_time=time(9, 0),
             end_time=time(10, 0),
             time_slot_minutes=30,
@@ -324,23 +313,25 @@ class TestMeetingResult:
             meeting.id, ParticipantCreate(display_name="참여자")
         )
 
-        # 화요일(available_days에 없음)에 슬롯 설정
+        # 제외 날짜에 슬롯 설정
         service.set_time_slots(meeting.id, participant.id, [
             TimeSlotCreate(
-                start_time=datetime(2024, 2, 6, 9, 0),  # 화요일
+                start_time=datetime(2024, 2, 6, 9, 0),
                 end_time=datetime(2024, 2, 6, 10, 0),
             ),
         ])
 
         result = result_service.get_meeting_result(meeting.id)
 
-        # 월요일만 그리드에 존재
+        # 제외 날짜의 칸은 없다
         assert [(c.start_time, c.end_time) for c in result.availability_grid] == [
             (datetime(2024, 2, 5, 9, 0), datetime(2024, 2, 5, 9, 30)),
             (datetime(2024, 2, 5, 9, 30), datetime(2024, 2, 5, 10, 0)),
+            (datetime(2024, 2, 7, 9, 0), datetime(2024, 2, 7, 9, 30)),
+            (datetime(2024, 2, 7, 9, 30), datetime(2024, 2, 7, 10, 0)),
         ]
 
-        # 화요일 슬롯은 그리드에 없으므로 무시됨, 월요일 카운트 0
+        # 제외 날짜의 슬롯은 어느 칸에도 세지 않는다
         assert all(cell.count == 0 for cell in result.availability_grid)
 
     def test_last_cell_ends_at_daily_range_end(self, test_session, test_user):
@@ -353,7 +344,6 @@ class TestMeetingResult:
             end_date=date(2024, 2, 5),
             timezone="UTC",
             mode="hourly",
-            available_days=[0],
             start_time=time(9, 0),
             end_time=time(10, 0),
             time_slot_minutes=25,
