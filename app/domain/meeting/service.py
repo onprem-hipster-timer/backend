@@ -3,10 +3,13 @@ Meeting Service
 
 일정 조율 서비스 비즈니스 로직 (CRUD + 참여자 관리)
 """
+from bisect import bisect_left, bisect_right
+from datetime import date, datetime
 from math import ceil
 from typing import List
 from uuid import UUID
 
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic.experimental.missing_sentinel import MISSING
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +28,8 @@ from app.domain.meeting.exceptions import (
 from app.domain.meeting.schema.dto import (
     daily_range,
     meeting_dates,
+    meeting_day_ranges,
+    merge_intervals,
     MODE_RULE_FIELDS,
     MeetingCreate,
     MeetingUpdate,
@@ -34,7 +39,7 @@ from app.domain.meeting.schema.dto import (
 )
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService, is_public
-from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
+from app.models.meeting import Meeting, MeetingMode, MeetingParticipant, MeetingTimeSlot, TimeSlotKind
 
 ALLOW_GUESTS_REQUIRES_PUBLIC = "allow_guests can be true only while the meeting's visibility is public"
 
@@ -306,8 +311,8 @@ class MeetingService:
         참여자의 가능 시간 설정
         
         기존 시간 슬롯을 모두 삭제하고 새로운 시간 슬롯을 설정합니다.
-        슬롯 수는 미팅의 칸 수(_cell_count)까지입니다. 슬롯은 보낸 구간 그대로 저장하고
-        미팅의 날짜·시간 범위나 칸에 맞는지는 검사하지 않습니다.
+        저장하기 전에 미팅과 함께 보는 규칙은 check_time_slots입니다. 슬롯은 보낸 구간 그대로 저장하고
+        칸에 맞추거나 나누지 않습니다.
         
         :param meeting_id: 일정 조율 ID
         :param participant_id: 참여자 ID
@@ -316,11 +321,12 @@ class MeetingService:
         :raises MeetingNotFoundError: 일정 조율이 없거나 접근할 수 없는 경우
         :raises MeetingParticipantNotFoundError: 참여자가 없거나 본인 참여자가 아닌 경우
         :raises TooManyTimeSlotsError: 슬롯 수가 미팅의 칸 수보다 많은 경우
+        :raises RequestValidationError: unavailable 구간이 있는데 하루 범위를 다 채우지 않은 경우
         """
         # 접근 권한 확인
         meeting, _ = self.get_meeting_with_access_check(meeting_id)
 
-        check_time_slot_count(meeting, time_slots)
+        check_time_slots(meeting, time_slots)
 
         # 참여자 확인
         participant = self.get_participant(meeting_id, participant_id)
@@ -364,11 +370,64 @@ class MeetingService:
         return meeting_read
 
 
-def check_time_slot_count(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None:
-    """슬롯 수가 미팅의 칸 수(MeetingService._cell_count)보다 많으면 TooManyTimeSlotsError"""
+def check_time_slots(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None:
+    """가능 시간을 저장하기 전에 미팅과 함께 보는 규칙. 회원과 게스트의 저장이 모두 거친다
+
+    - 슬롯 수가 미팅의 칸 수(MeetingService._cell_count)보다 많으면 TooManyTimeSlotsError
+    - unavailable 구간이 있는 묶음의 미팅 날짜는 available·unavailable 구간이 하루 범위를 빈틈없이 덮어야 한다.
+      묶음은 hourly면 날마다, daily·weekly면 미팅 날짜 전체다. 하루 범위 밖의 구간은 보지 않는다.
+      어기면 본문 검증(TimeSlotList의 겹침 거절)과 같은 모양의 422 (RequestValidationError)
+    """
     limit = MeetingService._cell_count(meeting)
     if len(time_slots) > limit:
         raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
+
+    day = _first_uncovered_day(meeting, time_slots)
+    if day is not None:
+        if meeting.mode == MeetingMode.HOURLY:
+            rule = "a day with unavailable time slots must be fully covered"
+        else:
+            rule = "with unavailable time slots, every meeting day must be fully covered"
+        message = f"{meeting.mode.value} meetings: {rule} by available and unavailable time slots ({day} is not)"
+        raise RequestValidationError([{
+            "type": "value_error",
+            "loc": ("body",),
+            "msg": f"Value error, {message}",
+            "input": [slot.model_dump(mode="json") for slot in time_slots],
+            "ctx": {"error": ValueError(message)},
+        }])
+
+
+def _first_uncovered_day(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> date | None:
+    """unavailable 구간이 하루 범위에 걸친 묶음에서, 구간들이 하루 범위를 다 덮지 않은 첫 날짜. 없으면 None"""
+    unavailable = merge_intervals([
+        (slot.start_time, slot.end_time) for slot in time_slots if slot.kind == TimeSlotKind.UNAVAILABLE
+    ])
+    if not unavailable:
+        return None
+    # 합친 구간은 서로 떨어져 있으므로 하루 범위는 한 구간이 덮어야 다 덮인다
+    covered = merge_intervals([(slot.start_time, slot.end_time) for slot in time_slots])
+    ranges = meeting_day_ranges(meeting)
+    groups = [[day_range] for day_range in ranges] if meeting.mode == MeetingMode.HOURLY else [ranges]
+    for group in groups:
+        if not any(_overlaps(unavailable, start, end) for _, start, end in group):
+            continue
+        for day, start, end in group:
+            if not _covers(covered, start, end):
+                return day
+    return None
+
+
+def _overlaps(merged: List[tuple[datetime, datetime]], start: datetime, end: datetime) -> bool:
+    """합친 구간 중 [start, end)와 겹치는 것이 있으면 True (맞닿는 것은 겹치지 않는다)"""
+    i = bisect_left(merged, (end,)) - 1  # end 전에 시작하는 마지막 구간
+    return i >= 0 and merged[i][1] > start
+
+
+def _covers(merged: List[tuple[datetime, datetime]], start: datetime, end: datetime) -> bool:
+    """합친 구간 하나가 [start, end)를 다 덮으면 True"""
+    i = bisect_right(merged, (start, datetime.max)) - 1  # start 이전에 시작하는 마지막 구간
+    return i >= 0 and merged[i][1] >= end
 
 
 def replace_time_slots(

@@ -93,13 +93,16 @@ def test_both_kinds_are_stored_and_returned(e2e_client):
 def test_unknown_kind_is_422_and_keeps_stored(e2e_client, kind):
     meeting_id = _create(e2e_client)
     participant_id = _participate(e2e_client, meeting_id)
-    _put(e2e_client, meeting_id, participant_id, [_slot("09:00", "10:00", "unavailable")])
+    assert _put(e2e_client, meeting_id, participant_id, [
+        _slot("09:00", "10:00", "unavailable"), _slot("10:00", "11:00"),
+    ]).status_code == 200
 
     response = _put(e2e_client, meeting_id, participant_id, [{**_slot("10:00", "11:00"), "kind": kind}])
 
     assert response.status_code == 422, response.text
     assert _stored(e2e_client, meeting_id) == [
         ("2024-02-05T09:00:00+0000", "2024-02-05T10:00:00+0000", "unavailable"),
+        ("2024-02-05T10:00:00+0000", "2024-02-05T11:00:00+0000", "available"),
     ]
 
 
@@ -126,9 +129,9 @@ def test_put_replaces_slots_of_both_kinds(e2e_client):
         _slot("09:00", "10:00", "available"), _slot("10:00", "11:00", "unavailable"),
     ])
 
-    assert _put(e2e_client, meeting_id, participant_id, [_slot("09:30", "10:30", "unavailable")]).status_code == 200
+    assert _put(e2e_client, meeting_id, participant_id, [_slot("09:00", "11:00", "unavailable")]).status_code == 200
     assert _stored(e2e_client, meeting_id) == [
-        ("2024-02-05T09:30:00+0000", "2024-02-05T10:30:00+0000", "unavailable"),
+        ("2024-02-05T09:00:00+0000", "2024-02-05T11:00:00+0000", "unavailable"),
     ]
     assert _put(e2e_client, meeting_id, participant_id, []).status_code == 200
     assert _stored(e2e_client, meeting_id) == []
@@ -200,9 +203,10 @@ def test_overlapping_available_and_unavailable_is_422_and_keeps_stored(e2e_clien
     [
         [_slot("09:00", "10:00", "available"), _slot("10:00", "11:00", "unavailable")],  # 맞닿는다
         [_slot("10:00", "11:00", "available"), _slot("09:00", "10:00", "unavailable")],
-        [_slot("09:00", "09:30", "unavailable"), _slot("09:30", "10:00"), _slot("10:00", "10:30", "unavailable")],
+        [_slot("09:00", "09:30", "unavailable"), _slot("09:30", "10:00"), _slot("10:00", "10:30", "unavailable"),
+         _slot("10:30", "11:00")],
         [_slot("09:00", "10:00"), _slot("09:30", "10:30")],  # 같은 종류는 겹쳐도 된다
-        [_slot("09:00", "10:00", "unavailable"), _slot("09:00", "10:00", "unavailable")],
+        [_slot("09:00", "10:00", "unavailable"), _slot("09:00", "10:00", "unavailable"), _slot("10:00", "11:00")],
         [_slot("09:00", "09:30", "unavailable"), _slot("09:15", "10:00", "unavailable"), _slot("10:00", "11:00")],
     ],
 )
@@ -225,7 +229,8 @@ def test_different_participants_may_overlap_with_different_kinds(multi_user_e2e)
 
     assert _put(owner, meeting_id, _participate(owner, meeting_id), [_slot("09:00", "10:00")]).status_code == 200
     assert _put(
-        member, meeting_id, _participate(member, meeting_id), [_slot("09:00", "10:00", "unavailable")],
+        member, meeting_id, _participate(member, meeting_id),
+        [_slot("09:00", "10:00", "unavailable"), _slot("10:00", "11:00")],
     ).status_code == 200
 
 
@@ -249,24 +254,26 @@ def test_unavailable_count_counts_participants_covering_whole_cell(multi_user_e2
     other = multi_user_e2e.as_user("other")
     meeting_id = _create(owner)
     owner.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
-    _put(owner, meeting_id, _participate(owner, meeting_id), [
-        _slot("09:00", "10:00", "unavailable"), _slot("10:00", "10:30", "available"),
-    ])
+    # unavailable 구간을 보낸 답은 하루 범위(09:00–11:00)를 채운다
+    assert _put(owner, meeting_id, _participate(owner, meeting_id), [
+        _slot("09:00", "10:00", "unavailable"), _slot("10:00", "10:30", "available"), _slot("10:30", "11:00"),
+    ]).status_code == 200
     # 칸의 일부만 덮는 구간은 세지 않는다
-    _put(member, meeting_id, _participate(member, meeting_id), [
-        _slot("09:15", "09:45", "unavailable"), _slot("10:30", "11:00", "unavailable"),
-    ])
+    assert _put(member, meeting_id, _participate(member, meeting_id), [
+        _slot("09:00", "09:15"), _slot("09:15", "09:45", "unavailable"), _slot("09:45", "10:30"),
+        _slot("10:30", "11:00", "unavailable"),
+    ]).status_code == 200
     # 맞닿은 구간은 함께 칸을 덮고, 같은 구간을 여러 번 보내도 한 번 센다
-    _put(other, meeting_id, _participate(other, meeting_id), [
+    assert _put(other, meeting_id, _participate(other, meeting_id), [
         _slot("09:00", "09:20", "unavailable"), _slot("09:20", "10:00", "unavailable"),
-        _slot("09:00", "10:00", "unavailable"),
-    ])
+        _slot("09:00", "10:00", "unavailable"), _slot("10:00", "11:00"),
+    ]).status_code == 200
 
     assert _cells(owner, meeting_id) == {
-        "09:00": (0, 2), "09:30": (0, 2), "10:00": (1, 0), "10:30": (0, 1),
+        "09:00": (0, 2), "09:30": (0, 2), "10:00": (3, 0), "10:30": (2, 1),
     }
     assert _cells(owner, meeting_id, timezone="Asia/Seoul") == {
-        "18:00": (0, 2), "18:30": (0, 2), "19:00": (1, 0), "19:30": (0, 1),
+        "18:00": (0, 2), "18:30": (0, 2), "19:00": (3, 0), "19:30": (2, 1),
     }
 
 

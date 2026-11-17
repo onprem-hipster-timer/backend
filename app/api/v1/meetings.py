@@ -300,6 +300,8 @@ async def set_availability(
     슬롯은 반열린 구간 [start_time, end_time)이고 시간대가 없는 값은 UTC로 읽습니다. 보낸 구간 그대로 저장합니다.
     슬롯 수는 미팅의 칸 수까지입니다 (넘으면 422). 슬롯이 미팅의 날짜·시간 범위나 칸에 맞는지는 검사하지 않습니다.
     슬롯마다 kind(available, unavailable, 기본 available)가 있고, available 슬롯과 unavailable 슬롯이 겹치면 422입니다(맞닿는 것은 됩니다).
+    unavailable 슬롯이 있으면 하루 범위를 available·unavailable 슬롯으로 빈틈없이 채워야 합니다(아니면 422).
+    hourly는 그날 범위에 unavailable 슬롯이 있는 날마다, daily·weekly는 모든 미팅 날짜를 봅니다 (check_time_slots).
     
     :param meeting_id: 일정 조율 ID
     :param participant_id: 참여자 ID (쿼리 파라미터)

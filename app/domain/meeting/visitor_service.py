@@ -27,7 +27,7 @@ from app.domain.meeting.schema.dto import (
     ParticipantCreate,
     TimeSlotCreate,
 )
-from app.domain.meeting.service import check_time_slot_count, replace_time_slots
+from app.domain.meeting.service import check_time_slots, replace_time_slots
 from app.domain.visibility.enums import ResourceType, VisibilityLevel
 from app.domain.visibility.service import is_public
 from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot
@@ -109,7 +109,7 @@ class MeetingGuestService(MeetingVisitorService):
     ) -> List[MeetingTimeSlot]:
         """게스트 자기 참여자의 가능 시간을 바꾼다. 다른 참여자면 없는 참여자와 같은 MeetingParticipantNotFoundError"""
         meeting = self.get_meeting(meeting_id)
-        check_time_slot_count(meeting, time_slots)
+        check_time_slots(meeting, time_slots)
         participant = crud.get_participant(self.session, meeting_id, participant_id)
         if participant is None or participant.guest_id != self.guest.id:
             raise MeetingParticipantNotFoundError()
