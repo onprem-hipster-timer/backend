@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Changed
+
+- **Guest password length**: `POST /v1/guests` requires a password of at least 4 characters, counted as Unicode code points after NFC normalisation; a shorter password returns 422 (`비밀번호는 4자 이상이어야 합니다`) and no guest or Kratos identity is created. The 72-byte UTF-8 maximum is unchanged. Login, lookup and existing guests are unchanged. Guide: `docs/guides/guest.ko.md`.
 
 ---
 
