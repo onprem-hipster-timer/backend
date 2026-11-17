@@ -68,6 +68,7 @@ PATCH  /v1/meetings/{id}                                # 미팅 수정 (생성�
 DELETE /v1/meetings/{id}                                # 미팅 삭제 (생성자). 그 미팅의 게스트도 폐기
 POST   /v1/meetings/{id}/participate                    # 참여 등록 (회원, 그 미팅의 게스트)
 DELETE /v1/meetings/{id}/participants/{participant_id}  # 참여자 빼기 (생성자). 게스트 참여자는 그 게스트를 폐기
+POST   /v1/meetings/{id}/guest-import                   # 게스트 가져오기 (회원). 본문의 게스트 JWT로 그 게스트의 가능 시간을 자기 참여자에 합치고 게스트를 폐기
 PUT    /v1/meetings/{id}/availability                   # 자기 참여자의 가능 시간 설정
 GET    /v1/meetings/{id}/availability                   # 참여자별 가능 시간
 GET    /v1/meetings/{id}/result                         # 칸마다 가능한 인원 수 (public이면 로그인 없이)

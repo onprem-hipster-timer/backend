@@ -50,6 +50,7 @@ flowchart TD
 | `GET /v1/meetings/{id}/availability` | `401` | 접근 권한이 있으면 | 게스트 상태가 `OPEN`이면 |
 | `POST /v1/meetings/{id}/participate`, `PUT /v1/meetings/{id}/availability` | `401` | 접근 권한이 있으면 | 게스트 상태가 `OPEN`이면 |
 | `POST /v1/meetings`, `GET /v1/meetings`, `PATCH`·`DELETE /v1/meetings/{id}`, `DELETE /v1/meetings/{id}/participants/{participant_id}` | `401` | 회원 (수정·삭제·참여자 빼기는 생성자만) | `403` |
+| `POST /v1/meetings/{id}/guest-import` | `401` | 접근 권한이 있으면 | `403` |
 
 - 접근할 수 없는 미팅은 없는 미팅과 같은 `404` `MeetingNotFoundError`를 받습니다. 회원은 조회, 참여 등록, 가능 시간 조회·설정, 결과 조회가 모두 같고, 수정·삭제·참여자 빼기는 생성자만 할 수 있어 다른 회원에게는 같은 `404`입니다([공개 범위 가이드](./visibility.ko.md#접근-제어-규칙)).
 - 로그인하지 않은 방문자도 `public`이 아니거나 생성자가 탈퇴를 신청한(휴면) 미팅은 없는 미팅과 같은 `404`입니다.
@@ -75,6 +76,7 @@ flowchart TD
 - 미팅을 지우면 삭제를 커밋한 뒤 그 미팅의 게스트를 모두 폐기합니다. 생성자가 파기되면 미팅이 지워지고, 같은 하루 한 번 실행이 그 게스트를 폐기합니다([게스트 수명 주기](./guest.ko.md#수명-주기)).
 - 게스트가 폐기되면(자기 삭제 포함) 그 게스트의 참여자와 가능 시간이 함께 지워집니다. 생성자가 게스트 참여자를 빼면 그 게스트를 폐기합니다([참여자 빼기](#참여자-빼기)).
 - 게스트 참여자의 표시 이름은 게스트 이름입니다. 게스트가 이름을 바꾸면 참여자 표시 이름도 바뀝니다.
+- 게스트로 답한 사람이 회원으로 로그인하면 그 게스트의 가능 시간을 회원 참여자로 옮기고 게스트를 폐기할 수 있습니다([게스트 가져오기](#게스트-가져오기)).
 - 게스트 토큰의 판정 순서(`GUEST_ENABLED`, 약관 동의 `428`, 게스트 행, 미팅, 게스트 상태)는 [게스트 경로의 토큰 판정](./guest.ko.md#게스트-경로)과 같습니다. 다른 미팅의 게스트도 `403`입니다. 미팅 경로는 Turnstile 토큰을 받지 않습니다.
 
 ---
@@ -348,6 +350,91 @@ interface ParticipantCreate {
 - 참여자와 그 가능 시간이 지워져 결과의 `participant_count`와 칸의 인원 수에서 빠집니다.
 - 뺀 회원은 다시 참여 등록할 수 있고, 새 참여자(`id`가 다르고 가능 시간이 없다)가 됩니다.
 - 게스트 참여자를 빼면 그 게스트를 폐기합니다. 게스트 자기 삭제와 같이 게스트 행과 Kratos identity를 지우고(identity 삭제가 실패하면 로그만 남긴다), 그 게스트의 토큰은 게스트 경로에서 `403`입니다([게스트 수명 주기](./guest.ko.md#수명-주기)). 게스트 상태가 `OPEN`이 아니어도 뺄 수 있습니다.
+
+#### 게스트 가져오기
+
+**POST /v1/meetings/{meeting_id}/guest-import**
+
+게스트로 답한 사람이 회원으로 로그인한 뒤, 그 게스트의 가능 시간을 자기 회원 참여자로 옮기고 게스트를 폐기합니다. 회원만 부를 수 있고(`Authorization`은 회원 JWT), 본문의 `guest_token`이 그 게스트를 쥐고 있다는 증명입니다. `GUEST_ENABLED`가 꺼져 있으면 `404`입니다.
+
+쿼리 파라미터:
+- `timezone` (optional): 응답 시각의 시간대
+
+```typescript
+// Request
+interface GuestImport {
+  guest_token: string;  // 이 미팅 게스트의 JWT
+}
+
+// Response (200): AvailabilityRead (회원 참여자와 합친 가능 시간)
+```
+
+- 게스트 JWT는 같은 기기면 들고 있던 게스트 세션 토큰으로 `GET /auth/sessions/whoami?tokenize_as=api`를 불러 받고, 다른 기기면 게스트 이름과 비밀번호로 게스트 로그인을 해서 받습니다([게스트가 따르는 순서](./guest.ko.md#클라이언트가-따르는-순서)). backend는 게스트 비밀번호를 받지 않고, 이 경로는 Turnstile 토큰을 받지 않습니다.
+- 회원이 참여하지 않았으면 회원 참여자를 만듭니다. 표시 이름은 회원 프로필의 표시 이름(JWT의 `name`)이고, 없거나 [참여자 이름 규칙](#참여자-등록)에 맞지 않으면 게스트 이름입니다. 이미 참여했으면 `id`와 표시 이름은 그대로입니다.
+- 가능 시간은 이렇게 합칩니다.
+  - 같은 종류의 구간은 합집합입니다. 겹치거나 맞닿은 구간은 하나가 됩니다.
+  - 게스트 구간이 회원의 다른 종류 구간과 겹치면 회원의 답을 두고, 게스트 구간에서 겹치는 부분을 뺍니다.
+  - 합친 답은 [겹침 규칙과 하루 범위 규칙](#unavailable-구간과-하루-범위)을 지킵니다. 두 답이 저장할 때의 규칙을 지켰으면 합쳐도 지킵니다. 저장한 뒤 미팅의 `mode`나 하루 범위가 바뀌어 규칙을 어기게 된 답은 채워야 하는 날의 빈 시간을 `unavailable`로 채웁니다. `available`만 표시한 답에서 표시하지 않은 시간은 불가능이므로 같은 답입니다.
+  - 슬롯 수 제한(칸 수)은 보지 않습니다. 응답의 구간이 칸 수보다 많을 수 있고, 그 목록을 그대로 `PUT /availability`로 보내면 `422`일 수 있습니다.
+- 그 게스트를 폐기합니다. 게스트 행, 게스트 참여자와 가능 시간, 약관 동의 기록이 지워지고, 그 게스트의 토큰은 게스트 경로에서 `403`입니다.
+- DB 변경(회원 참여자 생성, 합친 가능 시간, 게스트 행·참여자·가능 시간·약관 동의 삭제)은 한 트랜잭션이라 모두 커밋되거나 모두 되돌아가고, 다른 요청에는 가져오기 전이나 뒤의 상태만 보입니다. 실패한 가져오기는 아무것도 바꾸지 않으므로 게스트는 그 가능 시간 그대로 계속 쓸 수 있습니다.
+- 게스트의 Kratos identity는 커밋한 뒤 지웁니다. 실패해도 응답은 `200`이고 로그만 남깁니다. 게스트 행이 없으므로 그 identity는 로그인과 게스트 경로에서 거절됩니다([게스트 수명 주기](./guest.ko.md#수명-주기)).
+- 게스트 상태가 `CLOSED`여도 가져옵니다. 게스트 기간이 끝났으면(`EXPIRED`) 게스트를 폐기하고 `404` `GuestNotFoundError`입니다.
+- 가져온 뒤 다시 보내면 게스트가 없으므로 `404` `GuestNotFoundError`입니다. 응답을 받지 못해 다시 보낸 요청이 이 `404`를 받았으면 가져오기는 이미 끝났을 수 있으니 `GET /v1/meetings/{id}/availability`로 다시 읽습니다.
+- `409` `GuestImportConflictError`는 같은 회원이나 그 게스트의 참여자를 쓰는 다른 요청(가능 시간 저장, 다른 가져오기)이 진행 중이라 아무것도 바꾸지 않았다는 뜻입니다. 잠시 뒤 다시 보냅니다.
+
+**예시:**
+
+```http
+POST /v1/meetings/6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b/guest-import?timezone=Asia/Seoul
+Authorization: Bearer <회원 JWT>
+
+{"guest_token": "<게스트 JWT>"}
+```
+
+```json
+{
+  "participant": {
+    "id": "uuid-p", "meeting_id": "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b", "user_id": "<회원 sub>",
+    "display_name": "홍길동", "created_at": "2024-02-01T10:00:00+0900", "is_owner": false, "is_guest": false
+  },
+  "time_slots": [
+    { "id": "uuid-1", "participant_id": "uuid-p", "start_time": "2024-02-05T09:00:00+0900", "end_time": "2024-02-05T12:00:00+0900", "kind": "available" },
+    { "id": "uuid-2", "participant_id": "uuid-p", "start_time": "2024-02-06T09:00:00+0900", "end_time": "2024-02-06T18:00:00+0900", "kind": "unavailable" }
+  ]
+}
+```
+
+| 상태 | `error_type` | 뜻 |
+|------|--------------|----|
+| `200` | | 가져왔다 |
+| `401` | | 회원 토큰이 없거나 검증에 실패했다 |
+| `403` | | `Authorization`이 게스트 토큰이다 |
+| `404` | `MeetingNotFoundError` | 미팅이 없거나 회원이 접근할 수 없다. 본문보다 먼저 판정한다 |
+| `404` | `GuestNotFoundError` | 게스트가 없거나(폐기됨, 이미 가져옴), 다른 미팅의 게스트이거나, 게스트 기간이 끝났다. 응답이 모두 같다 |
+| `409` | `GuestImportConflictError` | 다른 요청과 겹쳤다. 아무것도 바뀌지 않았다 |
+| `422` | `GuestTokenInvalidError` | `guest_token`이 검증(서명·`iss`·`aud`·`exp`·`sub`)을 통과하지 못했거나 게스트 토큰이 아니다 |
+| `422` | | 본문에 문자열 `guest_token`이 없다 (`detail` 형식) |
+| `423`·`428` | | 회원이 휴면 계정이다·약관 동의가 필요하다 (다른 회원 경로와 같다) |
+
+```json
+{
+  "error_id": "0f2c6f0e-...",
+  "status_code": 404,
+  "error_type": "GuestNotFoundError",
+  "message": "게스트를 찾을 수 없습니다",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "path": "/v1/meetings/6f1c2a9e-.../guest-import"
+}
+```
+
+`422` `GuestTokenInvalidError`의 `message`는 `게스트 토큰이 아니거나 유효하지 않습니다`, `409` `GuestImportConflictError`의 `message`는 `다른 요청과 겹쳐 가져오지 못했습니다. 다시 시도하세요`입니다.
+
+| 확인 | 코드 | 테스트 |
+|------|------|--------|
+| 경로와 판정 순서 | `app/api/v1/meetings.py` (`import_guest`), `app/domain/guest/dependencies.py` (`guest_from_token`) | `tests/domain/guest/test_meeting_guest_import.py` |
+| 한 트랜잭션, 게스트 행 잠금, 폐기 | `app/domain/guest/service.py` (`import_guest`) | `tests/domain/guest/test_meeting_guest_import.py` (`TestAtomic`), `test_meeting_guest_import_concurrency.py` (PostgreSQL) |
+| 회원 참여자와 합치기 | `app/domain/meeting/service.py` (`merge_guest`, `merge_time_slots`) | `tests/domain/meeting/test_guest_merge.py` |
 
 ---
 
@@ -626,6 +713,10 @@ interface ParticipantCreate {
   display_name: string;
 }
 
+interface GuestImport {
+  guest_token: string;  // 이 미팅 게스트의 JWT
+}
+
 // ===== TimeSlot 타입 =====
 interface TimeSlot {
   id: string;
@@ -871,12 +962,13 @@ function TimeSlotSelector({
 |------|------|------|
 | `401` | 인증 필요 | 토큰이 유효하지 않다. 로그인이 필요한 경로([접근 권한](#접근-권한))에 토큰이 없다 |
 | `403` | 게스트 토큰 | 다른 미팅의 게스트, 게스트 상태가 `OPEN`이 아님, 폐기된 게스트, 회원만 쓰는 미팅 경로 ([게스트 계정](#게스트-계정)) |
-| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자, 참여자 빼기에서 그 미팅의 참여자가 아닌 참여자 |
-| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·제외 날짜, 방식의 규칙 위반, 미팅 입력 제한·수정 결과 위반, 가능 구간과 불가능 구간이 겹침, 불가능 구간이 있는데 하루 범위를 다 채우지 않음, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true` |
+| `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자, 참여자 빼기에서 그 미팅의 참여자가 아닌 참여자, 게스트 가져오기에서 없거나 다른 미팅의 게스트 (`GuestNotFoundError`) |
+| `409` | 충돌 | 게스트 가져오기가 같은 참여자를 쓰는 다른 요청과 겹침 (`GuestImportConflictError`) |
+| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·제외 날짜, 방식의 규칙 위반, 미팅 입력 제한·수정 결과 위반, 가능 구간과 불가능 구간이 겹침, 불가능 구간이 있는데 하루 범위를 다 채우지 않음, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true`, 게스트 가져오기의 `guest_token`이 게스트 토큰이 아님 (`GuestTokenInvalidError`) |
 | `429` | 요청 한도 초과 | [레이트 리밋](../development/rate-limit.ko.md) |
 
 요청 본문 하나만 보고 판단하는 422는 FastAPI 검증 오류 형식(`detail` 배열)입니다.
-저장된 미팅과 함께 판단하는 422(수정 결과 위반·`allow_guests` `InvalidMeetingError`, 슬롯 수 초과 `TooManyTimeSlotsError`)는 `error_type`과 `message`가 있는 공통 오류 형식입니다.
+저장된 미팅과 함께 판단하는 422(수정 결과 위반·`allow_guests` `InvalidMeetingError`, 슬롯 수 초과 `TooManyTimeSlotsError`)와 게스트 가져오기의 `GuestTokenInvalidError`는 `error_type`과 `message`가 있는 공통 오류 형식입니다.
 
 ### 에러 응답 예시
 

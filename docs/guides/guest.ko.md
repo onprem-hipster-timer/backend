@@ -238,19 +238,21 @@ sequenceDiagram
 | 이름 변경 | Kratos 설정 플로우(`method: profile`)로 `traits.name`을 바꾼다. 설정 훅이 `guest.name`을 바꾸고 `GuestRenamed` 이벤트를 낸다 |
 | 약관 동의 | 약관 버전이 바뀌면 `PUT /v1/guests/me/consent`로 다시 동의한다. `CONSENT_ENFORCED`면 그때까지 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`이다 |
 | 자기 삭제 | `DELETE /v1/guests/me` |
+| 가져오기 | 같은 사람이 회원으로 로그인해 그 게스트가 리소스에 남긴 것을 자기 것으로 옮긴다. 미팅은 `POST /v1/meetings/{id}/guest-import`([미팅 가이드](meeting.ko.md#게스트-가져오기)) |
 | 폐기 | 아래 조건에서 게스트 행, 약관 동의 기록, Kratos identity를 지우고 `GuestDiscarded` 이벤트를 낸다 |
 
 게스트는 다음 경우에 폐기됩니다.
 
 - 게스트가 자기를 삭제할 때
 - 리소스 소유자가 그 게스트를 뺄 때. 미팅은 생성자가 게스트 참여자를 뺄 때다(`DELETE /v1/meetings/{id}/participants/{participant_id}`)
-- 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때. 로그인·게스트 경로·이름 변경은 그 게스트를, 이름 찾기·생성은 그 리소스의 게스트 전부를 폐기한다. 호스트를 등록하지 않은 리소스 종류는 `MISSING`이다
+- 회원이 그 게스트를 가져올 때([가져오기](#가져오기)). 리소스가 옮겨 받는 것과 게스트 행·약관 동의 삭제가 한 트랜잭션이다
+- 게스트 확인(로그인, 게스트 경로 요청, 이름 변경, 가져오기, 같은 리소스의 이름 찾기·생성)에서 리소스가 `EXPIRED`나 `MISSING`일 때. 로그인·게스트 경로·이름 변경·가져오기는 그 게스트를, 이름 찾기·생성은 그 리소스의 게스트 전부를 폐기한다. 호스트를 등록하지 않은 리소스 종류는 `MISSING`이다
 - 리소스가 지워지면서 `discard_resource_guests`를 부를 때
 - 하루 한 번 실행(`POST /internal/accounts/purge`, [운영 배포](../deployment/production.ko.md#회원-탈퇴-파기))에서 리소스가 `EXPIRED`나 `MISSING`일 때. 게스트가 있는 리소스마다 호스트 상태를 읽어 그 리소스의 게스트 전부를 폐기하고, 폐기한 수를 응답의 `guests_discarded`로 돌려준다. `GUEST_ENABLED`가 꺼져 있어도 폐기한다
 
 폐기된 게스트의 Kratos 세션은 identity가 지워지면서 끊깁니다. 이미 받은 JWT는 만료(Kratos tokenizer `ttl`, 기본 10분)까지 서명은 유효하지만, 게스트 경로는 요청마다 게스트 행을 확인하므로 거부됩니다. Kratos identity 삭제가 실패해도 게스트 행은 지워지고, 행이 없는 게스트 identity는 로그인할 수 없습니다. 이때 identity와 그 세션은 Kratos에 남고(세션으로 받은 JWT는 게스트 경로와 회원 경로에서 거부된다), backend는 실패를 로그에 남길 뿐 다시 시도하지 않습니다. 하루 한 번 실행도 그 identity를 다시 지우지 않습니다. 리소스가 `EXPIRED`·`MISSING`이 된 뒤 게스트 확인이 일어나지 않아도 그 게스트는 다음 하루 한 번 실행에서 폐기됩니다. 이 실행에서 한 리소스의 호스트 상태 읽기나 폐기가 실패하면 로그에 남기고 다음 리소스로 넘어가며, 그 리소스의 게스트는 남아 다음 실행에서 다시 확인합니다. 폐기된 게스트의 이름은 다시 쓸 수 있습니다.
 
-리소스가 `CLOSED`인 동안 게스트는 남지만 로그인, 이름 찾기, 생성, 이름 변경은 거절됩니다. 자기 삭제는 됩니다. 하루 한 번 실행도 `CLOSED` 리소스의 게스트를 지우지 않습니다.
+리소스가 `CLOSED`인 동안 게스트는 남지만 로그인, 이름 찾기, 생성, 이름 변경은 거절됩니다. 자기 삭제와 회원의 가져오기는 됩니다. 하루 한 번 실행도 `CLOSED` 리소스의 게스트를 지우지 않습니다.
 
 ### 상태와 폐기 순서
 
@@ -267,13 +269,14 @@ stateDiagram-v2
     [*] --> Present: POST /v1/guests
     Present --> Discarded: DELETE /v1/guests/me
     Present --> Discarded: 리소스 소유자가 뺀다
+    Present --> Discarded: 회원이 가져온다
     Present --> Discarded: 게스트 확인에서 EXPIRED 또는 MISSING
     Present --> Discarded: 하루 한 번 실행에서 EXPIRED 또는 MISSING
     Present --> Discarded: discard_resource_guests
     Discarded --> [*]
 ```
 
-게스트 확인은 로그인 훅, 설정 훅, 게스트 경로 요청, 같은 리소스의 이름 찾기·생성입니다. 호스트 상태는 저장하지 않고 게스트 확인과 하루 한 번 실행 때마다 리소스에 묻습니다.
+게스트 확인은 로그인 훅, 설정 훅, 게스트 경로 요청, 가져오기, 같은 리소스의 이름 찾기·생성입니다. 호스트 상태는 저장하지 않고 게스트 확인과 하루 한 번 실행 때마다 리소스에 묻습니다.
 
 폐기는 다음 순서입니다.
 
@@ -304,6 +307,7 @@ sequenceDiagram
 | 폐기할 때 약관 동의 삭제 | `app/domain/guest/service.py` (`_delete_guest_row`, `_delete_resource_guest_rows`) | `tests/domain/guest/test_consent.py` |
 | 하루 한 번 실행의 폐기 | `app/domain/guest/service.py` (`discard_stale_guests`), `app/api/internal.py` | `tests/domain/guest/test_stale_guests.py`, `tests/test_account_purge_e2e.py` (`TestGuestDiscard`) |
 | 미팅 생성자가 게스트 참여자를 뺄 때의 폐기 | `app/api/v1/meetings.py` (`remove_participant`) | `tests/domain/guest/test_meeting_participant_removal.py` |
+| 가져오기 (한 트랜잭션, 게스트 행 잠금) | `app/domain/guest/service.py` (`import_guest`) | `tests/domain/guest/test_meeting_guest_import.py`, `test_meeting_guest_import_concurrency.py` (PostgreSQL) |
 | 호스트 계약 | `app/domain/guest/host.py` | `tests/domain/guest/test_policy.py` |
 
 ## 이름과 비밀번호 규칙
@@ -411,11 +415,20 @@ flowchart TD
 | 행·리소스·호스트 상태 | `app/domain/guest/service.py` (`authorize`, `check_access`) | `tests/domain/guest/test_policy.py` |
 | 모든 경로가 게스트 토큰을 거부하는지 | 경로 전체 | `tests/domain/guest/test_route_guard.py` (받는 경로는 허용 목록에 올린다) |
 
+#### 본문의 게스트 토큰 (가져오기)
+
+[가져오기](#가져오기)는 회원 경로라 `Authorization`의 회원 토큰은 [회원 경로](#회원-경로)대로 판정하고, 요청 본문의 게스트 JWT는 `guest_from_token`이 판정합니다. 검증은 `Authorization`의 토큰과 같습니다(서명·`iss`·`aud`·`exp`, `sub` 필수). 검증에 실패하거나 `schema_id`가 `KRATOS_GUEST_SCHEMA_ID`가 아니면 `401`이 아니라 `422` `GuestTokenInvalidError`입니다(요청한 회원의 인증과 따로다). 약관 동의는 보지 않습니다(가져오면 게스트는 폐기된다). 그 뒤 게스트 행·리소스·호스트 상태를 [가져오기](#가져오기)가 판정합니다.
+
+| 확인 | 코드 | 테스트 |
+|------|------|--------|
+| 본문의 게스트 토큰 | `app/domain/guest/dependencies.py` (`guest_from_token`), `app/core/auth/dependencies.py` (`verify_access_token`) | `tests/domain/guest/test_meeting_guest_import.py` |
+
 ### 꺼진 상태 (`GUEST_ENABLED=false`)
 
 | 요청 | 응답 |
 |------|------|
 | `/v1/guests/*` | `404` |
+| `POST /v1/meetings/{id}/guest-import` | `404` |
 | `/internal/kratos/hooks/*` | `404` |
 | 게스트 schema의 토큰 | 모든 인증 경로에서 `403` |
 | `schema_id` 클레임이 없는 토큰 | `401` (켜져 있을 때와 같다) |
@@ -656,6 +669,15 @@ sequenceDiagram
 | 동의 기록과 `428` | `app/api/v1/guests.py`, `app/domain/guest/service.py` (`record_consent`, `consent_pending`), `app/domain/guest/dependencies.py` | `tests/domain/guest/test_consent.py` |
 | 동의 판정·기록 (회원과 같다) | `app/domain/consent/service.py` | `tests/domain/consent/test_service.py` |
 
+### 가져오기
+
+게스트로 답한 사람이 회원으로 로그인한 뒤 그 게스트가 남긴 것을 회원 것으로 옮기고 게스트를 폐기합니다. 미팅은 `POST /v1/meetings/{id}/guest-import`이고, 합치는 규칙·응답·오류는 [미팅 가이드](meeting.ko.md#게스트-가져오기)에 있습니다. 클라이언트는 그 게스트의 JWT를 받아 회원 JWT와 함께 보냅니다.
+
+- 같은 기기: 들고 있던 게스트 세션 토큰으로 `GET /auth/sessions/whoami?tokenize_as=api`를 불러 JWT를 받습니다.
+- 다른 기기: 게스트 이름과 비밀번호로 이름 찾기, 로그인, JWT 받기를 합니다([클라이언트가 따르는 순서](#클라이언트가-따르는-순서)의 1, 3, 4번. 각각 Turnstile 토큰이 필요하다).
+- 게스트 JWT는 tokenizer `ttl`(기본 10분) 동안만 유효하므로 보내기 직전에 받습니다. 가져오기 요청 자체는 Turnstile 토큰을 받지 않고, backend는 게스트 비밀번호를 받지 않습니다.
+- 가져오지 않으면 게스트는 따로 남고, 나중에 같은 방법으로 가져올 수 있습니다.
+
 ### `/auth` 프록시가 받지 않는 게스트 관련 요청
 
 | 요청 | 응답 |
@@ -771,9 +793,30 @@ await discard_guest(guest.identity_id)
 
 미팅은 `DELETE /v1/meetings/{id}/participants/{participant_id}`가 생성자인지와 그 미팅의 참여자인지를 확인한 뒤, 게스트 참여자면 부릅니다.
 
+### 6. 회원이 게스트를 가져올 때
+
+같은 사람이 회원으로 로그인해 게스트가 남긴 것을 자기 것으로 옮기는 경로는 `import_guest`를 부릅니다. 리소스는 옮기는 일만 콜백(`merge`)으로 넘기고, 게스트 행 확인·잠금·삭제와 커밋, Kratos identity 삭제는 게스트 서비스가 합니다.
+
+```python
+from app.domain.guest import service as guest_service
+from app.domain.guest.dependencies import guest_from_token
+
+guest_user = await guest_from_token(data.guest_token)  # 본문의 게스트 JWT
+result = await guest_service.import_guest(
+    guest_user.sub, ResourceType.MEETING, meeting_id,
+    lambda session, guest: MeetingService(session, current_user).merge_guest(meeting_id, guest, profile_name),
+)
+```
+
+- 게스트 행이 없거나 다른 리소스의 게스트면 `GuestNotFoundError`(`404`)입니다. 호스트 상태가 `EXPIRED`·`MISSING`이면 접근 정책대로 게스트를 폐기하고 `GuestNotFoundError`, `CLOSED`면 가져옵니다(게스트와 그 기록이 남아 있는 상태다).
+- 한 트랜잭션: 게스트 행을 `FOR UPDATE`로 잠그고 다시 확인한 뒤 `merge(session, guest)`를 부르고, 게스트 행 삭제(`GuestDiscarded`)와 약관 동의 삭제를 하고 커밋합니다. 어느 단계에서 실패해도 모두 되돌아갑니다. Kratos identity는 커밋한 뒤 지우고, 실패하면 폐기와 같이 로그만 남깁니다.
+- `merge`는 받은 세션으로 읽고 쓰고, 커밋하지 않고, 결과(응답 DTO 등)를 돌려줍니다. 커밋하면 세션의 객체가 만료되므로 결과는 콜백 안에서 만듭니다. 읽는 행은 잠그되 기다리지 않습니다(`FOR UPDATE NOWAIT`, 미팅은 `app/crud/meeting.py`의 `lock=True`).
+- 잠금을 바로 잡지 못하거나(NOWAIT, 그 밖의 잠금 대기는 `IMPORT_LOCK_TIMEOUT`까지) 다른 요청과 unique 제약에 걸리면 되돌리고 `GuestImportConflictError`(`409`)입니다.
+- 게스트 행을 지우면 리소스 쪽은 FK의 `ON DELETE CASCADE`나 `GuestDiscarded` 핸들러로 지워집니다. 미팅은 게스트 참여자와 가능 시간이 같은 트랜잭션에서 지워집니다.
+
 ## 객체 의존성
 
-게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 여덟입니다.
+게스트 도메인(`app/domain/guest/`)으로 들어오는 곳은 아홉입니다.
 
 | 진입점 | 쓰는 것 |
 |--------|---------|
@@ -785,6 +828,7 @@ await discard_guest(guest.identity_id)
 | 리소스의 게스트 경로 (미팅: `api/v1/meetings.py`) | 게스트 의존성 |
 | 리소스 삭제 (미팅: `DELETE /v1/meetings/{id}`) | 서비스(리소스의 게스트 폐기) |
 | 소유자가 게스트를 뺀다 (미팅: `DELETE /v1/meetings/{id}/participants/{participant_id}`) | 서비스(게스트 하나 폐기) |
+| 회원이 게스트를 가져온다 (미팅: `POST /v1/meetings/{id}/guest-import`) | 본문의 게스트 토큰 판정(`guest_from_token`), 서비스(가져오기) |
 
 그 안쪽의 의존성입니다. 화살표는 "쓴다"이고, 테두리가 굵은 것이 게스트 도메인입니다.
 
@@ -829,7 +873,7 @@ graph TD
 | `app/domain/guest/service.py` | 이름 찾기, 생성, 접근 정책, 폐기, Kratos 훅 판정 |
 | `app/domain/guest/schema/dto.py` | 요청·응답, 이름 정규형 |
 | `app/domain/guest/host.py` | 호스트 계약 |
-| `app/domain/guest/dependencies.py` | 게스트 경로 의존성 |
+| `app/domain/guest/dependencies.py` | 게스트 경로 의존성, 본문의 게스트 토큰 판정(`guest_from_token`) |
 | `app/models/guest.py` | `guest` 테이블 |
 | `app/domain/consent/`, `app/models/consent.py` | 약관 동의 판정·기록·삭제와 `consent` 테이블 (회원과 함께 쓴다) |
 | `app/api/v1/guests.py` | `/v1/guests/*` |
