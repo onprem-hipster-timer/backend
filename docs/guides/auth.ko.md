@@ -293,6 +293,9 @@ api_router.include_router(authed)
 !!! note "공개(무인증) 라우터"
     `holidays`, `timers_ws`(WebSocket), `graphql`, `ws_playground`, `guests`는 이 게이트 밖에
     별도로 등록됩니다. GraphQL은 컨텍스트 단계에서 인증을 처리합니다(7장 참고).
+    미팅의 조회·참여·가능 시간·결과 경로(`meetings.shared_router`)도 게이트 밖에 있고, 회원 토큰이면 경로의
+    의존성(`get_meeting_caller`)이 `get_current_user_synced`를 부릅니다. 게스트와 로그인하지 않은 방문자도 받습니다
+    ([미팅 가이드의 접근 권한](meeting.ko.md#접근-권한)).
     `guests`(`/v1/guests/*`)는 게스트 전용 의존성을 쓰고 회원 토큰을 받지 않습니다([게스트 계정](./guest.ko.md)).
 
 ### 데이터 격리

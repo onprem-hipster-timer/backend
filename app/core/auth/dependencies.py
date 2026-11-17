@@ -79,8 +79,12 @@ async def authenticate_request(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 토큰 검증
-    claims = await oidc_client.verify_token(credentials.credentials)
+    return await verify_access_token(credentials.credentials)
+
+
+async def verify_access_token(token: str) -> CurrentUser:
+    """토큰 문자열을 검증해 사용자를 만든다 (서명·iss·aud·exp, sub 필수). 실패하면 401 (JWKS를 받지 못하면 503)"""
+    claims = await oidc_client.verify_token(token)
 
     # sub 클레임 필수
     sub = claims.get("sub")

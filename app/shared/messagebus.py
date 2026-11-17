@@ -107,6 +107,7 @@ def register_handlers() -> None:
     기록된 등록 명세를 replay해 reset_handlers() 이후에도 복구한다.
     순환 import 방지를 위해 lazy import.
     """
+    import app.domain.meeting.event_handlers  # noqa: F401
     import app.domain.schedule.event_handlers  # noqa: F401
     import app.domain.timer.event_handlers  # noqa: F401
     import app.domain.todo.event_handlers  # noqa: F401

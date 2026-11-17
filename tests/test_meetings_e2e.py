@@ -18,8 +18,9 @@ def test_create_meeting_e2e(e2e_client):
             "description": "다음 주 회의 일정을 조율합니다",
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
+            "excluded_dates": ["2024-02-03", "2024-02-04"],
             "timezone": "UTC",
-            "available_days": [0, 2, 4],  # 월, 수, 금
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -32,7 +33,8 @@ def test_create_meeting_e2e(e2e_client):
     assert data["description"] == "다음 주 회의 일정을 조율합니다"
     assert data["start_date"] == "2024-02-01"
     assert data["end_date"] == "2024-02-07"
-    assert data["available_days"] == [0, 2, 4]
+    assert data["excluded_dates"] == ["2024-02-03", "2024-02-04"]
+    assert data["mode"] == "hourly"
     assert data["start_time"] == "09:00:00"
     assert data["end_time"] == "18:00:00"
     assert data["time_slot_minutes"] == 30
@@ -51,7 +53,7 @@ def test_get_meeting_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -91,7 +93,7 @@ def test_get_all_meetings_e2e(e2e_client):
                 "start_date": "2024-02-01",
                 "end_date": "2024-02-07",
                 "timezone": "UTC",
-                "available_days": [0, 2, 4],
+                "mode": "hourly",
                 "start_time": "09:00:00",
                 "end_time": "18:00:00",
                 "time_slot_minutes": 30,
@@ -123,7 +125,7 @@ def test_update_meeting_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -157,7 +159,7 @@ def test_delete_meeting_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -187,7 +189,7 @@ def test_create_participant_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -220,7 +222,7 @@ def test_set_availability_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -273,7 +275,7 @@ def _meeting_with_two_participants(multi_user_e2e, title: str):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -300,7 +302,7 @@ def _meeting_with_two_participants(multi_user_e2e, title: str):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant1_id},
         json=[{
-            "start_time": "2024-02-02T09:00:00Z",  # 금요일 (weekday=4, available_days에 포함)
+            "start_time": "2024-02-02T09:00:00Z",
             "end_time": "2024-02-02T12:00:00Z",
         }],
     )
@@ -310,7 +312,7 @@ def _meeting_with_two_participants(multi_user_e2e, title: str):
         f"/v1/meetings/{meeting_id}/availability",
         params={"participant_id": participant2_id},
         json=[{
-            "start_time": "2024-02-02T10:00:00Z",  # 금요일 (weekday=4, available_days에 포함)
+            "start_time": "2024-02-02T10:00:00Z",
             "end_time": "2024-02-02T13:00:00Z",
         }],
     )
@@ -371,7 +373,7 @@ def test_meeting_timezone_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -435,7 +437,7 @@ def test_meeting_list_timezone_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,
@@ -474,7 +476,7 @@ def test_participant_timezone_e2e(e2e_client):
             "start_date": "2024-02-01",
             "end_date": "2024-02-07",
             "timezone": "UTC",
-            "available_days": [0, 2, 4],
+            "mode": "hourly",
             "start_time": "09:00:00",
             "end_time": "18:00:00",
             "time_slot_minutes": 30,

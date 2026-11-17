@@ -32,12 +32,6 @@ class InvalidTimeRangeError(DomainException):
     detail = "Invalid time range: start_time must be < end_time"
 
 
-class InvalidAvailableDaysError(DomainException):
-    """잘못된 요일 설정"""
-    status_code = status.HTTP_400_BAD_REQUEST
-    detail = "Invalid available_days: must be list of integers 0-6"
-
-
 class InvalidTimeSlotMinutesError(DomainException):
     """잘못된 시간 슬롯 단위"""
     status_code = status.HTTP_400_BAD_REQUEST

@@ -5,16 +5,17 @@ alembic/versions/2026_11_14_1010-5fdfd93be2c3_allow_meeting_end_time_midnight.py
 
 from __future__ import annotations
 
-from datetime import time
+from datetime import date, time
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 
 import app.models  # noqa: F401  # register every table in SQLModel.metadata
 import app.models.holiday  # noqa: F401
+from app.models.meeting import Meeting, MeetingMode
 from tests.db.conftest import database_url_for, migration_database
 
 BEFORE_MIDNIGHT = "f3a39109a3ef"
@@ -99,7 +100,12 @@ def test_upgrade_skips_constraint_that_create_all_already_made(engine_and_config
 
     command.upgrade(config, "head")
 
-    _insert(engine, "a" * 32, time(0), time(0))
+    with Session(engine) as session:
+        session.add(Meeting(
+            owner_id="owner", title="m", start_date=date(2024, 2, 5), end_date=date(2024, 2, 5), timezone="UTC",
+            mode=MeetingMode.DAILY, start_time=time(0), end_time=time(0), time_slot_minutes=30,
+        ))
+        session.commit()
 
 
 def test_migrated_meeting_checks_match_model(legacy, tmp_path: Path) -> None:

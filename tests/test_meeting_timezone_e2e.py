@@ -1,7 +1,7 @@
 """
 Meeting 시간대·가능 시간 구간 E2E 테스트
 
-미팅의 날짜·요일·시간은 미팅 시간대의 벽시계 값이고, 가능 시간은 받은 그대로 저장하는 UTC 구간 [start, end)이다.
+미팅의 날짜·시간은 미팅 시간대의 벽시계 값이고, 가능 시간은 받은 그대로 저장하는 UTC 구간 [start, end)이다.
 결과 그리드는 미팅 규칙으로 만든 칸마다 그 칸을 모두 덮는 가능 시간을 가진 참여자 수를 센다.
 """
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ SEOUL_MEETING = {
     "start_date": "2024-02-05",  # 월요일
     "end_date": "2024-02-06",
     "timezone": "Asia/Seoul",
-    "available_days": [0, 1],
+    "mode": "hourly",
     "start_time": "09:00:00",
     "end_time": "12:00:00",
     "time_slot_minutes": 30,
@@ -138,7 +138,7 @@ def test_dst_day_cells_are_consecutive_instants(e2e_client):
     """뉴욕 2024-03-10은 02:00이 03:00으로 건너뛰어 23시간이다"""
     meeting_id = _create_meeting(
         e2e_client, start_date="2024-03-10", end_date="2024-03-10", timezone="America/New_York",
-        available_days=[6], start_time="00:00:00", end_time="00:00:00", time_slot_minutes=60,
+        start_time="00:00:00", end_time="00:00:00", time_slot_minutes=60,
     )
 
     grid = _grid(e2e_client, meeting_id)
@@ -352,7 +352,7 @@ def test_patch_timezone_keeps_slots_and_rebuilds_grid(e2e_client):
     assert grid[0][:2] == (_utc(2024, 2, 5, 14, 0), _utc(2024, 2, 5, 14, 30))
     assert all(count == 0 for _, _, count in grid)
 
-    e2e_client.patch(f"/v1/meetings/{meeting_id}", json={"start_date": "2024-02-04", "available_days": [6, 0, 1],
+    e2e_client.patch(f"/v1/meetings/{meeting_id}", json={"start_date": "2024-02-04",
                                                           "start_time": "19:00:00", "end_time": "20:00:00"})
     assert _stored(e2e_client, meeting_id) == before
     counted = [start for start, count in _counts(e2e_client, meeting_id).items() if count]

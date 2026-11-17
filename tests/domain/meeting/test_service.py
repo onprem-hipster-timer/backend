@@ -30,10 +30,11 @@ def meeting_data() -> MeetingCreate:
     return MeetingCreate(
         title="팀 회의 일정 조율",
         description="다음 주 회의 일정을 조율합니다",
-        start_date=date(2024, 2, 1),
+        start_date=date(2024, 2, 2),
         end_date=date(2024, 2, 7),
+        excluded_dates=[date(2024, 2, 3), date(2024, 2, 4), date(2024, 2, 6)],  # 금, 월, 수가 남는다
         timezone="UTC",
-        available_days=[0, 2, 4],  # 월, 수, 금
+        mode="hourly",
         start_time=time(9, 0),
         end_time=time(18, 0),
         time_slot_minutes=30,
@@ -60,9 +61,10 @@ class TestCreateMeeting:
 
         assert meeting.title == "팀 회의 일정 조율"
         assert meeting.description == "다음 주 회의 일정을 조율합니다"
-        assert meeting.start_date == date(2024, 2, 1)
+        assert meeting.start_date == date(2024, 2, 2)
         assert meeting.end_date == date(2024, 2, 7)
-        assert meeting.available_days == [0, 2, 4]
+        assert meeting.excluded_dates == [date(2024, 2, 3), date(2024, 2, 4), date(2024, 2, 6)]
+        assert meeting.mode == "hourly"
         assert meeting.start_time == time(9, 0)
         assert meeting.end_time == time(18, 0)
         assert meeting.time_slot_minutes == 30
@@ -219,7 +221,7 @@ class TestUpdateMeeting:
         [
             MeetingUpdate(start_time=time(18, 0)),
             MeetingUpdate(end_date=date(2024, 1, 31)),
-            MeetingUpdate(end_date=date(2024, 5, 2)),
+            MeetingUpdate(end_date=date(2024, 5, 3)),
             MeetingUpdate(time_slot_minutes=541),
         ],
     )
@@ -437,7 +439,7 @@ def _distinct_slots(count: int) -> list[TimeSlotCreate]:
 class TestTimeSlotsLimit:
     """한 요청의 가능 시간 슬롯 수는 미팅의 칸 수까지
 
-    sample_meeting: 2024-02-01~07 중 월·수·금 3일 x 540분 / 30분 = 54칸
+    sample_meeting: 2024-02-02~07에서 제외 날짜 3일을 뺀 3일 x 540분 / 30분 = 54칸
     """
 
     def test_slots_up_to_cell_count_accepted(self, test_session, test_user, sample_meeting):

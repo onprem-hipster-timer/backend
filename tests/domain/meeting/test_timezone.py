@@ -26,7 +26,8 @@ def _meeting_read(**fields) -> MeetingRead:
         "start_date": date(2024, 2, 1),
         "end_date": date(2024, 2, 7),
         "timezone": "UTC",
-        "available_days": [0, 2, 4],
+        "mode": "hourly",
+        "excluded_dates": [date(2024, 2, 3)],
         "start_time": time(9, 0),
         "end_time": time(18, 0),
         "time_slot_minutes": 30,
@@ -119,7 +120,8 @@ class TestMeetingReadTimezone:
         assert result.description == meeting_read.description
         assert result.start_date == meeting_read.start_date
         assert result.end_date == meeting_read.end_date
-        assert result.available_days == meeting_read.available_days
+        assert result.mode == meeting_read.mode
+        assert result.excluded_dates == meeting_read.excluded_dates
         assert result.start_time == meeting_read.start_time
         assert result.end_time == meeting_read.end_time
         assert result.time_slot_minutes == meeting_read.time_slot_minutes

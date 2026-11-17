@@ -58,6 +58,24 @@ POST   /v1/tags                  # 태그 생성
 DELETE /v1/tags/{id}             # 태그 삭제
 ```
 
+### 미팅 (Meetings)
+
+```http
+POST   /v1/meetings                                     # 미팅 생성
+GET    /v1/meetings                                     # 내가 만든 미팅 목록
+GET    /v1/meetings/{id}                                # 미팅 조회 (public이면 로그인 없이)
+PATCH  /v1/meetings/{id}                                # 미팅 수정 (생성자)
+DELETE /v1/meetings/{id}                                # 미팅 삭제 (생성자). 그 미팅의 게스트도 폐기
+POST   /v1/meetings/{id}/participate                    # 참여 등록 (회원, 그 미팅의 게스트)
+DELETE /v1/meetings/{id}/participants/{participant_id}  # 참여자 빼기 (생성자). 게스트 참여자는 그 게스트를 폐기
+POST   /v1/meetings/{id}/guest-import                   # 게스트 가져오기 (회원). 본문의 게스트 JWT로 그 게스트의 가능 시간을 자기 참여자에 합치고 게스트를 폐기
+PUT    /v1/meetings/{id}/availability                   # 자기 참여자의 가능 시간 설정
+GET    /v1/meetings/{id}/availability                   # 참여자별 가능 시간
+GET    /v1/meetings/{id}/result                         # 칸마다 가능한 인원 수 (public이면 로그인 없이)
+```
+
+자세한 내용은 [미팅 가이드](../guides/meeting.ko.md)를 봅니다.
+
 ### 접근권한 (Visibility)
 
 ```http
@@ -120,7 +138,7 @@ DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게�
 PUT    /v1/guests/me/consent              # 게스트의 약관 동의 기록 (게스트 JWT)
 ```
 
-게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 이름 찾기·생성·자기 삭제와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 약관 동의 기록은 토큰을 받지 않습니다. 생성의 `consent`와 동의 기록의 본문은 회원의 `PUT /v1/users/me/consent`와 같아 선택 항목 `analytics`도 같은 규칙으로 기록합니다. `CONSENT_ENFORCED`면 현재 약관 버전에 동의하지 않은 게스트는 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`(`message: "consent_required"`)입니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 이름 찾기·생성·자기 삭제와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 약관 동의 기록은 토큰을 받지 않습니다. 생성의 `consent`와 동의 기록의 본문은 회원의 `PUT /v1/users/me/consent`와 같아 선택 항목 `analytics`도 같은 규칙으로 기록합니다. `CONSENT_ENFORCED`면 현재 약관 버전에 동의하지 않은 게스트는 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`(`message: "consent_required"`)입니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로(미팅의 조회·참여·가능 시간·결과, [미팅 가이드](../guides/meeting.ko.md#접근-권한)) 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
 
 ### 공휴일 (Holidays)
 

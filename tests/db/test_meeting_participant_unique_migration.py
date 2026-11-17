@@ -135,18 +135,19 @@ def test_upgrade_keeps_latest_participant_per_user_and_adds_constraint(legacy) -
 
 def test_constraint_allows_one_participant_per_user_and_any_number_without_user(legacy) -> None:
     engine, config = legacy
+    with engine.begin() as connection:
+        connection.execute(sa.text(
+            "INSERT INTO meeting (id, owner_id, title, start_date, end_date, available_days,"
+            " start_time, end_time, time_slot_minutes, created_at, updated_at)"
+            " VALUES (:id, 'owner', 'm', '2024-02-05', '2024-02-09', '[0]', '09:00:00', '18:00:00', 30,"
+            " '2026-11-14 00:00:00', '2026-11-14 00:00:00')"
+        ), {"id": _MEETING_A})
     command.upgrade(config, "head")
     _insert_rows_after = sa.text(
         "INSERT INTO meeting_participant (id, meeting_id, user_id, display_name, created_at, updated_at)"
         " VALUES (:id, :meeting, :user, 'p', '2026-11-14 00:00:00', '2026-11-14 00:00:00')"
     )
     with engine.begin() as connection:
-        connection.execute(sa.text(
-            "INSERT INTO meeting (id, owner_id, title, start_date, end_date, timezone, available_days,"
-            " start_time, end_time, time_slot_minutes, created_at, updated_at)"
-            " VALUES (:id, 'owner', 'm', '2024-02-05', '2024-02-09', 'UTC', '[0]', '09:00:00', '18:00:00', 30,"
-            " '2026-11-14 00:00:00', '2026-11-14 00:00:00')"
-        ), {"id": _MEETING_A})
         connection.execute(_insert_rows_after, {"id": "1" * 32, "meeting": _MEETING_A, "user": "u1"})
         connection.execute(_insert_rows_after, {"id": "2" * 32, "meeting": _MEETING_A, "user": None})
         connection.execute(_insert_rows_after, {"id": "3" * 32, "meeting": _MEETING_A, "user": None})

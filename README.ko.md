@@ -118,10 +118,10 @@
 
 | 기능 | 설명 |
 |------|------|
-| **일정 조율 생성** | 기간·가능 요일·시간 범위·슬롯 단위 설정 |
+| **일정 조율 생성** | 답하는 방식(hourly·daily·weekly)·기간과 제외 날짜·시간 범위·슬롯 단위 설정 |
 | **참여자 등록** | 공유 링크로 접근, 표시 이름 입력 |
-| **가능 시간 입력** | 참여자별 시간 슬롯 선택 |
-| **공통 시간대 조회** | 시간대별 가능 인원 수, 겹치는 구간 조회 |
+| **가능 시간 입력** | 참여자별 가능·불가능 시간 구간 선택 |
+| **공통 시간대 조회** | 칸마다 가능한 인원 수와 불가능한 인원 수 조회 |
 | **접근 권한** | public / allowed_emails / private |
 
 ### 🔒 Visibility (접근권한)
@@ -1092,7 +1092,7 @@ pip-compile은 `.in`의 명시적 마커를 생성된 `.txt`에 유지하고, De
 - **타임존 처리**: `app/domain/dateutil/` — KST/UTC 변환 유틸리티
 - **GraphQL + REST 공존**: `app/api/v1/graphql.py` — Strawberry와 FastAPI 통합
 - **친구 관계**: `app/domain/friend/` — 요청/수락 워크플로우, 양방향 유일 제약
-- **일정 조율**: `app/domain/meeting/` — 기간·요일·슬롯·참여자, 공통 가능 시간대 조회
+- **일정 조율**: `app/domain/meeting/` — 답하는 방식·날짜·슬롯·참여자, 공통 가능 시간대 조회
 - **리소스 공개 범위**: `app/domain/visibility/` — AllowList/AllowEmail, 리소스별 레벨 제어
 - **게스트 계정**: `app/domain/guest/` — 리소스가 등록하는 호스트 계약, Kratos 훅 판정, 폐기
 

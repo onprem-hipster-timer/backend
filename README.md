@@ -118,10 +118,10 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Create Poll** | Set date range, available weekdays, time range, slot duration |
+| **Create Poll** | Set answer mode (hourly / daily / weekly), date range and excluded dates, time range, slot duration |
 | **Participants** | Join via share link, set display name |
-| **Availability** | Each participant selects time slots |
-| **Common Slots** | API returns overlapping slots and counts per slot |
+| **Availability** | Each participant marks time ranges as available or unavailable |
+| **Common Slots** | API returns, per slot, how many participants are available and unavailable |
 | **Access** | public / allowed_emails / private |
 
 ### 🔒 Visibility
@@ -1118,7 +1118,7 @@ also emit markers, but Dependabot does **not** preserve that flag, so the marker
 - **Timezone Handling**: `app/domain/dateutil/` — KST/UTC conversion utilities
 - **GraphQL + REST Coexistence**: `app/api/v1/graphql.py` — Strawberry and FastAPI integration
 - **Friends**: `app/domain/friend/` — Request/accept workflow, bidirectional uniqueness
-- **Meeting Polls**: `app/domain/meeting/` — Date range, weekdays, slots, participants, common availability
+- **Meeting Polls**: `app/domain/meeting/` — Answer mode, dates, slots, participants, common availability
 - **Visibility**: `app/domain/visibility/` — AllowList/AllowEmail, per-resource level control
 
 ---

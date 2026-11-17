@@ -19,16 +19,21 @@ def create_guest(session: Session, guest: Guest) -> Guest:
     return guest
 
 
-def get_guest_by_identity(session: Session, identity_id: str, for_update: bool = False) -> Guest | None:
+def get_guest_by_identity(
+        session: Session,
+        identity_id: str,
+        for_update: bool = False,
+        key_share: bool = True,
+) -> Guest | None:
     """
     identity id로 게스트 조회
 
-    for_update=True면 트랜잭션 끝까지 행을 잠그고(FOR NO KEY UPDATE, SQLite에서는 무시),
-    세션에 이미 올라온 객체도 잠근 뒤의 DB 값으로 덮어쓴다.
+    for_update=True면 트랜잭션 끝까지 행을 잠그고(FOR NO KEY UPDATE, key_share=False면 FOR UPDATE,
+    SQLite에서는 무시), 세션에 이미 올라온 객체도 잠근 뒤의 DB 값으로 덮어쓴다.
     """
     statement = select(Guest).where(Guest.identity_id == identity_id)
     if for_update:
-        statement = statement.with_for_update(key_share=True).execution_options(
+        statement = statement.with_for_update(key_share=key_share).execution_options(
             populate_existing=True
         )
     return session.exec(statement).first()

@@ -8,20 +8,22 @@
 - require_guest_access(resource_type, id_param): 경로 파라미터 id_param의 리소스에 접근할 수 있는 게스트 행.
   요청마다 게스트 행과 접근 정책(app/domain/guest/service.py check_access)을 확인하므로, 폐기된 게스트는
   JWT가 아직 유효해도 거부된다
+- guest_from_token(token): 요청 본문으로 받은 게스트 JWT의 사용자 (게스트 가져오기)
 
-테스트: tests/domain/guest/test_dependencies.py, tests/domain/guest/test_consent.py
+테스트: tests/domain/guest/test_dependencies.py, tests/domain/guest/test_consent.py,
+tests/domain/guest/test_meeting_guest_import.py
 """
 from typing import Awaitable, Callable
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 import app.core.config as app_config
-from app.core.auth import CurrentUser, authenticate_request, require_schema_id, security
+from app.core.auth import CurrentUser, authenticate_request, require_schema_id, security, verify_access_token
 from app.domain.consent.exceptions import ConsentRequiredError
 from app.domain.guest import service
-from app.domain.guest.exceptions import GuestAccessDeniedError
+from app.domain.guest.exceptions import GuestAccessDeniedError, GuestTokenInvalidError
 from app.domain.guest.model import Guest
 from app.models.visibility import ResourceType
 
@@ -51,6 +53,23 @@ async def get_current_guest(
         and await service.consent_pending(user.sub)
     ):
         raise ConsentRequiredError()
+    return user
+
+
+async def guest_from_token(token: str) -> CurrentUser:
+    """요청 본문으로 받은 게스트 JWT의 사용자 (게스트 가져오기). 검증은 Authorization 헤더의 토큰과 같다.
+
+    검증에 실패하거나(서명·iss·aud·exp, sub) 게스트 토큰이 아니면 GuestTokenInvalidError(422).
+    본문의 토큰이라 401을 쓰지 않는다(요청한 회원의 인증과 따로다). JWKS를 받지 못하면 503 그대로
+    """
+    try:
+        user = await verify_access_token(token)
+    except HTTPException as e:
+        if e.status_code != status.HTTP_401_UNAUTHORIZED:
+            raise
+        raise GuestTokenInvalidError() from None
+    if not user.is_guest:
+        raise GuestTokenInvalidError()
     return user
 
 

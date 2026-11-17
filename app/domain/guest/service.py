@@ -9,6 +9,8 @@
 - 정리(discard_stale_guests): 게스트가 있는 리소스마다 호스트 상태를 읽어 EXPIRED·MISSING이면 discard_resource_guests로
   폐기한다. 하루 한 번 실행(POST /internal/accounts/purge, app/api/internal.py)이 부른다.
   GUEST_ENABLED와 상관없이 폐기한다. 한 리소스의 실패는 로그로 남기고 다음 리소스로 넘어간다
+- 가져오기(import_guest): 게스트 행을 잠근 한 트랜잭션에서 리소스가 게스트의 것을 넘겨받고(merge 콜백) 게스트 행·약관 동의를
+  지운 뒤 커밋하고, Kratos identity를 지운다. CLOSED 리소스의 게스트도 가져온다. 잠금을 기다리지 못하면 되돌리고 409
 - 이름 찾기(lookup)와 생성(create). 게스트 이름(정규형)은 guest.name에 두고, 리소스 안에서 겹치지 않는 것은
   UNIQUE (resource_type, resource_id, name)이 보장한다. 로그인 식별자(handle)는 "<게스트 행 id>@guest.invalid"
 - 약관 동의는 회원과 같은 consent 테이블에 게스트의 identity id로 둔다 (app/domain/consent). 생성은 동의를 게스트 행과
@@ -26,10 +28,11 @@ Kratos 호출 동안 트랜잭션을 열어 두지 않는다.
 """
 import logging
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Callable, Iterator, TypeVar
 from uuid import UUID, uuid4
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -43,8 +46,10 @@ from app.domain.guest.events import GuestDiscarded, GuestRenamed
 from app.domain.guest.exceptions import (
     GuestAccessDeniedError,
     GuestEntryRefusedError,
+    GuestImportConflictError,
     GuestLimitReachedError,
     GuestNameTakenError,
+    GuestNotFoundError,
     GuestServiceUnavailableError,
 )
 from app.domain.guest.host import GuestHostStatus, host_status
@@ -61,6 +66,8 @@ from app.shared.events import EventOrigin
 from app.shared.uow import clear_events, collect_event, flush_and_dispatch_events
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 # 게스트 로그인 식별자(handle) "<게스트 행 id>@<이 도메인>"의 도메인. 예약된 TLD라 메일이 가지 않는다.
 # handle은 Kratos require_verified_address를 통과하도록 인증된 주소로 만들고, 게스트에게 보여 주지 않는다
@@ -132,14 +139,17 @@ async def _delete_identity(identity_id: str) -> None:
 
 # ============ 접근 정책과 폐기 ============
 
-async def check_access(guest: Guest) -> bool:
-    """게스트가 지금 자기 리소스에 접근할 수 있는지. EXPIRED·MISSING이면 게스트를 폐기한다"""
+async def _checked_status(guest: Guest) -> GuestHostStatus:
+    """게스트 리소스의 호스트 상태. EXPIRED·MISSING이면 게스트를 폐기한다"""
     status = await run_in_threadpool(_read_status, guest.resource_type, guest.resource_id)
-    if status == GuestHostStatus.OPEN:
-        return True
     if status in (GuestHostStatus.EXPIRED, GuestHostStatus.MISSING):
         await discard_guest(guest.identity_id)
-    return False
+    return status
+
+
+async def check_access(guest: Guest) -> bool:
+    """게스트가 지금 자기 리소스에 접근할 수 있는지. EXPIRED·MISSING이면 게스트를 폐기한다"""
+    return await _checked_status(guest) == GuestHostStatus.OPEN
 
 
 def _delete_guest_row(identity_id: str) -> bool:
@@ -203,6 +213,68 @@ async def authorize(identity_id: str, resource_type: ResourceType, resource_id: 
     if not await check_access(guest):
         raise GuestAccessDeniedError()
     return guest
+
+
+# ============ 가져오기 ============
+
+# 가져오기 트랜잭션이 잠금을 기다리는 최대 시간 (PostgreSQL). 넘으면 아무것도 바꾸지 않고 GuestImportConflictError
+IMPORT_LOCK_TIMEOUT = "5s"
+_LOCK_NOT_AVAILABLE = "55P03"  # NOWAIT 잠금 실패와 lock_timeout의 SQLSTATE
+
+
+def _sqlstate(error: OperationalError) -> str | None:
+    return getattr(error.orig, "sqlstate", None) or getattr(error.orig, "pgcode", None)
+
+
+def _import_rows(
+        identity_id: str,
+        resource_type: ResourceType,
+        resource_id: UUID,
+        merge: Callable[[Session, Guest], T],
+) -> T:
+    with _transaction() as session:
+        if session.get_bind().dialect.name == "postgresql":
+            session.execute(text(f"SET LOCAL lock_timeout = '{IMPORT_LOCK_TIMEOUT}'"))
+        guest = crud.get_guest_by_identity(session, identity_id, for_update=True, key_share=False)
+        if guest is None or guest.resource_type != resource_type or guest.resource_id != resource_id:
+            raise GuestNotFoundError()
+        result = merge(session, guest)
+        _delete_with_event(session, guest)
+        consent_service.delete_consents(session, [identity_id])
+    return result
+
+
+async def import_guest(
+        identity_id: str,
+        resource_type: ResourceType,
+        resource_id: UUID,
+        merge: Callable[[Session, Guest], T],
+) -> T:
+    """게스트가 리소스에 남긴 것을 리소스가 넘겨받게 하고(merge) 게스트를 폐기한다. merge의 결과를 돌려준다.
+
+    - 게스트 행이 없거나 다른 리소스의 게스트면 GuestNotFoundError. 리소스가 EXPIRED·MISSING이면 접근 정책대로
+      게스트를 폐기하고 GuestNotFoundError. CLOSED는 가져온다(게스트와 그 기록이 남아 있는 상태다)
+    - 한 트랜잭션: 게스트 행을 잠그고(FOR UPDATE) 다시 확인한 뒤 merge(세션, 게스트 행), 게스트 행 삭제와
+      GuestDiscarded, 약관 동의 삭제. 어디서든 실패하면 모두 되돌린다. 커밋한 뒤에 Kratos identity를 지운다
+      (폐기와 같다. 실패는 로그만 남긴다)
+    - merge가 잡으려는 잠금을 다른 트랜잭션이 쥐고 있거나(NOWAIT, lock_timeout) 다른 요청과 unique 제약에 걸리면
+      되돌리고 GuestImportConflictError
+    """
+    guest = await run_in_threadpool(_read_guest, identity_id)
+    if guest is None or guest.resource_type != resource_type or guest.resource_id != resource_id:
+        raise GuestNotFoundError()
+    if await _checked_status(guest) not in (GuestHostStatus.OPEN, GuestHostStatus.CLOSED):
+        raise GuestNotFoundError()
+    try:
+        result = await run_in_threadpool(_import_rows, identity_id, resource_type, resource_id, merge)
+    except IntegrityError:
+        raise GuestImportConflictError() from None
+    except OperationalError as e:
+        if _sqlstate(e) != _LOCK_NOT_AVAILABLE:
+            raise
+        raise GuestImportConflictError() from None
+    await _delete_identity(identity_id)
+    return result
 
 
 # ============ 이름 찾기와 생성 ============

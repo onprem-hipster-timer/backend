@@ -4,17 +4,44 @@ Meeting 모델
 일정 조율 서비스를 위한 모델들
 """
 from datetime import date, time
+from enum import Enum
 from typing import List, TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import NaiveDatetime
-from sqlalchemy import Column, ForeignKey, JSON, CheckConstraint, UniqueConstraint
+from sqlalchemy import Boolean, Column, Enum as SQLEnum, ForeignKey, JSON, CheckConstraint, UniqueConstraint, false
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, Relationship
 
 from app.models.base import UUIDBase, TimestampMixin
 
 if TYPE_CHECKING:
     pass
+
+
+class MeetingMode(str, Enum):
+    """참여자가 미팅에 답하는 방식. 프론트엔드는 이 값으로 화면을 정한다"""
+    HOURLY = "hourly"  # 날짜와 하루 시간 범위 안에서 시간을 고른다
+    DAILY = "daily"  # 날짜만 고른다. 하루 전체가 한 답이다
+    WEEKLY = "weekly"  # 요일만 고른다 (매주 반복)
+
+
+class TimeSlotKind(str, Enum):
+    """참여자가 고른 시간 구간의 종류"""
+    AVAILABLE = "available"  # 가능
+    UNAVAILABLE = "unavailable"  # 불가능
+
+
+class DateList(TypeDecorator):
+    """date 목록을 ISO 날짜 문자열의 JSON 배열로 저장한다"""
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return [day.isoformat() for day in value]
+
+    def process_result_value(self, value, dialect):
+        return [date.fromisoformat(day) for day in value]
 
 
 class Meeting(UUIDBase, TimestampMixin, table=True):
@@ -33,24 +60,37 @@ class Meeting(UUIDBase, TimestampMixin, table=True):
     title: str
     description: str | None = None
 
-    # 일정 기간
+    # 일정 기간. 첫날과 마지막 날은 언제나 미팅 날짜다
     start_date: date
     end_date: date
 
-    # 날짜·요일·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
+    # 기간에서 빼는 날짜. 기간 안쪽(첫날·마지막 날이 아닌 날)만, 겹치지 않게 정렬해 둔다 (MeetingCreate)
+    excluded_dates: List[date] = Field(
+        default_factory=list,
+        sa_column=Column(DateList, nullable=False),
+    )
+
+    # 날짜·시간을 해석하는 IANA 시간대 (예: Asia/Seoul)
     timezone: str
 
-    # 요일 기반 설정 (JSON array of integers 0-6, 0=월요일)
-    # 예: [0, 2, 4] = 월, 수, 금
-    available_days: List[int] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False)
+    # 답하는 방식. 바꿔도 저장된 날짜와 가능 시간은 그대로다
+    mode: MeetingMode = Field(
+        sa_column=Column(
+            SQLEnum(MeetingMode, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=False,
+        )
     )
 
     # 시간 범위 설정
     start_time: time  # 하루 시작 시간
     end_time: time  # 하루 종료 시간 (포함하지 않음, 00:00이면 다음 날 00:00)
     time_slot_minutes: int = Field(default=30)  # 시간 선택 단위 (분)
+
+    # 게스트를 받는지. 공개 범위가 PUBLIC일 때만 켤 수 있다 (MeetingService)
+    allow_guests: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=false()),
+    )
 
     __table_args__ = (
         CheckConstraint("start_date <= end_date", name="ck_meeting_date_range"),
@@ -89,11 +129,23 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 
     # 참여자 정보
     user_id: str | None = Field(default=None, index=True)  # OIDC sub (로그인한 경우)
-    display_name: str  # 표시 이름 (닉네임)
+    # 게스트 참여자의 게스트 행. 게스트 행이 지워지면 DB가 참여자와 가능 시간을 지운다
+    guest_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("guest.id", ondelete="CASCADE", name="fk_meeting_participant_guest_id"),
+            nullable=True,
+        ),
+    )
+    display_name: str  # 표시 이름 (닉네임). 게스트 참여자는 게스트 이름
 
-    # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
     __table_args__ = (
+        # 미팅마다 사용자당 참여자 한 명 (user_id가 NULL인 행은 제한하지 않음)
         UniqueConstraint("meeting_id", "user_id", name="uq_meeting_participant_meeting_user"),
+        # 게스트마다 참여자 한 명
+        UniqueConstraint("guest_id", name="uq_meeting_participant_guest"),
+        # 회원 참여자이면서 게스트 참여자일 수 없다 (둘 다 NULL인 예전 행은 둔다)
+        CheckConstraint("user_id IS NULL OR guest_id IS NULL", name="ck_meeting_participant_user_or_guest"),
     )
 
     # Relationships
@@ -106,7 +158,7 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 
 class MeetingTimeSlot(UUIDBase, table=True):
     """
-    참여자가 선택한 가능 시간 슬롯
+    참여자가 고른 시간 구간 (가능 또는 불가능)
 
     반열린 구간 [start_time, end_time)을 받은 그대로 저장한다. 미팅의 날짜·시간·칸과는 무관하다
     """
@@ -121,9 +173,19 @@ class MeetingTimeSlot(UUIDBase, table=True):
         )
     )
 
-    # 가능 시간 (UTC naive, end_time은 포함하지 않음)
+    # 구간 (UTC naive, end_time은 포함하지 않음)
     start_time: NaiveDatetime
     end_time: NaiveDatetime
+
+    # 구간의 종류. 결과 그리드의 count는 available만 센다
+    kind: TimeSlotKind = Field(
+        default=TimeSlotKind.AVAILABLE,
+        sa_column=Column(
+            SQLEnum(TimeSlotKind, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=False,
+            server_default=TimeSlotKind.AVAILABLE.value,
+        ),
+    )
 
     __table_args__ = (
         CheckConstraint("start_time < end_time", name="ck_time_slot_range"),

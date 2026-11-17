@@ -150,7 +150,7 @@ def test_upgrade_skips_table_that_create_all_already_made(engine_and_config) -> 
 
     command.upgrade(config, "head")
 
-    assert _columns(engine) == {"id", "participant_id", "start_time", "end_time"}
+    assert _columns(engine) == {"id", "participant_id", "start_time", "end_time", "kind"}
 
 
 def test_migrated_schema_matches_model(legacy, tmp_path: Path) -> None:

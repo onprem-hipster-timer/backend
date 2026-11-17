@@ -6,6 +6,7 @@ Meeting CRUD 함수
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import Session, select, or_
 
 from app.crud.user_profile import dormant_subs
@@ -92,10 +93,11 @@ def create_participant(
         meeting_id: UUID,
         user_id: Optional[str],
         data: ParticipantCreate,
+        guest_id: Optional[UUID] = None,
 ) -> MeetingParticipant:
-    """참여자 생성"""
+    """참여자 생성 (회원은 user_id, 게스트는 guest_id)"""
     participant = MeetingParticipant.model_validate(
-        data, update={"meeting_id": meeting_id, "user_id": user_id}
+        data, update={"meeting_id": meeting_id, "user_id": user_id, "guest_id": guest_id}
     )
     session.add(participant)
     session.flush()
@@ -140,18 +142,55 @@ def get_participants(
     return results.all()
 
 
+def count_participants(
+        session: Session,
+        meeting_id: UUID,
+) -> int:
+    """일정 조율의 참여자 수 (휴면 계정 제외, get_participants와 같은 참여자)"""
+    statement = (
+        select(func.count())
+        .select_from(MeetingParticipant)
+        .where(MeetingParticipant.meeting_id == meeting_id)
+        .where(_not_dormant_participant())
+    )
+    return session.exec(statement).one()
+
+
+def _locked(statement, lock: bool):
+    """lock=True면 읽은 행을 트랜잭션 끝까지 잠근다(FOR UPDATE NOWAIT, SQLite에서는 무시).
+    다른 트랜잭션이 잡고 있으면 기다리지 않고 OperationalError(lock_not_available)"""
+    return statement.with_for_update(nowait=True) if lock else statement
+
+
 def get_participant_by_user_id(
         session: Session,
         meeting_id: UUID,
         user_id: str,
+        lock: bool = False,
 ) -> Optional[MeetingParticipant]:
-    """사용자 ID로 참여자 조회"""
+    """사용자 ID로 참여자 조회 (lock: _locked)"""
     statement = (
         select(MeetingParticipant)
         .where(MeetingParticipant.meeting_id == meeting_id)
         .where(MeetingParticipant.user_id == user_id)
     )
-    return session.exec(statement).first()
+    return session.exec(_locked(statement, lock)).first()
+
+
+def get_participant_by_guest_id(
+        session: Session,
+        guest_id: UUID,
+        lock: bool = False,
+) -> Optional[MeetingParticipant]:
+    """게스트의 참여자 조회 (게스트마다 하나, lock: _locked)"""
+    statement = select(MeetingParticipant).where(MeetingParticipant.guest_id == guest_id)
+    return session.exec(_locked(statement, lock)).first()
+
+
+def delete_participant(session: Session, participant: MeetingParticipant) -> None:
+    """참여자 삭제 (가능 시간은 DB의 ON DELETE CASCADE가 지운다)"""
+    session.delete(participant)
+    session.flush()
 
 
 # ============================================================
@@ -174,14 +213,15 @@ def create_time_slot(
 def get_participant_time_slots(
         session: Session,
         participant_id: UUID,
+        lock: bool = False,
 ) -> list[MeetingTimeSlot]:
-    """참여자의 모든 시간 슬롯 조회"""
+    """참여자의 모든 시간 슬롯 조회 (lock: _locked)"""
     statement = (
         select(MeetingTimeSlot)
         .where(MeetingTimeSlot.participant_id == participant_id)
         .order_by(MeetingTimeSlot.start_time)
     )
-    results = session.exec(statement)
+    results = session.exec(_locked(statement, lock))
     return results.all()
 
 

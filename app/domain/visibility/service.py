@@ -27,6 +27,14 @@ from app.domain.visibility.schema.dto import VisibilityRead
 T = TypeVar("T")
 
 
+def is_public(session: Session, resource_type: ResourceType, resource_id: UUID, owner_id: str) -> bool:
+    """로그인하지 않은 방문자에게 보이는 리소스인가: 공개 범위가 PUBLIC이고 소유자가 휴면 계정이 아니다"""
+    if profile_crud.is_dormant(session, owner_id):
+        return False
+    visibility = crud.get_visibility_by_resource(session, resource_type, resource_id)
+    return visibility is not None and visibility.level == VisibilityLevel.PUBLIC
+
+
 class VisibilityService:
     """
     Visibility Service - 리소스 접근권한 비즈니스 로직
