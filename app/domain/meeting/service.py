@@ -193,8 +193,6 @@ class MeetingService:
         참여자 등록
 
         미팅마다 사용자당 참여자는 한 명이다. 이미 참여했으면 그 참여자의 표시 이름을 바꿔 돌려준다.
-        같은 사용자의 요청 둘이 동시에 등록하려 하면 unique 제약(uq_meeting_participant_meeting_user)이
-        하나만 남긴다. 진 쪽은 SAVEPOINT만 되돌리고 이긴 쪽의 참여자를 다시 읽는다.
 
         :param meeting_id: 일정 조율 ID
         :param data: 참여자 생성 데이터
@@ -204,9 +202,24 @@ class MeetingService:
         # 접근 권한 확인
         self.get_meeting_with_access_check(meeting_id)
 
+        participant, created = self._get_or_create_participant(meeting_id, data)
+        if not created:
+            participant = self._rename_participant(participant, data)
+        return participant, created
+
+    def _get_or_create_participant(
+            self,
+            meeting_id: UUID,
+            data: ParticipantCreate,
+    ) -> tuple[MeetingParticipant, bool]:
+        """이 사용자의 참여자. 없으면 data로 만든다. (참여자, 새로 만들었는지)
+
+        같은 사용자의 요청 둘이 동시에 만들려 하면 unique 제약(uq_meeting_participant_meeting_user)이
+        하나만 남긴다. 진 쪽은 SAVEPOINT만 되돌리고 이긴 쪽의 참여자를 다시 읽는다.
+        """
         existing = crud.get_participant_by_user_id(self.session, meeting_id, self.owner_id)
         if existing:
-            return self._rename_participant(existing, data), False
+            return existing, False
 
         # 앞서 쌓인 변경은 SAVEPOINT 밖에서 먼저 flush해, 그 변경의 IntegrityError를 여기서 삼키지 않는다
         self.session.flush()
@@ -219,7 +232,7 @@ class MeetingService:
             existing = crud.get_participant_by_user_id(self.session, meeting_id, self.owner_id)
             if existing is None:
                 raise
-            return self._rename_participant(existing, data), False
+            return existing, False
 
         return participant, True
 
@@ -403,19 +416,30 @@ def _first_uncovered_day(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> 
     unavailable = merge_intervals([
         (slot.start_time, slot.end_time) for slot in time_slots if slot.kind == TimeSlotKind.UNAVAILABLE
     ])
-    if not unavailable:
-        return None
     # 합친 구간은 서로 떨어져 있으므로 하루 범위는 한 구간이 덮어야 다 덮인다
     covered = merge_intervals([(slot.start_time, slot.end_time) for slot in time_slots])
+    for day, start, end in _days_to_cover(meeting, unavailable):
+        if not _covers(covered, start, end):
+            return day
+    return None
+
+
+def _days_to_cover(
+        meeting: Meeting,
+        unavailable: List[tuple[datetime, datetime]],
+) -> List[tuple[date, datetime, datetime]]:
+    """합친 unavailable 구간이 하루 범위에 걸친 묶음의 (날짜, 하루 범위의 시작, 끝). 날짜 순.
+    묶음은 hourly면 날마다, daily·weekly면 미팅 날짜 전체다"""
+    if not unavailable:
+        return []
     ranges = meeting_day_ranges(meeting)
     groups = [[day_range] for day_range in ranges] if meeting.mode == MeetingMode.HOURLY else [ranges]
-    for group in groups:
-        if not any(_overlaps(unavailable, start, end) for _, start, end in group):
-            continue
-        for day, start, end in group:
-            if not _covers(covered, start, end):
-                return day
-    return None
+    return [
+        day_range
+        for group in groups
+        if any(_overlaps(unavailable, start, end) for _, start, end in group)
+        for day_range in group
+    ]
 
 
 def _overlaps(merged: List[tuple[datetime, datetime]], start: datetime, end: datetime) -> bool:
