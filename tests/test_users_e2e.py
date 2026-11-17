@@ -3,7 +3,15 @@ Users / 친구코드 친추 E2E 테스트
 
 - GET /v1/users/me: 본인 프로필 get-or-create, friend_code 공유, email 미노출
 - 친구코드 기반 친추: 코드로 친추 → 받은 요청에 발신자 display_name/avatar 표시
+- PUT /v1/users/me/consent: 약관 동의와 선택 동의인 사용성 분석(analytics)
 """
+from datetime import datetime
+
+import pytest
+
+import app.core.config as app_config
+from app.db.session import _session_manager
+from app.models.consent import Consent
 
 
 class TestUsersMe:
@@ -272,3 +280,176 @@ class TestConsent:
         with _session_manager.get_session() as session:
             rows = {(c.sub, c.version) for c in session.exec(select(Consent)).all()}
         assert rows == {("user-a", first), ("user-a", "2099-01-01")}
+
+
+class TestAnalyticsConsent:
+    """사용성 분석 동의(선택). PUT /v1/users/me/consent의 analytics로 보내고, 프로필 응답은 현재 약관 버전 동의 행의 값을
+    analytics_consent·analytics_consent_updated_at으로 돌려준다. 기록 규칙: tests/domain/consent/test_service.py
+    """
+
+    EARLIER = "2026-01-02T00:00:00+0000"
+
+    @staticmethod
+    def _agree(client, **body):
+        return client.put("/v1/users/me/consent", json={
+            "version": client.get("/v1/users/me").json()["consent_version"],
+            "age_over_14": True,
+            "terms": True,
+            "privacy": True,
+            **body,
+        })
+
+    @staticmethod
+    def _age_choice(sub: str) -> None:
+        """현재 버전 동의 행의 analytics_updated_at을 앞당긴다 (시각이 바뀌는지 초 단위로 가리려고)"""
+        with _session_manager.get_session() as session:
+            row = session.get(Consent, (sub, app_config.settings.CONSENT_VERSION))
+            row.analytics_updated_at = datetime(2026, 1, 2)
+            session.add(row)
+            session.commit()
+
+    @staticmethod
+    def _choice(profile: dict) -> tuple:
+        return profile["analytics_consent"], profile["analytics_consent_updated_at"]
+
+    @staticmethod
+    def _when(value: str) -> datetime:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S%z")
+
+    def test_not_chosen_before_consent_or_when_omitted(self, multi_user_e2e):
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        assert self._choice(a.get("/v1/users/me").json()) == (None, None)
+
+        assert self._agree(a).status_code == 200
+        assert self._agree(b, analytics=None).status_code == 200
+
+        assert self._choice(a.get("/v1/users/me").json()) == (None, None)
+        assert self._choice(b.get("/v1/users/me").json()) == (None, None)
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_first_consent_stores_choice(self, e2e_client, value):
+        before = datetime.now().astimezone().replace(microsecond=0)
+
+        r = self._agree(e2e_client, analytics=value)
+
+        assert r.status_code == 200, r.text
+        assert r.json()["consent_required"] is False
+        assert r.json()["analytics_consent"] is value
+        assert self._when(r.json()["analytics_consent_updated_at"]) >= before
+        assert e2e_client.get("/v1/users/me").json() == r.json()
+
+    @pytest.mark.parametrize("first, second", [(True, False), (False, True), (None, True)])
+    def test_same_version_again_changes_choice_and_time(self, e2e_client, first, second):
+        assert self._agree(e2e_client, analytics=first).status_code == 200
+        if first is not None:
+            self._age_choice("test-user-id")
+
+        r = self._agree(e2e_client, analytics=second)
+
+        assert r.status_code == 200, r.text
+        assert r.json()["analytics_consent"] is second
+        assert self._when(r.json()["analytics_consent_updated_at"]) > self._when(self.EARLIER)
+        assert r.json()["consent_required"] is False
+
+    @pytest.mark.parametrize("value", [True, False])
+    @pytest.mark.parametrize("body", [{}, {"analytics": None}], ids=["omitted", "null"])
+    def test_same_version_again_without_choice_keeps_it(self, e2e_client, value, body):
+        assert self._agree(e2e_client, analytics=value).status_code == 200
+        self._age_choice("test-user-id")
+
+        r = self._agree(e2e_client, **body)
+
+        assert r.status_code == 200, r.text
+        assert self._choice(r.json()) == (value, self.EARLIER)
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_same_value_again_keeps_time(self, e2e_client, value):
+        assert self._agree(e2e_client, analytics=value).status_code == 200
+        self._age_choice("test-user-id")
+
+        r = self._agree(e2e_client, analytics=value)
+
+        assert self._choice(r.json()) == (value, self.EARLIER)
+
+    def test_other_version_is_refused_and_changes_nothing(self, e2e_client):
+        assert self._agree(e2e_client, analytics=True).status_code == 200
+        self._age_choice("test-user-id")
+        stored = e2e_client.get("/v1/users/me").json()
+
+        r = self._agree(e2e_client, version="2000-01-01", analytics=False)
+
+        assert r.status_code == 409
+        assert e2e_client.get("/v1/users/me").json() == stored
+        assert self._choice(stored) == (True, self.EARLIER)
+
+    @pytest.mark.parametrize("value", ["yes", "true", 1, 0, [True]])
+    def test_non_boolean_choice_is_422_and_records_nothing(self, e2e_client, value):
+        r = self._agree(e2e_client, analytics=value)
+
+        assert r.status_code == 422
+        profile = e2e_client.get("/v1/users/me").json()
+        assert profile["consent_required"] is True
+        assert self._choice(profile) == (None, None)
+
+    @pytest.mark.parametrize("sent", [None, False])
+    def test_new_terms_version_starts_from_what_its_consent_sent(self, e2e_client, monkeypatch, sent):
+        assert self._agree(e2e_client, analytics=True).status_code == 200
+        monkeypatch.setattr(app_config.settings, "CONSENT_VERSION", "2099-01-01")
+
+        pending = e2e_client.get("/v1/users/me").json()
+        assert pending["consent_required"] is True
+        assert self._choice(pending) == (None, None)
+
+        r = self._agree(e2e_client, analytics=sent)
+
+        assert r.json()["consent_required"] is False
+        assert r.json()["analytics_consent"] is sent
+        assert (r.json()["analytics_consent_updated_at"] is None) is (sent is None)
+
+    def test_each_member_has_own_choice(self, multi_user_e2e):
+        a = multi_user_e2e.as_user("user-a")
+        b = multi_user_e2e.as_user("user-b")
+        assert self._agree(a, analytics=True).status_code == 200
+        assert self._agree(b, analytics=True).status_code == 200
+        self._age_choice("user-b")
+
+        assert self._agree(a, analytics=False).status_code == 200
+
+        assert a.get("/v1/users/me").json()["analytics_consent"] is False
+        assert self._choice(b.get("/v1/users/me").json()) == (True, self.EARLIER)
+
+    def test_every_profile_response_has_choice(self, multi_user_e2e, monkeypatch):
+        monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", "")  # 세션 폐기 호출 없이
+        a = multi_user_e2e.as_user("user-a")
+        assert self._agree(a, analytics=True).status_code == 200
+        self._age_choice("user-a")
+
+        for r in (a.post("/v1/users/me/deletion"), a.delete("/v1/users/me/deletion")):
+            assert r.status_code == 200, r.text
+            assert self._choice(r.json()) == (True, self.EARLIER)
+
+    def test_dormant_member_gets_423_and_keeps_choice(self, multi_user_e2e, monkeypatch):
+        monkeypatch.setattr(app_config.settings, "KRATOS_ADMIN_URL", "")  # 세션 폐기 호출 없이
+        a = multi_user_e2e.as_user("user-a")
+        assert self._agree(a, analytics=True).status_code == 200
+        assert a.post("/v1/users/me/deletion").status_code == 200
+
+        r = self._agree(a, analytics=False)
+
+        assert r.status_code == 423
+        assert r.json()["message"] == "account_deletion_pending"
+        assert a.get("/v1/users/me").json()["analytics_consent"] is True
+
+    def test_member_who_must_consent_can_send_choice_with_consent(self, multi_user_e2e, monkeypatch):
+        monkeypatch.setattr(app_config.settings, "CONSENT_ENFORCED", True)
+        a = multi_user_e2e.as_user("user-a")
+        blocked = a.get("/v1/todos")
+        assert blocked.status_code == 428
+        assert blocked.json()["message"] == "consent_required"
+
+        r = self._agree(a, analytics=False)
+
+        assert r.status_code == 200, r.text
+        assert r.json()["analytics_consent"] is False
+        assert a.get("/v1/todos").status_code == 200

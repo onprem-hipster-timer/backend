@@ -32,9 +32,14 @@ def check_version(data: ConsentCreate) -> None:
         raise ConsentVersionMismatchError()
 
 
+def current_consent(session: Session, sub: str) -> Consent | None:
+    """sub가 현재 약관 버전에 동의한 행. 동의하지 않았으면 None"""
+    return crud.get_consent(session, sub, app_config.settings.CONSENT_VERSION)
+
+
 def consent_pending(session: Session, sub: str) -> bool:
     """sub가 현재 약관 버전에 동의하지 않았으면 True"""
-    return crud.get_consent(session, sub, app_config.settings.CONSENT_VERSION) is None
+    return current_consent(session, sub) is None
 
 
 def record_consent(session: Session, sub: str, data: ConsentCreate) -> Consent:

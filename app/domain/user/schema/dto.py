@@ -20,3 +20,6 @@ class MyProfileRead(CustomModel):
     consent_required: bool  # consent_version에 동의하지 않았으면 True
     deletion_requested_at: Optional[datetime] = None  # 탈퇴 신청 시각. 값이 있으면 휴면 계정
     deletion_scheduled_at: Optional[datetime] = None  # 이 시각 뒤 파기된다 (신청 시각 + 유예 기간)
+    # consent_version 동의와 함께 고른 사용성 분석 동의(선택). 고르지 않았거나 consent_version에 동의하지 않았으면 null
+    analytics_consent: Optional[bool] = None
+    analytics_consent_updated_at: Optional[datetime] = None  # analytics_consent를 마지막으로 정한 시각
