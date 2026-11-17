@@ -299,92 +299,54 @@ class TestImport:
         assert len(response.json()["time_slots"]) == 2 * CELL_COUNT > CELL_COUNT
 
 
-class TestDayCoverage:
-    def test_hourly_answers_stay_valid(self, client, tokens, meeting_id, guest):
-        _answer_as_member(client, tokens, meeting_id, [_slot(2, "09:00", "10:00"), _slot(3, "09:00", "11:00", "unavailable")])
+class TestUnansweredTime:
+    """합친 답은 두 답뿐이다. 어느 쪽도 답하지 않은 시간은 어느 종류로도 채우지 않는다"""
+
+    def test_hourly_partial_answers_are_merged_as_they_are(self, client, tokens, meeting_id, guest):
+        _answer_as_member(client, tokens, meeting_id, [
+            _slot(2, "09:00", "09:30", "unavailable"), _slot(3, "10:00", "11:00"),
+        ])
         _answer_as_guest(client, tokens, meeting_id, guest, [
-            _slot(2, "09:00", "11:00", "unavailable"), _slot(3, "10:00", "11:00"), _slot(4, "09:30", "10:00"),
+            _slot(2, "10:30", "11:00", "unavailable"), _slot(4, "09:30", "10:00"),
         ])
 
         response = _import(client, tokens, meeting_id, _guest_token(tokens, guest))
 
+        assert response.status_code == 200, response.text
         slots = response.json()["time_slots"]
         assert _answer(slots) == [
-            _read(2, "09:00", "10:00"), _read(2, "10:00", "11:00", "unavailable"),
-            _read(3, "09:00", "11:00", "unavailable"), _read(4, "09:30", "10:00"),
+            _read(2, "09:00", "09:30", "unavailable"), _read(2, "10:30", "11:00", "unavailable"),
+            _read(3, "10:00", "11:00"), _read(4, "09:30", "10:00"),
         ]
         _assert_valid_answer(slots)
 
-    def test_hourly_day_left_uncovered_after_range_change_is_filled_with_unavailable(
-            self, client, tokens, meeting_id, guest,
-    ):
-        _answer_as_member(client, tokens, meeting_id, [_slot(2, "09:00", "10:00", "unavailable"), _slot(2, "10:00", "11:00")])
-        _answer_as_guest(client, tokens, meeting_id, guest, [_slot(3, "09:00", "10:00")])
-        response = client.patch(f"/v1/meetings/{meeting_id}", json={"end_time": "12:00:00"}, headers=tokens.member(OWNER))
-        assert response.status_code == 200
-
-        response = _import(client, tokens, meeting_id, _guest_token(tokens, guest))
-
-        slots = response.json()["time_slots"]
-        assert _answer(slots) == [
-            _read(2, "09:00", "10:00", "unavailable"), _read(2, "10:00", "11:00"),
-            _read(2, "11:00", "12:00", "unavailable"), _read(3, "09:00", "10:00"),
-        ]
-        _assert_valid_answer(slots)
-
-    @pytest.fixture
-    def daily_meeting(self, client, tokens) -> str:
-        """2099-03-02~04, 하루 전체. hourly로 만들어 답을 받은 뒤 daily로 바꿀 수 있다"""
-        body = {**MEETING, "end_date": "2099-03-04", "start_time": "00:00:00", "end_time": "00:00:00"}
+    def test_daily_days_nobody_answered_stay_unanswered(self, client, tokens, kratos):
+        """2099-03-02~04 daily 미팅에서 회원은 첫날만 불가능, 게스트는 둘째 날만 가능으로 답했다"""
+        body = {
+            **MEETING, "mode": "daily", "end_date": "2099-03-04",
+            "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440,
+        }
         response = client.post("/v1/meetings", json=body, headers=tokens.member(OWNER))
         assert response.status_code == 201, response.text
         meeting_id = response.json()["id"]
         set_level(client, tokens, meeting_id, "public")
         set_allow_guests(client, tokens, meeting_id, True)
-        return meeting_id
+        guest = make_guest(kratos, uuid.UUID(meeting_id), "민수")
+        first_day = {"start_time": "2099-03-02T00:00:00Z", "end_time": "2099-03-03T00:00:00Z", "kind": "unavailable"}
+        second_day = {"start_time": "2099-03-03T00:00:00Z", "end_time": "2099-03-04T00:00:00Z", "kind": "available"}
+        _answer_as_member(client, tokens, meeting_id, [first_day])
+        _answer_as_guest(client, tokens, meeting_id, guest, [second_day])
 
-    @staticmethod
-    def _day(day: int, kind: str = "available") -> dict:
-        return {"start_time": f"2099-03-0{day}T00:00:00Z", "end_time": f"2099-03-0{day + 1}T00:00:00Z", "kind": kind}
+        response = _import(client, tokens, meeting_id, _guest_token(tokens, guest))
 
-    @staticmethod
-    def _read_day(day: int, kind: str = "available", until: int | None = None) -> tuple:
-        return f"2099-03-0{day}T00:00:00+0000", f"2099-03-0{(until or day) + 1}T00:00:00+0000", kind
-
-    def _set_mode(self, client, tokens, meeting_id, mode: str) -> None:
-        response = client.patch(f"/v1/meetings/{meeting_id}", json={"mode": mode}, headers=tokens.member(OWNER))
         assert response.status_code == 200, response.text
-
-    def test_daily_answers_stay_valid(self, client, tokens, kratos, daily_meeting):
-        self._set_mode(client, tokens, daily_meeting, "daily")
-        guest = make_guest(kratos, uuid.UUID(daily_meeting), "민수")
-        _answer_as_member(client, tokens, daily_meeting, [self._day(3)])
-        _answer_as_guest(client, tokens, daily_meeting, guest, [
-            self._day(2), self._day(3, "unavailable"), self._day(4, "unavailable"),
-        ])
-
-        response = _import(client, tokens, daily_meeting, _guest_token(tokens, guest))
-
-        slots = response.json()["time_slots"]
-        assert _answer(slots) == [self._read_day(2, until=3), self._read_day(4, "unavailable")]
-        _assert_valid_answer(slots)
-
-    def test_daily_days_left_uncovered_after_mode_change_are_filled_with_unavailable(
-            self, client, tokens, kratos, daily_meeting,
-    ):
-        """회원은 hourly일 때 첫날만 불가능으로 답했다. daily에서는 모든 날을 채워야 한다"""
-        _answer_as_member(client, tokens, daily_meeting, [self._day(2, "unavailable")])
-        self._set_mode(client, tokens, daily_meeting, "daily")
-        guest = make_guest(kratos, uuid.UUID(daily_meeting), "민수")
-        _answer_as_guest(client, tokens, daily_meeting, guest, [self._day(3)])
-
-        response = _import(client, tokens, daily_meeting, _guest_token(tokens, guest))
-
-        slots = response.json()["time_slots"]
-        assert _answer(slots) == [
-            self._read_day(2, "unavailable"), self._read_day(3), self._read_day(4, "unavailable"),
+        assert _answer(response.json()["time_slots"]) == [
+            ("2099-03-02T00:00:00+0000", "2099-03-03T00:00:00+0000", "unavailable"),
+            ("2099-03-03T00:00:00+0000", "2099-03-04T00:00:00+0000", "available"),
         ]
-        _assert_valid_answer(slots)
+        assert [(count, unavailable) for _, count, unavailable in _grid(_result(client, meeting_id))] == [
+            (0, 1), (1, 0), (0, 0),
+        ]
 
 
 # ============ 게스트 상태 ============

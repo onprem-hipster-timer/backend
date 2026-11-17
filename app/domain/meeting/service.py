@@ -3,8 +3,6 @@ Meeting Service
 
 일정 조율 서비스 비즈니스 로직 (CRUD + 참여자 관리)
 """
-from bisect import bisect_left
-from datetime import date, datetime
 from math import ceil
 from typing import List
 from uuid import UUID
@@ -27,7 +25,6 @@ from app.domain.meeting.exceptions import (
 from app.domain.meeting.schema.dto import (
     daily_range,
     meeting_dates,
-    meeting_day_ranges,
     merge_intervals,
     subtract_intervals,
     MODE_RULE_FIELDS,
@@ -42,7 +39,7 @@ from app.domain.meeting.schema.dto import (
 )
 from app.domain.visibility.enums import ResourceType
 from app.domain.visibility.service import VisibilityService, is_public
-from app.models.meeting import Meeting, MeetingMode, MeetingParticipant, MeetingTimeSlot, TimeSlotKind
+from app.models.meeting import Meeting, MeetingParticipant, MeetingTimeSlot, TimeSlotKind
 
 ALLOW_GUESTS_REQUIRES_PUBLIC = "allow_guests can be true only while the meeting's visibility is public"
 
@@ -268,7 +265,7 @@ class MeetingService:
             if guest_participant is not None else []
         )
         slots = replace_time_slots(
-            self.session, participant.id, merge_time_slots(meeting, member_slots, guest_slots),
+            self.session, participant.id, merge_time_slots(member_slots, guest_slots),
         )
         return AvailabilityRead(
             participant=ParticipantRead.from_participant(participant, meeting.owner_id),
@@ -431,12 +428,12 @@ def check_time_slots(meeting: Meeting, time_slots: List[TimeSlotCreate]) -> None
         raise TooManyTimeSlotsError(f"Too many time slots: at most {limit} for this meeting")
 
 
-def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) -> List[TimeSlotCreate]:
+def merge_time_slots(member_slots: List, guest_slots: List) -> List[TimeSlotCreate]:
     """게스트 가져오기에서 회원의 가능 시간에 게스트의 가능 시간을 합친다 (시작 순)
 
     - 같은 종류의 구간은 합집합이다. 겹치거나 맞닿은 구간은 하나가 된다
     - 게스트 구간이 회원의 다른 종류 구간과 겹치면 회원의 답을 두고 게스트 구간에서 그 부분을 뺀다
-    - 합친 unavailable 구간이 하루 범위에 걸친 날(_days_to_cover)의 빈 시간을 unavailable로 채운다
+    - 어느 쪽도 답하지 않은 시간은 채우지 않는다
     - 슬롯 수 제한은 보지 않는다
     """
     def intervals(slots, kind):
@@ -450,43 +447,12 @@ def merge_time_slots(meeting: Meeting, member_slots: List, guest_slots: List) ->
     unavailable = merge_intervals(
         member_unavailable + subtract_intervals(intervals(guest_slots, TimeSlotKind.UNAVAILABLE), member_available)
     )
-    covered = merge_intervals(available + unavailable)
-    gaps = [
-        gap
-        for _, start, end in _days_to_cover(meeting, unavailable)
-        for gap in subtract_intervals([(start, end)], covered)
-    ]
-    unavailable = merge_intervals(unavailable + gaps)
     slots = [
         TimeSlotCreate(start_time=start, end_time=end, kind=kind)
         for kind, merged in ((TimeSlotKind.AVAILABLE, available), (TimeSlotKind.UNAVAILABLE, unavailable))
         for start, end in merged
     ]
     return sorted(slots, key=lambda slot: slot.start_time)
-
-
-def _days_to_cover(
-        meeting: Meeting,
-        unavailable: List[tuple[datetime, datetime]],
-) -> List[tuple[date, datetime, datetime]]:
-    """합친 unavailable 구간이 하루 범위에 걸친 묶음의 (날짜, 하루 범위의 시작, 끝). 날짜 순.
-    묶음은 hourly면 날마다, daily·weekly면 미팅 날짜 전체다"""
-    if not unavailable:
-        return []
-    ranges = meeting_day_ranges(meeting)
-    groups = [[day_range] for day_range in ranges] if meeting.mode == MeetingMode.HOURLY else [ranges]
-    return [
-        day_range
-        for group in groups
-        if any(_overlaps(unavailable, start, end) for _, start, end in group)
-        for day_range in group
-    ]
-
-
-def _overlaps(merged: List[tuple[datetime, datetime]], start: datetime, end: datetime) -> bool:
-    """합친 구간 중 [start, end)와 겹치는 것이 있으면 True (맞닿는 것은 겹치지 않는다)"""
-    i = bisect_left(merged, (end,)) - 1  # end 전에 시작하는 마지막 구간
-    return i >= 0 and merged[i][1] > start
 
 
 def replace_time_slots(
