@@ -96,12 +96,18 @@ DELETE /v1/friends/block/{user_id}        # 차단 해제
 
 ```http
 GET    /v1/users/me                       # 본인 표시정보 + 친구코드(공유용)
+PUT    /v1/users/me/consent               # 약관 동의 기록 (사용성 분석 동의는 선택)
 POST   /v1/users/me/deletion              # 회원 탈퇴 신청 (휴면)
 DELETE /v1/users/me/deletion              # 회원 탈퇴 신청 취소
 ```
 
+!!! info "약관 동의와 사용성 분석 동의"
+    `PUT /v1/users/me/consent`의 본문은 `{"version": "<consent_version>", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}`입니다. `version`은 `GET /v1/users/me`의 `consent_version`이고(다르면 `409`), 세 항목은 모두 `true`여야 합니다(아니면 `422`). `analytics`(사용성 분석 동의)는 선택이고 `true`, `false`, `null` 또는 생략입니다. 생략이나 `null`은 고르지 않은 것이고, 불리언이 아닌 값은 `422`입니다. 응답은 본인 프로필(`GET /v1/users/me`와 같은 모양, `200`)입니다.
+    같은 버전에 다시 보내면 처음 동의 기록은 그대로 두고 `analytics`만 바꿉니다. 생략·`null`이거나 저장된 값과 같으면 바꾸지 않습니다. 동의 기록은 약관 버전마다 따로라, 약관 버전이 바뀌면 새 버전에 동의할 때 보낸 `analytics`부터 시작합니다.
+    프로필 응답의 `analytics_consent`는 현재 약관 버전에 동의할 때 고른 값(`true`, `false`, 고르지 않았으면 `null`)이고 `analytics_consent_updated_at`은 그 값을 마지막으로 정한 시각입니다. 현재 버전에 동의하지 않았으면(`consent_required: true`) 둘 다 `null`입니다. `CONSENT_ENFORCED`면 동의하지 않은 회원도 이 경로를 부를 수 있고, 휴면 계정은 `423`입니다. 계정을 파기하면 동의 기록과 함께 지웁니다.
+
 !!! info "회원 탈퇴"
-    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 위 세 경로 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
+    신청하면 계정이 휴면이 되고 모든 기기의 로그인 세션이 끊깁니다. 휴면 계정의 데이터는 다른 사용자에게 보이지 않고, 프로필 조회와 탈퇴 신청·취소 외의 인증 요청은 `423`(`message: "account_deletion_pending"`)입니다. 다시 로그인해 취소할 수 있으며, 응답의 `deletion_scheduled_at`(신청 + `ACCOUNT_DELETION_GRACE_DAYS`일)이 지나면 다음 파기 실행이 모든 데이터와 로그인 계정을 지웁니다. 파기한 계정의 토큰은 `401`(`message: "account_deleted"`)입니다.
 
 ### 게스트 (Guests)
 
@@ -114,7 +120,7 @@ DELETE /v1/guests/me                      # 게스트가 자기를 폐기 (게�
 PUT    /v1/guests/me/consent              # 게스트의 약관 동의 기록 (게스트 JWT)
 ```
 
-게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 이름 찾기·생성·자기 삭제와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 약관 동의 기록은 토큰을 받지 않습니다. `CONSENT_ENFORCED`면 현재 약관 버전에 동의하지 않은 게스트는 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`(`message: "consent_required"`)입니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
+게스트는 `handle`과 비밀번호로 회원처럼 `/auth`에서 로그인하고 JWT를 받습니다. 이름 찾기·생성·자기 삭제와 게스트의 로그인 제출, 게스트 세션의 설정 제출에는 Turnstile 토큰(`X-Turnstile-Token` 헤더)이 필요하고, 토큰은 한 번만 쓸 수 있습니다. 약관 동의 기록은 토큰을 받지 않습니다. 생성의 `consent`와 동의 기록의 본문은 회원의 `PUT /v1/users/me/consent`와 같아 선택 항목 `analytics`도 같은 규칙으로 기록합니다. `CONSENT_ENFORCED`면 현재 약관 버전에 동의하지 않은 게스트는 동의 기록과 자기 삭제 밖의 게스트 경로가 `428`(`message: "consent_required"`)입니다. 게스트 토큰은 위 경로와 게스트를 받는 리소스 경로 외의 모든 인증 경로에서 `403`입니다. 자세한 내용은 [게스트 가이드](../guides/guest.ko.md)를 봅니다.
 
 ### 공휴일 (Holidays)
 

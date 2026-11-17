@@ -162,6 +162,7 @@ SQLite에서는 건너뛰고 `TEST_DATABASE_URL`이 PostgreSQL일 때만 도는 
 |--------|-------------|
 | `tests/domain/guest/test_name_concurrency.py` | 같은 이름의 게스트를 동시에 만들어도 하나만 남는다. 연결 풀이 작아도 동시 생성·이름 변경이 끝나고 다른 요청이 응답한다 |
 | `tests/domain/schedule/test_projection_concurrency.py` | 일정과 할 일의 동시 변경 |
+| `tests/domain/consent/test_record_concurrency.py` | 같은 약관 버전의 동의 기록이 겹쳐도 처음 동의한 행이 남고, 사용성 분석 동의(`analytics`)는 마지막으로 보낸 값이 남는다 |
 
 ## 게스트 계정을 실제 Kratos로 확인
 

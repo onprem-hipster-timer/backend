@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Usability analytics consent**: the consent body (`PUT /v1/users/me/consent`, `PUT /v1/guests/me/consent`, and `consent` of `POST /v1/guests`) takes an optional `analytics` item (`true` or `false`; left out or `null` means not chosen; any other value returns 422). It is stored on the consent record of that terms version (`consent.analytics`, `consent.analytics_updated_at`, migration `34f0c570658d`; existing records are `null`). Sending the same version again keeps the first consent record and changes only `analytics` and the time it was set; leaving it out, `null` or the stored value changes nothing. A new terms version starts from the `analytics` sent with the consent to it. `GET /v1/users/me` and every response shaped like it return `analytics_consent` (`true`, `false` or `null`) and `analytics_consent_updated_at` from the member's consent to the current terms version; both are `null` while `consent_required` is `true`. The value is deleted with the consent records when an account is purged or a guest is discarded. Docs: `docs/api/rest-api.ko.md`, `docs/guides/guest.ko.md`.
+
 ### Changed
 
 - **Guest password length**: `POST /v1/guests` requires a password of at least 4 characters, counted as Unicode code points after NFC normalisation; a shorter password returns 422 (`비밀번호는 4자 이상이어야 합니다`) and no guest or Kratos identity is created. The 72-byte UTF-8 maximum is unchanged. Login, lookup and existing guests are unchanged. Guide: `docs/guides/guest.ko.md`.

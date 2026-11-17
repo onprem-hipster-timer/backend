@@ -36,7 +36,7 @@
 |----|---------|---------|
 | Kratos identity | handle, 비밀번호, 이름(`traits.name`) | 로그인, 세션, JWT의 `name` |
 | `guest` 테이블 | identity id, 리소스, 이름(`name`) | 이름 찾기, 이름 중복 검사, 접근 확인 |
-| `consent` 테이블 | identity id, 동의한 약관 버전, 동의 시각 | 약관 동의 판정(`428`). 회원과 함께 쓴다 |
+| `consent` 테이블 | identity id, 동의한 약관 버전, 동의 시각, 사용성 분석 동의(선택)와 그 시각 | 약관 동의 판정(`428`). 회원과 함께 쓴다 |
 
 ## 구성 요소와 경계
 
@@ -490,7 +490,7 @@ flowchart TD
   "resource_id": "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b",
   "name": "민수",
   "password": "1234",
-  "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
+  "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true, "analytics": false}
 }
 ```
 
@@ -500,7 +500,7 @@ flowchart TD
 | `resource_id` | 리소스 UUID |
 | `name` | [이름 규칙](#이름과-비밀번호-규칙) |
 | `password` | [비밀번호 규칙](#이름과-비밀번호-규칙) |
-| `consent` | 회원 동의(`PUT /v1/users/me/consent`)와 같은 모양. `version`은 이름 찾기의 `consent_version`, `age_over_14`·`terms`·`privacy`(만 14세 이상, 이용약관, 개인정보처리방침)는 모두 `true` |
+| `consent` | 회원 동의(`PUT /v1/users/me/consent`)와 같은 모양. `version`은 이름 찾기의 `consent_version`, `age_over_14`·`terms`·`privacy`(만 14세 이상, 이용약관, 개인정보처리방침)는 모두 `true`. `analytics`(사용성 분석 동의)는 선택이고 `true`·`false`, 생략하거나 `null`이면 고르지 않은 것이다 |
 
 응답 (201):
 
@@ -524,7 +524,7 @@ flowchart TD
 | `409` | `GuestLimitReachedError` | 이 리소스에 게스트가 이미 100명이다 |
 | `403` | `GuestVerificationFailedError` | Turnstile 토큰을 받지 않았다. 위젯에서 새 토큰을 받아 다시 보낸다 |
 | `503` | `GuestServiceUnavailableError` | Turnstile 확인 서버나 Kratos에 닿지 않는다. 게스트는 만들어지지 않는다 |
-| `422` | | 입력 규칙 위반. `consent`가 없거나 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
+| `422` | | 입력 규칙 위반. `consent`가 없거나 세 항목 중 하나라도 빠졌거나 `true`가 아니거나 `analytics`가 불리언·`null`이 아니다 |
 | `429` | | IP당 분당 100회를 넘었다 (이름 찾기와 따로 센다) |
 
 ### 로그인과 JWT
@@ -630,17 +630,17 @@ sequenceDiagram
 
 ### 약관 동의 — `PUT /v1/guests/me/consent`
 
-게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다.
+게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다. `analytics`(사용성 분석 동의)는 선택입니다.
 
 ```json
-{"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}
+{"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}
 ```
 
 | 상태 | `error_type` | 뜻 |
 |------|--------------|----|
-| `204` | | 기록했다. 같은 버전에 다시 동의해도 `204`이고 처음 기록을 둔다 |
+| `204` | | 기록했다. 같은 버전에 다시 동의해도 `204`이고 처음 기록을 두며, `analytics`를 보냈고 저장된 값과 다르면 그 값과 시각만 바꾼다 |
 | `409` | `ConsentVersionMismatchError` | `version`이 현재 약관 시행일이 아니다 |
-| `422` | | 세 항목 중 하나라도 빠졌거나 `true`가 아니다 |
+| `422` | | 세 항목 중 하나라도 빠졌거나 `true`가 아니거나 `analytics`가 불리언·`null`이 아니다 |
 | `403` | `GuestAccessDeniedError` | 게스트 행이 없다(폐기된 게스트). 회원 토큰도 `403` |
 | `401` | | 토큰이 없거나 `schema_id` 클레임이 없다 |
 
