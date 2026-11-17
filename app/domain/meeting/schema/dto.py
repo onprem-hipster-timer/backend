@@ -45,6 +45,22 @@ def meeting_dates(start_date: date, end_date: date, excluded_dates: List[date]) 
     return [day for day in days if day not in excluded]
 
 
+def meeting_day_ranges(meeting) -> List[tuple[date, datetime, datetime]]:
+    """미팅 날짜마다 (날짜, 하루 범위의 시작, 끝). 날짜 순
+
+    하루 범위는 미팅 시간대의 start_time~end_time(00:00이면 다음 날 00:00)을 UTC naive 시각으로 바꾼 것이다.
+    일광 절약 시간 전환이 있는 날은 실제 경과 시간만큼 짧거나 길다.
+    """
+    zone = ZoneInfo(meeting.timezone)
+    ranges = []
+    for day in meeting_dates(meeting.start_date, meeting.end_date, meeting.excluded_dates):
+        end_day = day + timedelta(days=1) if meeting.end_time == time(0) else day
+        start = ensure_utc_naive(datetime.combine(day, meeting.start_time, zone))
+        end = ensure_utc_naive(datetime.combine(end_day, meeting.end_time, zone))
+        ranges.append((day, start, end))
+    return ranges
+
+
 def _validate_title(v: str) -> str:
     """앞뒤 공백을 뺀 1–200자"""
     v = v.strip()

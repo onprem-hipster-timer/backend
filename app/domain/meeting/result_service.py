@@ -5,16 +5,14 @@ Meeting Result Service
 """
 from bisect import bisect_left
 from collections import defaultdict
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import List
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from sqlmodel import Session
 
 from app.core.auth import CurrentUser
 from app.crud import meeting as crud
-from app.domain.dateutil.service import ensure_utc_naive
 from app.domain.meeting.schema.dto import (
     MeetingRead,
     ParticipantRead,
@@ -22,7 +20,7 @@ from app.domain.meeting.schema.dto import (
     AvailabilityRead,
     AvailabilityCell,
     MeetingResultRead,
-    meeting_dates,
+    meeting_day_ranges,
     merge_intervals,
 )
 from app.domain.meeting.service import MeetingService
@@ -128,17 +126,12 @@ class MeetingResultService:
         """
         결과 그리드의 칸 [start, end) (UTC naive, 시작 순)
 
-        미팅 날짜마다 미팅 시간대의 start_time~end_time(00:00이면 다음 날 00:00)을 UTC 시각으로 바꾸고,
-        그 사이를 실제 경과 시간 time_slot_minutes마다 나눕니다. 일광 절약 시간 전환이 있는 날도
-        칸은 이어지는 실제 시각이고, 마지막 칸은 하루 범위의 끝에서 자릅니다.
+        미팅 날짜마다 하루 범위(meeting_day_ranges)를 실제 경과 시간 time_slot_minutes마다 나눕니다.
+        일광 절약 시간 전환이 있는 날도 칸은 이어지는 실제 시각이고, 마지막 칸은 하루 범위의 끝에서 자릅니다.
         """
-        zone = ZoneInfo(meeting.timezone)
         step = timedelta(minutes=meeting.time_slot_minutes)
         cells = []
-        for day in meeting_dates(meeting.start_date, meeting.end_date, meeting.excluded_dates):
-            end_day = day + timedelta(days=1) if meeting.end_time == time(0) else day
-            current = ensure_utc_naive(datetime.combine(day, meeting.start_time, zone))
-            day_end = ensure_utc_naive(datetime.combine(end_day, meeting.end_time, zone))
+        for _, current, day_end in meeting_day_ranges(meeting):
             while current < day_end:
                 cell_end = min(current + step, day_end)
                 cells.append((current, cell_end))
