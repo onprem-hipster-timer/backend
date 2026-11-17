@@ -26,6 +26,12 @@ class MeetingMode(str, Enum):
     WEEKLY = "weekly"  # 요일만 고른다 (매주 반복)
 
 
+class TimeSlotKind(str, Enum):
+    """참여자가 고른 시간 구간의 종류"""
+    AVAILABLE = "available"  # 가능
+    UNAVAILABLE = "unavailable"  # 불가능
+
+
 class DateList(TypeDecorator):
     """date 목록을 ISO 날짜 문자열의 JSON 배열로 저장한다"""
     impl = JSON
@@ -152,7 +158,7 @@ class MeetingParticipant(UUIDBase, TimestampMixin, table=True):
 
 class MeetingTimeSlot(UUIDBase, table=True):
     """
-    참여자가 선택한 가능 시간 슬롯
+    참여자가 고른 시간 구간 (가능 또는 불가능)
 
     반열린 구간 [start_time, end_time)을 받은 그대로 저장한다. 미팅의 날짜·시간·칸과는 무관하다
     """
@@ -167,9 +173,19 @@ class MeetingTimeSlot(UUIDBase, table=True):
         )
     )
 
-    # 가능 시간 (UTC naive, end_time은 포함하지 않음)
+    # 구간 (UTC naive, end_time은 포함하지 않음)
     start_time: NaiveDatetime
     end_time: NaiveDatetime
+
+    # 구간의 종류. 결과 그리드의 count는 available만 센다
+    kind: TimeSlotKind = Field(
+        default=TimeSlotKind.AVAILABLE,
+        sa_column=Column(
+            SQLEnum(TimeSlotKind, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=False,
+            server_default=TimeSlotKind.AVAILABLE.value,
+        ),
+    )
 
     __table_args__ = (
         CheckConstraint("start_time < end_time", name="ck_time_slot_range"),

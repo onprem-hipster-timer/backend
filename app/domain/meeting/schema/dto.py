@@ -15,7 +15,7 @@ from pydantic.experimental.missing_sentinel import MISSING
 
 from app.core.base_model import CustomModel
 from app.domain.dateutil.service import convert_utc_naive_to_timezone, ensure_utc_naive
-from app.models.meeting import MeetingMode
+from app.models.meeting import MeetingMode, TimeSlotKind
 from app.models.visibility import VisibilityLevel
 from app.utils.validators import validate_time_order
 
@@ -326,6 +326,7 @@ class TimeSlotCreate(CustomModel):
     """가능 시간 생성 DTO: 반열린 구간 [start_time, end_time). 시간대가 없는 값은 UTC로 읽는다"""
     start_time: datetime
     end_time: datetime
+    kind: TimeSlotKind = TimeSlotKind.AVAILABLE
 
     @field_validator("start_time", "end_time")
     @classmethod
@@ -348,6 +349,7 @@ class TimeSlotRead(CustomModel):
     participant_id: UUID
     start_time: datetime
     end_time: datetime
+    kind: TimeSlotKind
 
     def to_timezone(self, tz: timezone | str | None) -> "TimeSlotRead":
         """UTC naive datetime 필드를 지정된 타임존의 aware datetime으로 변환"""

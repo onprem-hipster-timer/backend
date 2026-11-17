@@ -25,7 +25,7 @@ from app.domain.meeting.schema.dto import (
     meeting_dates,
 )
 from app.domain.meeting.service import MeetingService
-from app.models.meeting import Meeting
+from app.models.meeting import Meeting, TimeSlotKind
 
 
 class MeetingResultService:
@@ -98,10 +98,11 @@ class MeetingResultService:
         cell_starts = [start for start, _ in cells]
         counts = [0] * len(cells)
 
-        # 모든 참여자의 시간 슬롯을 JOIN 한 번으로 조회 (N+1 제거)
+        # 모든 참여자의 시간 슬롯을 JOIN 한 번으로 조회 (N+1 제거). count는 available 구간만 센다
         intervals_by_participant: dict[UUID, list[tuple[datetime, datetime]]] = defaultdict(list)
         for slot in crud.get_time_slots_by_meeting(self.session, meeting.id):
-            intervals_by_participant[slot.participant_id].append((slot.start_time, slot.end_time))
+            if slot.kind == TimeSlotKind.AVAILABLE:
+                intervals_by_participant[slot.participant_id].append((slot.start_time, slot.end_time))
 
         # 합친 구간은 서로 겹치지 않으므로 참여자는 칸마다 많아야 한 번 센다
         for intervals in intervals_by_participant.values():

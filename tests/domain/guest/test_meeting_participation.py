@@ -111,6 +111,18 @@ class TestAvailability:
         assert [s["participant_id"] for s in response.json()] == [participant["id"]]
         assert cell_count(client.get(f"/v1/meetings/{meeting_id}/result").json()) == 1
 
+    def test_guest_sets_unavailable_slot_and_it_is_not_counted(self, client, tokens, meeting_id, guest):
+        headers = tokens.guest(guest.identity_id)
+        participant = participate(client, meeting_id, headers)
+
+        response = set_slots(client, meeting_id, participant["id"], headers, slots=[{**SLOT, "kind": "unavailable"}])
+
+        assert response.status_code == 200
+        assert [s["kind"] for s in response.json()] == ["unavailable"]
+        availability = client.get(f"/v1/meetings/{meeting_id}/availability", headers=headers).json()
+        assert [s["kind"] for a in availability for s in a["time_slots"]] == ["unavailable"]
+        assert cell_count(client.get(f"/v1/meetings/{meeting_id}/result").json()) == 0
+
     def test_replacing_slots_replaces_all(self, client, tokens, meeting_id, guest):
         headers = tokens.guest(guest.identity_id)
         participant = participate(client, meeting_id, headers)
