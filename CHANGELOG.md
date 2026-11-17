@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.17-888f3e5] - 2026-11-17
+
 ### Added
 
 - **Usability analytics consent**: the consent body (`PUT /v1/users/me/consent`, `PUT /v1/guests/me/consent`, and `consent` of `POST /v1/guests`) takes an optional `analytics` item (`true` or `false`; left out or `null` means not chosen; any other value returns 422). It is stored on the consent record of that terms version (`consent.analytics`, `consent.analytics_updated_at`, migration `34f0c570658d`; existing records are `null`). Sending the same version again keeps the first consent record and changes only `analytics` and the time it was set; leaving it out, `null` or the stored value changes nothing. A new terms version starts from the `analytics` sent with the consent to it. `GET /v1/users/me` and every response shaped like it return `analytics_consent` (`true`, `false` or `null`) and `analytics_consent_updated_at` from the member's consent to the current terms version; both are `null` while `consent_required` is `true`. The value is deleted with the consent records when an account is purged or a guest is discarded. Docs: `docs/api/rest-api.ko.md`, `docs/guides/guest.ko.md`.
@@ -538,7 +544,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.16-6e39e06...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.17-888f3e5...HEAD
+[v2026.11.17-888f3e5]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.16-6e39e06...v2026.11.17-888f3e5
 [v2026.11.16-6e39e06]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-da99ae8...v2026.11.16-6e39e06
 [v2026.11.15-da99ae8]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...v2026.11.15-da99ae8
 [v2026.11.15-ea415eb]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.14-27a3ef9...v2026.11.15-ea415eb
