@@ -103,12 +103,12 @@ flowchart TB
 POST /v1/guests/lookup
 X-Turnstile-Token: <위젯 토큰 1>
 {"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수"}
-→ 200 {"handle": null, "consent_version": "2026-11-13"}
+→ 200 {"handle": null, "consent_version": "2026-11-19"}
 
 POST /v1/guests
 X-Turnstile-Token: <위젯 토큰 2>
 {"resource_type": "meeting", "resource_id": "<uuid>", "name": "민수", "password": "1234",
- "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true}}
+ "consent": {"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true}}
 → 201 {"guest_id": "0b9c...", "handle": "0b9c...@guest.invalid", ...}
 
 GET  /auth/self-service/login/api
@@ -468,7 +468,7 @@ flowchart TD
 응답 (200): 그 이름의 게스트가 있으면 `handle`이 `"<guest_id>@guest.invalid"`, 없으면 `null`입니다. `consent_version`은 현재 약관 시행일(`CONSENT_VERSION`)이고, 생성과 동의 기록에 그대로 보냅니다.
 
 ```json
-{"handle": null, "consent_version": "2026-11-13"}
+{"handle": null, "consent_version": "2026-11-19"}
 ```
 
 | 상태 | 뜻 |
@@ -490,7 +490,7 @@ flowchart TD
   "resource_id": "6f1c2a9e-3b4d-4e5f-8a7b-9c0d1e2f3a4b",
   "name": "민수",
   "password": "1234",
-  "consent": {"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true, "analytics": false}
+  "consent": {"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true, "analytics": false}
 }
 ```
 
@@ -633,7 +633,7 @@ sequenceDiagram
 게스트 JWT가 필요합니다. Turnstile 토큰은 받지 않습니다. 본문은 회원의 `PUT /v1/users/me/consent`와 같습니다. `analytics`(사용성 분석 동의)는 선택입니다.
 
 ```json
-{"version": "2026-11-13", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}
+{"version": "2026-11-19", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}
 ```
 
 | 상태 | `error_type` | 뜻 |

@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     GRAPHQL_ENABLE_INTROSPECTION: bool = True  # 개발 환경에서만 True
 
     # 이용약관·개인정보처리방침 시행일. 바꾸면 모든 사용자에게 다시 동의를 받는다.
-    CONSENT_VERSION: str = "2026-11-13"
+    CONSENT_VERSION: str = "2026-11-19"
     # True면 현재 버전에 동의하지 않은 사용자는 프로필 조회·동의 기록 외의 인증 요청이 428
     # (게스트는 동의 기록·자기 삭제 외의 게스트 경로가 428)
     CONSENT_ENFORCED: bool = True

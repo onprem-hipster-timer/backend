@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Terms version**: the default `CONSENT_VERSION` is `2026-11-19` (terms and privacy policy effective 2026-11-19), so members and guests are asked to accept them on their next use.
 - **Guest password length**: `POST /v1/guests` requires a password of at least 4 characters, counted as Unicode code points after NFC normalisation; a shorter password returns 422 (`비밀번호는 4자 이상이어야 합니다`) and no guest or Kratos identity is created. The 72-byte UTF-8 maximum is unchanged. Login, lookup and existing guests are unchanged. Guide: `docs/guides/guest.ko.md`.
 - **Guest whitespace-only password**: `POST /v1/guests` refuses a password made only of whitespace characters (the same whitespace as the guest name rules: Python whitespace and Unicode Zs, such as spaces, tabs, line breaks, NBSP and U+3000) with 422 (`비밀번호에는 공백이 아닌 문자가 있어야 합니다`), and no guest or Kratos identity is created. A password with any other character is accepted and stored as sent, without trimming. Login, lookup and existing guests are unchanged. Guide: `docs/guides/guest.ko.md`.
 
