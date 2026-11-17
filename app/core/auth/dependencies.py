@@ -149,6 +149,7 @@ DORMANT_ALLOWED_ROUTES = frozenset({
 CONSENT_ALLOWED_ROUTES = frozenset({
     ("GET", "/v1/users/me"),
     ("PUT", "/v1/users/me/consent"),
+    ("PUT", "/v1/users/me/analytics-consent"),  # 선택 동의. 약관 동의와 따로다
     ("POST", "/v1/users/me/deletion"),
     ("DELETE", "/v1/users/me/deletion"),
 })

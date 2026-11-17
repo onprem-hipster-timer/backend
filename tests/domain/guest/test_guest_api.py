@@ -1,4 +1,5 @@
 """게스트 엔드포인트 (POST /v1/guests/lookup, POST /v1/guests, DELETE /v1/guests/me)와 플래그"""
+import unicodedata
 import uuid
 
 import pytest
@@ -148,11 +149,75 @@ def test_invalid_password_is_422(guest_client, kratos, resource, password):
     assert kratos.identities == {}
 
 
-@pytest.mark.parametrize("password", ["1", " ", "a" * 72, "가" * 24, "1234"])
-def test_any_short_password_is_accepted(guest_client, kratos, resource, password):
+@pytest.mark.parametrize("password", ["1234", "가나다라", "🙂🙂🙂🙂", "a" * 72, "가" * 24])
+def test_password_of_4_characters_up_to_72_bytes_is_accepted(guest_client, kratos, resource, password):
     r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
     assert r.status_code == 201
     assert kratos.passwords[guest_rows()[0].identity_id] == password
+
+
+@pytest.mark.parametrize(
+    "password",
+    ["    ", " " * 72, "\t\t\t\t", "    ", "　　　　", " \t\n  　"],
+    ids=["4_spaces", "72_spaces", "tabs", "nbsp", "ideographic_space", "mixed"],
+)
+def test_whitespace_only_password_is_422(guest_client, kratos, resource, password):
+    """공백 문자는 이름 규칙과 같다 (Python 공백, 유니코드 Zs)"""
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
+
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body", "password"]]
+    assert detail[0]["msg"].endswith("비밀번호에는 공백이 아닌 문자가 있어야 합니다")
+    assert kratos.identities == {}
+    assert guest_rows() == []
+
+
+@pytest.mark.parametrize("password", ["a   ", " ab c", "　가　　", "\t\t\t1"])
+def test_password_with_spaces_is_stored_as_sent(guest_client, kratos, resource, password):
+    """공백이 아닌 문자가 하나라도 있으면 받고, 앞뒤 공백을 떼지 않는다"""
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
+    assert r.status_code == 201, r.text
+    assert kratos.passwords[guest_rows()[0].identity_id] == password
+
+
+@pytest.mark.parametrize(
+    "password",
+    ["1", "123", " ", "   ", "가나다", "🙂🙂🙂", "\U00020000\U00020001\U00020002"],
+    ids=["1_char", "3_chars", "1_space", "3_spaces", "3_hangul", "3_emoji", "3_supplementary_cjk"],
+)
+def test_password_shorter_than_4_characters_is_422(guest_client, kratos, resource, password):
+    """길이는 코드 포인트 수다. 바이트 수가 4 이상이어도 3자면 거절한다"""
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
+
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body", "password"]]
+    assert detail[0]["msg"].endswith("비밀번호는 4자 이상이어야 합니다")
+    assert kratos.identities == {}
+    assert guest_rows() == []
+
+
+@pytest.mark.parametrize("password", ["가나다", "ééé"], ids=["hangul", "latin"])
+def test_password_length_is_counted_after_normalisation(guest_client, kratos, resource, password):
+    """NFD로 4자 이상이어도 NFC로 3자면 거절한다"""
+    assert len(_nfd(password)) >= 4
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd(password)))
+    assert r.status_code == 422, r.text
+    assert kratos.identities == {}
+
+
+def test_nfd_password_of_4_characters_is_accepted_as_nfc(guest_client, kratos, resource):
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd("가나다라")))
+    assert r.status_code == 201, r.text
+    assert kratos.passwords[guest_rows()[0].identity_id] == "가나다라"
+
+
+def test_combining_marks_without_precomposed_form_are_counted(guest_client, kratos, resource):
+    """NFC로 합쳐지지 않는 결합 문자는 따로 센다 (q + U+0307 두 번 = 4자)"""
+    password = "q\u0307q\u0307"
+    assert len(unicodedata.normalize("NFC", password)) == 4
+    assert guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password)).status_code == 201
 
 
 @pytest.mark.parametrize("field", ["resource_type", "resource_id", "name", "password"])
@@ -367,8 +432,8 @@ def test_nfd_name_is_stored_as_nfc(guest_client, kratos, resource):
 
 
 def test_nfd_password_is_stored_as_nfc(guest_client, kratos, resource):
-    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd("비밀")))
-    assert kratos.passwords[guest_rows()[0].identity_id] == "비밀"
+    guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=_nfd("비밀번호")))
+    assert kratos.passwords[guest_rows()[0].identity_id] == "비밀번호"
 
 
 def test_name_length_is_measured_after_normalisation(guest_client, kratos, resource):

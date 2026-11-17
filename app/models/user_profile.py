@@ -16,10 +16,19 @@ OIDC sub ↔ 표시 정보(display_name, avatar_url) 매핑.
   친구 추가 매칭용으로만 사용한다. 사용자 검색/목록/응답에는 노출하지 않는다.
 - 외부 공유는 `sub`가 아니라 `friend_code`로만 한다(OIDC subject 비노출).
 """
+from enum import Enum
+
 from pydantic import NaiveDatetime
+from sqlalchemy import Column, Enum as SQLEnum
 from sqlmodel import Field
 
 from app.models.base import TimestampMixin
+
+
+class AnalyticsConsent(str, Enum):
+    """사용성 분석 동의 (선택). 약관 동의(app/models/consent.py)와 따로다"""
+    GRANTED = "granted"
+    DENIED = "denied"
 
 
 class UserProfile(TimestampMixin, table=True):
@@ -31,6 +40,7 @@ class UserProfile(TimestampMixin, table=True):
     - display_name: 표시명 (OIDC `name` 클레임, 없으면 None)
     - avatar_url: 아바타 URL (OIDC `picture` 클레임, 없으면 None)
     - friend_code: 친구 추가용 불투명 코드 (외부 공유 식별자, unique)
+    - analytics_consent: 사용성 분석 동의 (본인이 PUT /v1/users/me/analytics-consent로 정한다)
     """
     __tablename__ = "user_profile"
 
@@ -45,3 +55,13 @@ class UserProfile(TimestampMixin, table=True):
     verified_email: str | None = Field(default=None, nullable=True, index=True)
     # 탈퇴를 신청한 시각(UTC). 값이 있으면 휴면 계정이며, 유예 기간이 지나면 파기한다.
     deletion_requested_at: NaiveDatetime | None = Field(default=None, nullable=True, index=True)
+    # 사용성 분석 동의. 고르지 않았으면 None
+    analytics_consent: AnalyticsConsent | None = Field(
+        default=None,
+        sa_column=Column(
+            SQLEnum(AnalyticsConsent, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+            nullable=True,
+        ),
+    )
+    # analytics_consent를 마지막으로 바꾼 시각(UTC)
+    analytics_consent_updated_at: NaiveDatetime | None = Field(default=None, nullable=True)

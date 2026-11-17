@@ -87,7 +87,7 @@ async def test_concurrent_creates_of_one_name_leave_one_row_and_one_identity(slo
     make_guest(slow_kratos, resource, name="영희")
 
     results = await asyncio.gather(
-        *(service.create(_create(resource, password=f"p{i}")) for i in range(5)),
+        *(service.create(_create(resource, password=f"pass{i}")) for i in range(5)),
         return_exceptions=True,
     )
 
