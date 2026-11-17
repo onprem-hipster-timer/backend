@@ -408,10 +408,11 @@ class AvailabilityRead(CustomModel):
 
 
 class AvailabilityCell(CustomModel):
-    """결과 그리드의 칸 [start_time, end_time)과 그 칸을 모두 덮는 가능 시간을 가진 참여자 수"""
+    """결과 그리드의 칸 [start_time, end_time)과 그 칸을 모두 덮는 available·unavailable 구간을 가진 참여자 수"""
     start_time: datetime
     end_time: datetime
     count: int
+    unavailable_count: int
 
     def to_timezone(self, tz: timezone | str | None) -> "AvailabilityCell":
         if tz is None:
@@ -420,6 +421,7 @@ class AvailabilityCell(CustomModel):
             start_time=convert_utc_naive_to_timezone(self.start_time, tz),
             end_time=convert_utc_naive_to_timezone(self.end_time, tz),
             count=self.count,
+            unavailable_count=self.unavailable_count,
         )
 
 

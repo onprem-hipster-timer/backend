@@ -228,3 +228,54 @@ def test_different_participants_may_overlap_with_different_kinds(multi_user_e2e)
         member, meeting_id, _participate(member, meeting_id), [_slot("09:00", "10:00", "unavailable")],
     ).status_code == 200
 
+
+# ============================================================
+# 결과 칸의 unavailable_count: 그 칸을 모두 덮는 unavailable 구간을 가진 참여자 수
+# ============================================================
+
+def _cells(client, meeting_id: str, **params) -> dict[str, tuple[int, int]]:
+    """첫날 칸 시작 시각(HH:MM) → (count, unavailable_count)"""
+    result = client.get(f"/v1/meetings/{meeting_id}/result", params=params).json()
+    return {
+        cell["start_time"][11:16]: (cell["count"], cell["unavailable_count"])
+        for cell in result["availability_grid"][:4]
+    }
+
+
+@pytest.mark.e2e
+def test_unavailable_count_counts_participants_covering_whole_cell(multi_user_e2e):
+    owner = multi_user_e2e.as_user("owner")
+    member = multi_user_e2e.as_user("member")
+    other = multi_user_e2e.as_user("other")
+    meeting_id = _create(owner)
+    owner.put(f"/v1/visibility/meeting/{meeting_id}", json={"level": "public"})
+    _put(owner, meeting_id, _participate(owner, meeting_id), [
+        _slot("09:00", "10:00", "unavailable"), _slot("10:00", "10:30", "available"),
+    ])
+    # 칸의 일부만 덮는 구간은 세지 않는다
+    _put(member, meeting_id, _participate(member, meeting_id), [
+        _slot("09:15", "09:45", "unavailable"), _slot("10:30", "11:00", "unavailable"),
+    ])
+    # 맞닿은 구간은 함께 칸을 덮고, 같은 구간을 여러 번 보내도 한 번 센다
+    _put(other, meeting_id, _participate(other, meeting_id), [
+        _slot("09:00", "09:20", "unavailable"), _slot("09:20", "10:00", "unavailable"),
+        _slot("09:00", "10:00", "unavailable"),
+    ])
+
+    assert _cells(owner, meeting_id) == {
+        "09:00": (0, 2), "09:30": (0, 2), "10:00": (1, 0), "10:30": (0, 1),
+    }
+    assert _cells(owner, meeting_id, timezone="Asia/Seoul") == {
+        "18:00": (0, 2), "18:30": (0, 2), "19:00": (1, 0), "19:30": (0, 1),
+    }
+
+
+@pytest.mark.e2e
+def test_unavailable_count_is_zero_without_unavailable_slots(e2e_client):
+    meeting_id = _create(e2e_client)
+    _put(e2e_client, meeting_id, _participate(e2e_client, meeting_id), [_slot("09:00", "11:00")])
+
+    result = e2e_client.get(f"/v1/meetings/{meeting_id}/result").json()
+
+    assert [cell["unavailable_count"] for cell in result["availability_grid"]] == [0] * 8
+    assert [cell["count"] for cell in result["availability_grid"]] == [1] * 4 + [0] * 4

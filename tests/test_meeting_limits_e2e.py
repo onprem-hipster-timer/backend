@@ -486,6 +486,7 @@ def test_whole_day_slot_accepted_and_counted(e2e_client, overrides, slot_date):
     cell = next(c for c in result["availability_grid"] if c["start_time"] == f"{slot_date}T00:00:00+0000")
     assert cell == {
         "start_time": f"{slot_date}T00:00:00+0000", "end_time": f"{next_day}T00:00:00+0000", "count": 1,
+        "unavailable_count": 0,
     }
 
 

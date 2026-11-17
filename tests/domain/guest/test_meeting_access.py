@@ -17,6 +17,8 @@ from tests.domain.guest.meeting_helpers import (
     MEETING,
     MEMBER,
     OWNER,
+    SLOT,
+    SLOT_CELL_START,
     call,
     cell_count,
     create_meeting,
@@ -309,6 +311,16 @@ class TestParticipantCountAndRoles:
         response = client.get(f"/v1/meetings/{meeting_id}/result", params={"timezone": "Asia/Seoul"})
 
         assert response.json()["participant_count"] == 3
+
+    def test_unavailable_count_is_same_for_anonymous_guest_and_member(
+            self, client, tokens, meeting_id, guest, participants,
+    ):
+        set_slots(client, meeting_id, participants["owner"], tokens.member(OWNER), slots=[{**SLOT, "kind": "unavailable"}])
+
+        for headers in ({}, tokens.guest(guest.identity_id), tokens.member(MEMBER)):
+            result = client.get(f"/v1/meetings/{meeting_id}/result", headers=headers).json()
+            cell = next(c for c in result["availability_grid"] if c["start_time"] == SLOT_CELL_START)
+            assert (cell["count"], cell["unavailable_count"]) == (2, 1)
 
     def test_anonymous_result_has_no_participant_ids(self, client, meeting_id, participants):
         text = client.get(f"/v1/meetings/{meeting_id}/result").text
