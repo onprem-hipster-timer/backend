@@ -26,7 +26,7 @@ DESCRIPTION_MAX_LENGTH = 2000
 MAX_PERIOD = relativedelta(months=3)
 TIME_SLOT_MINUTES_MIN = 5
 TIME_SLOT_MINUTES_MAX = 1440
-HOURLY_MAX_DAYS = 7
+HOURLY_MAX_MEETING_DAYS = 7
 WEEKLY_DAYS = 7
 # 방식의 규칙(MeetingCreate.validate_mode)이 읽는 필드
 MODE_RULE_FIELDS = ("mode", "start_date", "end_date", "excluded_dates", "start_time", "end_time")
@@ -174,13 +174,15 @@ class MeetingCreate(CustomModel):
 
     @model_validator(mode="after")
     def validate_mode(self, info: ValidationInfo):
-        """hourly는 7일 이하. daily는 하루 전체(00:00–00:00). weekly는 정확히 7일, 제외 날짜 없음, 하루 전체"""
+        """hourly는 미팅 날짜 7일 이하(기간 길이는 보지 않는다). daily는 하루 전체(00:00–00:00).
+        weekly는 정확히 7일, 제외 날짜 없음, 하루 전체"""
         if (info.context or {}).get("skip_mode_rules"):
             return self
         days = (self.end_date - self.start_date).days + 1
+        meeting_days = len(meeting_dates(self.start_date, self.end_date, self.excluded_dates))
         whole_day = self.start_time == time(0) and self.end_time == time(0)
-        if self.mode == MeetingMode.HOURLY and days > HOURLY_MAX_DAYS:
-            raise ValueError(f"hourly meetings must span at most {HOURLY_MAX_DAYS} days")
+        if self.mode == MeetingMode.HOURLY and meeting_days > HOURLY_MAX_MEETING_DAYS:
+            raise ValueError(f"hourly meetings must have at most {HOURLY_MAX_MEETING_DAYS} meeting days")
         if self.mode == MeetingMode.DAILY and not whole_day:
             raise ValueError("daily meetings must cover the whole day (start_time and end_time 00:00)")
         if self.mode == MeetingMode.WEEKLY:
