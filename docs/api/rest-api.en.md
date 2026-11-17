@@ -96,18 +96,12 @@ DELETE /v1/friends/block/{user_id}        # Unblock user
 
 ```http
 GET    /v1/users/me                       # Own display info + friend code (for sharing)
-PUT    /v1/users/me/analytics-consent     # Set optional usability analytics consent
 POST   /v1/users/me/deletion              # Request account deletion (dormant)
 DELETE /v1/users/me/deletion              # Cancel account deletion
 ```
 
-!!! info "Usability analytics consent"
-    Whether a member allows usability analytics (optional) is stored on the account, so the same choice applies on every device. In the `GET /v1/users/me` response, `analytics_consent` is `"granted"`, `"denied"`, or `null` when not chosen, and `analytics_consent_updated_at` is when the value last changed (`null` when not chosen).
-    `PUT /v1/users/me/analytics-consent` with `{"analytics_consent": "granted"}` or `{"analytics_consent": "denied"}` stores it and returns the caller's profile (same shape as `GET /v1/users/me`) with `200`. Sending the stored value again keeps the time. Other values, `null` and a body without the field return `422`; there is no request to go back to `null`.
-    It is separate from the terms consent: it does not affect `consent_required`, and a member who has not consented to the current terms can still change it. Dormant accounts get `423`, guest tokens `403`, and requests without a token `401`. Purging the account deletes it with the profile.
-
 !!! info "Account deletion"
-    A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than reading the profile and requesting or cancelling deletion returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
+    A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than the three paths above returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
 
 ### Guests
 
