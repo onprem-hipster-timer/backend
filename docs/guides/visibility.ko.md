@@ -351,9 +351,10 @@ POST /v1/meetings
 ```json
 {
   "title": "프로젝트 회의 일정 조율",
+  "mode": "hourly",
   "start_date": "2024-02-01",
   "end_date": "2024-02-07",
-  "available_days": [0, 2, 4],
+  "timezone": "Asia/Seoul",
   "start_time": "09:00:00",
   "end_time": "18:00:00"
 }

@@ -11,8 +11,8 @@ Meeting(일정 조율) API는 여러 참여자가 공통으로 가능한 시간�
 ```mermaid
 flowchart TD
     subgraph step1["1. 생성자가 일정 조율 생성"]
-        A0[시간대 설정] --> A1[기간 설정]
-        A1 --> A2[가능한 요일 설정]
+        A0[답하는 방식 설정] --> A1[시간대 설정]
+        A1 --> A2[기간과 제외 날짜 설정]
         A2 --> A3[시간 범위 설정]
         A3 --> A4[시간 슬롯 단위 설정]
         A4 --> A5[접근 권한 설정]
@@ -24,11 +24,11 @@ flowchart TD
     end
 
     subgraph step3["3. 가능 시간 입력"]
-        C1[각 참여자가 자신의 가능 시간 구간 입력]
+        C1[각 참여자가 자신의 가능·불가능 시간 구간 입력]
     end
 
     subgraph step4["4. 결과 확인"]
-        D1[미팅 규칙으로 만든 칸마다] --> D2[가능한 인원 수 표시]
+        D1[미팅 규칙으로 만든 칸마다] --> D2[가능한 인원 수와 불가능한 인원 수 표시]
     end
 
     step1 --> step2 --> step3 --> step4
@@ -84,10 +84,25 @@ flowchart TD
 ### 시간 규칙
 
 - 모든 구간은 반열린 구간 `[start, end)`입니다. 끝 시각은 포함하지 않습니다.
-- 미팅의 `start_date`, `end_date`, `available_days`, `start_time`, `end_time`은 미팅 `timezone`(IANA 이름, 예: `Asia/Seoul`)의 벽시계 값입니다.
+- 미팅의 `start_date`, `end_date`, `excluded_dates`, `start_time`, `end_time`은 미팅 `timezone`(IANA 이름, 예: `Asia/Seoul`)의 벽시계 값입니다.
+- 미팅 날짜는 `start_date`~`end_date`에서 `excluded_dates`를 뺀 날입니다. 첫날과 마지막 날은 언제나 미팅 날짜입니다.
 - 미팅의 `end_time`이 `00:00:00`이면 다음 날 00:00, 곧 하루의 끝입니다. 하루 전체는 `start_time: "00:00:00"`, `end_time: "00:00:00"`입니다.
-- 가능 시간(TimeSlot)은 칸이 아니라 시각 구간입니다. 받은 구간을 UTC로 바꿔 그대로 저장하고, 미팅의 날짜·요일·하루 범위·시간 단위와 맞추거나 나누거나 합치지 않습니다.
-- 칸(그리드)은 결과 조회에서만 쓰입니다. 미팅 규칙으로 칸을 만들고, 칸마다 그 칸을 모두 덮는 가능 시간을 가진 참여자 수를 셉니다.
+- 가능 시간(TimeSlot)은 칸이 아니라 시각 구간이고, 종류(`kind`)가 가능(`available`) 또는 불가능(`unavailable`)입니다. 받은 구간을 UTC로 바꿔 그대로 저장하고, 미팅의 날짜·하루 범위·시간 단위와 맞추거나 나누거나 합치지 않습니다.
+- 칸(그리드)은 결과 조회에서만 쓰입니다. 미팅 규칙으로 칸을 만들고, 칸마다 그 칸을 모두 덮는 가능 구간을 가진 참여자 수와 불가능 구간을 가진 참여자 수를 셉니다.
+
+### 답하는 방식 (mode)
+
+`mode`는 참여자가 미팅에 답하는 방식이고, 프론트엔드는 이 값으로 화면을 정합니다. 다른 필드로 방식을 짐작하지 않습니다.
+
+| `mode` | 참여자가 고르는 것 | 미팅 규칙 |
+|--------|--------------------|-----------|
+| `hourly` | 미팅 날짜와 하루 범위 안의 시간 | 기간은 7일 이하 (`end_date - start_date <= 6`) |
+| `daily` | 미팅 날짜. 하루 전체가 한 답 | 하루 범위는 하루 전체 (`start_time`, `end_time` 모두 `00:00:00`) |
+| `weekly` | 요일 (매주 반복) | 기간은 정확히 7일, `excluded_dates`는 빈 목록, 하루 범위는 하루 전체 |
+
+- 세 방식 모두 가능 시간은 같은 시각 구간으로 저장하고 결과도 같은 칸으로 셉니다. `time_slot_minutes`도 방식과 상관없이 씁니다.
+- `weekly` 미팅의 요일은 7일 기간의 각 날짜입니다. 요일에 답하면 기간 안에서 그 요일인 날짜에 구간을 넣습니다.
+- `mode`를 바꿔도 저장된 날짜와 참여자의 가능 시간은 바뀌지 않습니다. 수정 결과가 바뀐 방식의 규칙을 지켜야 합니다([일정 조율 수정](#일정-조율-수정)).
 
 ### Meeting (일정 조율)
 
@@ -97,10 +112,11 @@ interface Meeting {
   owner_id: string | null;       // 생성자 ID. 로그인하지 않은 방문자와 게스트에게는 null
   title: string;                 // 제목
   description?: string;          // 설명
-  start_date: string;            // 시작 날짜 (YYYY-MM-DD, timezone 기준)
-  end_date: string;              // 종료 날짜 (YYYY-MM-DD, timezone 기준, 포함)
+  start_date: string;            // 시작 날짜 (YYYY-MM-DD, timezone 기준). 언제나 미팅 날짜
+  end_date: string;              // 종료 날짜 (YYYY-MM-DD, timezone 기준, 포함). 언제나 미팅 날짜
+  excluded_dates: string[];      // 기간에서 빼는 날짜 (YYYY-MM-DD, 오름차순)
   timezone: string;              // IANA 시간대 이름 (예: "Asia/Seoul")
-  available_days: number[];      // 가능한 요일 (0=월, 1=화, ..., 6=일)
+  mode: MeetingMode;             // 답하는 방식: "hourly" | "daily" | "weekly"
   start_time: string;            // 하루 시작 시간 (HH:MM:SS, timezone 기준)
   end_time: string;              // 하루 종료 시간 (HH:MM:SS, 포함하지 않음, "00:00:00"이면 하루의 끝)
   time_slot_minutes: number;     // 결과 그리드의 칸 길이 (분)
@@ -134,6 +150,7 @@ interface TimeSlot {
   participant_id: string;        // 참여자 ID
   start_time: string;            // 시작 시각 (ISO 8601)
   end_time: string;              // 끝 시각 (ISO 8601, 포함하지 않음)
+  kind: TimeSlotKind;            // "available"(가능) | "unavailable"(불가능)
 }
 ```
 
@@ -144,14 +161,15 @@ interface TimeSlot {
 interface AvailabilityCell {
   start_time: string;  // 칸 시작 시각 (ISO 8601)
   end_time: string;    // 칸 끝 시각 (ISO 8601, 포함하지 않음)
-  count: number;       // 이 칸을 모두 덮는 가능 시간을 가진 참여자 수
+  count: number;              // 이 칸을 모두 덮는 가능(available) 구간을 가진 참여자 수
+  unavailable_count: number;  // 이 칸을 모두 덮는 불가능(unavailable) 구간을 가진 참여자 수
 }
 
 // 예시 (Asia/Seoul 미팅, 09:00–10:00, 30분, ?timezone=Asia/Seoul)
 const grid: AvailabilityCell[] = [
-  { start_time: "2024-02-05T09:00:00+0900", end_time: "2024-02-05T09:30:00+0900", count: 3 },
-  { start_time: "2024-02-05T09:30:00+0900", end_time: "2024-02-05T10:00:00+0900", count: 2 },
-  { start_time: "2024-02-06T09:00:00+0900", end_time: "2024-02-06T09:30:00+0900", count: 0 },
+  { start_time: "2024-02-05T09:00:00+0900", end_time: "2024-02-05T09:30:00+0900", count: 3, unavailable_count: 0 },
+  { start_time: "2024-02-05T09:30:00+0900", end_time: "2024-02-05T10:00:00+0900", count: 2, unavailable_count: 1 },
+  { start_time: "2024-02-06T09:00:00+0900", end_time: "2024-02-06T09:30:00+0900", count: 0, unavailable_count: 2 },
 ];
 ```
 
@@ -170,10 +188,11 @@ const grid: AvailabilityCell[] = [
 interface MeetingCreate {
   title: string;
   description?: string;
+  mode: MeetingMode;            // "hourly" | "daily" | "weekly" (필수)
   start_date: string;           // "2024-02-01"
   end_date: string;             // "2024-02-07"
+  excluded_dates?: string[];    // [] (기본값). ["2024-02-03", "2024-02-04"]이면 그날을 뺀다
   timezone: string;             // "Asia/Seoul" (필수)
-  available_days: number[];     // [0, 2, 4] = 월, 수, 금
   start_time: string;           // "09:00:00"
   end_time: string;             // "18:00:00", 하루의 끝까지면 "00:00:00"
   time_slot_minutes?: number;   // 30 (기본값)
@@ -190,10 +209,11 @@ interface MeetingCreate {
 {
   "title": "팀 회의 일정 조율",
   "description": "다음 주 회의 일정을 조율합니다",
+  "mode": "hourly",
   "start_date": "2024-02-01",
   "end_date": "2024-02-07",
+  "excluded_dates": ["2024-02-03", "2024-02-04"],
   "timezone": "Asia/Seoul",
-  "available_days": [0, 2, 4],
   "start_time": "09:00:00",
   "end_time": "18:00:00",
   "time_slot_minutes": 30
@@ -206,14 +226,16 @@ interface MeetingCreate {
 |------|------|
 | `title` | 앞뒤 공백을 뺀 1–200자 (앞뒤 공백은 빼고 저장) |
 | `description` | 2000자 이하 |
+| `mode` | 필수. `hourly`, `daily`, `weekly` 중 하나. 방식의 [미팅 규칙](#답하는-방식-mode)을 지켜야 한다 |
 | `start_date`, `end_date` | `start_date <= end_date <= start_date + 3개월`. 3개월 뒤 같은 날이 없으면 그 달 말일 (예: 2024-11-30 → 2025-02-28) |
+| `excluded_dates` | `start_date`보다 뒤이고 `end_date`보다 앞인 날짜만(첫날·마지막 날은 뺄 수 없다), 중복 불가. 오름차순으로 저장 |
 | `timezone` | 필수. IANA 시간대 이름 (예: `Asia/Seoul`, `America/New_York`, `UTC`). `+09:00` 같은 오프셋 문자열은 받지 않음 |
-| `available_days` | 0–6 정수 1개 이상, 중복 불가 |
 | `start_time`, `end_time` | `start_time < end_time`, 또는 `end_time`이 `00:00:00`(하루의 끝) |
 | `time_slot_minutes` | 5–1440이면서 하루 범위 이하. 하루 범위는 `end_time - start_time`이고, `end_time`이 `00:00:00`이면 24:00까지 |
 | `allow_guests` | `false`만 받는다. `true`는 `422` `InvalidMeetingError` ([게스트 계정](#게스트-계정)) |
 
 하루 전체를 한 칸으로 쓰려면 `start_time: "00:00:00"`, `end_time: "00:00:00"`, `time_slot_minutes: 1440`을 보냅니다.
+목록에 없는 필드는 읽지 않습니다.
 
 #### 일정 조율 목록 조회 (내 것만)
 
@@ -248,10 +270,11 @@ interface MeetingCreate {
 interface MeetingUpdate {
   title?: string;
   description?: string;
+  mode?: MeetingMode;
   start_date?: string;
   end_date?: string;
+  excluded_dates?: string[];
   timezone?: string;
-  available_days?: number[];
   start_time?: string;
   end_time?: string;
   time_slot_minutes?: number;
@@ -261,11 +284,12 @@ interface MeetingUpdate {
 // Response: Meeting
 ```
 
-보내지 않은 필드는 저장된 값을 씁니다. `timezone`·`allow_guests`에 `null`을 보내면 422이고, 그 밖의 필드(`description` 제외)에 `null`을 보내면 무시합니다.
+보내지 않은 필드는 저장된 값을 씁니다. `mode`·`excluded_dates`·`timezone`·`allow_guests`에 `null`을 보내면 422이고, 그 밖의 필드(`description` 제외)에 `null`을 보내면 무시합니다. 제외 날짜를 모두 없애려면 `excluded_dates: []`를 보냅니다.
 `allow_guests: true`는 공개 범위가 `public`일 때만 받습니다. 아니면 `422` `InvalidMeetingError`이고 미팅을 바꾸지 않습니다(같이 보낸 다른 필드도). `false`는 언제든 받습니다.
-미팅을 수정해도 저장된 가능 시간은 바뀌지 않습니다. 결과 그리드만 새 규칙(시간대·날짜·하루 범위·시간 단위)으로 다시 만들어집니다.
-저장된 값에 수정 내용을 합친 미팅이 생성의 입력 제한을 어기면 422를 반환하고 미팅을 바꾸지 않습니다
-(예: `start_time`만 저장된 `end_time` 이후로 바꾸는 경우).
+미팅을 수정해도(`mode`를 바꿔도) 저장된 가능 시간은 바뀌지 않습니다. 결과 그리드만 새 규칙(시간대·날짜·제외 날짜·하루 범위·시간 단위)으로 다시 만들어집니다.
+저장된 값에 수정 내용을 합친 미팅이 생성의 입력 제한이나 방식의 규칙을 어기면 422를 반환하고 미팅을 바꾸지 않습니다
+(예: `start_time`만 저장된 `end_time` 이후로 바꾸는 경우, 기간을 바꿔 저장된 제외 날짜가 첫날·마지막 날이 되거나 기간 밖으로 나가는 경우,
+`hourly` 미팅의 기간을 8일 이상으로 늘리는 경우). 기간과 제외 날짜, 방식과 기간·하루 범위처럼 함께 맞춰야 하는 값은 한 요청에 보냅니다.
 
 #### 일정 조율 삭제
 
@@ -340,6 +364,7 @@ interface ParticipantCreate {
 interface TimeSlotCreate {
   start_time: string;          // ISO 8601 시각. 오프셋이 없으면 UTC
   end_time: string;            // ISO 8601 시각, 포함하지 않음
+  kind?: TimeSlotKind;         // "available"(기본값) | "unavailable"
 }
 
 // Request Body: TimeSlotCreate[]
@@ -358,16 +383,33 @@ interface TimeSlotCreate {
   {
     "start_time": "2024-02-05T14:07:00+09:00",
     "end_time": "2024-02-06T10:00:00+09:00"
+  },
+  {
+    "start_time": "2024-02-06T13:00:00+09:00",
+    "end_time": "2024-02-06T15:00:00+09:00",
+    "kind": "unavailable"
   }
 ]
 ```
 
+**응답 예시** (`?timezone=Asia/Seoul`):
+
+```json
+[
+  { "id": "uuid-1", "participant_id": "uuid-p", "start_time": "2024-02-02T09:00:00+0900", "end_time": "2024-02-02T12:00:00+0900", "kind": "available" },
+  { "id": "uuid-2", "participant_id": "uuid-p", "start_time": "2024-02-05T14:07:00+0900", "end_time": "2024-02-06T10:00:00+0900", "kind": "available" },
+  { "id": "uuid-3", "participant_id": "uuid-p", "start_time": "2024-02-06T13:00:00+0900", "end_time": "2024-02-06T15:00:00+0900", "kind": "unavailable" }
+]
+```
+
 - 요청 목록이 그 참여자의 가능 시간 전체가 됩니다.
-- 구간은 받은 그대로(UTC로 바꿔서) 저장합니다. 미팅의 날짜·요일·하루 범위·칸 경계에 맞는지 검사하지 않고, 칸으로 나누거나 겹치는 구간을 합치지도 않습니다. 여러 날에 걸친 구간도 한 행입니다.
+- 구간은 받은 그대로(UTC로 바꿔서) 저장합니다. 미팅의 날짜·하루 범위·칸 경계에 맞는지 검사하지 않고, 칸으로 나누거나 겹치는 구간을 합치지도 않습니다. 여러 날에 걸친 구간도 한 행입니다.
 - `end_time`이 `start_time`보다 뒤가 아니면 422입니다.
-- 한 요청의 구간 수는 미팅의 칸 수까지입니다 (넘으면 422, 저장된 가능 시간은 그대로).
-  칸 수 = 기간 안에서 `available_days`에 해당하는 날 수 × 하루 범위(분) ÷ `time_slot_minutes`, 올림.
-  예: 5일 × 09:00–18:00 / 30분 = 90, 하루 × 00:00–00:00 / 30분 = 48. 기간 안에 해당하는 날이 없으면 칸 수는 0이라 빈 목록만 받습니다.
+- `kind`를 보내지 않은 구간은 `available`입니다. `available`·`unavailable` 밖의 값은 422입니다.
+- 한 요청 안에서 `available` 구간과 `unavailable` 구간이 겹치면 422입니다(저장된 가능 시간은 그대로). 맞닿는 것(앞 구간의 끝 = 뒤 구간의 시작)은 받습니다. 같은 종류의 구간끼리는 겹쳐도 받습니다.
+- 한 요청의 구간 수는 두 종류를 합쳐 미팅의 칸 수까지입니다 (넘으면 422, 저장된 가능 시간은 그대로).
+  칸 수 = 미팅 날짜 수(기간의 날 수 - `excluded_dates` 수) × 하루 범위(분) ÷ `time_slot_minutes`, 올림.
+  예: 5일 × 09:00–18:00 / 30분 = 90, 하루 × 00:00–00:00 / 30분 = 48.
 - 같은 구간을 여러 번 보내면 보낸 만큼 저장되고, 개수 제한에도 그만큼 셉니다.
 
 #### 전체 가능 시간 조회
@@ -387,7 +429,7 @@ interface AvailabilityRead {
 // Response: AvailabilityRead[]
 ```
 
-참여자의 `created_at`과 가능 시간의 `start_time`·`end_time`을 `timezone` 쿼리의 시간대로 반환합니다.
+참여자의 `created_at`과 가능 시간의 `start_time`·`end_time`을 `timezone` 쿼리의 시간대로 반환합니다. 가능 시간마다 `kind`가 있습니다.
 로그인이 필요합니다(로그인하지 않은 방문자는 `401`). 게스트가 받는 응답에서는 모든 참여자의 `user_id`가 `null`이고, 역할은 `is_owner`·`is_guest`로 가립니다. 휴면 회원의 참여자는 빠집니다.
 
 ---
@@ -416,9 +458,10 @@ interface MeetingResult {
 
 칸은 미팅의 시간대에서 만듭니다.
 
-- `start_date`~`end_date` 중 요일이 `available_days`에 있는 날마다 `start_time`부터 `end_time`(`00:00:00`이면 다음 날 00:00)까지를 실제 시각으로 바꾸고, 그 사이를 `time_slot_minutes`마다 나눕니다. 하루 범위가 나누어떨어지지 않으면 마지막 칸은 하루 범위의 끝에서 끝납니다.
+- 미팅 날짜(`start_date`~`end_date`에서 `excluded_dates`를 뺀 날)마다 `start_time`부터 `end_time`(`00:00:00`이면 다음 날 00:00)까지를 실제 시각으로 바꾸고, 그 사이를 `time_slot_minutes`마다 나눕니다. 하루 범위가 나누어떨어지지 않으면 마지막 칸은 하루 범위의 끝에서 끝납니다. 제외 날짜에는 칸이 없습니다.
 - 일광 절약 시간이 바뀌는 날도 칸은 이어지는 실제 시각입니다. 예: `America/New_York` 2024-03-10의 00:00–00:00 / 60분은 23칸이고, 01:00 칸 다음은 03:00 칸입니다.
-- 한 참여자의 가능 시간을 합친 구간이 칸을 모두 덮으면 그 칸에서 한 명으로 셉니다. 예: 09:00–09:15와 09:15–09:30을 함께 보낸 참여자는 09:00–09:30 칸에 셉니다. 칸의 일부만 덮으면 세지 않고, 겹치거나 같은 구간을 여러 번 보내도 한 번만 셉니다.
+- `count`: 한 참여자의 `available` 구간을 합친 구간이 칸을 모두 덮으면 그 칸에서 한 명으로 셉니다. 예: 09:00–09:15와 09:15–09:30을 함께 보낸 참여자는 09:00–09:30 칸에 셉니다. 칸의 일부만 덮으면 세지 않고, 겹치거나 같은 구간을 여러 번 보내도 한 번만 셉니다.
+- `unavailable_count`: `unavailable` 구간을 같은 방법으로 셉니다. 한 참여자의 두 종류 구간은 겹치지 않으므로 한 칸에서 한 참여자는 많아야 한쪽에 들어갑니다. 어느 구간도 칸을 모두 덮지 않은 참여자는 어느 쪽에도 들어가지 않습니다.
 - 칸 밖의 가능 시간은 결과에 나타나지 않습니다.
 
 **응답 예시** (`?timezone=Asia/Seoul`):
@@ -430,8 +473,9 @@ interface MeetingResult {
     "title": "팀 회의 일정 조율",
     "start_date": "2024-02-02",
     "end_date": "2024-02-05",
+    "excluded_dates": ["2024-02-03", "2024-02-04"],
     "timezone": "Asia/Seoul",
-    "available_days": [0, 4],
+    "mode": "hourly",
     "start_time": "09:00:00",
     "end_time": "10:00:00",
     "time_slot_minutes": 30,
@@ -439,10 +483,10 @@ interface MeetingResult {
   },
   "participant_count": 3,
   "availability_grid": [
-    { "start_time": "2024-02-02T09:00:00+0900", "end_time": "2024-02-02T09:30:00+0900", "count": 3 },
-    { "start_time": "2024-02-02T09:30:00+0900", "end_time": "2024-02-02T10:00:00+0900", "count": 2 },
-    { "start_time": "2024-02-05T09:00:00+0900", "end_time": "2024-02-05T09:30:00+0900", "count": 2 },
-    { "start_time": "2024-02-05T09:30:00+0900", "end_time": "2024-02-05T10:00:00+0900", "count": 0 }
+    { "start_time": "2024-02-02T09:00:00+0900", "end_time": "2024-02-02T09:30:00+0900", "count": 3, "unavailable_count": 0 },
+    { "start_time": "2024-02-02T09:30:00+0900", "end_time": "2024-02-02T10:00:00+0900", "count": 2, "unavailable_count": 1 },
+    { "start_time": "2024-02-05T09:00:00+0900", "end_time": "2024-02-05T09:30:00+0900", "count": 2, "unavailable_count": 0 },
+    { "start_time": "2024-02-05T09:30:00+0900", "end_time": "2024-02-05T10:00:00+0900", "count": 0, "unavailable_count": 2 }
   ]
 }
 ```
@@ -452,26 +496,9 @@ interface MeetingResult {
 ## TypeScript 타입 정의
 
 ```typescript
-// ===== 요일 상수 =====
-const DAY_OF_WEEK = {
-  MONDAY: 0,
-  TUESDAY: 1,
-  WEDNESDAY: 2,
-  THURSDAY: 3,
-  FRIDAY: 4,
-  SATURDAY: 5,
-  SUNDAY: 6,
-} as const;
-
-const DAY_LABELS: Record<number, string> = {
-  0: "월",
-  1: "화",
-  2: "수",
-  3: "목",
-  4: "금",
-  5: "토",
-  6: "일",
-};
+// ===== 열거형 =====
+type MeetingMode = "hourly" | "daily" | "weekly";
+type TimeSlotKind = "available" | "unavailable";
 
 // ===== 접근권한 설정 =====
 interface VisibilitySettings {
@@ -488,8 +515,9 @@ interface Meeting {
   description?: string;
   start_date: string;
   end_date: string;
+  excluded_dates: string[];
   timezone: string;
-  available_days: number[];
+  mode: MeetingMode;
   start_time: string;
   end_time: string;
   time_slot_minutes: number;
@@ -503,10 +531,11 @@ interface Meeting {
 interface MeetingCreate {
   title: string;
   description?: string;
+  mode: MeetingMode;
   start_date: string;
   end_date: string;
+  excluded_dates?: string[];
   timezone: string;
-  available_days: number[];
   start_time: string;
   end_time: string;
   time_slot_minutes?: number;
@@ -516,10 +545,11 @@ interface MeetingCreate {
 interface MeetingUpdate {
   title?: string;
   description?: string;
+  mode?: MeetingMode;
   start_date?: string;
   end_date?: string;
+  excluded_dates?: string[];
   timezone?: string;
-  available_days?: number[];
   start_time?: string;
   end_time?: string;
   time_slot_minutes?: number;
@@ -547,11 +577,13 @@ interface TimeSlot {
   participant_id: string;
   start_time: string;  // ISO 8601
   end_time: string;    // ISO 8601, 포함하지 않음
+  kind: TimeSlotKind;
 }
 
 interface TimeSlotCreate {
   start_time: string;  // ISO 8601, 오프셋이 없으면 UTC
   end_time: string;
+  kind?: TimeSlotKind; // 기본값 "available"
 }
 
 // ===== 결과 타입 =====
@@ -559,6 +591,7 @@ interface AvailabilityCell {
   start_time: string;  // ISO 8601
   end_time: string;    // ISO 8601, 포함하지 않음
   count: number;
+  unavailable_count: number;
 }
 
 interface AvailabilityRead {
@@ -599,10 +632,11 @@ async function createMeeting(data: MeetingCreate): Promise<Meeting> {
 const meeting = await createMeeting({
   title: "프로젝트 킥오프 미팅",
   description: "전체 팀원이 참석 가능한 시간을 찾습니다",
-  start_date: "2024-02-01",
-  end_date: "2024-02-14",
+  mode: "hourly",
+  start_date: "2024-02-05",
+  end_date: "2024-02-09",  // hourly는 7일 이하
+  excluded_dates: ["2024-02-07"],
   timezone: "Asia/Seoul",
-  available_days: [0, 1, 2, 3, 4],  // 월-금
   start_time: "09:00:00",
   end_time: "18:00:00",
   time_slot_minutes: 60,
@@ -658,9 +692,9 @@ async function setAvailability(
 const participant = await registerParticipant(meeting.id, "홍길동");
 
 await setAvailability(meeting.id, participant.id, [
-  { start_time: "2024-02-02T09:00:00+09:00", end_time: "2024-02-02T12:00:00+09:00" },
-  { start_time: "2024-02-02T14:00:00+09:00", end_time: "2024-02-02T17:00:00+09:00" },
-  { start_time: "2024-02-05T10:00:00+09:00", end_time: "2024-02-05T15:00:00+09:00" },
+  { start_time: "2024-02-05T09:00:00+09:00", end_time: "2024-02-05T12:00:00+09:00" },
+  { start_time: "2024-02-05T14:00:00+09:00", end_time: "2024-02-05T17:00:00+09:00", kind: "unavailable" },
+  { start_time: "2024-02-06T10:00:00+09:00", end_time: "2024-02-06T15:00:00+09:00" },
 ]);
 ```
 
@@ -711,6 +745,13 @@ console.log("2명 이상 가능한 시간대:", bestSlots);
 범례: ████ 모든 참여자 가능  ░░░ 아무도 불가능
 ```
 
+### 방식별 화면
+
+- `hourly`: 위처럼 미팅 날짜 × 하루 범위의 칸 그리드입니다. 제외 날짜는 칸이 없습니다.
+- `daily`: 미팅 날짜를 고르는 달력입니다. 한 날짜의 답은 그날 00:00부터 다음 날 00:00까지의 구간 하나로 보내면 그날의 모든 칸에 셉니다.
+- `weekly`: 7일 기간의 날짜를 요일로 보여 줍니다. 요일의 답은 기간 안에서 그 요일인 날짜의 하루 전체 구간입니다.
+- 세 방식 모두 참여자는 가능(`available`)과 불가능(`unavailable`)을 고를 수 있고, 결과의 `unavailable_count`로 안 되는 사람 수를 보여 줄 수 있습니다.
+
 ### 색상 가이드
 
 | 상태 | 색상 | 설명 |
@@ -720,6 +761,8 @@ console.log("2명 이상 가능한 시간대:", bestSlots);
 | 일부 가능 | 🟠 노란색 | count >= 총 참여자 수 * 0.3 |
 | 소수 가능 | 🔴 연한 빨간색 | count > 0 |
 | 불가능 | ⚪ 회색 | count == 0 |
+
+`unavailable_count`는 그 칸이 안 된다고 답한 참여자 수입니다. `participant_count - count - unavailable_count`는 그 칸에 답하지 않은 참여자 수입니다.
 
 ### 참여자 선택 UI
 
@@ -774,7 +817,7 @@ function TimeSlotSelector({
 | `401` | 인증 필요 | 토큰이 유효하지 않다. 로그인이 필요한 경로([접근 권한](#접근-권한))에 토큰이 없다 |
 | `403` | 게스트 토큰 | 다른 미팅의 게스트, 게스트 상태가 `OPEN`이 아님, 폐기된 게스트, 회원만 쓰는 미팅 경로 ([게스트 계정](#게스트-계정)) |
 | `404` | 찾을 수 없음 | 존재하지 않거나 접근할 수 없는 일정 조율, 없거나 본인 것이 아닌 참여자, 참여자 빼기에서 그 미팅의 참여자가 아닌 참여자 |
-| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·요일, 미팅 입력 제한·수정 결과 위반, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true` |
+| `422` | 입력 규칙 위반 | 필수 필드 누락, 잘못된 날짜·제외 날짜, 방식의 규칙 위반, 미팅 입력 제한·수정 결과 위반, 가능 구간과 불가능 구간이 겹침, 알 수 없는 `timezone`, `display_name` 규칙 위반, 가능 시간의 끝이 시작보다 뒤가 아님, 가능 시간 수가 칸 수 초과, 공개 범위가 `public`이 아닌데 `allow_guests: true` |
 | `429` | 요청 한도 초과 | [레이트 리밋](../development/rate-limit.ko.md) |
 
 요청 본문 하나만 보고 판단하는 422는 FastAPI 검증 오류 형식(`detail` 배열)입니다.
@@ -832,48 +875,34 @@ async function handleMeetingError(response: Response): Promise<never> {
 
 ## 주의사항
 
-### 1. 요일 인덱스
-
-요일은 **0부터 시작**합니다 (Python의 `weekday()` 방식):
-
-| 인덱스 | 요일 |
-|--------|------|
-| 0 | 월요일 |
-| 1 | 화요일 |
-| 2 | 수요일 |
-| 3 | 목요일 |
-| 4 | 금요일 |
-| 5 | 토요일 |
-| 6 | 일요일 |
-
-### 2. 시간 형식
+### 1. 시간 형식
 
 - 날짜: `YYYY-MM-DD` (예: `2024-02-01`)
 - 미팅의 하루 시간: `HH:MM:SS` (예: `09:00:00`), 미팅 `timezone`의 벽시계 값
 - 가능 시간·결과 칸·`created_at` 등 시각: ISO 8601 (예: `2024-02-02T09:00:00+0900`)
 
-### 3. 타임존
+### 2. 타임존
 
-- 미팅의 날짜·요일·하루 시간은 미팅 `timezone`으로 해석합니다.
+- 미팅의 날짜·제외 날짜·하루 시간은 미팅 `timezone`으로 해석합니다.
 - 가능 시간은 UTC 시각으로 저장합니다. 요청 시각에 오프셋이 없으면 UTC로 읽습니다.
 - `timezone` 쿼리 파라미터는 응답의 시각(`created_at`, `updated_at`, 가능 시간, 결과 칸)을 그 시간대로 바꿔 보여 줄 뿐이고, 결과 칸을 만드는 데는 쓰지 않습니다. 지정하지 않으면 UTC(`+0000`)로 반환합니다.
 - 예: `?timezone=+09:00` 또는 `?timezone=Asia/Seoul`
 
-### 4. 접근 권한
+### 3. 접근 권한
 
 - `ALLOWED_EMAILS` 레벨에서는 로그인이 필수입니다
 - `PUBLIC` 레벨은 로그인 없이 미팅 정보와 결과를 볼 수 있습니다. 참여자별 가능 시간, 참여, 가능 시간 설정은 회원이나 그 미팅의 게스트만 합니다
 - 게스트는 `allow_guests`가 켜진 `PUBLIC` 미팅에만 들어갑니다([게스트 계정](#게스트-계정))
 
-### 5. 참여자 식별
+### 4. 참여자 식별
 
 - 회원의 참여자는 `user_id`가 설정됩니다. 게스트의 참여자는 `user_id`가 `null`이고 `is_guest`가 `true`입니다
 - 미팅마다 같은 회원·같은 게스트의 참여자는 하나입니다. 다시 등록하면 기존 참여자를 200으로 반환합니다
 - 생성자의 참여자는 `is_owner`가 `true`입니다. 게스트 참여자는 언제나 `false`입니다
 
-### 6. 시간 슬롯 업데이트
+### 5. 시간 슬롯 업데이트
 
-- `PUT /availability`는 기존 가능 시간을 **전체 교체**합니다
+- `PUT /availability`는 기존 가능 시간(두 종류 모두)을 **전체 교체**합니다
 - 부분 업데이트가 아니라 전체 목록을 보내야 합니다
 
 ---

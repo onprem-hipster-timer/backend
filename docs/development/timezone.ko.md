@@ -103,7 +103,7 @@
 | timer | ✅ 서버에서 `ensure_utc_naive(datetime.now(UTC))` 설정 | ✅ `TimerRead.to_timezone` + `timezone` | 입력 datetime을 직접 받지 않음 |
 | todo | ✅ `TodoCreate/Update` validator | ✅ `TodoRead.to_timezone` + `timezone` | `deadline` |
 | holiday | ✅ 수신 DTO `HolidayItem.to_utc_naive_range` (KASI 날짜→KST→UTC naive) | – | 해시 `updated_at`도 naive UTC로 저장 |
-| meeting | ✅ `TimeSlotCreate` validator | ✅ `TimeSlotRead`·`AvailabilityRead`·`MeetingResultRead.to_timezone` + `timezone` | 미팅의 날짜·요일·하루 시간은 `Meeting.timezone`(IANA)의 벽시계 값, 결과 칸은 그 시간대에서 만든 UTC 구간 |
+| meeting | ✅ `TimeSlotCreate` validator | ✅ `TimeSlotRead`·`AvailabilityRead`·`MeetingResultRead.to_timezone` + `timezone` | 미팅의 날짜·제외 날짜·하루 시간은 `Meeting.timezone`(IANA)의 벽시계 값, 결과 칸은 그 시간대에서 만든 UTC 구간 |
 | friend / visibility / tag | – | – | `TimestampMixin` 타임스탬프만 사용 |
 
 ---
