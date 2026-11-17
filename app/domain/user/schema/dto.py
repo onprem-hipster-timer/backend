@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Optional
 
 from app.core.base_model import CustomModel
-from app.models.user_profile import AnalyticsConsent
 
 
 class MyProfileRead(CustomModel):
@@ -21,10 +20,6 @@ class MyProfileRead(CustomModel):
     consent_required: bool  # consent_version에 동의하지 않았으면 True
     deletion_requested_at: Optional[datetime] = None  # 탈퇴 신청 시각. 값이 있으면 휴면 계정
     deletion_scheduled_at: Optional[datetime] = None  # 이 시각 뒤 파기된다 (신청 시각 + 유예 기간)
-    analytics_consent: Optional[AnalyticsConsent] = None  # 사용성 분석 동의. 고르지 않았으면 null
-    analytics_consent_updated_at: Optional[datetime] = None  # analytics_consent를 마지막으로 바꾼 시각
-
-
-class AnalyticsConsentUpdate(CustomModel):
-    """사용성 분석 동의 (PUT /v1/users/me/analytics-consent). 약관 동의(consent_required)와 따로다"""
-    analytics_consent: AnalyticsConsent
+    # consent_version 동의와 함께 고른 사용성 분석 동의(선택). 고르지 않았거나 consent_version에 동의하지 않았으면 null
+    analytics_consent: Optional[bool] = None
+    analytics_consent_updated_at: Optional[datetime] = None  # analytics_consent를 마지막으로 정한 시각

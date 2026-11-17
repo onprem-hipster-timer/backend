@@ -1,7 +1,8 @@
 """게스트의 약관 동의 (app/domain/consent)
 
 - 생성(POST /v1/guests)은 동의를 게스트 행과 함께 기록한다 (test_guest_api.py, test_lookup_create.py)
-- PUT /v1/guests/me/consent: 게스트 토큰. 현재 버전 동의를 기록한다. Turnstile 토큰은 받지 않는다
+- PUT /v1/guests/me/consent: 게스트 토큰. 현재 버전 동의를 기록한다. Turnstile 토큰은 받지 않는다.
+  선택 동의인 사용성 분석(analytics)은 회원과 같이 기록하고 바꾼다 (tests/domain/consent/test_service.py)
 - CONSENT_ENFORCED면 현재 버전에 동의하지 않은 게스트는 PUT /v1/guests/me/consent, DELETE /v1/guests/me 밖의
   게스트 경로가 428. 동의는 sub마다 따로라 회원과 게스트가 서로의 동의로 통과하지 않는다
 - 게스트를 폐기하면(자기 삭제, 리소스 단위 폐기) 동의 기록도 지운다
@@ -25,7 +26,7 @@ from app.domain.guest.dependencies import get_current_guest, require_guest_acces
 from app.domain.guest.host import GuestHostStatus
 from app.domain.guest.model import Guest
 from app.models.visibility import ResourceType
-from tests.domain.guest.helpers import consent_body, consent_rows, guest_rows, make_guest
+from tests.domain.guest.helpers import consent_analytics, consent_body, consent_rows, guest_rows, make_guest
 
 CREATE = "/v1/guests"
 ME = "/v1/guests/me"
@@ -119,6 +120,29 @@ def test_put_other_version_is_409(guest_client, kratos, tokens, resource):
     assert r.json()["error_type"] == "ConsentVersionMismatchError"
     assert r.json()["message"] == "Consent version is not current"
     assert consent_rows() == set()
+
+
+def test_put_records_and_changes_analytics(guest_client, kratos, tokens, resource):
+    guest = make_guest(kratos, resource)
+    headers = tokens.guest(guest.identity_id)
+    body = consent_body()
+
+    assert _put(guest_client, headers, {**body, "analytics": True}).status_code == 204
+    assert consent_analytics() == {guest.identity_id: True}
+    assert _put(guest_client, headers, {**body, "analytics": False}).status_code == 204
+    assert consent_analytics() == {guest.identity_id: False}
+    assert _put(guest_client, headers, body).status_code == 204
+    assert _put(guest_client, headers, {**body, "analytics": None}).status_code == 204
+    assert consent_analytics() == {guest.identity_id: False}
+
+
+def test_put_with_non_boolean_analytics_is_422(guest_client, kratos, tokens, resource):
+    guest = make_guest(kratos, resource)
+    headers = tokens.guest(guest.identity_id)
+    assert _put(guest_client, headers, {**consent_body(), "analytics": True}).status_code == 204
+
+    assert _put(guest_client, headers, {**consent_body(), "analytics": "no"}).status_code == 422
+    assert consent_analytics() == {guest.identity_id: True}
 
 
 @pytest.mark.parametrize("item", ["age_over_14", "terms", "privacy"])
@@ -239,6 +263,18 @@ def test_self_delete_removes_consent(guest_client, kratos, tokens, resource):
 
     assert r.status_code == 204
     assert consent_rows() == set()
+
+
+def test_self_delete_removes_analytics_with_consent(guest_client, kratos, tokens, resource):
+    leaving = make_guest(kratos, resource, name="떠남")
+    staying = make_guest(kratos, resource, name="남음")
+    for guest in (leaving, staying):
+        assert _put(guest_client, tokens.guest(guest.identity_id), {**consent_body(), "analytics": True}).status_code == 204
+
+    r = guest_client.delete(ME, headers={**tokens.guest(leaving.identity_id), **TOKEN})
+
+    assert r.status_code == 204
+    assert consent_analytics() == {staying.identity_id: True}
 
 
 @pytest.mark.asyncio

@@ -96,15 +96,15 @@ DELETE /v1/friends/block/{user_id}        # Unblock user
 
 ```http
 GET    /v1/users/me                       # Own display info + friend code (for sharing)
-PUT    /v1/users/me/analytics-consent     # Set optional usability analytics consent
+PUT    /v1/users/me/consent               # Record consent to the terms (usability analytics consent is optional)
 POST   /v1/users/me/deletion              # Request account deletion (dormant)
 DELETE /v1/users/me/deletion              # Cancel account deletion
 ```
 
-!!! info "Usability analytics consent"
-    Whether a member allows usability analytics (optional) is stored on the account, so the same choice applies on every device. In the `GET /v1/users/me` response, `analytics_consent` is `"granted"`, `"denied"`, or `null` when not chosen, and `analytics_consent_updated_at` is when the value last changed (`null` when not chosen).
-    `PUT /v1/users/me/analytics-consent` with `{"analytics_consent": "granted"}` or `{"analytics_consent": "denied"}` stores it and returns the caller's profile (same shape as `GET /v1/users/me`) with `200`. Sending the stored value again keeps the time. Other values, `null` and a body without the field return `422`; there is no request to go back to `null`.
-    It is separate from the terms consent: it does not affect `consent_required`, and a member who has not consented to the current terms can still change it. Dormant accounts get `423`, guest tokens `403`, and requests without a token `401`. Purging the account deletes it with the profile.
+!!! info "Terms consent and usability analytics consent"
+    The body of `PUT /v1/users/me/consent` is `{"version": "<consent_version>", "age_over_14": true, "terms": true, "privacy": true, "analytics": true}`. `version` is the `consent_version` from `GET /v1/users/me` (otherwise `409`), and the three items must all be `true` (otherwise `422`). `analytics` (usability analytics consent) is optional: `true`, `false`, `null` or left out. Leaving it out or `null` means not chosen; a value that is not a boolean returns `422`. The response is the caller's profile (same shape as `GET /v1/users/me`, `200`).
+    Sending the same version again keeps the first consent record and changes only `analytics`; leaving it out, `null` or the stored value changes nothing. Consent is recorded per terms version, so after the terms version changes the choice starts from the `analytics` sent with the consent to the new version.
+    In profile responses, `analytics_consent` is the value chosen with the consent to the current terms version (`true`, `false`, or `null` when not chosen) and `analytics_consent_updated_at` is when that value was last set. Both are `null` while the member has not consented to the current version (`consent_required: true`). With `CONSENT_ENFORCED`, a member who has not consented can still call this path; dormant accounts get `423`. Purging the account deletes it with the consent records.
 
 !!! info "Account deletion"
     A request makes the account dormant and ends every login session. A dormant account's data is hidden from other users, and any authenticated request other than reading the profile and requesting or cancelling deletion returns `423` (`message: "account_deletion_pending"`). The user can log in again and cancel; once `deletion_scheduled_at` (request + `ACCOUNT_DELETION_GRACE_DAYS` days) has passed, the next purge run deletes all data and the login identity. Tokens of a purged account get `401` (`message: "account_deleted"`).
@@ -120,7 +120,7 @@ DELETE /v1/guests/me                      # The guest deletes itself (guest JWT)
 PUT    /v1/guests/me/consent              # Record the guest's consent (guest JWT)
 ```
 
-Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. Lookup, creation, self-deletion, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Recording consent takes no token. With `CONSENT_ENFORCED`, a guest that has not consented to the current version gets `428` (`message: "consent_required"`) on guest routes other than recording consent and self-deletion. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
+Guests sign in with `handle` and their password through `/auth`, like members, and get JWTs the same way. Lookup, creation, self-deletion, a guest's login submission and a settings submission from a guest session need a Turnstile token (`X-Turnstile-Token` header), and each token is accepted once. Recording consent takes no token. The `consent` of creation and the body of recording consent are the same as the member's `PUT /v1/users/me/consent`, so the optional `analytics` item is recorded by the same rules. With `CONSENT_ENFORCED`, a guest that has not consented to the current version gets `428` (`message: "consent_required"`) on guest routes other than recording consent and self-deletion. Guest tokens get `403` on every authenticated route other than the ones above and the guest routes of the resource they belong to. See the [Guest guide](../guides/guest.ko.md).
 
 ### Holidays
 

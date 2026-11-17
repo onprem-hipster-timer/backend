@@ -1,6 +1,6 @@
-"""user_profile에 사용성 분석 동의 컬럼을 더하는 마이그레이션
+"""consent에 사용성 분석 동의 컬럼을 더하는 마이그레이션
 
-alembic/versions/2026_11_17_1200-73e8f92c2d27_add_analytics_consent_to_user_profile.py
+alembic/versions/2026_11_18_1200-34f0c570658d_add_analytics_to_consent.py
 """
 
 from __future__ import annotations
@@ -16,12 +16,11 @@ from alembic.script import ScriptDirectory
 from tests.db.conftest import database_url_for, migration_database
 
 PREVIOUS_REVISION = "b3e7c1d9f4a2"
-ANALYTICS_REVISION = "73e8f92c2d27"
-ANALYTICS_COLUMNS = {"analytics_consent", "analytics_consent_updated_at"}
+ANALYTICS_REVISION = "34f0c570658d"
+ANALYTICS_COLUMNS = {"analytics", "analytics_updated_at"}
 
-PROFILE = sa.text(
-    "INSERT INTO user_profile (sub, friend_code, created_at, updated_at)"
-    " VALUES (:sub, :sub, '2026-11-01 00:00:00', '2026-11-01 00:00:00')"
+CONSENT = sa.text(
+    "INSERT INTO consent (sub, version, consented_at) VALUES (:sub, :version, '2026-11-13 09:30:00')"
 )
 
 
@@ -31,10 +30,11 @@ def database_url(request, tmp_path: Path) -> str:
 
 
 def _columns(engine: sa.Engine) -> dict[str, dict]:
-    return {c["name"]: c for c in sa.inspect(engine).get_columns("user_profile")}
+    return {c["name"]: c for c in sa.inspect(engine).get_columns("consent")}
 
 
 def _rows(engine: sa.Engine, sql: str) -> set[tuple]:
+    """값은 문자열로 맞춘다 (SQLite는 시각을 문자열로, PostgreSQL은 datetime으로 돌려준다)"""
     with engine.connect() as connection:
         return {tuple(None if v is None else str(v) for v in row) for row in connection.execute(sa.text(sql))}
 
@@ -45,26 +45,32 @@ def test_upgrade_adds_nullable_columns_and_downgrade_drops_them(database_url, mo
         command.downgrade(config, PREVIOUS_REVISION)
         assert not ANALYTICS_COLUMNS & set(_columns(engine))
         with engine.begin() as connection:
-            connection.execute(PROFILE, {"sub": "existing"})
+            connection.execute(CONSENT, {"sub": "a", "version": "2026-11-13"})
+            connection.execute(CONSENT, {"sub": "a", "version": "2026-01-01"})
 
         command.upgrade(config, ANALYTICS_REVISION)
 
         columns = _columns(engine)
         assert ANALYTICS_COLUMNS <= set(columns)
         assert all(columns[name]["nullable"] for name in ANALYTICS_COLUMNS)
-        assert _rows(engine, "SELECT sub, analytics_consent, analytics_consent_updated_at FROM user_profile") == {
-            ("existing", None, None),
+        assert _rows(engine, "SELECT sub, version, consented_at, analytics, analytics_updated_at FROM consent") == {
+            ("a", "2026-11-13", "2026-11-13 09:30:00", None, None),
+            ("a", "2026-01-01", "2026-11-13 09:30:00", None, None),
         }
 
         with engine.begin() as connection:
             connection.execute(sa.text(
-                "UPDATE user_profile SET analytics_consent = 'granted',"
-                " analytics_consent_updated_at = '2026-11-17 03:00:00'"
-            ))
+                "UPDATE consent SET analytics = :value, analytics_updated_at = '2026-11-18 03:00:00'"
+                " WHERE version = '2026-11-13'"
+            ), {"value": True})
         command.downgrade(config, PREVIOUS_REVISION)
 
         assert not ANALYTICS_COLUMNS & set(_columns(engine))
-        assert _rows(engine, "SELECT sub FROM user_profile") == {("existing",)}
+        assert _rows(engine, "SELECT sub, version, consented_at FROM consent") == {
+            ("a", "2026-11-13", "2026-11-13 09:30:00"),
+            ("a", "2026-01-01", "2026-11-13 09:30:00"),
+        }
+        assert sa.inspect(engine).get_pk_constraint("consent")["constrained_columns"] == ["sub", "version"]
 
         command.upgrade(config, "head")
         with engine.connect() as connection:
