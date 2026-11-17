@@ -4,7 +4,7 @@ Meeting 답하는 방식(mode) E2E 테스트
 mode는 생성 때 필수이고 PATCH로 바꿀 수 있다. 바꿔도 저장된 날짜와 참여자의 가능 시간은 그대로다.
 방식의 규칙은 생성과 수정(저장된 값에 수정 내용을 합친 결과) 모두에서 검사한다.
 수정은 규칙이 읽는 필드(MODE_RULE_FIELDS) 중 하나라도 저장된 값과 달라질 때만 규칙을 본다.
-- hourly: 기간은 7일 이하
+- hourly: 미팅 날짜(기간에서 제외 날짜를 뺀 날)는 7일 이하. 기간의 길이는 보지 않는다
 - daily: 하루 범위는 하루 전체(00:00–00:00)
 - weekly: 기간은 정확히 7일, 제외 날짜 없음, 하루 범위는 하루 전체
 """
@@ -148,6 +148,23 @@ def _days(start: str, days: int) -> dict:
     return {"start_date": start, "end_date": (date.fromisoformat(start) + timedelta(days=days - 1)).isoformat()}
 
 
+def _meeting_days(*days: str) -> dict:
+    """첫 날짜~마지막 날짜 기간에서 days만 미팅 날짜로 남긴다 (나머지는 제외 날짜)"""
+    kept = sorted(date.fromisoformat(day) for day in days)
+    between = (kept[0] + timedelta(days=offset) for offset in range(1, (kept[-1] - kept[0]).days))
+    return {
+        "start_date": kept[0].isoformat(),
+        "end_date": kept[-1].isoformat(),
+        "excluded_dates": [day.isoformat() for day in between if day not in kept],
+    }
+
+
+HOURLY_RULE = "hourly meetings must have at most 7 meeting days"
+
+# 2024-02-05~2024-02-23(19일) 기간에 미팅 날짜 7일
+SPREAD_7 = ("2024-02-05", "2024-02-07", "2024-02-09", "2024-02-12", "2024-02-14", "2024-02-19", "2024-02-23")
+
+
 @pytest.mark.e2e
 @pytest.mark.parametrize(
     "body",
@@ -157,6 +174,16 @@ def _days(start: str, days: int) -> dict:
         {**MEETINGS["hourly"], **_days("2024-02-26", 7)},  # 윤년 2월 말을 넘는 7일
         {**MEETINGS["hourly"], **_days("2024-02-05", 7), **WHOLE_DAY},
         {**MEETINGS["hourly"], **_days("2024-02-05", 7), "excluded_dates": ["2024-02-07"]},
+        # 3주에 흩어진 5일
+        {**MEETINGS["hourly"], **_meeting_days("2024-02-05", "2024-02-09", "2024-02-14", "2024-02-19", "2024-02-23")},
+        {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7)},
+        {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7), **WHOLE_DAY},
+        # 10일 기간 - 제외 3일 = 7일
+        {**MEETINGS["hourly"], **_days("2024-02-05", 10), "excluded_dates": ["2024-02-07", "2024-02-08", "2024-02-09"]},
+        # 가장 긴 기간(3개월)에 미팅 날짜 7일, 2일(첫날·마지막 날)
+        {**MEETINGS["hourly"], **_meeting_days(
+            "2024-02-05", "2024-02-20", "2024-03-04", "2024-03-15", "2024-04-01", "2024-04-22", "2024-05-05")},
+        {**MEETINGS["hourly"], **_meeting_days("2024-02-05", "2024-05-05")},
         {**MEETINGS["daily"], **_days("2024-02-05", 1)},
         {**MEETINGS["daily"], **_days("2024-02-05", 8)},
         {**MEETINGS["daily"], "start_date": "2024-02-05", "end_date": "2024-05-05"},
@@ -201,6 +228,93 @@ def test_mode_rules_rejected(e2e_client, body):
     assert [error["loc"] for error in detail] == [["body"]]
     assert body["mode"] in detail[0]["msg"]
     assert e2e_client.get("/v1/meetings").json() == []
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**MEETINGS["hourly"], **_days("2024-02-05", 8)},
+        {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7, "2024-02-21")},
+        {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7, "2024-02-21"), **WHOLE_DAY},
+        # 10일 기간 - 제외 2일 = 8일
+        {**MEETINGS["hourly"], **_days("2024-02-05", 10), "excluded_dates": ["2024-02-07", "2024-02-08"]},
+        {**MEETINGS["hourly"], **_meeting_days(
+            "2024-02-05", "2024-02-20", "2024-03-04", "2024-03-15", "2024-04-01", "2024-04-22", "2024-04-23",
+            "2024-05-05")},
+    ],
+)
+def test_hourly_with_more_than_7_meeting_days_is_422(e2e_client, body):
+    response = e2e_client.post("/v1/meetings", json=body)
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert len(detail) == 1 and HOURLY_RULE in detail[0]["msg"], detail
+    assert e2e_client.get("/v1/meetings").json() == []
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"excluded_dates": _meeting_days(*SPREAD_7, "2024-02-21")["excluded_dates"]},  # 제외 날짜 하나를 뺀다
+        {"excluded_dates": []},
+        {"end_date": "2024-02-24"},  # 새 마지막 날
+        {"start_date": "2024-02-04"},  # 새 첫날
+        {"mode": "hourly", "end_date": "2024-02-26", "title": "새 제목"},
+    ],
+)
+def test_patch_adding_hourly_meeting_day_beyond_7_is_422_and_keeps_stored(e2e_client, patch):
+    meeting = _create(e2e_client, {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7)})
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting['id']}", json=patch)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error_type"] == "InvalidMeetingError"
+    assert HOURLY_RULE in response.json()["message"]
+    assert e2e_client.get(f"/v1/meetings/{meeting['id']}").json() == meeting
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "patch",
+    [
+        # 마지막 날을 하루 늘리고 안쪽 날짜 하나를 뺀다
+        {"end_date": "2024-02-24", "excluded_dates": _meeting_days(*SPREAD_7[:-1], "2024-02-24")["excluded_dates"]},
+        # 제외 날짜를 다른 날로 바꾼다 (여전히 7일)
+        {"excluded_dates": _meeting_days(*SPREAD_7[:-2], "2024-02-21", "2024-02-23")["excluded_dates"]},
+        # 제외 날짜 하나를 더한다 (6일)
+        {"excluded_dates": _meeting_days(*SPREAD_7[:2], *SPREAD_7[3:])["excluded_dates"]},
+        # 기간을 3개월로 늘리고 늘어난 날을 모두 뺀다
+        _meeting_days(*SPREAD_7[:-1], "2024-05-05"),
+    ],
+)
+def test_patch_keeping_hourly_within_7_meeting_days_is_applied(e2e_client, patch):
+    meeting_id = _create(e2e_client, {**MEETINGS["hourly"], **_meeting_days(*SPREAD_7)})["id"]
+
+    response = e2e_client.patch(f"/v1/meetings/{meeting_id}", json=patch)
+
+    assert response.status_code == 200, response.text
+    stored = e2e_client.get(f"/v1/meetings/{meeting_id}").json()
+    assert {key: stored[key] for key in patch} == patch
+
+
+@pytest.mark.e2e
+def test_patch_daily_to_hourly_needs_at_most_7_meeting_days(e2e_client):
+    """30일 daily 미팅은 날짜를 7일로 줄이는 제외 날짜를 같이 보내야 hourly가 된다"""
+    meeting = _create(e2e_client, MEETINGS["daily"])
+    to_hourly = {"mode": "hourly", "start_time": "09:00:00", "end_time": "18:00:00", "time_slot_minutes": 30}
+    days = _meeting_days(*SPREAD_7[:-1], meeting["end_date"])
+
+    refused = e2e_client.patch(f"/v1/meetings/{meeting['id']}", json=to_hourly)
+    assert refused.status_code == 422, refused.text
+    assert HOURLY_RULE in refused.json()["message"]
+    assert e2e_client.get(f"/v1/meetings/{meeting['id']}").json() == meeting
+
+    applied = e2e_client.patch(f"/v1/meetings/{meeting['id']}", json={**to_hourly, **days})
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["mode"] == "hourly"
+    assert applied.json()["excluded_dates"] == days["excluded_dates"]
 
 
 @pytest.mark.e2e
@@ -264,11 +378,17 @@ def test_patch_keeping_mode_rules_is_applied(e2e_client, mode, patch):
 
 # (저장된 행, 규칙 필드를 바꾸지만 여전히 어기는 수정, 규칙을 지키게 하는 수정)
 LEGACY_MEETINGS = {
-    "hourly_longer_than_7_days": (
+    "hourly_10_meeting_days": (
         {"mode": "hourly", **_days("2024-02-05", 10), "start_time": "09:00:00", "end_time": "18:00:00",
          "time_slot_minutes": 30},
         {"end_date": "2024-02-13"},  # 9일
         {"end_date": "2024-02-11"},  # 7일
+    ),
+    "hourly_8_meeting_days_in_3_weeks": (
+        {"mode": "hourly", **_meeting_days(*SPREAD_7, "2024-02-21"), "start_time": "09:00:00",
+         "end_time": "18:00:00", "time_slot_minutes": 30},
+        {"excluded_dates": _meeting_days(*SPREAD_7[:-1], "2024-02-20", "2024-02-21", "2024-02-23")["excluded_dates"]},
+        {"excluded_dates": _meeting_days(*SPREAD_7)["excluded_dates"]},  # 제외 날짜 하나를 더해 7일
     ),
     "daily_not_whole_day": (
         {"mode": "daily", "start_date": "2024-02-05", "end_date": "2024-03-05", "start_time": "09:00:00",
@@ -417,7 +537,8 @@ def test_legacy_row_accepts_patch_that_fixes_rules(e2e_client, shape):
     [
         ("daily_not_whole_day", {"time_slot_minutes": 600}),  # 하루 범위 9시간보다 크다
         ("weekly_not_whole_day", {"title": "새 제목", "time_slot_minutes": 1440}),
-        ("hourly_longer_than_7_days", {"title": "   "}),
+        ("hourly_10_meeting_days", {"title": "   "}),
+        ("hourly_8_meeting_days_in_3_weeks", {"time_slot_minutes": 541}),  # 하루 범위 540분보다 크다
         ("weekly_with_excluded_dates", {"description": "x" * 2001}),
     ],
 )
