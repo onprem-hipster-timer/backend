@@ -257,7 +257,7 @@ def test_hourly_with_more_than_7_meeting_days_is_422(e2e_client, body):
 @pytest.mark.parametrize(
     "patch",
     [
-        {"excluded_dates": _meeting_days(*SPREAD_7, "2024-02-21")["excluded_dates"]},  # 제외 날짜 하나를 뺀다
+        {"excluded_dates": _meeting_days(*SPREAD_7, "2024-02-21")["excluded_dates"]},  # 제외 날짜 하나를 미팅 날짜로 되돌린다
         {"excluded_dates": []},
         {"end_date": "2024-02-24"},  # 새 마지막 날
         {"start_date": "2024-02-04"},  # 새 첫날
@@ -279,7 +279,7 @@ def test_patch_adding_hourly_meeting_day_beyond_7_is_422_and_keeps_stored(e2e_cl
 @pytest.mark.parametrize(
     "patch",
     [
-        # 마지막 날을 하루 늘리고 안쪽 날짜 하나를 뺀다
+        # 마지막 날을 하루 늘리고 원래 마지막 날을 제외 날짜로 둔다
         {"end_date": "2024-02-24", "excluded_dates": _meeting_days(*SPREAD_7[:-1], "2024-02-24")["excluded_dates"]},
         # 제외 날짜를 다른 날로 바꾼다 (여전히 7일)
         {"excluded_dates": _meeting_days(*SPREAD_7[:-2], "2024-02-21", "2024-02-23")["excluded_dates"]},
