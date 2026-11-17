@@ -25,6 +25,8 @@ DESCRIPTION_MAX_LENGTH = 2000
 MAX_PERIOD = relativedelta(months=3)
 TIME_SLOT_MINUTES_MIN = 5
 TIME_SLOT_MINUTES_MAX = 1440
+HOURLY_MAX_DAYS = 7
+WEEKLY_DAYS = 7
 
 
 def daily_range(start_time: time, end_time: time) -> timedelta:
@@ -148,6 +150,24 @@ class MeetingCreate(CustomModel):
             raise ValueError("excluded_dates must be after start_date and before end_date")
         if self.time_slot_minutes * 60 > daily_range(self.start_time, self.end_time).total_seconds():
             raise ValueError("time_slot_minutes must not exceed end_time - start_time")
+        return self
+
+    @model_validator(mode="after")
+    def validate_mode(self):
+        """hourly는 7일 이하. daily는 하루 전체(00:00–00:00). weekly는 정확히 7일, 제외 날짜 없음, 하루 전체"""
+        days = (self.end_date - self.start_date).days + 1
+        whole_day = self.start_time == time(0) and self.end_time == time(0)
+        if self.mode == MeetingMode.HOURLY and days > HOURLY_MAX_DAYS:
+            raise ValueError(f"hourly meetings must span at most {HOURLY_MAX_DAYS} days")
+        if self.mode == MeetingMode.DAILY and not whole_day:
+            raise ValueError("daily meetings must cover the whole day (start_time and end_time 00:00)")
+        if self.mode == MeetingMode.WEEKLY:
+            if days != WEEKLY_DAYS:
+                raise ValueError(f"weekly meetings must span exactly {WEEKLY_DAYS} days")
+            if self.excluded_dates:
+                raise ValueError("weekly meetings must not have excluded_dates")
+            if not whole_day:
+                raise ValueError("weekly meetings must cover the whole day (start_time and end_time 00:00)")
         return self
 
 

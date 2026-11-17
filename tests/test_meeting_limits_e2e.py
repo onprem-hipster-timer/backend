@@ -19,6 +19,10 @@ BASE_MEETING = {
 }
 
 
+# 기간이 7일을 넘는 미팅은 날짜만 고르는(daily) 하루 전체 미팅이다
+_DAILY = {"mode": "daily", "start_time": "00:00:00", "end_time": "00:00:00"}
+
+
 def _create_meeting(client, **overrides):
     response = client.post("/v1/meetings", json={**BASE_MEETING, **overrides})
     assert response.status_code == 201, response.text
@@ -76,8 +80,8 @@ def test_display_name_rejected(e2e_client, display_name):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"start_date": "2024-02-05", "end_date": "2024-05-05"},  # 정확히 3개월
-        {"start_date": "2024-11-30", "end_date": "2025-02-28"},  # 말일 시작: 3개월 뒤 같은 날이 없으면 그 달 말일
+        {**_DAILY, "start_date": "2024-02-05", "end_date": "2024-05-05"},  # 정확히 3개월
+        {**_DAILY, "start_date": "2024-11-30", "end_date": "2025-02-28"},  # 말일 시작: 3개월 뒤 같은 날이 없으면 그 달 말일
         {"start_date": "2024-02-05", "end_date": "2024-02-05"},  # 하루
         {"time_slot_minutes": 5},
         {"start_time": "09:00:00", "end_time": "10:00:00", "time_slot_minutes": 60},  # 단위 = 하루 범위
@@ -101,8 +105,8 @@ def test_meeting_shape_accepted(e2e_client, overrides):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"start_date": "2024-02-05", "end_date": "2024-05-06"},  # 3개월 + 1일
-        {"start_date": "2024-11-30", "end_date": "2025-03-01"},
+        {**_DAILY, "start_date": "2024-02-05", "end_date": "2024-05-06"},  # 3개월 + 1일
+        {**_DAILY, "start_date": "2024-11-30", "end_date": "2025-03-01"},
         {"start_date": "2024-02-05", "end_date": "2024-02-04"},
         {"excluded_dates": ["2024-02-05"]},
         {"time_slot_minutes": 4},
@@ -193,9 +197,9 @@ def _shape(meeting: dict) -> dict:
         {"start_date": "2024-02-10"},  # 저장된 end_date보다 뒤
         {"end_date": "2024-02-04"},  # 저장된 start_date보다 앞
         {"start_date": "2024-02-10", "end_date": "2024-02-09"},
-        {"end_date": "2024-05-06"},  # 저장된 start_date + 3개월 + 1일
-        {"start_date": "2023-11-08"},  # 저장된 end_date까지 3개월 초과
-        {"start_date": "2024-01-01", "end_date": "2024-04-02"},
+        {**_DAILY, "end_date": "2024-05-06"},  # 저장된 start_date + 3개월 + 1일
+        {**_DAILY, "start_date": "2023-11-08"},  # 저장된 end_date까지 3개월 초과
+        {**_DAILY, "start_date": "2024-01-01", "end_date": "2024-04-02"},
         {"time_slot_minutes": 541},  # 저장된 하루 범위(540분)보다 김
         {"start_time": "17:45:00"},  # 하루 범위가 저장된 단위(30분)보다 짧아짐
         {"end_time": "09:20:00"},
@@ -229,7 +233,7 @@ def test_patch_making_invalid_meeting_is_422_and_keeps_stored(e2e_client, patch)
     "patch, expected",
     [
         ({"start_time": "19:00:00", "end_time": "20:00:00"}, {"start_time": "19:00:00", "end_time": "20:00:00"}),
-        ({"end_date": "2024-05-05"}, {"end_date": "2024-05-05"}),
+        ({**_DAILY, "end_date": "2024-05-05"}, {**_DAILY, "end_date": "2024-05-05"}),
         ({"start_date": "2024-02-09"}, {"start_date": "2024-02-09"}),
         ({"time_slot_minutes": 540}, {"time_slot_minutes": 540}),
         ({"end_time": "00:00:00"}, {"end_time": "00:00:00"}),
@@ -461,10 +465,10 @@ def test_duplicate_slots_are_stored_as_sent_and_count_toward_cap(e2e_client):
     "overrides, slot_date",
     [
         # 날짜만 고르는 미팅: 하루 전체(00:00–00:00)를 한 칸으로
-        ({"start_date": "2024-02-05", "end_date": "2024-05-05",
+        ({"start_date": "2024-02-05", "end_date": "2024-05-05", "mode": "daily",
           "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-05-05"),
         # 요일만 고르는 미팅: 7일 기간, 하루 전체를 한 칸으로
-        ({"start_date": "2024-02-05", "end_date": "2024-02-11",
+        ({"start_date": "2024-02-05", "end_date": "2024-02-11", "mode": "weekly",
           "start_time": "00:00:00", "end_time": "00:00:00", "time_slot_minutes": 1440}, "2024-02-11"),
     ],
 )
