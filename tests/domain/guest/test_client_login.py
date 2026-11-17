@@ -64,3 +64,17 @@ def test_existing_guest_with_shorter_password_still_logs_in(guest_client, kratos
     guest = make_guest(kratos, resource, password="1")
 
     assert _login(guest_client, f"{guest.id}@guest.invalid", "1").status_code == 200
+
+
+def test_existing_guest_with_whitespace_only_password_still_logs_in(guest_client, kratos, resource):
+    """공백만인 비밀번호도 생성 때만 거절한다"""
+    guest = make_guest(kratos, resource, password="    ")
+
+    assert _login(guest_client, f"{guest.id}@guest.invalid", "    ").status_code == 200
+
+
+def test_password_with_leading_and_trailing_spaces_logs_in_only_as_sent(guest_client, resource):
+    handle = _create_and_find(guest_client, resource, password=" ab c ")
+
+    assert _login(guest_client, handle, "ab c").status_code == 400
+    assert _login(guest_client, handle, " ab c ").status_code == 200

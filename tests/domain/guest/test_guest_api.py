@@ -149,10 +149,35 @@ def test_invalid_password_is_422(guest_client, kratos, resource, password):
     assert kratos.identities == {}
 
 
-@pytest.mark.parametrize("password", ["1234", "    ", "가나다라", "🙂🙂🙂🙂", "a" * 72, "가" * 24])
+@pytest.mark.parametrize("password", ["1234", "가나다라", "🙂🙂🙂🙂", "a" * 72, "가" * 24])
 def test_password_of_4_characters_up_to_72_bytes_is_accepted(guest_client, kratos, resource, password):
     r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
     assert r.status_code == 201
+    assert kratos.passwords[guest_rows()[0].identity_id] == password
+
+
+@pytest.mark.parametrize(
+    "password",
+    ["    ", " " * 72, "\t\t\t\t", "    ", "　　　　", " \t\n  　"],
+    ids=["4_spaces", "72_spaces", "tabs", "nbsp", "ideographic_space", "mixed"],
+)
+def test_whitespace_only_password_is_422(guest_client, kratos, resource, password):
+    """공백 문자는 이름 규칙과 같다 (Python 공백, 유니코드 Zs)"""
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
+
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert [error["loc"] for error in detail] == [["body", "password"]]
+    assert detail[0]["msg"].endswith("비밀번호에는 공백이 아닌 문자가 있어야 합니다")
+    assert kratos.identities == {}
+    assert guest_rows() == []
+
+
+@pytest.mark.parametrize("password", ["a   ", " ab c", "　가　　", "\t\t\t1"])
+def test_password_with_spaces_is_stored_as_sent(guest_client, kratos, resource, password):
+    """공백이 아닌 문자가 하나라도 있으면 받고, 앞뒤 공백을 떼지 않는다"""
+    r = guest_client.post(CREATE, headers=TOKEN, json=_body(resource, password=password))
+    assert r.status_code == 201, r.text
     assert kratos.passwords[guest_rows()[0].identity_id] == password
 
 
