@@ -22,7 +22,7 @@ from app.db.session import CommittingSession, get_db_transactional
 from app.domain.consent.schema.dto import ConsentCreate
 from app.domain.consent.service import consent_pending
 from app.domain.user.model import UserProfile
-from app.domain.user.schema.dto import AnalyticsConsentUpdate, MyProfileRead
+from app.domain.user.schema.dto import MyProfileRead
 from app.domain.user.service import UserProfileService, deletion_scheduled_at
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -54,22 +54,6 @@ async def put_my_consent(
     `version`은 응답 전에 받은 현재 약관 시행일이어야 한다(다르면 409).
     """
     profile = UserProfileService(session, current_user).record_consent(data)
-    return _to_read(session, profile)
-
-
-@router.put("/me/analytics-consent", response_model=MyProfileRead)
-async def put_my_analytics_consent(
-        data: AnalyticsConsentUpdate,
-        session: Session = CommittingSession,
-        current_user: CurrentUser = Depends(get_current_user),
-):
-    """
-    사용성 분석 동의(선택) 설정. `granted` 또는 `denied`.
-
-    약관 동의(PUT /v1/users/me/consent)와 따로이고 `consent_required`에 영향이 없다.
-    저장된 값과 같으면 `analytics_consent_updated_at`을 바꾸지 않는다.
-    """
-    profile = UserProfileService(session, current_user).set_analytics_consent(data)
     return _to_read(session, profile)
 
 
@@ -124,6 +108,4 @@ def _to_read(session: Session, profile: UserProfile) -> MyProfileRead:
         consent_required=consent_pending(session, profile.sub),
         deletion_requested_at=profile.deletion_requested_at,
         deletion_scheduled_at=deletion_scheduled_at(profile),
-        analytics_consent=profile.analytics_consent,
-        analytics_consent_updated_at=profile.analytics_consent_updated_at,
     )
