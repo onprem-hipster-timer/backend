@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [v2026.11.18-2062a11] - 2026-11-18
+
 ### Changed
 
 - **Hourly meeting rule counts meeting days**: an `hourly` meeting may have at most 7 meeting days (the dates from `start_date` to `end_date` minus `excluded_dates`); the period itself may be as long as the input limits allow. More meeting days are refused with 422 (`hourly meetings must have at most 7 meeting days`) on create, and on update when `mode`, `start_date`, `end_date` or `excluded_dates` changes.
@@ -546,7 +552,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.17-888f3e5...HEAD
+[Unreleased]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.18-2062a11...HEAD
+[v2026.11.18-2062a11]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.17-888f3e5...v2026.11.18-2062a11
 [v2026.11.17-888f3e5]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.16-6e39e06...v2026.11.17-888f3e5
 [v2026.11.16-6e39e06]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-da99ae8...v2026.11.16-6e39e06
 [v2026.11.15-da99ae8]: https://github.com/onprem-hipster-timer/backend/compare/v2026.11.15-ea415eb...v2026.11.15-da99ae8
