@@ -19,7 +19,7 @@ BASE_MEETING = {
 }
 
 
-# 기간이 7일을 넘는 미팅은 날짜만 고르는(daily) 하루 전체 미팅이다
+# 미팅 날짜가 7일을 넘는 미팅은 날짜만 고르는(daily) 하루 전체 미팅이다
 _DAILY = {"mode": "daily", "start_time": "00:00:00", "end_time": "00:00:00"}
 
 
