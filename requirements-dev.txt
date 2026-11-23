@@ -217,7 +217,7 @@ pytest-cov==7.1.0
     # via -r requirements-dev.in
 pytest-dotenv==0.5.2
     # via -r requirements-dev.in
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via
     #   -r requirements.txt
     #   ghp-import
@@ -283,7 +283,9 @@ typing-inspection==0.4.5
     #   pydantic
     #   pydantic-settings
 tzdata==2026.6
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   python-dateutil
 urllib3==2.6.3
     # via requests
 uvicorn[standard]==0.54.0

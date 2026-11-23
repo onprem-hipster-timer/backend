@@ -85,7 +85,7 @@ pydantic-core==2.50.2
     # via pydantic
 pydantic-settings==2.16.2
     # via -r requirements.in
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via
     #   -r requirements.in
     #   strawberry-graphql
@@ -132,7 +132,9 @@ typing-inspection==0.4.5
     #   pydantic
     #   pydantic-settings
 tzdata==2026.6
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   python-dateutil
 uvicorn[standard]==0.54.0
     # via -r requirements.in
 uvloop==0.23.0 ; sys_platform != "win32"
